@@ -1,0 +1,41 @@
+[build-system]
+requires = ["maturin>=1.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+bindings = "bin"
+
+[tool.commitizen]
+name = "cz_customize"
+version = "0.1.0"
+version_files = ["Cargo.toml:version"]
+tag_format = "v$version"
+bump_message = "release: v$new_version"
+
+[tool.commitizen.customize]
+commit_parser = '^(?P<change_type>feat|fix|refactor|docs|perf|test|style|chore)(?:\((?P<scope>[^\)]+)\))?:\s*(?P<message>.+)$'
+changelog_pattern = '^(feat|fix|refactor|docs|perf|test|style|chore)'
+change_type_order = [
+    "feat",
+    "fix",
+    "refactor",
+    "docs",
+    "style",
+    "perf",
+    "test",
+    "chore"
+]
+
+message_template = """
+{{ change_type }}{% if scope %}({{ scope }}){% endif %}: {{ message }}
+"""
+
+[tool.commitizen.customize.change_type_map]
+feat = "Features"
+fix = "Bug Fixes"
+refactor = "Refactor"
+docs = "Documentation"
+style = "Styles"
+perf = "Performance"
+test = "Tests"
+chore = "Chores"

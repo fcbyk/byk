@@ -1,0 +1,145 @@
+---
+title: 参数处理
+description: 占位符命名空间、完整占位符一览、消耗规则及各类使用示例
+---
+
+import { Tab, Tabs } from '@rspress/core/theme';
+
+# 参数处理
+
+## 占位符命名空间
+
+三个命名空间完全隔离：
+
+| 命名空间 | 语法 | 说明 |
+|---------|------|------|
+| 具名占位符 | `{xxx}` | 匹配输入中 `xxx` 后面紧跟的值 |
+| 可选透传 | `{{xxx}}` | 有 `xxx` 则原样渲染，无则消失 |
+| 系统占位符 | `${...}` | 固定语义，由系统提供 |
+
+## 占位符一览
+
+| 占位符 | 说明 | 消耗位置数 |
+|--------|------|-----------|
+| `{xxx}` | 匹配输入中 `xxx` 后面紧跟的值 | 2（xxx + 值） |
+| `{{xxx}}` | 可选透传，有则渲染为 `xxx value`，无则消失 | 2（有值时） |
+| `{xxx?}` | 条件渲染（最简），有 `xxx` 则渲染为 `xxx`，无则消失 | 1 |
+| `{xxx?渲染1:渲染2}` | 条件渲染（三元） | 1 |
+| `${N}` | 原始参数第 N 个（从 0 开始） | 1（位置 N） |
+| `${args}` | 所有原始参数 | 不消耗 |
+| `${...args}` | 剩余参数（去除已被其他占位符消耗的） | 不消耗 |
+
+## 消耗规则
+
+- `{xxx}` / `{{xxx}}` 消耗 `xxx` 及其紧跟的值（共 2 个位置）
+- `{xxx?}` / `{xxx?渲染1}` / `{xxx?渲染1:渲染2}` 只消耗 `xxx` 本身（1 个位置）
+- `${N}` 消耗位置 N
+- 同一占位符多次出现，只消耗一次，值复用
+- `${...args}` 的剩余 = 所有原始参数 - 已被消耗的位置，按原始顺序拼接
+
+## 无值 / 无占位符行为
+
+:::tip 无占位符行为
+别名中不含任何占位符时，自动追加所有原始参数，等价于末尾隐式追加 `${args}`。兼容 find 命令中的裸 `{}`（如 `find . -exec ... {} +`），不会被解析或替换。
+:::
+
+:::note 无值行为
+任何占位符取不到对应的值时，**静默消失**，不报错。参数缺失导致的错误由底层命令的运行时处理。
+:::
+
+## 具名占位符示例
+
+<Tabs>
+<Tab label="长选项">
+
+```bash
+# "copy": "cp {--src} {--dest}"
+byk copy --src foo.txt --dest bar.txt
+# 执行：cp foo.txt bar.txt
+```
+
+</Tab>
+<Tab label="短选项">
+
+```bash
+# "copy": "cp {-s} {-d}"
+byk copy -s foo.txt -d bar.txt
+# 执行：cp foo.txt bar.txt
+```
+
+</Tab>
+</Tabs>
+
+## 可选透传示例
+
+```bash 
+# "build": "vite build {{--mode}}"
+byk build --mode production
+# 执行：vite build --mode production
+
+byk build
+# 执行：vite build
+```
+
+## 条件渲染示例
+
+<Tabs>
+<Tab label="最简形式">
+
+```bash 
+# "dev": "vite {--open?--open}"
+byk dev --open
+# 执行：vite --open
+
+byk dev
+# 执行：vite
+```
+
+</Tab>
+<Tab label="三元形式">
+
+```bash 
+# "test": "jest {--coverage?--coverage:--no-coverage}"
+byk test --coverage
+# 执行：jest --coverage
+
+byk test
+# 执行：jest --no-coverage
+```
+
+</Tab>
+</Tabs>
+
+## 位置参数示例
+
+<Tabs>
+<Tab label="绝对位置">
+
+```bash 
+# "echo": "echo ${0} ${2}"
+byk echo aaa bbb ccc
+# 执行：echo aaa ccc
+```
+
+</Tab>
+<Tab label="重复使用">
+
+```bash 
+# "repeat": "echo ${0} ${0} ${0}"
+byk repeat Hello
+# 执行：echo Hello Hello Hello
+```
+
+</Tab>
+<Tab label="剩余参数">
+
+```bash 
+# "cmd": "run {--src} ${...args}"
+byk cmd --src foo aaa bbb
+# {--src} 消耗 --src 和 foo
+# ${...args} → aaa bbb
+# 执行：run foo aaa bbb
+```
+
+</Tab>
+</Tabs>

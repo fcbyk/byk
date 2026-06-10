@@ -1,0 +1,13 @@
+[
+  {
+    "type": "file",
+    "name": "index",
+    "label": "概述"
+  },
+  {
+    "type": "dir",
+    "name": "alias",
+    "label": "命令别名",
+    "collapsible": false
+  }
+]

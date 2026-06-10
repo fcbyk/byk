@@ -1,0 +1,49 @@
+name: Build Wheels
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            artifact: linux-x64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+            artifact: linux-arm64
+          - target: aarch64-apple-darwin
+            os: macos-14
+            artifact: macos-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
+            artifact: windows-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheel
+        run: maturin build --release --target ${{ matrix.target }} --out dist
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: byk-${{ matrix.artifact }}-wheel
+          path: dist/*.whl

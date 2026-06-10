@@ -1,0 +1,121 @@
+/// Plugin Commands 渲染。
+///
+/// 将 PluginCache 中的命令列表转为对齐的终端展示行并输出。
+
+use colored::Colorize;
+
+use crate::core::plugins::PluginCache;
+use crate::utils::display;
+
+/// 渲染 Commands 区块到终端。
+pub fn render(cache: &PluginCache) {
+    let lines = format_lines(cache);
+    if lines.is_empty() {
+        return;
+    }
+
+    println!();
+    println!("{}", "Commands:".green().bold());
+    for (name, line) in &lines {
+        let rest = &line[2 + name.len()..];
+        print!("  {}", name.cyan().bold());
+        println!("{}", rest);
+    }
+}
+
+/// 将插件命令格式化为对齐的展示行。
+///
+/// 行格式: "  {name}{padding}  {description}"
+fn format_lines(cache: &PluginCache) -> Vec<(String, String)> {
+    if cache.commands.is_empty() {
+        return Vec::new();
+    }
+
+    let mut entries: Vec<(String, String)> = cache
+        .commands
+        .iter()
+        .map(|(name, cmd)| (name.clone(), cmd.description.clone()))
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    display::align_kv_pairs(&entries, "  ")
+}
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use crate::core::plugins::PluginCommand;
+
+    fn plugin_command(module: &str, description: &str) -> PluginCommand {
+        PluginCommand {
+            module: module.into(),
+            description: description.into(),
+        }
+    }
+
+    fn make_cache(commands: Vec<(&str, &str, &str)>) -> PluginCache {
+        let map: HashMap<String, PluginCommand> = commands
+            .into_iter()
+            .map(|(name, module, desc)| (name.into(), plugin_command(module, desc)))
+            .collect();
+        PluginCache {
+            watched_mtimes: HashMap::new(),
+            commands: map,
+            python_executable: None,
+        }
+    }
+
+    #[test]
+    fn plugin_format_lines_empty() {
+        let cache = make_cache(vec![]);
+        assert!(format_lines(&cache).is_empty());
+    }
+
+    #[test]
+    fn plugin_format_lines_single_command() {
+        let cache = make_cache(vec![("send", "byklansend.main:Plugin", "Send messages")]);
+        let result = format_lines(&cache);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "send");
+        assert_eq!(result[0].1, "  send  Send messages");
+    }
+
+    #[test]
+    fn plugin_format_lines_sorted_by_name() {
+        let cache = make_cache(vec![
+            ("zzz", "mod3:Plugin", "Last"),
+            ("aaa", "mod1:Plugin", "First"),
+            ("mmm", "mod2:Plugin", "Middle"),
+        ]);
+        let result = format_lines(&cache);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "aaa");
+        assert_eq!(result[1].0, "mmm");
+        assert_eq!(result[2].0, "zzz");
+    }
+
+    #[test]
+    fn plugin_format_lines_key_alignment() {
+        let cache = make_cache(vec![
+            ("verylongcommand", "m:Plugin", "Has a long name"),
+            ("x", "m:Plugin", "Short"),
+        ]);
+        let result = format_lines(&cache);
+        assert_eq!(result.len(), 2);
+        // 排序后 "verylongcommand" 在前，"x" 在后
+        // "x" 应补齐到和 "verylongcommand" 相同的宽度
+        let short = result.iter().find(|(k, _)| k == "x").unwrap();
+        let long = result.iter().find(|(k, _)| k == "verylongcommand").unwrap();
+        assert!(short.1.contains("Short"));
+        assert!(long.1.contains("Has a long name"));
+        // 对齐后的描述起始位置应该一致
+        let short_desc_pos = short.1.find("Short").unwrap();
+        let long_desc_pos = long.1.find("Has a long name").unwrap();
+        assert_eq!(short_desc_pos, long_desc_pos);
+    }
+}

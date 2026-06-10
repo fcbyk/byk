@@ -1,0 +1,25 @@
+/* ========================================
+   byk docs — 侧边栏优化
+   ======================================== */
+
+:root {
+  --rp-sidebar-width: 230px !important;  /* 默认 320px */
+  --rp-outline-width: 200px !important;  /* 默认 268px */
+}
+
+/* PC 端去掉侧边栏右边框线，移动端保留 */
+@media (min-width: 1280px) {
+  .rp-doc-layout__sidebar {
+    border-right: none !important;
+  }
+}
+
+/* 缩减侧边栏顶部 padding，让第一个 item 与右侧目录标题对齐 */
+.rp-doc-layout__sidebar {
+  padding-top: 40px !important;
+}
+
+/* 右侧目录最大高度为浏览器高度的 60% */
+.rp-outline__toc {
+  max-height: 60vh !important;
+}

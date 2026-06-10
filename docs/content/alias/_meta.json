@@ -1,0 +1,17 @@
+[
+  {
+    "type": "file",
+    "name": "start",
+    "label": "快速开始"
+  },
+  {
+    "type": "file",
+    "name": "config",
+    "label": "别名配置"
+  },
+  {
+    "type": "file",
+    "name": "placeholders",
+    "label": "参数处理"
+  }
+]

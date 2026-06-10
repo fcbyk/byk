@@ -1,0 +1,33 @@
+/**
+ * 让 Nav 的左右文字与下方的 Sidebar 和 Outline 文字对齐
+ *
+ * Rspress 默认 Nav padding 是对称计算的，且未考虑 Sidebar/Outline 内部的 padding，
+ * 导致 Nav 标题与 Sidebar 菜单项、Nav 右侧图标与 Outline 文字不对齐。
+ *
+ * Sidebar 内部有 20px padding，NavTitle 在 Nav 内部无额外边距，
+ * 因此 Nav padding-left 需要 = sidebar-margin-left + sidebar-padding (20px)。
+ *
+ * Outline 内部同样有 20px padding，右侧也需要相应补偿。
+ *
+ * 安全策略：屏幕宽度 <1280px 时 sidebar/outline margin 变量值为 0，
+ *          padding 退化为 0+20px = 20px，与默认行为一致；
+ *          >=1280px 时自动对齐。
+ */
+header.rp-nav {
+  padding-left: calc(
+    max(var(--rp-sidebar-margin-left), 0px) + var(--rp-sidebar-padding, 20px)
+  ) !important;
+  padding-right: calc(
+    max(var(--rp-outline-margin-right), 0px) + var(--rp-outline-padding-x, 20px)
+  ) !important;
+}
+
+/**
+ * Outline 只显示二级和三级标题（h2/h3），隐藏四级标题（h4）
+ *
+ * Rspress Toc 组件使用 data-depth 属性标记层级：
+ *   h2 → data-depth="0"，h3 → data-depth="1"，h4 → data-depth="2"
+ */
+.rp-toc-item[data-depth="2"] {
+  display: none;
+}

@@ -1,0 +1,335 @@
+---
+title: 别名配置
+description: 别名的类型定义、三种配置模式、文件组织、命名规范、优先级及精确执行语法
+---
+
+import { Badge, Tab, Tabs } from '@rspress/core/theme';
+
+# 别名配置
+
+## 类型定义
+
+```ts title="alias.types.ts"
+// 别名对象类型
+type AliasObject = {
+  $cmd?: string;
+  $cwd?: string;
+  $interactive?: boolean;
+  [key: string]: string | AliasObject | boolean | undefined;
+}
+
+// JSON 文件格式类型
+type AliasFileJSON = {
+  $priority?: number;      // 优先级，默认本地=10 全局=0
+  $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
+  $interactive?: boolean;  // 文件级 / 分组级交互模式，子别名自动继承
+  [key: string]: string | AliasObject | number | boolean | undefined;
+};
+```
+
+## 别名对象类型
+
+### Key 命名规则
+
+#### 普通字段
+
+- key **不能包含** `@` 或 `.`，违规则被忽略
+- 支持中文 key 名
+- key 支持嵌套分组（dict），通过 `.` 分隔符访问
+
+#### 前缀系统字段
+
+通过 `$` 前缀系统字段配置别名：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `$cmd` | string | 执行命令（必填） |
+| `$cwd` | string | 工作目录（可选） |
+| `$interactive` | boolean | 是否交互执行（可选） |
+
+:::note
+`$cmd` 开头的 object 为别名叶子节点。仅有 `$cwd` / `$interactive` 而无 `$cmd` 的 object 为带继承属性的分组节点。`$priority` 为文件保留字段。
+:::
+
+### 工作目录 cwd
+
+支持三级继承：文件级 → 分组级 → 别名级，优先级逐级递增（别名自己的 `$cwd` 覆盖分组级，分组级覆盖文件级）。
+
+<Tabs>
+<Tab label="别名级指定">
+
+```json
+{
+  "install": {
+    "$cmd": "npm i",
+    "$cwd": "/project/web"
+  }
+}
+```
+
+</Tab>
+<Tab label="分组级继承">
+
+在中间分组上设置 `$cwd`，该分组下所有子别名自动继承，无需逐个指定。子分组可以覆盖：
+
+```json
+{
+  "services": {
+    "$cwd": "/project",
+    "install": "npm i",
+    "web": {
+      "$cwd": "/project/web",
+      "dev": "pnpm dev",
+      "build": "pnpm build"
+    }
+  }
+}
+```
+
+`install` 继承 `services` 的 `$cwd`（`/project`），`web.dev` 和 `web.build` 使用 `web` 分组覆盖的 `/project/web`。
+
+</Tab>
+<Tab label="文件级继承">
+
+在文件顶层设置 `$cwd`，所有子别名未单独指定 `$cwd` 时会自动继承：
+
+```json
+{
+  "$cwd": "/project/web",
+  "install": "npm i",
+  "start": {
+    "$cmd": "pnpm dev",
+    "$cwd": "/project/web/frontend"
+  }
+}
+```
+
+`install` 继承文件级 `$cwd`（`/project/web`），而 `start` 使用自行指定的 `/project/web/frontend`。
+
+</Tab>
+</Tabs>
+
+### 交互模式
+
+交互模式适合需要逐步确认参数或执行危险命令的场景。开启后逐项提示输入占位符值，最后确认执行。
+
+`$interactive` 同样支持三级继承：文件级 → 分组级 → 别名级。
+
+<Tabs>
+<Tab label="别名级指定">
+
+```json
+{
+  "deploy": {
+    "$cmd": "deploy --env {env} --tag {version}",
+    "$interactive": true
+  }
+}
+```
+
+```bash
+byk deploy
+# ~ deploy --env {env} --tag {version}
+#   env: staging
+#   version: v2.0
+# ~ deploy --env staging --tag v2.0     ← 绿色粗体
+#    Press Enter to execute...
+```
+
+</Tab>
+<Tab label="分组级继承">
+
+在中间分组上设置 `$interactive`，该分组下所有子别名自动启用交互模式。子节点可以覆盖为 `false`：
+
+```json
+{
+  "danger": {
+    "$interactive": true,
+    "delete": "rm -rf {path}",
+    "migrate": {
+      "$cmd": "db migrate --env {env}",
+      "$interactive": false
+    }
+  }
+}
+```
+
+`delete` 继承 `danger` 的交互模式（确认后再执行），`migrate` 覆盖为非交互（直接执行）。
+
+</Tab>
+<Tab label="文件级继承">
+
+在文件顶层设置 `$interactive`，所有子别名未单独指定时会自动继承：
+
+```json
+{
+  "$interactive": true,
+  "deploy": "deploy --env {env}",
+  "build": {
+    "$cmd": "pnpm build",
+    "$interactive": false
+  }
+}
+```
+
+`deploy` 继承文件级交互模式，`build` 使用自行指定的非交互模式。
+
+</Tab>
+</Tabs>
+
+:::tip
+交互和非交互模式 header 和 final 行格式完全一致。交互只是多了 `~` 前缀的输入区和确认步骤。
+:::
+
+### 调用示例
+
+<Tabs>
+<Tab label="使用系统字段">
+
+```json
+{
+  "dev": "vite",
+
+  "install": {
+    "$cmd": "npm i",
+    "$cwd": "/Users/coke/project/web"
+  },
+
+  "deploy": {
+    "$cmd": "deploy --env {env}",
+    "$interactive": true
+  }
+}
+```
+
+```bash
+byk install    
+# 等价于在/Users/coke/project/web 运行 npm i
+```
+
+</Tab>
+<Tab label="别名对象嵌套">
+
+```json
+{
+  "开发": {
+    "测试": "pytest -q",
+    "构建": {
+      "$cmd": "pnpm run build",
+      "后端": "python -m build"
+    }
+  },
+  "清理": "find . -type d ..."
+}
+```
+
+```bash
+byk 开发.测试           # 运行 pytest -q
+byk 开发.构建           # 运行 pnpm run build
+byk 开发.构建.前端       # 运行pnpm run build
+byk 清理               # find . -type d ...
+```
+
+</Tab>
+</Tabs>
+
+## 别名文件
+
+byk 扫描当前目录和全局目录下所有 `*.byk.json` 文件，自动合并为一个统一的别名空间。
+
+### 文件命名规范
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| `[name].byk.json` | `run.byk.json`, `release.byk.json` | 推荐形式，文件名有语义 |
+| `.byk.json` | `.byk.json` | 极简形式，匿名文件 |
+
+:::warning
+**name 合法字符**：字母、数字、`-`、`_`、中文。
+
+**禁止字符**：`.`、`@`、`/`、空格及其他特殊符号。
+
+非法命名的文件（如 `aaa.bbb.byk.json`）会被**静默跳过**，不报错。
+:::
+
+### 目录结构
+
+本地目录（当前工作目录，不递归扫描子目录）：
+
+```tree
+./
+├── run.byk.json
+├── release.byk.json
+└── .byk.json
+```
+
+全局目录：
+
+```tree
+~/.byk/alias/
+├── alias.byk.json
+├── work.byk.json
+└── .byk.json
+```
+
+### 优先级
+
+所有文件合并为一个统一的 key 空间，高优先级文件的同名 key 覆盖低优先级。
+
+#### 默认优先级
+
+| 文件位置 | 默认优先级 |
+|---------|-----------|
+| 本地 `[name].byk.json` | 10 |
+| 本地 `.byk.json` | 10（匿名文件排序靠后） |
+| 全局 `[name].byk.json` | 0 |
+| 全局 `.byk.json` | 0（匿名文件排序靠后） |
+
+同优先级文件按文件名字母序加载，后者覆盖前者，行为确定。
+
+#### 自定义优先级
+
+通过 `$priority` 字段声明，可打破默认规则：
+
+```json title="任意 .byk.json"
+{
+  "$priority": 20,
+  "build": "vite build",
+  "dev": "vite"
+}
+```
+
+:::note
+`$priority` 为保留字段，不会被解析为别名 key。设为负数（如 `-1`）的文件不参与优先级合并，仅可通过精确语法调用。
+:::
+
+### 精确执行语法
+
+日常使用直接 `byk <key>`。当需要精确指定执行哪个文件中的别名时：
+
+| 语法 | 说明 |
+|------|------|
+| `byk @release.build` | 精确执行本地 `release.byk.json` 的 `build` |
+| `byk @@release.build` | 精确执行全局 `release.byk.json` 的 `build` |
+| `byk @.build` | 精确执行本地 `.byk.json` 的 `build` |
+| `byk @@.build` | 精确执行全局 `.byk.json` 的 `build` |
+
+**约定**：
+- `@` 语法只做文件路由，不做任何 fallback
+- 文件不存在 → 报错，不自动查找其他位置
+- 文件存在但 key 不存在 → 报错
+- Key 名不能包含 `@`，违反则静默跳过
+
+```bash title="精确执行示例"
+# 本地文件不存在
+byk @release.build
+# Error: local file "release.byk.json" not found
+
+# 全局文件不存在
+byk @@work.deploy
+# Error: global file "work.byk.json" not found
+
+# key 不存在
+byk @release.cleanup
+# Error: alias "cleanup" not found in release.byk.json
+```

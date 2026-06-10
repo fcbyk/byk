@@ -1,0 +1,32 @@
+import { Steps, Tab, Tabs } from '@rspress/core/theme';
+
+# 命令别名
+
+通过别名快速运行终端命令
+
+## 快速入门
+
+<Steps>
+
+### 创建配置文件
+
+在当前目录下创建任意 `hello.byk.json`：
+
+```json
+{
+  "hello": "echo hello world"
+}
+```
+
+### 通过别名运行
+
+```bash
+byk hello
+```
+
+### 进阶使用
+
+- [别名配置](./config.mdx) — 了解别名的配置格式
+- [参数处理](./placeholders.mdx) — 别名的占位符设计
+
+</Steps>
