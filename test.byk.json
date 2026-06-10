@@ -1,0 +1,6 @@
+{
+    "hello": {
+        "$interactive": true,
+        "$cmd": "echo {xxx} ${0} ${...args}"
+    }
+}

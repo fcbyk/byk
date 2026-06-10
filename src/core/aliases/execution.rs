@@ -1,7 +1,7 @@
 /// 别名执行：危险命令检测、环境构建、交互模式、执行入口。
 
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
+use rustyline::DefaultEditor;
 use std::path::{Path, PathBuf};
 use std::process::{Command, exit};
 
@@ -282,6 +282,11 @@ fn execute_interactive_impl(
     let has_args_placeholder = placeholders.iter().any(|ph| ph == "${args}");
     let show_args_info = no_placeholders || has_args_placeholder;
 
+    let mut rl = DefaultEditor::new().unwrap_or_else(|_| {
+        eprintln!("Error: interactive mode requires a terminal");
+        exit(1);
+    });
+
     let (display_cmd, display_placeholders) = if no_placeholders {
         let d = format!("{} ${{args}}", command);
         (d, vec!["${args}".to_string()])
@@ -304,10 +309,7 @@ fn execute_interactive_impl(
         let (final_command, _) = parse_alias_arguments_with_mapping(command, cli_args, &[]);
         println!("~ \x1b[1;32m{}\x1b[0m", final_command);
 
-        print!("  Press Enter to execute...");
-        std::io::stdout().flush().unwrap();
-        let mut _buf = String::new();
-        if std::io::stdin().read_line(&mut _buf).is_err() {
+        if rl.readline("  Press Enter to execute...").is_err() {
             println!("\nCancelled");
             exit(0);
         }
@@ -352,15 +354,13 @@ fn execute_interactive_impl(
             continue;
         }
         let n = &ph[2..ph.len() - 1];
-        print!("  \x1b[33m${{{}}}\x1b[0m: ", n);
-        std::io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        if std::io::stdin().read_line(&mut input).is_err() {
-            println!("\nCancelled");
-            exit(0);
-        }
-        let input = input.trim().to_string();
+        let input = match rl.readline(&format!("  ${{{}}}: ", n)) {
+            Ok(line) => line.trim().to_string(),
+            Err(_) => {
+                println!("\nCancelled");
+                exit(0);
+            }
+        };
         if !input.is_empty() {
             resolved_map.insert((*ph).clone(), input.clone());
             cmd = cmd.replace(ph.as_str(), &input);
@@ -386,17 +386,16 @@ fn execute_interactive_impl(
             &false_branch
         };
 
-        print!(
-            "  [\x1b[33m{}\x1b[0m / {}] (y/N): ",
+        let input = match rl.readline(&format!(
+            "  [{}/{}] (y/N): ",
             true_branch, false_label
-        );
-        std::io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        if std::io::stdin().read_line(&mut input).is_err() {
-            println!("\nCancelled");
-            exit(0);
-        }
+        )) {
+            Ok(line) => line,
+            Err(_) => {
+                println!("\nCancelled");
+                exit(0);
+            }
+        };
         let chosen = if input.trim().to_lowercase().starts_with('y') {
             true_branch.clone()
         } else {
@@ -429,15 +428,13 @@ fn execute_interactive_impl(
             continue;
         }
 
-        print!("  \x1b[33m{}\x1b[0m: ", key);
-        std::io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        if std::io::stdin().read_line(&mut input).is_err() {
-            println!("\nCancelled");
-            exit(0);
-        }
-        let input = input.trim().to_string();
+        let input = match rl.readline(&format!("  {}: ", key)) {
+            Ok(line) => line.trim().to_string(),
+            Err(_) => {
+                println!("\nCancelled");
+                exit(0);
+            }
+        };
         if !input.is_empty() {
             interactive_args.push(key.to_string());
             interactive_args.push(input.clone());
@@ -468,14 +465,13 @@ fn execute_interactive_impl(
         } else {
             String::new()
         };
-        print!("  \x1b[33m...args\x1b[0m: {}", hint);
-        std::io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        if std::io::stdin().read_line(&mut input).is_err() {
-            println!("\nCancelled");
-            exit(0);
-        }
+        let input = match rl.readline(&format!("  ...args: {}", hint)) {
+            Ok(line) => line,
+            Err(_) => {
+                println!("\nCancelled");
+                exit(0);
+            }
+        };
         for arg in input.trim().split_whitespace() {
             if !arg.is_empty() {
                 interactive_args.push(arg.to_string());
@@ -523,10 +519,7 @@ fn execute_interactive_impl(
 
     // --- ④ 最终命令 + 确认 ---
     println!("~ \x1b[1;32m{}\x1b[0m", final_command);
-    print!("  Press Enter to execute...");
-    std::io::stdout().flush().unwrap();
-    let mut _buf = String::new();
-    if std::io::stdin().read_line(&mut _buf).is_err() {
+    if rl.readline("  Press Enter to execute...").is_err() {
         println!("\nCancelled");
         exit(0);
     }
