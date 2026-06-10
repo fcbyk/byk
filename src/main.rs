@@ -60,7 +60,6 @@ fn main() {
         match info_arg.as_str() {
             "paths" => render::info::render_paths(&layout),
             "py" => render::info::render_py(&layout),
-            "latest" => render::info::render_latest(),
             _ => render::info::render_info_help(),
         }
         return;

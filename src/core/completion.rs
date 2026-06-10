@@ -124,7 +124,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // --info 子命令补全
     if first == "--info" {
-        const INFO_SUBS: &[&str] = &["paths", "py", "latest"];
+        const INFO_SUBS: &[&str] = &["paths", "py"];
         return INFO_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
