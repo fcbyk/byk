@@ -61,6 +61,7 @@ const GLOBAL_FLAGS: &[&str] = &[
     "--version",
     "-v",
     "--info",
+    "--init",
     "--help",
     "-h",
 ];
@@ -126,6 +127,16 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
     if first == "--info" {
         const INFO_SUBS: &[&str] = &["paths", "py"];
         return INFO_SUBS
+            .iter()
+            .filter(|s| s.starts_with(partial))
+            .map(|s| s.to_string())
+            .collect();
+    }
+
+    // --init 子命令补全
+    if first == "--init" {
+        const INIT_SUBS: &[&str] = &["npm", "pnpm", "comp"];
+        return INIT_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
             .map(|s| s.to_string())

@@ -69,6 +69,7 @@ fn main() {
         match init_arg.as_str() {
             "npm" => init::init_npm(&layout),
             "pnpm" => init::init_pnpm(&layout),
+            "comp" => init::init_completion(),
             _ => init::render_init_help(),
         }
         return;

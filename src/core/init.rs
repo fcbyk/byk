@@ -4,6 +4,7 @@
 /// 模板文件位于 src/templates/，通过 include_str! 编译期嵌入。
 
 use colored::Colorize;
+use std::env;
 use std::fs;
 use std::io::{self, Write};
 
@@ -34,6 +35,93 @@ pub fn render_init_help() {
         "  {:<8} {}",
         "pnpm".yellow(),
         "Initialize with pnpm (node-pkgs)".dimmed()
+    );
+    println!(
+        "  {:<8} {}",
+        "comp".yellow(),
+        "Initialize shell completion (zsh/bash)".dimmed()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --init comp
+// ---------------------------------------------------------------------------
+
+/// 初始化 shell 补全。
+///
+/// 行为与 install.sh 保持一致：
+/// - 从 `$SHELL` 检测当前 shell（zsh / bash）
+/// - 在对应的 rc 文件中追加 `source <(byk completion <shell>)` 行
+/// - 幂等：已配置则跳过
+pub fn init_completion() {
+    let shell = env::var("SHELL").unwrap_or_default();
+
+    let (rc_filename, shell_name) = if shell.ends_with("/zsh") {
+        (".zshrc", "zsh")
+    } else if shell.ends_with("/bash") {
+        (".bashrc", "bash")
+    } else {
+        eprintln!(
+            "{} {} {}",
+            "Unsupported shell:".red(),
+            shell.dimmed(),
+            "(supported: zsh, bash)".dimmed()
+        );
+        return;
+    };
+
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            eprintln!("{}", "Cannot determine home directory.".red());
+            return;
+        }
+    };
+    let rc_path = home.join(rc_filename);
+
+    let line = format!(
+        "if command -v byk >/dev/null 2>&1; then source <(byk completion {}); fi",
+        shell_name
+    );
+
+    // 读取 rc 文件检测是否已配置
+    let content = fs::read_to_string(&rc_path).unwrap_or_default();
+    if content.contains(&line) {
+        println!(
+            "Shell completion already configured in {}",
+            rc_path.display().to_string().dimmed()
+        );
+        return;
+    }
+
+    // 追加到 rc 文件
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&rc_path)
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to open {}: {}", rc_path.display(), e);
+            std::process::exit(1);
+        });
+
+    // 确保从新行开始
+    if !content.is_empty() && !content.ends_with('\n') {
+        let _ = writeln!(file);
+    }
+
+    writeln!(file, "\n# byk shell completion\n{}", line).unwrap_or_else(|e| {
+        eprintln!("Failed to write to {}: {}", rc_path.display(), e);
+        std::process::exit(1);
+    });
+
+    println!(
+        "+ Shell completion configured in {}",
+        rc_path.display().to_string().dimmed()
+    );
+    println!(
+        "  Restart your shell or run: {} {}",
+        "source".dimmed(),
+        rc_path.display().to_string().dimmed()
     );
 }
 
