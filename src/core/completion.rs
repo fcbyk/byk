@@ -172,8 +172,10 @@ fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
 /// 检查某个词是否是已知的 NPM 命令。
 fn is_known_npm(word: &str, layout: &PathLayout) -> bool {
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    let npm_cache = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir);
-    npm_cache.bin_map.contains_key(word)
+    match npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+        Some(npm_cache) => npm_cache.bin_map.contains_key(word),
+        None => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -246,8 +248,9 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
 
     // NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    let npm_cache = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir);
-    candidates.extend(npm_cache.bin_map.keys().cloned());
+    if let Some(npm_cache) = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+        candidates.extend(npm_cache.bin_map.keys().cloned());
+    }
 
     // 顶级别名（叶子节点 + 中间 dict 节点，dict 加 . 后缀提示可展开）
     let (merged, files) = aliases::load_merged_aliases(layout);

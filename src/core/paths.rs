@@ -29,7 +29,7 @@ impl PathLayout {
         let node_pkgs_dir = root_dir.join("node-pkgs");
         let cache_dir = root_dir.join("cache");
 
-        for d in [&logs_dir, &alias_dir, &node_pkgs_dir, &cache_dir] {
+        for d in [&logs_dir, &alias_dir, &cache_dir] {
             std::fs::create_dir_all(d).unwrap_or_else(|e| {
                 eprintln!("无法创建持久化目录 {}: {}", d.display(), e);
             });
@@ -82,8 +82,9 @@ mod tests {
         assert!(layout.root_dir.exists());
         assert!(layout.logs_dir.exists());
         assert!(layout.alias_dir.exists());
-        assert!(layout.node_pkgs_dir.exists());
         assert!(layout.cache_dir.exists());
+        // node-pkgs 不再自动创建，由 --init 手动初始化
+        assert!(!layout.node_pkgs_dir.exists());
 
         // 清理
         let _ = fs::remove_dir_all(&layout.root_dir);

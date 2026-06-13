@@ -20,11 +20,12 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
     super::plugins::render(&plugin_cache);
 
-    let npm_cache = npm_commands::load_npm_cache(
+    if let Some(npm_cache) = npm_commands::load_npm_cache(
         &layout.cache_dir.join("node-pkg.json"),
         &layout.node_pkgs_dir,
-    );
-    super::npm::render(&npm_cache.packages);
+    ) {
+        super::npm::render(&npm_cache.packages);
+    }
 
     let (merged, _files) = aliases::load_merged_aliases(layout);
     super::aliases::render(&merged);

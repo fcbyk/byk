@@ -83,11 +83,11 @@ fn main() {
 
     // Step 3: 检查是否为 NPM Command
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    let cache = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir);
-
-    if cache.bin_map.contains_key(command_name) {
-        npm_commands::execute_npm_command(command_name, command_args, &layout);
-        return;
+    if let Some(cache) = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+        if cache.bin_map.contains_key(command_name) {
+            npm_commands::execute_npm_command(command_name, command_args, &layout);
+            return;
+        }
     }
 
     // 提前加载别名数据（精确执行和普通查找共用）

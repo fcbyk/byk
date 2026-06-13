@@ -331,10 +331,16 @@ fn build_cache(node_pkgs_dir: &Path) -> NodePkgCache {
 ///
 /// - `cache_file`: ~/.byk/cache/node-pkg.json 路径
 /// - `node_pkgs_dir`: ~/.byk/node-pkgs 目录路径
-pub fn load_npm_cache(cache_file: &Path, node_pkgs_dir: &Path) -> NodePkgCache {
+///
+/// 若 node-pkgs 目录不存在，返回 None（npm 功能不启用）。
+pub fn load_npm_cache(cache_file: &Path, node_pkgs_dir: &Path) -> Option<NodePkgCache> {
+    if !node_pkgs_dir.is_dir() {
+        return None;
+    }
+
     let data: Option<NodePkgCache> = json_io::read_json(cache_file);
 
-    match data {
+    let cache = match data {
         None => {
             // 无缓存，构建新缓存
             let new_cache = build_cache(node_pkgs_dir);
@@ -351,7 +357,9 @@ pub fn load_npm_cache(cache_file: &Path, node_pkgs_dir: &Path) -> NodePkgCache {
                 cached
             }
         }
-    }
+    };
+
+    Some(cache)
 }
 
 // ---------------------------------------------------------------------------
