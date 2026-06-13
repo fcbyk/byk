@@ -10,6 +10,7 @@ use std::process::exit;
 use cli::{Cli, Commands, extract_options};
 use core::aliases;
 use core::completion;
+use core::init;
 use core::npm_commands;
 use core::paths::PathLayout;
 use core::plugins;
@@ -61,6 +62,14 @@ fn main() {
             "paths" => render::info::render_paths(&layout),
             "py" => render::info::render_py(&layout),
             _ => render::info::render_info_help(),
+        }
+        return;
+    }
+    if let Some(init_arg) = &cli.init {
+        match init_arg.as_str() {
+            "npm" => init::init_npm(&layout),
+            "pnpm" => init::init_pnpm(&layout),
+            _ => init::render_init_help(),
         }
         return;
     }

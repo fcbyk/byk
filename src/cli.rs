@@ -13,6 +13,10 @@ pub struct Cli {
     #[arg(long = "info", num_args = 0..=1, default_missing_value = "")]
     pub info: Option<String>,
 
+    /// Initialize features (run without args for help)
+    #[arg(long = "init", num_args = 0..=1, default_missing_value = "")]
+    pub init: Option<String>,
+
     /// Print help
     #[arg(short = 'h', long = "help", action = clap::ArgAction::SetTrue)]
     pub help: bool,

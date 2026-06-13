@@ -1,0 +1,4 @@
+{
+    "i": {"$cmd": "npm i", "$cwd": "../node-pkgs/"},
+    "uni": {"$cmd": "npm uni", "$cwd": "../node-pkgs/"}
+}

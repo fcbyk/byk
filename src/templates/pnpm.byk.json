@@ -1,0 +1,4 @@
+{
+    "add": {"$cmd": "pnpm add", "$cwd": "../node-pkgs/"},
+    "remove": {"$cmd": "pnpm remove", "$cwd": "../node-pkgs/"}
+}
