@@ -7,6 +7,7 @@ use colored::Colorize;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
+use std::process::Command;
 
 use super::paths::PathLayout;
 
@@ -40,6 +41,16 @@ pub fn render_init_help() {
         "  {:<8} {}",
         "comp".yellow(),
         "Initialize shell completion (zsh/bash)".dimmed()
+    );
+    println!(
+        "  {:<8} {}",
+        "py".yellow(),
+        "Enable Python plugin system (global)".dimmed()
+    );
+    println!(
+        "  {:<8} {}",
+        "py-v".yellow(),
+        "Initialize Python venv & aliases (recommended)".dimmed()
     );
 }
 
@@ -137,6 +148,247 @@ pub fn init_npm(layout: &PathLayout) {
 /// 初始化 pnpm 命令功能。
 pub fn init_pnpm(layout: &PathLayout) {
     init_node_pkgs(layout, "pnpm", "add", "remove", PNPM_TEMPLATE);
+}
+
+// ---------------------------------------------------------------------------
+// --init py (全局)
+// ---------------------------------------------------------------------------
+
+/// 初始化全局 Python 插件系统（系统级，不建 venv）。
+///
+/// 检查 bykpy 是否已安装 → 未安装则 pip install →
+/// 运行 bykpy --scan-plugins 写入 cache/app.json。
+/// 二次 init 仅重扫插件，不删除数据。
+pub fn init_py_global(layout: &PathLayout) {
+    let cache_path = layout.cache_dir.join("app.json");
+
+    #[cfg(windows)]
+    let python = "python";
+    #[cfg(not(windows))]
+    let python = "python3";
+
+    // 确保目录存在
+    ensure_dir(&layout.root_dir, "CLI home");
+    ensure_dir(&layout.cache_dir, "cache");
+
+    // ① 检查 bykpy 是否已安装
+    let check = Command::new(python)
+        .args(["-c", "import bykpy"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    let has_bykpy = check.map(|s| s.success()).unwrap_or(false);
+
+    if has_bykpy {
+        println!("{}", "bykpy already installed, skipping pip install.".dimmed());
+    } else {
+        println!("{}", "Installing bykpy (global)...".dimmed());
+        let status = Command::new(python)
+            .args(["-m", "pip", "install", "bykpy"])
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                println!("  {} bykpy {}", "+".green(), "(installed)".dimmed());
+            }
+            Ok(s) => {
+                eprintln!(
+                    "{} pip install bykpy failed with code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1)
+                );
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // ② 扫描插件，生成/更新 cache/app.json
+    println!("{}", "Scanning plugins...".dimmed());
+    let status = Command::new(python)
+        .args(["-m", "bykpy", "--scan-plugins"])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            println!(
+                "  {} cache/app.json {}",
+                "+".green(),
+                if cache_path.exists() { "(updated)" } else { "(created)" }.dimmed()
+            );
+        }
+        Ok(s) => {
+            eprintln!(
+                "{} plugin scan failed with code {}",
+                "Error:".red(),
+                s.code().unwrap_or(1)
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("{} Failed to run bykpy scan: {}", "Error:".red(), e);
+            std::process::exit(1);
+        }
+    }
+
+    println!();
+    println!(
+        "{} {}",
+        "Python plugin system enabled (global).".green(),
+        "(not recommended)".yellow()
+    );
+    println!(
+        "  For isolated env with pip aliases: {}",
+        "byk --init py-v".dimmed()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --init py-v
+// ---------------------------------------------------------------------------
+
+/// 初始化 Python 虚拟环境及别名（推荐方式）。
+///
+/// 创建 ~/.byk/venv/（不存在时），安装 bykpy（未安装时），
+/// 扫描插件更新 cache/app.json，写入/更新 alias/py.byk.json。
+/// 纯切换逻辑，不删除已有数据。
+pub fn init_py(layout: &PathLayout) {
+    let venv_dir = &layout.venv_dir;
+    let alias_path = layout.alias_dir.join("py.byk.json");
+
+    #[cfg(windows)]
+    let python = "python";
+    #[cfg(not(windows))]
+    let python = "python3";
+
+    #[cfg(windows)]
+    let bin_dir = "Scripts";
+    #[cfg(not(windows))]
+    let bin_dir = "bin";
+
+    // 确保目录存在
+    ensure_dir(&layout.root_dir, "CLI home");
+    ensure_dir(&layout.alias_dir, "alias");
+    ensure_dir(&layout.cache_dir, "cache");
+
+    // ① 创建 venv（不存在时）
+    if venv_dir.exists() {
+        println!("{}", "venv/ already exists, skipping creation.".dimmed());
+    } else {
+        println!("{}", "Creating Python virtual environment...".dimmed());
+        let status = Command::new(python)
+            .args(["-m", "venv", &venv_dir.to_string_lossy()])
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+            }
+            Ok(s) => {
+                eprintln!(
+                    "{} venv creation failed with code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1)
+                );
+                return;
+            }
+            Err(e) => {
+                eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
+                return;
+            }
+        }
+    }
+
+    // ② 检查 bykpy 是否已安装在 venv 中
+    let py = venv_dir.join(bin_dir).join(if cfg!(windows) { "python.exe" } else { "python" });
+    let check = Command::new(&py)
+        .args(["-c", "import bykpy"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    let has_bykpy = check.map(|s| s.success()).unwrap_or(false);
+
+    if has_bykpy {
+        println!("{}", "bykpy already installed, skipping pip install.".dimmed());
+    } else {
+        let pip = venv_dir.join(bin_dir).join(if cfg!(windows) { "pip.exe" } else { "pip" });
+        println!("{}", "Installing bykpy...".dimmed());
+        let status = Command::new(&pip)
+            .args(["install", "bykpy"])
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                println!("  {} bykpy {}", "+".green(), "(installed)".dimmed());
+            }
+            Ok(s) => {
+                eprintln!(
+                    "{} pip install bykpy failed with code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1)
+                );
+                return;
+            }
+            Err(e) => {
+                eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
+                return;
+            }
+        }
+    }
+
+    // ③ 扫描插件，生成/更新 cache/app.json
+    println!("{}", "Scanning plugins...".dimmed());
+    let status = Command::new(&py)
+        .args(["-m", "bykpy", "--scan-plugins"])
+        .status();
+
+    let cache_path = layout.cache_dir.join("app.json");
+    match status {
+        Ok(s) if s.success() => {
+            println!(
+                "  {} cache/app.json {}",
+                "+".green(),
+                if cache_path.exists() { "(updated)" } else { "(created)" }.dimmed()
+            );
+        }
+        Ok(s) => {
+            eprintln!(
+                "{} plugin scan failed with code {}",
+                "Error:".red(),
+                s.code().unwrap_or(1)
+            );
+            return;
+        }
+        Err(e) => {
+            eprintln!("{} Failed to run bykpy scan: {}", "Error:".red(), e);
+            return;
+        }
+    }
+
+    // ④ 写入/更新别名模板
+    let template = serde_json::json!({
+        "$cwd": format!("../venv/{}/", bin_dir),
+        "pi": "./pip install",
+        "pu": "./pip uninstall",
+        "pl": "./pip list",
+    });
+    let template_str = serde_json::to_string_pretty(&template).unwrap_or_default();
+    write_file(&alias_path, &template_str, "alias/py.byk.json");
+
+    println!();
+    println!(
+        "{} {}",
+        "Python environment ready.".green(),
+        "(venv)".dimmed()
+    );
+    println!("  Install packages:  byk pi <pkg>");
+    println!("  Remove packages:   byk pu <pkg>");
+    println!("  List packages:     byk pl");
 }
 
 // ---------------------------------------------------------------------------

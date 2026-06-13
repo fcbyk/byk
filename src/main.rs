@@ -69,6 +69,8 @@ fn main() {
         match init_arg.as_str() {
             "npm" => init::init_npm(&layout),
             "pnpm" => init::init_pnpm(&layout),
+            "py" => init::init_py_global(&layout),
+            "py-v" => init::init_py(&layout),
             "comp" => init::init_completion(),
             _ => init::render_init_help(),
         }

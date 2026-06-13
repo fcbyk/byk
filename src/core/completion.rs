@@ -135,7 +135,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // --init 子命令补全
     if first == "--init" {
-        const INIT_SUBS: &[&str] = &["npm", "pnpm", "comp"];
+        const INIT_SUBS: &[&str] = &["npm", "pnpm", "py", "py-v", "comp"];
         return INIT_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -343,6 +343,7 @@ mod tests {
             let alias_dir = temp.path().join("alias");
             let cache_dir = temp.path().join("cache");
             let node_pkgs_dir = temp.path().join("node-pkgs");
+            let venv_dir = temp.path().join("venv");
             let logs_dir = temp.path().join("logs");
             let root_dir = temp.path().to_path_buf();
 
@@ -355,6 +356,7 @@ mod tests {
                 logs_dir,
                 alias_dir,
                 node_pkgs_dir,
+                venv_dir,
                 cache_dir: cache_dir.clone(),
                 home_exists: true,
             };

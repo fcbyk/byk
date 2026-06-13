@@ -228,10 +228,8 @@ pub fn load_plugin_cache(cache_dir: &Path) -> PluginCache {
 
     match data {
         None => {
-            if !refresh_plugin_cache(cache_dir) {
-                return empty_cache();
-            }
-            json_io::read_json(&cache_file).unwrap_or_else(empty_cache)
+            // 无缓存 → 未初始化，返回空缓存，不自动 spawn
+            empty_cache()
         }
         Some(cached) => {
             if is_plugin_cache_stale(&cached.watched_mtimes) {
