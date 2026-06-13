@@ -17,7 +17,11 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     println!();
     render_options(options);
 
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+    let plugin_cache = if layout.home_exists {
+        plugins::load_plugin_cache(&layout.cache_dir)
+    } else {
+        plugins::empty_plugin_cache()
+    };
     super::plugins::render(&plugin_cache);
 
     if let Some(npm_cache) = npm_commands::load_npm_cache(

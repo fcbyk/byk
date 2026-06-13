@@ -75,7 +75,12 @@ fn main() {
     let command_args = &cli.trailing[1..];
 
     // Step 2: 检查是否为插件命令（优先级高于 NPM）
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+    // 仅 ~/.byk 存在时加载插件缓存，避免触发 bykpy spawn 创建目录
+    let plugin_cache = if layout.home_exists {
+        plugins::load_plugin_cache(&layout.cache_dir)
+    } else {
+        plugins::empty_plugin_cache()
+    };
     if plugin_cache.commands.contains_key(command_name) {
         plugins::execute_plugin_command(command_name, command_args, &layout.cache_dir);
         return;

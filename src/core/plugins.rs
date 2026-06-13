@@ -59,6 +59,15 @@ fn is_plugin_cache_stale(cached_mtimes: &HashMap<String, f64>) -> bool {
     false
 }
 
+/// 构造空插件缓存（~/.byk 不存在时使用，避免不必要的 bykpy spawn）。
+pub fn empty_plugin_cache() -> PluginCache {
+    PluginCache {
+        watched_mtimes: HashMap::new(),
+        commands: HashMap::new(),
+        python_executable: None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------------------

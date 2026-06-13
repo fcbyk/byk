@@ -165,6 +165,9 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
 /// 检查某个词是否是已知的插件命令。
 fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
+    if !layout.home_exists {
+        return false;
+    }
     let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
     plugin_cache.commands.contains_key(word)
 }
@@ -243,8 +246,10 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     let mut candidates: Vec<String> = Vec::new();
 
     // 插件命令
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
-    candidates.extend(plugin_cache.commands.keys().cloned());
+    if layout.home_exists {
+        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+        candidates.extend(plugin_cache.commands.keys().cloned());
+    }
 
     // NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
@@ -340,6 +345,7 @@ mod tests {
                 alias_dir,
                 node_pkgs_dir,
                 cache_dir: cache_dir.clone(),
+                home_exists: true,
             };
 
             // 写入插件缓存

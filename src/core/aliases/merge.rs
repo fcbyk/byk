@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use super::cache::load_alias_cache;
 use super::parse::{is_alias_value, to_alias_value};
-use super::scan::sort_alias_files;
+use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, MergedNode, ResolvedAlias};
 use crate::core::paths::PathLayout;
 
@@ -155,20 +155,24 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
 
 /// 扫描本地和全局别名文件，返回 (合并配置, 文件列表)。
 ///
-/// 通过缓存（~/.byk/cache/alias.json）避免每次启动重复扫描和合并。
-/// 缓存通过文件 mtime 快照检测失效：文件增删改、CWD 变化均自动触发重建。
+/// - ~/.byk 存在 → 本地 + 全局别名，通过缓存避免重复扫描和合并
+/// - ~/.byk 不存在 → 仅扫描 cwd 的本地别名，不走缓存不写文件
 pub fn load_merged_aliases(layout: &PathLayout) -> (MergedConfig, Vec<AliasFile>) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let cache_file = layout.cache_dir.join("alias.json");
-    let global_dir = &layout.alias_dir;
 
-    let (merged, mut files) = load_alias_cache(&cache_file, &cwd, global_dir);
+    if layout.home_exists {
+        let cache_file = layout.cache_dir.join("alias.json");
+        let global_dir = &layout.alias_dir;
 
-    // 文件列表需要保持排序（load_alias_cache 内部保证排序后写入缓存）
-    // 防御性排序，确保调用方拿到的始终有序
-    sort_alias_files(&mut files);
-
-    (merged, files)
+        let (merged, mut files) = load_alias_cache(&cache_file, &cwd, global_dir);
+        sort_alias_files(&mut files);
+        (merged, files)
+    } else {
+        let mut files = scan_alias_files(&cwd, false);
+        sort_alias_files(&mut files);
+        let merged = build_merged_aliases(&files);
+        (merged, files)
+    }
 }
 
 // ---------------------------------------------------------------------------
