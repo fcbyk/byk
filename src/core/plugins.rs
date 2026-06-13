@@ -177,14 +177,28 @@ pub(crate) fn get_python_executable(cache_dir: &Path) -> String {
 
 /// 调用 Python 重建插件缓存。
 ///
-/// `python3` 不可用时静默跳过，后续使用现有缓存（可能已过期）。
-fn refresh_plugin_cache(cache_dir: &Path) {
+/// 返回 `true` 表示扫描成功，`false` 表示 bykpy 运行时不可用。
+fn refresh_plugin_cache(cache_dir: &Path) -> bool {
     let python_exe = get_python_executable(cache_dir);
-    let _ = Command::new(python_exe)
+
+    // 先快速检查 bykpy 是否可导入（避免 spawn 注定失败的扫描进程）
+    let check = Command::new(&python_exe)
+        .args(["-c", "import bykpy"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    if !check.map(|s| s.success()).unwrap_or(false) {
+        return false;
+    }
+
+    let status = Command::new(&python_exe)
         .args(["-m", "bykpy", "--scan-plugins"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
+
+    status.map(|s| s.success()).unwrap_or(false)
 }
 
 /// 读取插件缓存，失效时自动调用 Python 重建。
@@ -192,24 +206,33 @@ fn refresh_plugin_cache(cache_dir: &Path) {
 /// 无缓存 → spawn Python 写入后重读。
 /// 缓存过期 → spawn Python 刷新后重读。
 /// 缓存有效 → 直接返回。
+/// bykpy 不可用时 → 删除过期缓存，返回空 PluginCache。
 pub fn load_plugin_cache(cache_dir: &Path) -> PluginCache {
     let cache_file = cache_dir.join("app.json");
+    let empty_cache = || PluginCache {
+        watched_mtimes: HashMap::new(),
+        commands: HashMap::new(),
+        python_executable: None,
+    };
 
     let data: Option<PluginCache> = json_io::read_json(&cache_file);
 
     match data {
         None => {
-            refresh_plugin_cache(cache_dir);
-            json_io::read_json(&cache_file).unwrap_or_else(|| PluginCache {
-                watched_mtimes: HashMap::new(),
-                commands: HashMap::new(),
-                python_executable: None,
-            })
+            if !refresh_plugin_cache(cache_dir) {
+                return empty_cache();
+            }
+            json_io::read_json(&cache_file).unwrap_or_else(empty_cache)
         }
         Some(cached) => {
             if is_plugin_cache_stale(&cached.watched_mtimes) {
-                refresh_plugin_cache(cache_dir);
-                json_io::read_json(&cache_file).unwrap_or(cached)
+                if refresh_plugin_cache(cache_dir) {
+                    json_io::read_json(&cache_file).unwrap_or(cached)
+                } else {
+                    // bykpy 不存在 → 删除过期缓存，返回空，反正任何插件命令也执行不了
+                    let _ = fs::remove_file(&cache_file);
+                    empty_cache()
+                }
             } else {
                 cached
             }
