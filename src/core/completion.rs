@@ -122,10 +122,20 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .collect();
     }
 
-    // --info 子命令补全
-    if first == "--info" {
-        const INFO_SUBS: &[&str] = &["paths", "py"];
-        return INFO_SUBS
+    // init 子命令补全
+    if first == "init" {
+        const INIT_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp", "py", "py-v"];
+        return INIT_SUBS
+            .iter()
+            .filter(|s| s.starts_with(partial))
+            .map(|s| s.to_string())
+            .collect();
+    }
+
+    // remove 子命令补全
+    if first == "remove" {
+        const RM_SUBS: &[&str] = &["py", "py-v", "comp", "node", "all"];
+        return RM_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
             .map(|s| s.to_string())
@@ -165,6 +175,9 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
 /// 检查某个词是否是已知的插件命令。
 fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
+    if !layout.home_exists {
+        return false;
+    }
     let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
     plugin_cache.commands.contains_key(word)
 }
@@ -238,13 +251,19 @@ fn complete_nested_alias(prefix: &str, key_partial: &str, layout: &PathLayout) -
         .collect()
 }
 
-/// 补全顶级命令：插件 + NPM + 顶级别名。
+/// 补全顶级命令：内置子命令 + 插件 + NPM + 顶级别名。
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
+    // 内置子命令
+    candidates.push("init".into());
+    candidates.push("remove".into());
+
     // 插件命令
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
-    candidates.extend(plugin_cache.commands.keys().cloned());
+    if layout.home_exists {
+        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+        candidates.extend(plugin_cache.commands.keys().cloned());
+    }
 
     // NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
@@ -327,6 +346,7 @@ mod tests {
             let alias_dir = temp.path().join("alias");
             let cache_dir = temp.path().join("cache");
             let node_pkgs_dir = temp.path().join("node-pkgs");
+            let venv_dir = temp.path().join("venv");
             let logs_dir = temp.path().join("logs");
             let root_dir = temp.path().to_path_buf();
 
@@ -339,7 +359,9 @@ mod tests {
                 logs_dir,
                 alias_dir,
                 node_pkgs_dir,
+                venv_dir,
                 cache_dir: cache_dir.clone(),
+                home_exists: true,
             };
 
             // 写入插件缓存
@@ -631,14 +653,6 @@ mod tests {
         assert!(!result.is_empty());
         assert!(result.contains(&"--version".to_string()));
         assert!(result.contains(&"--help".to_string()));
-    }
-
-    #[test]
-    fn contextual_info_subcommands() {
-        let env = TestEnv::new();
-        let prev = vec!["--info".to_string()];
-        let result = contextual_completions(&prev, "pa", &env.layout);
-        assert_eq!(result, vec!["paths".to_string()]);
     }
 
     #[test]

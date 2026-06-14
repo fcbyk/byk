@@ -6,7 +6,10 @@ pub struct PathLayout {
     pub logs_dir: PathBuf,
     pub alias_dir: PathBuf,
     pub node_pkgs_dir: PathBuf,
+    pub venv_dir: PathBuf,
     pub cache_dir: PathBuf,
+    /// ~/.byk/ 目录是否已存在（用于零配置分叉）
+    pub home_exists: bool,
 }
 
 impl PathLayout {
@@ -23,24 +26,27 @@ impl PathLayout {
                 std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
             });
         let root_dir = home.join(format!(".{}", app_name));
+        let home_exists = root_dir.is_dir();
 
         let logs_dir = root_dir.join("logs");
         let alias_dir = root_dir.join("alias");
         let node_pkgs_dir = root_dir.join("node-pkgs");
+        let venv_dir = root_dir.join("venv");
         let cache_dir = root_dir.join("cache");
 
-        for d in [&logs_dir, &alias_dir, &cache_dir] {
-            std::fs::create_dir_all(d).unwrap_or_else(|e| {
-                eprintln!("无法创建持久化目录 {}: {}", d.display(), e);
-            });
-        }
+        // 子目录不在此处创建，由各子系统按需创建：
+        // - cache/  → json_io::write_json 内部 create_dir_all
+        // - alias/  → 用户手动放入文件，scan 缺失时天然空
+        // - logs/   → 暂未使用，后续日志模块自行创建
 
         PathLayout {
             root_dir,
             logs_dir,
             alias_dir,
             node_pkgs_dir,
+            venv_dir,
             cache_dir,
+            home_exists,
         }
     }
 }
@@ -52,7 +58,6 @@ impl PathLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn path_layout_with_name_structure() {
@@ -70,6 +75,10 @@ mod tests {
             home.join(".fcbyk_test_paths").join("node-pkgs")
         );
         assert_eq!(
+            layout.venv_dir,
+            home.join(".fcbyk_test_paths").join("venv")
+        );
+        assert_eq!(
             layout.cache_dir,
             home.join(".fcbyk_test_paths").join("cache")
         );
@@ -79,14 +88,12 @@ mod tests {
     fn path_layout_creates_directories() {
         let layout = PathLayout::with_name("fcbyk_test_paths2");
 
-        assert!(layout.root_dir.exists());
-        assert!(layout.logs_dir.exists());
-        assert!(layout.alias_dir.exists());
-        assert!(layout.cache_dir.exists());
-        // node-pkgs 不再自动创建，由 --init 手动初始化
+        // home_exists=false → 不创建任何目录
+        assert!(!layout.root_dir.exists());
+        assert!(!layout.logs_dir.exists());
+        assert!(!layout.alias_dir.exists());
+        assert!(!layout.cache_dir.exists());
         assert!(!layout.node_pkgs_dir.exists());
-
-        // 清理
-        let _ = fs::remove_dir_all(&layout.root_dir);
+        assert!(!layout.home_exists);
     }
 }

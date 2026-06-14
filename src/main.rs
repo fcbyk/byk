@@ -10,9 +10,11 @@ use std::process::exit;
 use cli::{Cli, Commands, extract_options};
 use core::aliases;
 use core::completion;
+use core::init;
 use core::npm_commands;
 use core::paths::PathLayout;
 use core::plugins;
+use core::remove;
 
 fn main() {
     let cmd = Cli::command();
@@ -31,11 +33,35 @@ fn main() {
             completion::complete(&words, &layout);
             return;
         }
+        Some(Commands::Remove { feature }) => {
+            match feature.as_deref() {
+                Some("py") => remove::rm_py(&layout),
+                Some("py-v") => remove::rm_py_v(&layout),
+                Some("comp") => remove::rm_comp(),
+                Some("node") => remove::rm_node(&layout),
+                Some("all") => remove::rm_all(&layout),
+                _ => remove::render_remove_help(),
+            }
+            return;
+        }
+        Some(Commands::Init { feature }) => {
+            match feature.as_deref() {
+                Some("npm") => init::init_npm(&layout),
+                Some("pnpm") => init::init_pnpm(&layout),
+                Some("cache") => init::init_cache(&layout),
+                Some("py") => init::init_py_global(&layout),
+                Some("py-v") => init::init_py(&layout),
+                Some("comp") => init::init_completion(),
+                _ => init::render_init_help(),
+            }
+            return;
+        }
         None => {}
     }
 
     // Step 1: 全局选项（优先级最高，直接返回）
     if cli.help {
+        println!();
         render::help::render_all(&layout, &options);
         return;
     }
@@ -56,18 +82,15 @@ fn main() {
         }
         return;
     }
-    if let Some(info_arg) = &cli.info {
-        match info_arg.as_str() {
-            "paths" => render::info::render_paths(&layout),
-            "py" => render::info::render_py(&layout),
-            _ => render::info::render_info_help(),
-        }
+    if cli.info {
+        render::info::render_all(&layout);
         return;
     }
 
-    // 无额外参数 → 仪表盘
+    // 无额外参数 → 帮助（上下各空一行）
     if cli.trailing.is_empty() {
-        render::dashboard::render(&layout, &options);
+        println!();
+        render::help::render_all(&layout, &options);
         return;
     }
 
@@ -75,7 +98,12 @@ fn main() {
     let command_args = &cli.trailing[1..];
 
     // Step 2: 检查是否为插件命令（优先级高于 NPM）
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+    // 仅 ~/.byk 存在时加载插件缓存，避免触发 bykpy spawn 创建目录
+    let plugin_cache = if layout.home_exists {
+        plugins::load_plugin_cache(&layout.cache_dir)
+    } else {
+        plugins::empty_plugin_cache()
+    };
     if plugin_cache.commands.contains_key(command_name) {
         plugins::execute_plugin_command(command_name, command_args, &layout.cache_dir);
         return;

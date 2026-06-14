@@ -10,8 +10,8 @@ pub struct Cli {
     pub version: bool,
 
     /// Show CLI info
-    #[arg(long = "info", num_args = 0..=1, default_missing_value = "")]
-    pub info: Option<String>,
+    #[arg(long = "info")]
+    pub info: bool,
 
     /// Print help
     #[arg(short = 'h', long = "help", action = clap::ArgAction::SetTrue)]
@@ -32,6 +32,18 @@ pub enum Commands {
     Completion {
         /// 目标 shell: zsh | bash | fish
         shell: String,
+    },
+    /// 移除已初始化的 feature
+    Remove {
+        /// 要移除的 feature: py | py-v | comp | node | all
+        #[arg(allow_hyphen_values = true)]
+        feature: Option<String>,
+    },
+    /// 初始化 feature
+    Init {
+        /// 要初始化的 feature: npm | pnpm | cache | comp | py | py-v
+        #[arg(allow_hyphen_values = true)]
+        feature: Option<String>,
     },
     /// 内部：查询补全候选
     #[command(hide = true, name = "__complete")]

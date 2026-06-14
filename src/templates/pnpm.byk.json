@@ -1,0 +1,4 @@
+{
+    "ni": {"$cmd": "pnpm add", "$cwd": "../node-pkgs/"},
+    "nu": {"$cmd": "pnpm remove", "$cwd": "../node-pkgs/"}
+}

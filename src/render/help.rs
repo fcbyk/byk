@@ -1,6 +1,6 @@
 /// 帮助信息渲染（Usage / Options / NPM / Aliases）。
 ///
-/// `render_all` 为 -h/--help 回调，dashboard 复用之并加上 banner。
+/// `render_all` 为 -h/--help 回调及无参数时的默认输出。
 
 use colored::Colorize;
 
@@ -8,6 +8,7 @@ use crate::core::aliases;
 use crate::core::npm_commands;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
+use crate::utils::display;
 
 /// 渲染完整帮助信息（Usage + Options + Commands + NPM Commands + Aliases）。
 ///
@@ -17,8 +18,8 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     println!();
     render_options(options);
 
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
-    super::plugins::render(&plugin_cache);
+    // 内置 + 插件命令合并到一个 Commands 区块
+    render_commands(layout);
 
     if let Some(npm_cache) = npm_commands::load_npm_cache(
         &layout.cache_dir.join("node-pkg.json"),
@@ -31,6 +32,40 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     super::aliases::render(&merged);
 
     println!();
+}
+
+/// 渲染内置 + 插件命令（合并到 Commands 区块）。
+pub fn render_commands(layout: &PathLayout) {
+    // 内置子命令
+    let mut entries: Vec<(String, String)> = vec![
+        ("init".into(), "Initialize features".into()),
+        ("remove".into(), "Remove initialized features".into()),
+    ];
+
+    // 插件命令
+    let plugin_cache = if layout.home_exists {
+        plugins::load_plugin_cache(&layout.cache_dir)
+    } else {
+        plugins::empty_plugin_cache()
+    };
+    let mut plugins: Vec<(String, String)> = plugin_cache
+        .commands
+        .iter()
+        .map(|(name, cmd)| (name.clone(), cmd.description.clone()))
+        .collect();
+    plugins.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.append(&mut plugins);
+
+    // 统一对齐
+    let aligned = display::align_kv_pairs(&entries, "  ");
+
+    println!();
+    println!("{}", "Commands:".green().bold());
+    for (name, line) in &aligned {
+        let rest = &line[2 + name.len()..];
+        print!("  {}", name.cyan().bold());
+        println!("{}", rest);
+    }
 }
 
 /// 渲染 Usage 说明。
