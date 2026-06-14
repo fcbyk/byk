@@ -35,7 +35,7 @@ pub enum Commands {
     },
     /// 移除已初始化的 feature
     Remove {
-        /// 要移除的 feature: py | py-v | comp | node | all | all
+        /// 要移除的 feature: py | py-v | comp | node | all
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },

@@ -253,7 +253,7 @@ pub fn init_py_global(layout: &PathLayout) {
     );
     println!(
         "  For isolated env with pip aliases: {}",
-        "byk --init py-v".dimmed()
+        "byk init py-v".dimmed()
     );
 }
 
