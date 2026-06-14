@@ -1,17 +1,58 @@
-# byk
+# [byk](https://cli.fcbyk.com/) &middot; [![PyPI](https://img.shields.io/pypi/v/byk.svg)](https://pypi.org/project/byk/) [![Tests](https://github.com/fcbyk/byk/actions/workflows/test.yml/badge.svg)](https://github.com/fcbyk/byk/actions/workflows/test.yml) [![Coverage](https://codecov.io/gh/fcbyk/byk/branch/main/graph/badge.svg)](https://codecov.io/gh/fcbyk/byk)
 
-[![PyPI](https://img.shields.io/pypi/v/byk.svg)](https://pypi.org/project/byk/)
-[![Tests](https://github.com/fcbyk/byk/actions/workflows/test.yml/badge.svg)](https://github.com/fcbyk/byk/actions/workflows/test.yml)
-[![Coverage](https://codecov.io/gh/fcbyk/byk/branch/main/graph/badge.svg)](https://codecov.io/gh/fcbyk/byk)
-[![Rust](https://img.shields.io/badge/powered_by-Rust-orange?logo=rust)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/github/license/fcbyk/byk.svg)](https://github.com/fcbyk/byk/blob/main/LICENSE)
+> A lightweight, extensible collection of CLI utilities 🚀
 
-**`byk`** is a lightweight collection of command-line utilities.
+Features are opt-in. Nothing is created until you need it.
 
-It provides simple commands for solving small everyday tasks quickly and directly.
+## pip plugins
 
-Useful when:
+Run Python-based tools in an isolated virtualenv — no global pip installs.
 
-* there is no existing tool available
-* existing tools feel too heavy or overcomplicated
-* you just want to get something done with a single command
+```bash
+byk init py-v          # first use only, activates & creates pi/pu/pl aliases
+byk pi byk-lansend     # install a plugin (pi = pip install)
+byk lansend            # run it
+```
+
+## npm commands
+
+Manage npm CLIs under a byk-scoped environment — no global pollution.
+
+```bash
+byk init npm           # first use only, activates & creates ni/nu aliases
+byk ni live-server     # install (ni = npm i)
+byk live-server        # run it
+```
+
+## Aliases
+
+Give long commands short names.
+
+```JSON
+# ~/.byk/alias/global.byk.json
+{
+  "ssh": {
+    "prod": "ssh -i ~/.ssh/prod.pem ubuntu@203.0.113.42"
+  }
+}
+```
+
+```bash
+byk ssh.prod
+```
+
+## Installation
+
+```bash
+pip install byk
+```
+
+Or via shell script (no Python needed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fcbyk/byk/main/scripts/install.sh | bash
+```
+
+## License
+
+[MIT](LICENSE)
