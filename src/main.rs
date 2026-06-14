@@ -38,8 +38,8 @@ fn main() {
                 Some("py") => remove::rm_py(&layout),
                 Some("py-v") => remove::rm_py_v(&layout),
                 Some("comp") => remove::rm_comp(),
-                Some("npm") => remove::rm_npm(&layout),
-                Some("pnpm") => remove::rm_pnpm(&layout),
+                Some("node") => remove::rm_node(&layout),
+                Some("all") => remove::rm_all(&layout),
                 _ => remove::render_remove_help(),
             }
             return;

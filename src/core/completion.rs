@@ -134,7 +134,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // remove 子命令补全
     if first == "remove" {
-        const RM_SUBS: &[&str] = &["py", "py-v", "comp", "npm", "pnpm"];
+        const RM_SUBS: &[&str] = &["py", "py-v", "comp", "node", "all"];
         return RM_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))

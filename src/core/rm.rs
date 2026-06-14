@@ -4,12 +4,11 @@
 /// 并提供 byk 包卸载指引。
 
 use colored::Colorize;
-use std::env;
 use std::fs;
-use std::io::{self, Write};
 use std::process::Command;
 
 use super::paths::PathLayout;
+use crate::utils::shell;
 
 // ---------------------------------------------------------------------------
 // remove 帮助
@@ -39,13 +38,13 @@ pub fn render_remove_help() {
     );
     println!(
         "  {:<8} {}",
-        "npm".cyan().bold(),
+        "node".cyan().bold(),
         "Remove node-pkgs, aliases, and cache"
     );
     println!(
         "  {:<8} {}",
-        "pnpm".cyan().bold(),
-        "Remove node-pkgs, aliases, and cache"
+        "all".cyan().bold(),
+        "Remove everything (~/.byk/ + shell completion)"
     );
     println!();
 }
@@ -73,21 +72,7 @@ pub fn rm_py(layout: &PathLayout) {
         println!("{}", "Plugin cache not found, skipped.".dimmed());
     }
 
-    // 提供 byk 包卸载命令
-    if let Some(cmd) = byk_packages {
-        println!();
-        println!(
-            "{} {}",
-            "byk-related packages detected:".yellow(),
-            "(copy to uninstall all)".dimmed()
-        );
-        println!("  {}", cmd.white());
-    } else {
-        println!(
-            "  {}",
-            "No byk packages found.".dimmed()
-        );
-    }
+    print_byk_packages(byk_packages);
 }
 
 // ---------------------------------------------------------------------------
@@ -114,57 +99,19 @@ pub fn rm_py_v(layout: &PathLayout) {
     // 现有数据提示
     println!();
     println!("{}", "This will remove:".yellow());
-    if venv_dir.exists() {
-        println!("  {}", venv_dir.display().to_string().dimmed());
-    }
-    if alias_path.exists() {
-        println!("  {}", alias_path.display().to_string().dimmed());
-    }
-    if cache_path.exists() {
-        println!("  {}", cache_path.display().to_string().dimmed());
-    }
+    print_if_exists(venv_dir);
+    print_if_exists(&alias_path);
+    print_if_exists(&cache_path);
     println!();
 
-    let confirm_text = "py-v".to_string();
-    print!("  {} {}: ", "Type".dimmed(), confirm_text.yellow());
-    let _ = io::stdout().flush();
-
-    let mut input = String::new();
-    if io::stdin().read_line(&mut input).is_err() {
-        println!();
-        println!("  {}", "Cancelled.".dimmed());
-        return;
-    }
-    if input.trim() != confirm_text {
-        println!();
-        println!(
-            "{}",
-            "Confirmation does not match. Cancelled.".dimmed()
-        );
+    if !shell::prompt_confirm("py-v") {
         return;
     }
 
     // 删除
-    if venv_dir.exists() {
-        let _ = fs::remove_dir_all(venv_dir);
-        println!("  {} venv/ {}", "-".red(), "(removed)".dimmed());
-    }
-    if alias_path.exists() {
-        let _ = fs::remove_file(&alias_path);
-        println!(
-            "  {} alias/py.byk.json {}",
-            "-".red(),
-            "(removed)".dimmed()
-        );
-    }
-    if cache_path.exists() {
-        let _ = fs::remove_file(&cache_path);
-        println!(
-            "  {} cache/app.json {}",
-            "-".red(),
-            "(removed)".dimmed()
-        );
-    }
+    remove_if_exists(venv_dir, "venv/");
+    remove_if_exists(&alias_path, "alias/py.byk.json");
+    remove_if_exists(&cache_path, "cache/app.json");
 
     println!();
     println!("{}", "Python venv removed.".green());
@@ -178,37 +125,30 @@ pub fn rm_py_v(layout: &PathLayout) {
 ///
 /// 从 .zshrc / .bashrc 中移除 `byk completion` 相关行及前面的注释行。
 pub fn rm_comp() {
-    let shell = env::var("SHELL").unwrap_or_default();
-
-    let (rc_filename, shell_name) = if shell.ends_with("/zsh") {
-        (".zshrc", "zsh")
-    } else if shell.ends_with("/bash") {
-        (".bashrc", "bash")
-    } else {
-        eprintln!(
-            "{} {} {}",
-            "Unsupported shell:".red(),
-            shell.dimmed(),
-            "(supported: zsh, bash)".dimmed()
-        );
-        return;
+    let (_, shell_name) = match shell::detect_shell() {
+        Some(s) => s,
+        None => {
+            let shell_val = std::env::var("SHELL").unwrap_or_default();
+            eprintln!(
+                "{} {} {}",
+                "Unsupported shell:".red(),
+                shell_val.dimmed(),
+                "(supported: zsh, bash)".dimmed()
+            );
+            return;
+        }
     };
 
-    let home = match dirs::home_dir() {
-        Some(h) => h,
+    let rc_path = match shell::rc_path() {
+        Some(p) => p,
         None => {
             eprintln!("{}", "Cannot determine home directory.".red());
             return;
         }
     };
-    let rc_path = home.join(rc_filename);
 
     let content = fs::read_to_string(&rc_path).unwrap_or_default();
-
-    let line = format!(
-        "if command -v byk >/dev/null 2>&1; then source <(byk completion {}); fi",
-        shell_name
-    );
+    let line = shell::completion_line(shell_name);
 
     if !content.contains(&line) {
         println!(
@@ -218,33 +158,8 @@ pub fn rm_comp() {
         return;
     }
 
-    // 过滤掉 completion 行及前面的注释行
-    let mut new_lines: Vec<&str> = Vec::new();
-    let prev_lines: Vec<&str> = content.lines().collect();
-    let mut i = 0;
-    while i < prev_lines.len() {
-        let l = prev_lines[i];
-        if l.contains("byk completion") {
-            i += 1;
-            continue;
-        }
-        // 跳过紧接 completion 行前的空行和注释行
-        if i + 1 < prev_lines.len()
-            && prev_lines[i + 1].contains("byk completion")
-            && (l.trim().is_empty() || l.trim().starts_with("# byk shell completion"))
-        {
-            i += 1;
-            continue;
-        }
-        new_lines.push(l);
-        i += 1;
-    }
-
-    let new_content = new_lines.join("\n") + "\n";
-    fs::write(&rc_path, new_content).unwrap_or_else(|e| {
-        eprintln!("Failed to write {}: {}", rc_path.display(), e);
-        std::process::exit(1);
-    });
+    let new_content = shell::strip_completion_lines(&content);
+    shell::write_rc(&rc_path, &new_content);
 
     println!(
         "  {} shell completion in {}",
@@ -259,17 +174,12 @@ pub fn rm_comp() {
 }
 
 // ---------------------------------------------------------------------------
-// remove npm / remove pnpm
+// remove node
 // ---------------------------------------------------------------------------
 
-/// 删除 NPM node-pkgs 环境。
-pub fn rm_npm(layout: &PathLayout) {
-    rm_node_pkgs(layout, "npm");
-}
-
-/// 删除 PNPM node-pkgs 环境。
-pub fn rm_pnpm(layout: &PathLayout) {
-    rm_node_pkgs(layout, "pnpm");
+/// 删除 node-pkgs 环境（覆盖 npm 和 pnpm）。
+pub fn rm_node(layout: &PathLayout) {
+    rm_node_pkgs(layout, "node");
 }
 
 fn rm_node_pkgs(layout: &PathLayout, pm: &str) {
@@ -288,60 +198,18 @@ fn rm_node_pkgs(layout: &PathLayout, pm: &str) {
 
     println!();
     println!("{} ({})", "This will remove:".yellow(), pm.dimmed());
-    if node_pkgs_dir.exists() {
-        println!("  {}", node_pkgs_dir.display().to_string().dimmed());
-    }
-    if alias_path.exists() {
-        println!("  {}", alias_path.display().to_string().dimmed());
-    }
-    if cache_path.exists() {
-        println!("  {}", cache_path.display().to_string().dimmed());
-    }
+    print_if_exists(node_pkgs_dir);
+    print_if_exists(&alias_path);
+    print_if_exists(&cache_path);
     println!();
 
-    let confirm_text = "node-pkgs".to_string();
-    print!("  {} {}: ", "Type".dimmed(), confirm_text.yellow());
-    let _ = io::stdout().flush();
-
-    let mut input = String::new();
-    if io::stdin().read_line(&mut input).is_err() {
-        println!();
-        println!("  {}", "Cancelled.".dimmed());
-        return;
-    }
-    if input.trim() != confirm_text {
-        println!();
-        println!(
-            "{}",
-            "Confirmation does not match. Cancelled.".dimmed()
-        );
+    if !shell::prompt_confirm("node-pkgs") {
         return;
     }
 
-    if node_pkgs_dir.exists() {
-        let _ = fs::remove_dir_all(node_pkgs_dir);
-        println!(
-            "  {} node-pkgs/ {}",
-            "-".red(),
-            "(removed)".dimmed()
-        );
-    }
-    if alias_path.exists() {
-        let _ = fs::remove_file(&alias_path);
-        println!(
-            "  {} alias/node.byk.json {}",
-            "-".red(),
-            "(removed)".dimmed()
-        );
-    }
-    if cache_path.exists() {
-        let _ = fs::remove_file(&cache_path);
-        println!(
-            "  {} cache/node-pkg.json {}",
-            "-".red(),
-            "(removed)".dimmed()
-        );
-    }
+    remove_if_exists(node_pkgs_dir, "node-pkgs/");
+    remove_if_exists(&alias_path, "alias/node.byk.json");
+    remove_if_exists(&cache_path, "cache/node-pkg.json");
 
     println!();
     println!(
@@ -349,6 +217,213 @@ fn rm_node_pkgs(layout: &PathLayout, pm: &str) {
         "Node packages removed.".green(),
         pm.dimmed()
     );
+}
+
+// ---------------------------------------------------------------------------
+// remove all
+// ---------------------------------------------------------------------------
+
+/// 删除所有 byk 持久化数据：`~/.byk/` + shell 补全配置。
+///
+/// 如果当前运行的 byk 二进制在 `~/.byk/` 下，跳过自身所在目录，
+/// 提示用户手动删除。否则直接 `remove_dir_all(~/.byk/)`。
+/// 需要输入 "all" 确认。
+pub fn rm_all(layout: &PathLayout) {
+    // ---------- 1. 检测待删除项 ----------
+    let has_home = layout.home_exists;
+    let exe = std::env::current_exe().unwrap_or_default();
+    let exe_in_home = has_home && exe.starts_with(&layout.root_dir);
+
+    let has_comp = match shell::detect_shell() {
+        Some((_, sn)) => {
+            match shell::rc_path() {
+                Some(p) => {
+                    let content = fs::read_to_string(&p).unwrap_or_default();
+                    content.contains(&shell::completion_line(sn))
+                }
+                None => false,
+            }
+        }
+        None => false,
+    };
+
+    // exe 在 ~/.byk/ 下但没别的东西可删 → 提前结束
+    if exe_in_home && !has_comp {
+        // 检查 root 下是否只有 exe 所在目录
+        let only_exe = fs::read_dir(&layout.root_dir)
+            .map(|mut entries| {
+                !entries.any(|e| {
+                    if let Ok(e) = e {
+                        !exe.starts_with(e.path())
+                    } else {
+                        false
+                    }
+                })
+            })
+            .unwrap_or(false);
+        if only_exe {
+            let keep_display = exe
+                .strip_prefix(&layout.root_dir)
+                .unwrap_or(&exe)
+                .components()
+                .next()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .unwrap_or_default();
+            println!(
+                "{}",
+                format!(
+                    "Nothing to remove (~/.byk/{}/ kept — contains running binary).",
+                    keep_display
+                )
+                .dimmed()
+            );
+            println!();
+            println!(
+                "{} {} {}",
+                "!".yellow().bold(),
+                format!("~/.byk/{}/", keep_display).dimmed(),
+                "kept (contains running byk binary)".dimmed()
+            );
+            println!(
+                "  Remove manually: rm -rf {}",
+                layout.root_dir.join(&keep_display).display()
+            );
+            return;
+        }
+    }
+
+    if !has_home && !has_comp {
+        println!("{}", "Nothing to remove.".dimmed());
+    } else {
+        // ---------- 2. 列出待删项 + 确认 ----------
+        println!();
+        println!("{}", "This will remove everything:".yellow());
+        if has_home {
+            if exe_in_home {
+                // 逐项列出，标记 keep
+                println!("  {}", layout.root_dir.display().to_string().dimmed());
+                if let Ok(entries) = fs::read_dir(&layout.root_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        let label = path.strip_prefix(&layout.root_dir).unwrap_or(&path);
+                        if exe.starts_with(&path) {
+                            println!(
+                                "    {}/ {}",
+                                label.display(),
+                                "(kept — contains running binary)".dimmed()
+                            );
+                        } else {
+                            println!(
+                                "    {}/ {}",
+                                label.display(),
+                                "(removed)".dimmed()
+                            );
+                        }
+                    }
+                }
+            } else {
+                println!("  {}", layout.root_dir.display().to_string().dimmed());
+                println!(
+                    "  {}",
+                    "(all subdirectories: venv, aliases, caches, logs, node-pkgs, bin)".dimmed()
+                );
+            }
+        }
+        if has_comp {
+            if let Some(p) = shell::rc_path() {
+                println!("  {}", p.display().to_string().dimmed());
+                println!("    {}", "(byk completion line)".dimmed());
+            }
+        }
+        println!();
+
+        if !shell::prompt_confirm("all") {
+            return;
+        }
+
+        // ---------- 3. 执行删除 ----------
+        if has_home {
+            if exe_in_home {
+                // 运行中二进制在 ~/.byk/ 下 → 逐项删除，跳过自身所在目录
+                let mut kept_path: Option<std::path::PathBuf> = None;
+                if let Ok(entries) = fs::read_dir(&layout.root_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if exe.starts_with(&path) {
+                            kept_path = Some(path.clone());
+                            let label = path.strip_prefix(&layout.root_dir).unwrap_or(&path);
+                            println!(
+                                "  {} ~/.byk/{}/ {}",
+                                "!".yellow(),
+                                label.display(),
+                                "(kept — contains running binary)".dimmed()
+                            );
+                            continue;
+                        }
+                        if path.is_dir() {
+                            let _ = fs::remove_dir_all(&path);
+                            let label = path.strip_prefix(&layout.root_dir).unwrap_or(&path);
+                            println!(
+                                "  {} ~/.byk/{}/ {}",
+                                "-".red(),
+                                label.display(),
+                                "(removed)".dimmed()
+                            );
+                        } else {
+                            let _ = fs::remove_file(&path);
+                            let label = path.strip_prefix(&layout.root_dir).unwrap_or(&path);
+                            println!(
+                                "  {} ~/.byk/{} {}",
+                                "-".red(),
+                                label.display(),
+                                "(removed)".dimmed()
+                            );
+                        }
+                    }
+                }
+                let _ = fs::remove_dir(&layout.root_dir);
+
+                if let Some(p) = kept_path {
+                    let label = p.strip_prefix(&layout.root_dir).unwrap_or(&p);
+                    println!();
+                    println!(
+                        "{} {} {}",
+                        "!".yellow().bold(),
+                        label.display().to_string().dimmed(),
+                        "kept (contains running byk binary)".dimmed()
+                    );
+                    println!("  Remove manually: rm -rf {}", p.display());
+                }
+            } else {
+                // 安全：二进制不在 ~/.byk/ 下
+                let _ = fs::remove_dir_all(&layout.root_dir);
+                println!(
+                    "  {} ~/.byk/ {}",
+                    "-".red(),
+                    "(removed)".dimmed()
+                );
+            }
+        }
+        if has_comp {
+            if let Some(p) = shell::rc_path() {
+                let content = fs::read_to_string(&p).unwrap_or_default();
+                let new_content = shell::strip_completion_lines(&content);
+                let _ = fs::write(&p, new_content);
+                println!(
+                    "  {} shell completion in {}",
+                    "-".red(),
+                    p.display().to_string().dimmed()
+                );
+            }
+        }
+        println!();
+        println!("{}", "Everything removed.".green());
+    }
+
+    // ---------- 4. 全局 byk 包检测（与 ~/.byk/ 是否存在无关） ----------
+    let py_exe = crate::core::plugins::get_python_executable(&layout.cache_dir);
+    let byk_packages = find_byk_packages(&py_exe);
+    print_byk_packages_with_label(byk_packages, "Global");
 }
 
 // ---------------------------------------------------------------------------
@@ -374,5 +449,62 @@ fn find_byk_packages(python_exe: &str) -> Option<String> {
         None
     } else {
         Some(format!("pip uninstall {}", packages.join(" ")))
+    }
+}
+
+/// 打印路径（存在时），dimmed 格式。
+fn print_if_exists(path: &std::path::Path) {
+    if path.exists() {
+        println!("  {}", path.display().to_string().dimmed());
+    }
+}
+
+/// 删除路径（存在时），打印 `- path (removed)`。
+fn remove_if_exists(path: &std::path::Path, label: &str) {
+    if path.exists() {
+        let is_dir = path.is_dir();
+        let _ = if is_dir {
+            fs::remove_dir_all(path)
+        } else {
+            fs::remove_file(path)
+        };
+        println!("  {} {} {}", "-".red(), label.dimmed(), "(removed)".dimmed());
+    }
+}
+
+/// 使用 rm_py 的样式输出 byk 包卸载命令。
+fn print_byk_packages(packages: Option<String>) {
+    if let Some(cmd) = packages {
+        println!();
+        println!(
+            "{} {}",
+            "byk-related packages detected:".yellow(),
+            "(copy to uninstall all)".dimmed()
+        );
+        println!("  {}", cmd.white());
+    } else {
+        println!(
+            "  {}",
+            "No byk packages found.".dimmed()
+        );
+    }
+}
+
+/// 使用 rm_all 的样式输出全局 byk 包卸载命令。
+fn print_byk_packages_with_label(packages: Option<String>, label: &str) {
+    if let Some(cmd) = packages {
+        println!();
+        println!(
+            "{} {}",
+            format!("{} byk-related packages detected:", label).yellow(),
+            "(copy to uninstall)".dimmed()
+        );
+        println!("  {}", cmd.white());
+    } else {
+        println!();
+        println!(
+            "  {}",
+            format!("No {} byk packages found.", label.to_lowercase()).dimmed()
+        );
     }
 }

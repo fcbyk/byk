@@ -4,12 +4,13 @@
 /// 模板文件位于 src/templates/，通过 include_str! 编译期嵌入。
 
 use colored::Colorize;
-use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io::Write;
+use std::path::Path;
 use std::process::Command;
 
 use super::paths::PathLayout;
+use crate::utils::shell;
 
 // ---------------------------------------------------------------------------
 // 模板（编译期嵌入）
@@ -73,35 +74,29 @@ pub fn render_init_help() {
 /// - 在对应的 rc 文件中追加 `source <(byk completion <shell>)` 行
 /// - 幂等：已配置则跳过
 pub fn init_completion() {
-    let shell = env::var("SHELL").unwrap_or_default();
-
-    let (rc_filename, shell_name) = if shell.ends_with("/zsh") {
-        (".zshrc", "zsh")
-    } else if shell.ends_with("/bash") {
-        (".bashrc", "bash")
-    } else {
-        eprintln!(
-            "{} {} {}",
-            "Unsupported shell:".red(),
-            shell.dimmed(),
-            "(supported: zsh, bash)".dimmed()
-        );
-        return;
+    let (_, shell_name) = match shell::detect_shell() {
+        Some(s) => s,
+        None => {
+            let shell_val = std::env::var("SHELL").unwrap_or_default();
+            eprintln!(
+                "{} {} {}",
+                "Unsupported shell:".red(),
+                shell_val.dimmed(),
+                "(supported: zsh, bash)".dimmed()
+            );
+            return;
+        }
     };
 
-    let home = match dirs::home_dir() {
-        Some(h) => h,
+    let rc_path = match shell::rc_path() {
+        Some(p) => p,
         None => {
             eprintln!("{}", "Cannot determine home directory.".red());
             return;
         }
     };
-    let rc_path = home.join(rc_filename);
 
-    let line = format!(
-        "if command -v byk >/dev/null 2>&1; then source <(byk completion {}); fi",
-        shell_name
-    );
+    let line = shell::completion_line(shell_name);
 
     // 读取 rc 文件检测是否已配置
     let content = fs::read_to_string(&rc_path).unwrap_or_default();
@@ -153,9 +148,7 @@ pub fn init_completion() {
 /// 创建 ~/.byk/ 及其子目录（alias、cache、logs），
 /// 使别名系统和其他缓存功能可用。幂等：已存在则跳过。
 pub fn init_cache(layout: &PathLayout) {
-    ensure_dir(&layout.root_dir, "CLI home");
-    ensure_dir(&layout.alias_dir, "alias");
-    ensure_dir(&layout.cache_dir, "cache");
+    ensure_common_dirs(layout);
     ensure_dir(&layout.logs_dir, "logs");
 }
 
@@ -184,18 +177,12 @@ pub fn init_pnpm(layout: &PathLayout) {
 /// 二次 init 仅重扫插件，不删除数据。
 pub fn init_py_global(layout: &PathLayout) {
     let cache_path = layout.cache_dir.join("app.json");
+    let py_exe = crate::core::plugins::get_python_executable(&layout.cache_dir);
 
-    #[cfg(windows)]
-    let python = "python";
-    #[cfg(not(windows))]
-    let python = "python3";
-
-    // 确保目录存在
-    ensure_dir(&layout.root_dir, "CLI home");
-    ensure_dir(&layout.cache_dir, "cache");
+    ensure_common_dirs(layout);
 
     // ① 检查 bykpy 是否已安装
-    let check = Command::new(python)
+    let check = Command::new(&py_exe)
         .args(["-c", "import bykpy"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -207,7 +194,7 @@ pub fn init_py_global(layout: &PathLayout) {
         println!("{}", "bykpy already installed, skipping pip install.".dimmed());
     } else {
         println!("{}", "Installing bykpy (global)...".dimmed());
-        let status = Command::new(python)
+        let status = Command::new(&py_exe)
             .args(["-m", "pip", "install", "bykpy"])
             .status();
 
@@ -221,18 +208,18 @@ pub fn init_py_global(layout: &PathLayout) {
                     "Error:".red(),
                     s.code().unwrap_or(1)
                 );
-                std::process::exit(1);
+                return;
             }
             Err(e) => {
                 eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                std::process::exit(1);
+                return;
             }
         }
     }
 
     // ② 扫描插件，生成/更新 cache/app.json
     println!("{}", "Scanning plugins...".dimmed());
-    let status = Command::new(python)
+    let status = Command::new(&py_exe)
         .args(["-m", "bykpy", "--scan-plugins"])
         .status();
 
@@ -250,11 +237,11 @@ pub fn init_py_global(layout: &PathLayout) {
                 "Error:".red(),
                 s.code().unwrap_or(1)
             );
-            std::process::exit(1);
+            return;
         }
         Err(e) => {
             eprintln!("{} Failed to run bykpy scan: {}", "Error:".red(), e);
-            std::process::exit(1);
+            return;
         }
     }
 
@@ -274,6 +261,18 @@ pub fn init_py_global(layout: &PathLayout) {
 // --init py-v
 // ---------------------------------------------------------------------------
 
+/// 获取 venv 内 bin 目录名（Windows: Scripts, Unix: bin）。
+#[cfg(windows)]
+const VENV_BIN: &str = "Scripts";
+#[cfg(not(windows))]
+const VENV_BIN: &str = "bin";
+
+/// 获取 venv 内 Python 可执行文件名。
+#[cfg(windows)]
+const PYTHON_BIN: &str = "python.exe";
+#[cfg(not(windows))]
+const PYTHON_BIN: &str = "python";
+
 /// 初始化 Python 虚拟环境及别名（推荐方式）。
 ///
 /// 创建 ~/.byk/venv/（不存在时），安装 bykpy（未安装时），
@@ -282,28 +281,16 @@ pub fn init_py_global(layout: &PathLayout) {
 pub fn init_py(layout: &PathLayout) {
     let venv_dir = &layout.venv_dir;
     let alias_path = layout.alias_dir.join("py.byk.json");
+    let py_exe = crate::core::plugins::get_python_executable(&layout.cache_dir);
 
-    #[cfg(windows)]
-    let python = "python";
-    #[cfg(not(windows))]
-    let python = "python3";
-
-    #[cfg(windows)]
-    let bin_dir = "Scripts";
-    #[cfg(not(windows))]
-    let bin_dir = "bin";
-
-    // 确保目录存在
-    ensure_dir(&layout.root_dir, "CLI home");
-    ensure_dir(&layout.alias_dir, "alias");
-    ensure_dir(&layout.cache_dir, "cache");
+    ensure_common_dirs(layout);
 
     // ① 创建 venv（不存在时）
     if venv_dir.exists() {
         println!("{}", "venv/ already exists, skipping creation.".dimmed());
     } else {
         println!("{}", "Creating Python virtual environment...".dimmed());
-        let status = Command::new(python)
+        let status = Command::new(&py_exe)
             .args(["-m", "venv", &venv_dir.to_string_lossy()])
             .status();
 
@@ -327,8 +314,8 @@ pub fn init_py(layout: &PathLayout) {
     }
 
     // ② 检查 bykpy 是否已安装在 venv 中
-    let py = venv_dir.join(bin_dir).join(if cfg!(windows) { "python.exe" } else { "python" });
-    let check = Command::new(&py)
+    let venv_python = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+    let check = Command::new(&venv_python)
         .args(["-c", "import bykpy"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -339,7 +326,7 @@ pub fn init_py(layout: &PathLayout) {
     if has_bykpy {
         println!("{}", "bykpy already installed, skipping pip install.".dimmed());
     } else {
-        let pip = venv_dir.join(bin_dir).join(if cfg!(windows) { "pip.exe" } else { "pip" });
+        let pip = venv_dir.join(VENV_BIN).join(if cfg!(windows) { "pip.exe" } else { "pip" });
         println!("{}", "Installing bykpy...".dimmed());
         let status = Command::new(&pip)
             .args(["install", "bykpy"])
@@ -366,7 +353,7 @@ pub fn init_py(layout: &PathLayout) {
 
     // ③ 扫描插件，生成/更新 cache/app.json
     println!("{}", "Scanning plugins...".dimmed());
-    let status = Command::new(&py)
+    let status = Command::new(&venv_python)
         .args(["-m", "bykpy", "--scan-plugins"])
         .status();
 
@@ -395,7 +382,7 @@ pub fn init_py(layout: &PathLayout) {
 
     // ④ 写入/更新别名模板
     let template = serde_json::json!({
-        "$cwd": format!("../venv/{}/", bin_dir),
+        "$cwd": format!("../venv/{}/", VENV_BIN),
         "pi": "./pip install",
         "pu": "./pip uninstall",
         "pl": "./pip list",
@@ -419,7 +406,7 @@ pub fn init_py(layout: &PathLayout) {
 // ---------------------------------------------------------------------------
 
 /// 创建目录，打印操作信息。
-fn ensure_dir(path: &std::path::Path, label: &str) {
+fn ensure_dir(path: &Path, label: &str) {
     if path.exists() {
         println!("  {} {} {}", "+".dimmed(), label.dimmed(), "(exists)".dimmed());
     } else {
@@ -430,8 +417,15 @@ fn ensure_dir(path: &std::path::Path, label: &str) {
     }
 }
 
+/// 确保公共目录存在：root、alias、cache。
+fn ensure_common_dirs(layout: &PathLayout) {
+    ensure_dir(&layout.root_dir, "CLI home");
+    ensure_dir(&layout.alias_dir, "alias");
+    ensure_dir(&layout.cache_dir, "cache");
+}
+
 /// 写入文件内容。
-fn write_file(path: &std::path::Path, content: &str, label: &str) {
+fn write_file(path: &Path, content: &str, label: &str) {
     if path.exists() {
         println!(
             "  {} {} {}",
@@ -491,24 +485,7 @@ fn init_node_pkgs(
         );
         println!();
 
-        // 输入 "node-pkgs" 确认删除
-        let confirm_text = "node-pkgs".to_string();
-        print!(
-            "  {} {}: ",
-            "Type".dimmed(),
-            confirm_text.yellow()
-        );
-        let _ = io::stdout().flush();
-
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input).is_err() {
-            println!();
-            println!("  {}", "Cancelled.".dimmed());
-            return;
-        }
-        if input.trim() != confirm_text {
-            println!();
-            println!("  {}", "Confirmation does not match. Cancelled.".dimmed());
+        if !shell::prompt_confirm("node-pkgs") {
             return;
         }
 
@@ -528,9 +505,8 @@ fn init_node_pkgs(
     }
 
     // 确保目录存在
-    ensure_dir(&layout.root_dir, "CLI home");
+    ensure_common_dirs(layout);
     ensure_dir(node_pkgs_dir, "node-pkgs");
-    ensure_dir(&layout.alias_dir, "alias");
 
     // 写入别名模板
     write_file(&alias_path, template, "alias/node.byk.json");
