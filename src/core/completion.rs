@@ -61,8 +61,6 @@ const GLOBAL_FLAGS: &[&str] = &[
     "--version",
     "-v",
     "--info",
-    "--init",
-    "--rm",
     "--help",
     "-h",
 ];
@@ -134,8 +132,8 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .collect();
     }
 
-    // --init 子命令补全
-    if first == "--init" {
+    // init 子命令补全
+    if first == "init" {
         const INIT_SUBS: &[&str] = &["npm", "pnpm", "py", "py-v", "comp"];
         return INIT_SUBS
             .iter()
@@ -144,8 +142,8 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .collect();
     }
 
-    // --rm 子命令补全
-    if first == "--rm" {
+    // remove 子命令补全
+    if first == "remove" {
         const RM_SUBS: &[&str] = &["py", "py-v", "npm", "pnpm"];
         return RM_SUBS
             .iter()
@@ -263,9 +261,13 @@ fn complete_nested_alias(prefix: &str, key_partial: &str, layout: &PathLayout) -
         .collect()
 }
 
-/// 补全顶级命令：插件 + NPM + 顶级别名。
+/// 补全顶级命令：内置子命令 + 插件 + NPM + 顶级别名。
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
+
+    // 内置子命令
+    candidates.push("init".into());
+    candidates.push("remove".into());
 
     // 插件命令
     if layout.home_exists {

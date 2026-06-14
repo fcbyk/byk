@@ -2,30 +2,15 @@
 ///
 /// 将 PluginCache 中的命令列表转为对齐的终端展示行并输出。
 
-use colored::Colorize;
-
+#[cfg(test)]
 use crate::core::plugins::PluginCache;
+#[cfg(test)]
 use crate::utils::display;
-
-/// 渲染 Commands 区块到终端。
-pub fn render(cache: &PluginCache) {
-    let lines = format_lines(cache);
-    if lines.is_empty() {
-        return;
-    }
-
-    println!();
-    println!("{}", "Commands:".green().bold());
-    for (name, line) in &lines {
-        let rest = &line[2 + name.len()..];
-        print!("  {}", name.cyan().bold());
-        println!("{}", rest);
-    }
-}
 
 /// 将插件命令格式化为对齐的展示行。
 ///
 /// 行格式: "  {name}{padding}  {description}"
+#[cfg(test)]
 fn format_lines(cache: &PluginCache) -> Vec<(String, String)> {
     if cache.commands.is_empty() {
         return Vec::new();

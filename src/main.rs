@@ -14,7 +14,7 @@ use core::init;
 use core::npm_commands;
 use core::paths::PathLayout;
 use core::plugins;
-use core::rm;
+use core::remove;
 
 fn main() {
     let cmd = Cli::command();
@@ -31,6 +31,27 @@ fn main() {
         }
         Some(Commands::Complete { words }) => {
             completion::complete(&words, &layout);
+            return;
+        }
+        Some(Commands::Remove { feature }) => {
+            match feature.as_deref() {
+                Some("py") => remove::rm_py(&layout),
+                Some("py-v") => remove::rm_py_v(&layout),
+                Some("npm") => remove::rm_npm(&layout),
+                Some("pnpm") => remove::rm_pnpm(&layout),
+                _ => remove::render_remove_help(),
+            }
+            return;
+        }
+        Some(Commands::Init { feature }) => {
+            match feature.as_deref() {
+                Some("npm") => init::init_npm(&layout),
+                Some("pnpm") => init::init_pnpm(&layout),
+                Some("py") => init::init_py_global(&layout),
+                Some("py-v") => init::init_py(&layout),
+                Some("comp") => init::init_completion(),
+                _ => init::render_init_help(),
+            }
             return;
         }
         None => {}
@@ -63,27 +84,6 @@ fn main() {
             "paths" => render::info::render_paths(&layout),
             "py" => render::info::render_py(&layout),
             _ => render::info::render_info_help(),
-        }
-        return;
-    }
-    if let Some(init_arg) = &cli.init {
-        match init_arg.as_str() {
-            "npm" => init::init_npm(&layout),
-            "pnpm" => init::init_pnpm(&layout),
-            "py" => init::init_py_global(&layout),
-            "py-v" => init::init_py(&layout),
-            "comp" => init::init_completion(),
-            _ => init::render_init_help(),
-        }
-        return;
-    }
-    if let Some(rm_arg) = &cli.rm {
-        match rm_arg.as_str() {
-            "py" => rm::rm_py(&layout),
-            "py-v" => rm::rm_py_v(&layout),
-            "npm" => rm::rm_npm(&layout),
-            "pnpm" => rm::rm_pnpm(&layout),
-            _ => rm::render_rm_help(),
         }
         return;
     }

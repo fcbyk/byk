@@ -1,6 +1,6 @@
-/// --rm 选项逻辑。
+/// `byk remove` 子命令逻辑。
 ///
-/// 删除 --init 创建的持久化数据（venv、缓存、别名等），
+/// 删除 `byk init` 创建的持久化数据（venv、缓存、别名等），
 /// 并提供 byk 包卸载指引。
 
 use colored::Colorize;
@@ -11,12 +11,12 @@ use std::process::Command;
 use super::paths::PathLayout;
 
 // ---------------------------------------------------------------------------
-// --rm 帮助
+// remove 帮助
 // ---------------------------------------------------------------------------
 
-/// 渲染 --rm 帮助信息（无子参数时显示）。
-pub fn render_rm_help() {
-    let title = "byk --rm <feature>";
+/// 渲染 remove 帮助信息（无子参数时显示）。
+pub fn render_remove_help() {
+    let title = "byk remove <feature>";
     println!("{}", title.bold());
     println!();
     println!(
@@ -42,7 +42,7 @@ pub fn render_rm_help() {
 }
 
 // ---------------------------------------------------------------------------
-// --rm py
+// remove py
 // ---------------------------------------------------------------------------
 
 /// 删除全局 Python 插件缓存。
@@ -82,13 +82,13 @@ pub fn rm_py(layout: &PathLayout) {
 }
 
 // ---------------------------------------------------------------------------
-// --rm py-v
+// remove py-v
 // ---------------------------------------------------------------------------
 
 /// 删除 Python venv 环境及所有关联数据。
 ///
 /// 删除 ~/.byk/venv/、alias/py.byk.json、cache/app.json。
-/// 检索 venv 中 byk 开头的包，提供卸载命令。
+/// venv 整体删除，无需额外提示包卸载（目录已不存在）。
 pub fn rm_py_v(layout: &PathLayout) {
     let venv_dir = &layout.venv_dir;
     let alias_path = layout.alias_dir.join("py.byk.json");
@@ -135,21 +135,6 @@ pub fn rm_py_v(layout: &PathLayout) {
         return;
     }
 
-    // 检索 byk 包（删除 venv 之前）
-    #[cfg(windows)]
-    let bin_dir = "Scripts";
-    #[cfg(not(windows))]
-    let bin_dir = "bin";
-
-    let byk_packages = if venv_dir.exists() {
-        let py = venv_dir
-            .join(bin_dir)
-            .join(if cfg!(windows) { "python.exe" } else { "python" });
-        find_byk_packages(&py.to_string_lossy())
-    } else {
-        None
-    };
-
     // 删除
     if venv_dir.exists() {
         let _ = fs::remove_dir_all(venv_dir);
@@ -174,21 +159,10 @@ pub fn rm_py_v(layout: &PathLayout) {
 
     println!();
     println!("{}", "Python venv removed.".green());
-
-    // 提供 byk 包卸载命令
-    if let Some(cmd) = byk_packages {
-        println!();
-        println!(
-            "{} {}",
-            "byk-related packages detected:".yellow(),
-            "(copy to uninstall all)".dimmed()
-        );
-        println!("  {}", cmd.white());
-    }
 }
 
 // ---------------------------------------------------------------------------
-// --rm npm / --rm pnpm
+// remove npm / remove pnpm
 // ---------------------------------------------------------------------------
 
 /// 删除 NPM node-pkgs 环境。

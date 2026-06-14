@@ -1,4 +1,4 @@
-/// --init 选项逻辑。
+/// `byk init` 子命令逻辑。
 ///
 /// 用户手动按需初始化 CLI 功能，不自动创建任何配置。
 /// 模板文件位于 src/templates/，通过 include_str! 编译期嵌入。
@@ -19,12 +19,12 @@ const NPM_TEMPLATE: &str = include_str!("../templates/npm.byk.json");
 const PNPM_TEMPLATE: &str = include_str!("../templates/pnpm.byk.json");
 
 // ---------------------------------------------------------------------------
-// --init 帮助
+// init 帮助
 // ---------------------------------------------------------------------------
 
-/// 渲染 --init 帮助信息（无子参数时显示）。
+/// 渲染 init 帮助信息（无子参数时显示）。
 pub fn render_init_help() {
-    let title = "byk --init <feature>";
+    let title = "byk init <feature>";
     println!("{}", title.bold());
     println!();
     println!(

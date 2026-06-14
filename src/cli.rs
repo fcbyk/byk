@@ -13,14 +13,6 @@ pub struct Cli {
     #[arg(long = "info", num_args = 0..=1, default_missing_value = "")]
     pub info: Option<String>,
 
-    /// Initialize features (run without args for help)
-    #[arg(long = "init", num_args = 0..=1, default_missing_value = "")]
-    pub init: Option<String>,
-
-    /// Remove/uninstall features (run without args for help)
-    #[arg(long = "rm", num_args = 0..=1, default_missing_value = "")]
-    pub rm: Option<String>,
-
     /// Print help
     #[arg(short = 'h', long = "help", action = clap::ArgAction::SetTrue)]
     pub help: bool,
@@ -40,6 +32,18 @@ pub enum Commands {
     Completion {
         /// 目标 shell: zsh | bash | fish
         shell: String,
+    },
+    /// 移除已初始化的 feature
+    Remove {
+        /// 要移除的 feature: py | py-v | npm | pnpm
+        #[arg(allow_hyphen_values = true)]
+        feature: Option<String>,
+    },
+    /// 初始化 feature
+    Init {
+        /// 要初始化的 feature: npm | pnpm | py | py-v | comp
+        #[arg(allow_hyphen_values = true)]
+        feature: Option<String>,
     },
     /// 内部：查询补全候选
     #[command(hide = true, name = "__complete")]
