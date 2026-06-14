@@ -17,6 +17,10 @@ pub struct Cli {
     #[arg(long = "init", num_args = 0..=1, default_missing_value = "")]
     pub init: Option<String>,
 
+    /// Remove/uninstall features (run without args for help)
+    #[arg(long = "rm", num_args = 0..=1, default_missing_value = "")]
+    pub rm: Option<String>,
+
     /// Print help
     #[arg(short = 'h', long = "help", action = clap::ArgAction::SetTrue)]
     pub help: bool,

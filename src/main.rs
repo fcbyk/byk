@@ -14,6 +14,7 @@ use core::init;
 use core::npm_commands;
 use core::paths::PathLayout;
 use core::plugins;
+use core::rm;
 
 fn main() {
     let cmd = Cli::command();
@@ -73,6 +74,16 @@ fn main() {
             "py-v" => init::init_py(&layout),
             "comp" => init::init_completion(),
             _ => init::render_init_help(),
+        }
+        return;
+    }
+    if let Some(rm_arg) = &cli.rm {
+        match rm_arg.as_str() {
+            "py" => rm::rm_py(&layout),
+            "py-v" => rm::rm_py_v(&layout),
+            "npm" => rm::rm_npm(&layout),
+            "pnpm" => rm::rm_pnpm(&layout),
+            _ => rm::render_rm_help(),
         }
         return;
     }
