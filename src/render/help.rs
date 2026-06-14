@@ -38,8 +38,8 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
 pub fn render_commands(layout: &PathLayout) {
     // 内置子命令
     let mut entries: Vec<(String, String)> = vec![
-        ("init".into(), "Initialize features (npm/pnpm/py/py-v/comp)".into()),
-        ("remove".into(), "Remove initialized features (py/py-v/npm/pnpm)".into()),
+        ("init".into(), "Initialize features".into()),
+        ("remove".into(), "Remove initialized features".into()),
     ];
 
     // 插件命令

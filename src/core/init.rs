@@ -24,34 +24,42 @@ const PNPM_TEMPLATE: &str = include_str!("../templates/pnpm.byk.json");
 
 /// 渲染 init 帮助信息（无子参数时显示）。
 pub fn render_init_help() {
-    let title = "byk init <feature>";
-    println!("{}", title.bold());
     println!();
+    print!("{}", "Usage:".green().bold());
+    println!("{}", " byk init [feature]".bold());
+    println!();
+    println!("{}", "Feature:".green().bold());
     println!(
         "  {:<8} {}",
-        "npm".yellow(),
-        "Initialize with npm (node-pkgs)".dimmed()
+        "npm".cyan().bold(),
+        "Initialize with npm (node-pkgs)"
     );
     println!(
         "  {:<8} {}",
-        "pnpm".yellow(),
-        "Initialize with pnpm (node-pkgs)".dimmed()
+        "pnpm".cyan().bold(),
+        "Initialize with pnpm (node-pkgs)"
     );
     println!(
         "  {:<8} {}",
-        "comp".yellow(),
-        "Initialize shell completion (zsh/bash)".dimmed()
+        "comp".cyan().bold(),
+        "Initialize shell completion (zsh/bash)"
     );
     println!(
         "  {:<8} {}",
-        "py".yellow(),
-        "Enable Python plugin system (global)".dimmed()
+        "cache".cyan().bold(),
+        "Initialize CLI home & cache directories"
     );
     println!(
         "  {:<8} {}",
-        "py-v".yellow(),
-        "Initialize Python venv & aliases (recommended)".dimmed()
+        "py".cyan().bold(),
+        "Enable Python plugin system (global)"
     );
+    println!(
+        "  {:<8} {}",
+        "py-v".cyan().bold(),
+        "Initialize Python venv & aliases (recommended)"
+    );
+    println!();
 }
 
 // ---------------------------------------------------------------------------
@@ -137,17 +145,32 @@ pub fn init_completion() {
 }
 
 // ---------------------------------------------------------------------------
+// --init cache
+// ---------------------------------------------------------------------------
+
+/// 初始化 CLI 家目录及缓存目录结构。
+///
+/// 创建 ~/.byk/ 及其子目录（alias、cache、logs），
+/// 使别名系统和其他缓存功能可用。幂等：已存在则跳过。
+pub fn init_cache(layout: &PathLayout) {
+    ensure_dir(&layout.root_dir, "CLI home");
+    ensure_dir(&layout.alias_dir, "alias");
+    ensure_dir(&layout.cache_dir, "cache");
+    ensure_dir(&layout.logs_dir, "logs");
+}
+
+// ---------------------------------------------------------------------------
 // --init npm / --init pnpm
 // ---------------------------------------------------------------------------
 
 /// 初始化 npm 命令功能。
 pub fn init_npm(layout: &PathLayout) {
-    init_node_pkgs(layout, "npm", "i", "uni", NPM_TEMPLATE);
+    init_node_pkgs(layout, "npm", "ni", "nu", NPM_TEMPLATE);
 }
 
 /// 初始化 pnpm 命令功能。
 pub fn init_pnpm(layout: &PathLayout) {
-    init_node_pkgs(layout, "pnpm", "add", "remove", PNPM_TEMPLATE);
+    init_node_pkgs(layout, "pnpm", "ni", "nu", PNPM_TEMPLATE);
 }
 
 // ---------------------------------------------------------------------------

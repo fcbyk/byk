@@ -4,6 +4,7 @@
 /// 并提供 byk 包卸载指引。
 
 use colored::Colorize;
+use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::process::Command;
@@ -16,29 +17,37 @@ use super::paths::PathLayout;
 
 /// 渲染 remove 帮助信息（无子参数时显示）。
 pub fn render_remove_help() {
-    let title = "byk remove <feature>";
-    println!("{}", title.bold());
     println!();
+    print!("{}", "Usage:".green().bold());
+    println!("{}", " byk remove [feature]".bold());
+    println!();
+    println!("{}", "Feature:".green().bold());
     println!(
         "  {:<8} {}",
-        "py".yellow(),
-        "Remove Python plugin cache (keep byk packages)".dimmed()
+        "py".cyan().bold(),
+        "Remove Python plugin cache (keep byk packages)"
     );
     println!(
         "  {:<8} {}",
-        "py-v".yellow(),
-        "Remove venv, aliases, and plugin cache".dimmed()
+        "py-v".cyan().bold(),
+        "Remove venv, aliases, and plugin cache"
     );
     println!(
         "  {:<8} {}",
-        "npm".yellow(),
-        "Remove node-pkgs, aliases, and cache".dimmed()
+        "comp".cyan().bold(),
+        "Remove shell completion (zsh/bash)"
     );
     println!(
         "  {:<8} {}",
-        "pnpm".yellow(),
-        "Remove node-pkgs, aliases, and cache".dimmed()
+        "npm".cyan().bold(),
+        "Remove node-pkgs, aliases, and cache"
     );
+    println!(
+        "  {:<8} {}",
+        "pnpm".cyan().bold(),
+        "Remove node-pkgs, aliases, and cache"
+    );
+    println!();
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +168,94 @@ pub fn rm_py_v(layout: &PathLayout) {
 
     println!();
     println!("{}", "Python venv removed.".green());
+}
+
+// ---------------------------------------------------------------------------
+// remove comp
+// ---------------------------------------------------------------------------
+
+/// 移除 shell 补全配置。
+///
+/// 从 .zshrc / .bashrc 中移除 `byk completion` 相关行及前面的注释行。
+pub fn rm_comp() {
+    let shell = env::var("SHELL").unwrap_or_default();
+
+    let (rc_filename, shell_name) = if shell.ends_with("/zsh") {
+        (".zshrc", "zsh")
+    } else if shell.ends_with("/bash") {
+        (".bashrc", "bash")
+    } else {
+        eprintln!(
+            "{} {} {}",
+            "Unsupported shell:".red(),
+            shell.dimmed(),
+            "(supported: zsh, bash)".dimmed()
+        );
+        return;
+    };
+
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            eprintln!("{}", "Cannot determine home directory.".red());
+            return;
+        }
+    };
+    let rc_path = home.join(rc_filename);
+
+    let content = fs::read_to_string(&rc_path).unwrap_or_default();
+
+    let line = format!(
+        "if command -v byk >/dev/null 2>&1; then source <(byk completion {}); fi",
+        shell_name
+    );
+
+    if !content.contains(&line) {
+        println!(
+            "{}",
+            "Shell completion not configured, nothing to remove.".dimmed()
+        );
+        return;
+    }
+
+    // 过滤掉 completion 行及前面的注释行
+    let mut new_lines: Vec<&str> = Vec::new();
+    let prev_lines: Vec<&str> = content.lines().collect();
+    let mut i = 0;
+    while i < prev_lines.len() {
+        let l = prev_lines[i];
+        if l.contains("byk completion") {
+            i += 1;
+            continue;
+        }
+        // 跳过紧接 completion 行前的空行和注释行
+        if i + 1 < prev_lines.len()
+            && prev_lines[i + 1].contains("byk completion")
+            && (l.trim().is_empty() || l.trim().starts_with("# byk shell completion"))
+        {
+            i += 1;
+            continue;
+        }
+        new_lines.push(l);
+        i += 1;
+    }
+
+    let new_content = new_lines.join("\n") + "\n";
+    fs::write(&rc_path, new_content).unwrap_or_else(|e| {
+        eprintln!("Failed to write {}: {}", rc_path.display(), e);
+        std::process::exit(1);
+    });
+
+    println!(
+        "  {} shell completion in {}",
+        "-".red(),
+        rc_path.display().to_string().dimmed()
+    );
+    println!(
+        "{} {}",
+        "Shell completion removed from".green(),
+        rc_path.display().to_string().dimmed()
+    );
 }
 
 // ---------------------------------------------------------------------------

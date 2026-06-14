@@ -9,7 +9,6 @@ pub fn render() {
     let separator = "-".repeat(29);
 
     println!();
-    println!("{}", separator.dimmed());
     println!(
         "{} {}",
         "BYK".green().bold(),
@@ -17,5 +16,4 @@ pub fn render() {
     );
     println!("{}", "Docs https://cli.fcbyk.com".dimmed());
     println!("{}", separator.dimmed());
-    println!();
 }

@@ -9,7 +9,7 @@ pub struct Cli {
     #[arg(short = 'v', long = "version")]
     pub version: bool,
 
-    /// Show CLI info (paths & environment)
+    /// Show CLI info
     #[arg(long = "info")]
     pub info: bool,
 
@@ -35,13 +35,13 @@ pub enum Commands {
     },
     /// 移除已初始化的 feature
     Remove {
-        /// 要移除的 feature: py | py-v | npm | pnpm
+        /// 要移除的 feature: py | py-v | comp | npm | pnpm
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
     /// 初始化 feature
     Init {
-        /// 要初始化的 feature: npm | pnpm | py | py-v | comp
+        /// 要初始化的 feature: npm | pnpm | cache | comp | py | py-v
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
