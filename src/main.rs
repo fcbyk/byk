@@ -59,6 +59,7 @@ fn main() {
 
     // Step 1: 全局选项（优先级最高，直接返回）
     if cli.help {
+        println!();
         render::help::render_all(&layout, &options);
         return;
     }
@@ -79,18 +80,15 @@ fn main() {
         }
         return;
     }
-    if let Some(info_arg) = &cli.info {
-        match info_arg.as_str() {
-            "paths" => render::info::render_paths(&layout),
-            "py" => render::info::render_py(&layout),
-            _ => render::info::render_info_help(),
-        }
+    if cli.info {
+        render::info::render_all(&layout);
         return;
     }
 
-    // 无额外参数 → 仪表盘
+    // 无额外参数 → 帮助（上下各空一行）
     if cli.trailing.is_empty() {
-        render::dashboard::render(&layout, &options);
+        println!();
+        render::help::render_all(&layout, &options);
         return;
     }
 

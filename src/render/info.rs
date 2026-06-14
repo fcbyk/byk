@@ -6,24 +6,15 @@ use std::process::Command;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
 
-/// 渲染 --info 帮助信息（无子参数时显示）。
-pub fn render_info_help() {
-    let title = "byk --info <subcommand>";
-    println!("{}", title.bold());
+/// 渲染 CLI 完整信息：banner + 路径 + Python 环境。
+pub fn render_all(layout: &PathLayout) {
+    crate::render::banner::render();
+    render_paths(layout);
     println!();
-    println!(
-        "  {:<8} {}",
-        "paths".yellow(),
-        "Show CLI directories (home, alias, logs)".dimmed()
-    );
-    println!(
-        "  {:<8} {}",
-        "py".yellow(),
-        "Show Python environment info".dimmed()
-    );
+    render_py(layout);
 }
 
-/// 显示 CLI 目录路径（供 --info paths 使用）。
+/// 显示 CLI 目录路径。
 pub fn render_paths(layout: &PathLayout) {
     let items: [(&str, &std::path::Path); 5] = [
         ("CLI Home", layout.root_dir.as_path()),
@@ -43,7 +34,7 @@ pub fn render_paths(layout: &PathLayout) {
     }
 }
 
-/// 渲染 Python 环境信息（供 --info py 使用）。
+/// 渲染 Python 环境信息。
 pub fn render_py(layout: &PathLayout) {
     let python_exe = plugins::get_python_executable(&layout.cache_dir);
     let cache_file = layout.cache_dir.join("app.json");
@@ -53,8 +44,8 @@ pub fn render_py(layout: &PathLayout) {
     if !is_env && !cache_file.exists() {
         println!("{}", "Python plugin system not initialized.".yellow());
         println!();
-        println!("  {}   {}", "$ byk --init py".dimmed(), "(global)".dimmed());
-        println!("  {}   {}", "$ byk --init py-v".dimmed(), "(venv, recommended)".dimmed());
+        println!("  {}   {}", "$ byk init py".dimmed(), "(global)".dimmed());
+        println!("  {}   {}", "$ byk init py-v".dimmed(), "(venv, recommended)".dimmed());
         return;
     }
 

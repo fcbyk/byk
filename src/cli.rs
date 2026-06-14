@@ -9,9 +9,9 @@ pub struct Cli {
     #[arg(short = 'v', long = "version")]
     pub version: bool,
 
-    /// Show CLI info
-    #[arg(long = "info", num_args = 0..=1, default_missing_value = "")]
-    pub info: Option<String>,
+    /// Show CLI info (paths & environment)
+    #[arg(long = "info")]
+    pub info: bool,
 
     /// Print help
     #[arg(short = 'h', long = "help", action = clap::ArgAction::SetTrue)]

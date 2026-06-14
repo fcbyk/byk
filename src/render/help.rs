@@ -1,6 +1,6 @@
 /// 帮助信息渲染（Usage / Options / NPM / Aliases）。
 ///
-/// `render_all` 为 -h/--help 回调，dashboard 复用之并加上 banner。
+/// `render_all` 为 -h/--help 回调及无参数时的默认输出。
 
 use colored::Colorize;
 

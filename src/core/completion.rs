@@ -122,16 +122,6 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .collect();
     }
 
-    // --info 子命令补全
-    if first == "--info" {
-        const INFO_SUBS: &[&str] = &["paths", "py"];
-        return INFO_SUBS
-            .iter()
-            .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
-            .collect();
-    }
-
     // init 子命令补全
     if first == "init" {
         const INIT_SUBS: &[&str] = &["npm", "pnpm", "py", "py-v", "comp"];
@@ -663,14 +653,6 @@ mod tests {
         assert!(!result.is_empty());
         assert!(result.contains(&"--version".to_string()));
         assert!(result.contains(&"--help".to_string()));
-    }
-
-    #[test]
-    fn contextual_info_subcommands() {
-        let env = TestEnv::new();
-        let prev = vec!["--info".to_string()];
-        let result = contextual_completions(&prev, "pa", &env.layout);
-        assert_eq!(result, vec!["paths".to_string()]);
     }
 
     #[test]
