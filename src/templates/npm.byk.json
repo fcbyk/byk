@@ -1,4 +1,0 @@
-{
-    "ni": {"$cmd": "npm i", "$cwd": "../node-pkgs/"},
-    "nu": {"$cmd": "npm uni", "$cwd": "../node-pkgs/"}
-}

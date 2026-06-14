@@ -4,13 +4,14 @@
 /// 包含 CJK 显示宽度对齐和终端宽度感知的自动换行。
 
 use colored::Colorize;
+use std::path::{Path, PathBuf};
 
 use crate::core::aliases::{self, MergedConfig};
 use crate::utils::display;
 
 /// 渲染 Aliases 区块到终端。
-pub fn render(merged: &MergedConfig) {
-    let lines = format_lines(merged);
+pub fn render(merged: &MergedConfig, alias_dir: &Path) {
+    let lines = format_lines(merged, alias_dir);
     if lines.is_empty() {
         return;
     }
@@ -30,7 +31,7 @@ pub fn render(merged: &MergedConfig) {
 }
 
 /// 将合并后的别名配置格式化为对齐的展示行。
-fn format_lines(merged: &MergedConfig) -> Vec<(String, String)> {
+fn format_lines(merged: &MergedConfig, alias_dir: &Path) -> Vec<(String, String)> {
     let mut paths = aliases::collect_merged_paths(merged, "");
     paths.sort();
 
@@ -39,10 +40,16 @@ fn format_lines(merged: &MergedConfig) -> Vec<(String, String)> {
         .filter_map(|path| {
             let resolved = aliases::resolve_merged_alias(merged, path)?;
             let definition = aliases::to_alias_definition(&resolved.value)?;
+            // cwd 相对路径以别名来源文件所在目录为基准解析，
+            // 无 source_path 时回退到 ~/.byk/alias/
+            let base_dir = resolved
+                .source_path
+                .as_deref()
+                .unwrap_or(alias_dir);
             let suffix = definition
                 .cwd
                 .as_ref()
-                .map(|c| format!(" (cwd: {})", c))
+                .map(|c| format!(" ({})", resolve_cwd_display(c, base_dir)))
                 .unwrap_or_default();
             let display_command = display::escape_for_display(&definition.command);
             Some((path.clone(), format!("{}{}", display_command, suffix)))
@@ -95,6 +102,46 @@ fn format_lines(merged: &MergedConfig) -> Vec<(String, String)> {
 }
 
 // ---------------------------------------------------------------------------
+// 路径显示
+// ---------------------------------------------------------------------------
+
+/// 将 alias 文件中存储的 cwd 路径解析为直观的显示路径。
+///
+/// 相对路径以 `base_dir`（来源文件所在目录）为基准 resolve，
+/// 绝对路径直接使用。手动消除 `.` 和 `..` 组件（不依赖文件系统，
+/// 路径不存在也能正确计算）。若在 `$HOME` 下则替换为 `~` 前缀。
+fn resolve_cwd_display(cwd: &str, base_dir: &Path) -> String {
+    let cwd_path = Path::new(cwd);
+    let resolved = if cwd_path.is_absolute() {
+        cwd_path.to_path_buf()
+    } else {
+        normalize(&base_dir.join(cwd_path))
+    };
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(rest) = resolved.strip_prefix(&home) {
+            return format!("~/{}", rest.display());
+        }
+    }
+    resolved.display().to_string()
+}
+
+/// 手动标准化路径，消除 `.` 和 `..` 组件。
+/// 不依赖文件系统，路径不存在也能正确计算。
+fn normalize(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => { /* skip "." */ }
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
+            other => result.push(other),
+        }
+    }
+    result
+}
+
+// ---------------------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------------------
 
@@ -102,7 +149,11 @@ fn format_lines(merged: &MergedConfig) -> Vec<(String, String)> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::path::Path;
     use crate::core::aliases::{ResolvedAlias, MergedNode};
+
+    /// 测试用的虚拟 alias 目录。
+    const TEST_ALIAS_DIR: &str = "/tmp";
 
     fn make_resolved_alias(cmd: &str) -> ResolvedAlias {
         ResolvedAlias {
@@ -142,14 +193,14 @@ mod tests {
     #[test]
     fn alias_format_lines_empty() {
         let merged: MergedConfig = HashMap::new();
-        assert!(format_lines(&merged).is_empty());
+        assert!(format_lines(&merged, Path::new(TEST_ALIAS_DIR)).is_empty());
     }
 
     #[test]
     fn alias_format_lines_single_alias() {
         let mut merged: MergedConfig = HashMap::new();
         insert_alias(&mut merged, "greet", "echo hello");
-        let result = format_lines(&merged);
+        let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, "greet");
         // format: "greet  echo hello" (no prefix in format_lines)
@@ -162,7 +213,7 @@ mod tests {
         insert_alias(&mut merged, "zzz", "cmd-z");
         insert_alias(&mut merged, "aaa", "cmd-a");
         insert_alias(&mut merged, "mmm", "cmd-m");
-        let result = format_lines(&merged);
+        let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].0, "aaa");
         assert_eq!(result[1].0, "mmm");
@@ -173,7 +224,7 @@ mod tests {
     fn alias_format_lines_nested() {
         let mut merged: MergedConfig = HashMap::new();
         insert_nested_alias(&mut merged, "ns", "cmd", "echo nested");
-        let result = format_lines(&merged);
+        let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, "ns.cmd");
         assert!(result[0].1.contains("echo nested"));
@@ -185,10 +236,10 @@ mod tests {
         let mut node = MergedNode::default();
         node.alias = Some(make_resolved_alias_with_cwd("npm run build", "/path/to/project"));
         merged.insert("build".into(), node);
-        let result = format_lines(&merged);
+        let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         assert_eq!(result.len(), 1);
         assert!(result[0].1.contains("npm run build"));
-        assert!(result[0].1.contains("(cwd: /path/to/project)"));
+        assert!(result[0].1.contains("(/path/to/project)"));
     }
 
     #[test]
@@ -196,7 +247,7 @@ mod tests {
         let mut merged: MergedConfig = HashMap::new();
         insert_alias(&mut merged, "a", "cmd-a");
         insert_alias(&mut merged, "verylongkey", "cmd-long");
-        let result = format_lines(&merged);
+        let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         // "a" 应补齐到和 "verylongkey" 相同的宽度
         assert_eq!(result.len(), 2);
         let a_line = result.iter().find(|(k, _)| k == "a").unwrap();

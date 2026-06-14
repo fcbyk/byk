@@ -29,7 +29,7 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     }
 
     let (merged, _files) = aliases::load_merged_aliases(layout);
-    super::aliases::render(&merged);
+    super::aliases::render(&merged, &layout.alias_dir);
 
     println!();
 }

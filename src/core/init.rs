@@ -1,7 +1,7 @@
 /// `byk init` 子命令逻辑。
 ///
 /// 用户手动按需初始化 CLI 功能，不自动创建任何配置。
-/// 模板文件位于 src/templates/，通过 include_str! 编译期嵌入。
+/// npm/pnpm/py 别名模板直接硬编码，与生成文件一一对应。
 
 use colored::Colorize;
 use std::fs;
@@ -11,13 +11,6 @@ use std::process::Command;
 
 use super::paths::PathLayout;
 use crate::utils::shell;
-
-// ---------------------------------------------------------------------------
-// 模板（编译期嵌入）
-// ---------------------------------------------------------------------------
-
-const NPM_TEMPLATE: &str = include_str!("../templates/npm.byk.json");
-const PNPM_TEMPLATE: &str = include_str!("../templates/pnpm.byk.json");
 
 // ---------------------------------------------------------------------------
 // init 帮助
@@ -156,14 +149,14 @@ pub fn init_cache(layout: &PathLayout) {
 // --init npm / --init pnpm
 // ---------------------------------------------------------------------------
 
-/// 初始化 npm 命令功能。
+/// 初始化 npm / pnpm 命令功能。
 pub fn init_npm(layout: &PathLayout) {
-    init_node_pkgs(layout, "npm", "ni", "nu", NPM_TEMPLATE);
+    init_node_pm(layout, "npm");
 }
 
 /// 初始化 pnpm 命令功能。
 pub fn init_pnpm(layout: &PathLayout) {
-    init_node_pkgs(layout, "pnpm", "ni", "nu", PNPM_TEMPLATE);
+    init_node_pm(layout, "pnpm");
 }
 
 // ---------------------------------------------------------------------------
@@ -445,13 +438,15 @@ fn write_file(path: &Path, content: &str, label: &str) {
 // 共享初始化逻辑
 // ---------------------------------------------------------------------------
 
-fn init_node_pkgs(
+fn init_node_pm(
     layout: &PathLayout,
     pm: &str,
-    install_alias: &str,
-    remove_alias: &str,
-    template: &str,
 ) {
+    let template = serde_json::json!({
+        "$cwd": "../node-pkgs/",
+        "ni": format!("{} i", pm),
+        "nu": format!("{} uni", pm),
+    });
     let node_pkgs_dir = &layout.node_pkgs_dir;
     let alias_path = layout.alias_dir.join("node.byk.json");
     let cache_path = layout.cache_dir.join("node-pkg.json");
@@ -509,7 +504,8 @@ fn init_node_pkgs(
     ensure_dir(node_pkgs_dir, "node-pkgs");
 
     // 写入别名模板
-    write_file(&alias_path, template, "alias/node.byk.json");
+    let template_str = serde_json::to_string_pretty(&template).unwrap_or_default();
+    write_file(&alias_path, &template_str, "alias/node.byk.json");
 
     println!();
     println!(
@@ -517,6 +513,6 @@ fn init_node_pkgs(
         "Node package support initialized.".green(),
         pm.dimmed(),
     );
-    println!("  Install packages:  byk {} <pkg>", install_alias.dimmed());
-    println!("  Remove packages:   byk {} <pkg>", remove_alias.dimmed());
+    println!("  Install packages:  {} <pkg>", "byk ni".dimmed());
+    println!("  Remove packages:   {} <pkg>", "byk nu".dimmed());
 }
