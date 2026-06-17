@@ -1,5 +1,6 @@
 pub mod aliases;
 pub mod completion;
+pub mod info;
 pub mod init;
 pub mod npm_commands;
 pub mod paths;

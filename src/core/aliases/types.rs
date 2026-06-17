@@ -65,8 +65,11 @@ pub struct ResolvedAlias {
     pub value: AliasValue,
     /// 来源文件 key，如 "@release"
     pub source: String,
-    /// 来源配置文件所在目录（用于解析别名中的相对路径）
+    /// 来源配置文件路径（文件本身，非目录）
     pub source_path: Option<PathBuf>,
+    /// 来源文件的优先级
+    #[serde(default)]
+    pub priority: i32,
     /// 来源文件的 $paths，需要前置到 PATH 环境变量的目录列表
     #[serde(default)]
     pub paths: Vec<String>,

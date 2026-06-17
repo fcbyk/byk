@@ -122,6 +122,11 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .collect();
     }
 
+    // --info 后面补全：保留词 + 所有可用命令名
+    if first == "--info" {
+        return complete_info_topic(partial, layout);
+    }
+
     // init 子命令补全
     if first == "init" {
         const INIT_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp", "py", "py-v"];
@@ -189,6 +194,43 @@ fn is_known_npm(word: &str, layout: &PathLayout) -> bool {
         Some(npm_cache) => npm_cache.bin_map.contains_key(word),
         None => false,
     }
+}
+
+/// 补全 --info 后面的参数：保留词 + 所有可用命令名。
+fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
+    let mut candidates: Vec<String> = Vec::new();
+
+    // 保留词
+    candidates.push(super::info::TOPIC_DOCTOR.to_string());
+
+    // 内置子命令
+    candidates.push("init".into());
+    candidates.push("remove".into());
+    candidates.push("completion".into());
+
+    // 插件命令
+    if layout.home_exists {
+        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+        candidates.extend(plugin_cache.commands.keys().cloned());
+    }
+
+    // NPM 命令
+    let cache_file = layout.cache_dir.join("node-pkg.json");
+    if let Some(npm_cache) = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+        candidates.extend(npm_cache.bin_map.keys().cloned());
+    }
+
+    // 别名路径
+    let (merged, _files) = aliases::load_merged_aliases(layout);
+    // 合并树中的所有别名路径（不含 @file 前缀）
+    candidates.extend(aliases::collect_merged_paths(&merged, ""));
+
+    candidates.sort();
+    candidates.dedup();
+    candidates
+        .into_iter()
+        .filter(|c| c.starts_with(partial))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

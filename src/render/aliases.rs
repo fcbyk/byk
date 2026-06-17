@@ -31,7 +31,7 @@ pub fn render(merged: &MergedConfig, alias_dir: &Path) {
 }
 
 /// 将合并后的别名配置格式化为对齐的展示行。
-fn format_lines(merged: &MergedConfig, alias_dir: &Path) -> Vec<(String, String)> {
+fn format_lines(merged: &MergedConfig, _alias_dir: &Path) -> Vec<(String, String)> {
     let mut paths = aliases::collect_merged_paths(merged, "");
     paths.sort();
 
@@ -45,7 +45,7 @@ fn format_lines(merged: &MergedConfig, alias_dir: &Path) -> Vec<(String, String)
             let base_dir = resolved
                 .source_path
                 .as_deref()
-                .unwrap_or(alias_dir);
+                .and_then(|p| p.parent());
             let suffix = definition
                 .cwd
                 .as_ref()
@@ -114,12 +114,14 @@ fn format_lines(merged: &MergedConfig, alias_dir: &Path) -> Vec<(String, String)
 /// 相对路径以 `base_dir`（来源文件所在目录）为基准 resolve，
 /// 绝对路径直接使用。手动消除 `.` 和 `..` 组件（不依赖文件系统，
 /// 路径不存在也能正确计算）。若在 `$HOME` 下则替换为 `~` 前缀。
-fn resolve_cwd_display(cwd: &str, base_dir: &Path) -> String {
+pub(crate) fn resolve_cwd_display(cwd: &str, base_dir: Option<&Path>) -> String {
     let cwd_path = Path::new(cwd);
     let resolved = if cwd_path.is_absolute() {
         cwd_path.to_path_buf()
+    } else if let Some(base) = base_dir {
+        normalize(&base.join(cwd_path))
     } else {
-        normalize(&base_dir.join(cwd_path))
+        normalize(cwd_path)
     };
     if let Some(home) = dirs::home_dir() {
         if let Ok(rest) = resolved.strip_prefix(&home) {
@@ -164,6 +166,7 @@ mod tests {
             value: aliases::AliasValue::Str(cmd.into()),
             source: "@test".into(),
             source_path: None,
+            priority: 0,
             paths: Vec::new(),
         }
     }
@@ -178,6 +181,7 @@ mod tests {
             },
             source: "@test".into(),
             source_path: None,
+            priority: 0,
             paths: Vec::new(),
         }
     }

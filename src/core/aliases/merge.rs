@@ -31,6 +31,7 @@ fn deep_merge_dict(
     source: &serde_json::Map<String, serde_json::Value>,
     file_key: &str,
     source_path: Option<&Path>,
+    priority: i32,
     inherited_cwd: Option<&str>,
     inherited_interactive: Option<bool>,
     inherited_paths: &[String],
@@ -61,6 +62,7 @@ fn deep_merge_dict(
                     value: av,
                     source: file_key.to_string(),
                     source_path: source_path.map(|p| p.to_path_buf()),
+                    priority,
                     paths: inherited_paths.to_vec(),
                 });
 
@@ -70,6 +72,7 @@ fn deep_merge_dict(
                         inner,
                         file_key,
                         source_path,
+                        priority,
                         group_cwd,
                         group_interactive,
                         inherited_paths,
@@ -85,6 +88,7 @@ fn deep_merge_dict(
                 inner,
                 file_key,
                 source_path,
+                priority,
                 group_cwd,
                 group_interactive,
                 inherited_paths,
@@ -154,7 +158,8 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
             &mut merged,
             &f.aliases,
             &f.key,
-            f.path.parent(),
+            Some(f.path.as_path()),
+            f.priority,
             f.inherited_cwd.as_deref(),
             f.inherited_interactive,
             &f.inherited_paths,
@@ -231,6 +236,69 @@ pub fn resolve_merged_alias<'a>(
     None
 }
 
+/// 在所有别名文件中查找同名的全部别名（用于 --info 查询路由）。
+///
+/// 与 `resolve_merged_alias` 不同，此函数遍历所有 AliasFile，
+/// 返回所有包含该 key 路径的 ResolvedAlias，按文件优先级排序。
+/// 这暴露了"谁覆盖了谁"的信息。
+pub fn lookup_all_aliases(files: &[AliasFile], name: &str) -> Vec<ResolvedAlias> {
+    let parts: Vec<&str> = name.split('.').collect();
+    let mut results: Vec<ResolvedAlias> = Vec::new();
+
+    for f in files {
+        // 负数优先级文件不参与普通合并，但 --info 仍应展示
+        let mut current: &serde_json::Map<String, serde_json::Value> = &f.aliases;
+
+        // 沿路径遍历到倒数第二级
+        let mut group_cwd = f.inherited_cwd.as_deref();
+        let mut group_interactive = f.inherited_interactive;
+
+        for (i, part) in parts.iter().enumerate() {
+            let val = match current.get(*part) {
+                Some(v) => v,
+                None => break,
+            };
+
+            if i == parts.len() - 1 {
+                // 最后一级：检查是否为别名值
+                if is_alias_value(val) {
+                    if let Some(av) = to_alias_value(val) {
+                        let av = apply_inherited(av, group_cwd, group_interactive);
+                        results.push(ResolvedAlias {
+                            value: av,
+                            source: f.key.clone(),
+                            source_path: Some(f.path.clone()),
+                            priority: f.priority,
+                            paths: f.inherited_paths.clone(),
+                        });
+                    }
+                }
+                break;
+            }
+
+            // 中间级：必须是 object 才能继续遍历
+            if let serde_json::Value::Object(inner) = val {
+                // 累积分组级继承属性
+                if let Some(c) = inner.get("$cwd").and_then(|v| v.as_str()) {
+                    group_cwd = Some(c);
+                }
+                if let Some(v) = inner.get("$interactive") {
+                    if let Some(b) = v.as_bool() {
+                        group_interactive = Some(b);
+                    }
+                }
+                current = inner;
+            } else {
+                break;
+            }
+        }
+    }
+
+    // 按优先级从高到低排列，高优先级（实际执行的）排前面
+    results.reverse();
+    results
+}
+
 // ---------------------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------------------
@@ -244,6 +312,7 @@ mod tests {
             value: AliasValue::Str(cmd.into()),
             source: "@test".into(),
             source_path: None,
+            priority: 0,
             paths: Vec::new(),
         }
     }

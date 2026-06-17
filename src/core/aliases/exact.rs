@@ -79,12 +79,13 @@ pub fn lookup_exact_alias(
             let effective_interactive = group_interactive.or(f.inherited_interactive);
             let value = apply_inherited(value, effective_cwd, effective_interactive);
             let display_source = format!("{}.{}", file_key, alias_key);
-            let source_path = f.path.parent().map(|p| p.to_path_buf());
+            let source_path = Some(f.path.clone());
             return Some((
                 ResolvedAlias {
                     value,
                     source: file_key.to_string(),
                     source_path,
+                    priority: f.priority,
                     paths: f.inherited_paths.clone(),
                 },
                 display_source,

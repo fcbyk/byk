@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use super::merge::build_merged_aliases;
-use super::scan::scan_alias_files;
+use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, MergedConfig};
 use crate::utils::json_io;
 
@@ -107,7 +107,8 @@ pub fn load_alias_cache(
     let mut files: Vec<AliasFile> = Vec::new();
     files.extend(scan_alias_files(cwd, false));
     files.extend(scan_alias_files(global_dir, true));
-    let merged = build_merged_aliases(&mut files);
+    sort_alias_files(&mut files);
+    let merged = build_merged_aliases(&files);
 
     let scanned_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)

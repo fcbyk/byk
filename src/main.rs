@@ -82,8 +82,11 @@ fn main() {
         }
         return;
     }
-    if cli.info {
-        render::info::render_all(&layout);
+    if let Some(topic) = &cli.info {
+        match topic {
+            Some(name) => render::info::render_topic(name, &layout),
+            None => render::info::render_all(&layout),
+        }
         return;
     }
 

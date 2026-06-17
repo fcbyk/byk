@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 ///
 /// 通过括号计数处理嵌套占位符（如 `{a?{b?x:y}:z}`），
 /// 对 `${...}` 系列用独立规则避免与 `{` 计数混淆。
-pub(crate) fn collect_placeholders(template: &str) -> Vec<String> {
+pub fn collect_placeholders(template: &str) -> Vec<String> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut result: Vec<String> = Vec::new();
     let chars: Vec<char> = template.chars().collect();

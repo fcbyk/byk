@@ -267,7 +267,10 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
         }
     };
 
-    let working_dir = resolve_working_dir(definition.cwd.as_deref(), resolved.source_path.as_deref());
+    let working_dir = resolve_working_dir(
+        definition.cwd.as_deref(),
+        resolved.source_path.as_deref().and_then(|p| p.parent()),
+    );
     let placeholders = collect_placeholders(&definition.command);
 
     // --- 公共输出: header ---

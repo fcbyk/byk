@@ -10,13 +10,14 @@ mod parse;
 mod scan;
 mod merge;
 mod exact;
-mod placeholder;
+pub(crate) mod placeholder;
 mod execution;
 mod cache;
 
 // 重导出所有公开类型和函数，保持向后兼容
 pub use types::*;
 pub use parse::to_alias_definition;
-pub use merge::{collect_merged_paths, load_merged_aliases, resolve_merged_alias};
+pub use merge::{collect_merged_paths, load_merged_aliases, lookup_all_aliases, resolve_merged_alias};
 pub use exact::{lookup_exact_alias, parse_exact_syntax};
+pub use placeholder::collect_placeholders;
 pub use execution::execute_alias;
