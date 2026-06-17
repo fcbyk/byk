@@ -33,6 +33,7 @@ fn deep_merge_dict(
     source_path: Option<&Path>,
     inherited_cwd: Option<&str>,
     inherited_interactive: Option<bool>,
+    inherited_paths: &[String],
 ) {
     // 提取当前分组的 $cwd / $interactive，子级覆盖父级
     let group_cwd = source
@@ -60,6 +61,7 @@ fn deep_merge_dict(
                     value: av,
                     source: file_key.to_string(),
                     source_path: source_path.map(|p| p.to_path_buf()),
+                    paths: inherited_paths.to_vec(),
                 });
 
                 if let serde_json::Value::Object(inner) = val {
@@ -70,6 +72,7 @@ fn deep_merge_dict(
                         source_path,
                         group_cwd,
                         group_interactive,
+                        inherited_paths,
                     );
                 }
             }
@@ -84,6 +87,7 @@ fn deep_merge_dict(
                 source_path,
                 group_cwd,
                 group_interactive,
+                inherited_paths,
             );
         }
     }
@@ -148,6 +152,7 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
             f.path.parent(),
             f.inherited_cwd.as_deref(),
             f.inherited_interactive,
+            &f.inherited_paths,
         );
     }
     merged
@@ -234,6 +239,7 @@ mod tests {
             value: AliasValue::Str(cmd.into()),
             source: "@test".into(),
             source_path: None,
+            paths: Vec::new(),
         }
     }
 
@@ -457,5 +463,49 @@ mod tests {
 
         // "ns.sub" 对应的节点没有 alias → None
         assert!(resolve_merged_alias(&merged, "ns.sub").is_none());
+    }
+
+    // ==================== inherited_paths ====================
+
+    #[test]
+    fn inherited_paths_flows_to_resolved_alias() {
+        let mut aliases = serde_json::Map::new();
+        aliases.insert(
+            "build".into(),
+            serde_json::Value::String("make build".into()),
+        );
+        let files = vec![AliasFile {
+            key: "@test".into(),
+            priority: 0,
+            aliases,
+            path: PathBuf::from("/fake/test.byk.json"),
+            inherited_cwd: None,
+            inherited_interactive: None,
+            inherited_paths: vec!["./scripts".into(), "~/tools/bin".into()],
+        }];
+        let merged = build_merged_aliases(&files);
+        let resolved = resolve_merged_alias(&merged, "build").unwrap();
+        assert_eq!(resolved.paths, vec!["./scripts", "~/tools/bin"]);
+    }
+
+    #[test]
+    fn inherited_paths_empty_by_default() {
+        let mut aliases = serde_json::Map::new();
+        aliases.insert(
+            "build".into(),
+            serde_json::Value::String("make build".into()),
+        );
+        let files = vec![AliasFile {
+            key: "@test".into(),
+            priority: 0,
+            aliases,
+            path: PathBuf::from("/fake/test.byk.json"),
+            inherited_cwd: None,
+            inherited_interactive: None,
+            inherited_paths: Vec::new(),
+        }];
+        let merged = build_merged_aliases(&files);
+        let resolved = resolve_merged_alias(&merged, "build").unwrap();
+        assert!(resolved.paths.is_empty());
     }
 }

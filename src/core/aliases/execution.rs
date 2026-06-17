@@ -37,19 +37,47 @@ pub fn is_dangerous_command(command: &str) -> bool {
 // 别名执行环境构建
 // ---------------------------------------------------------------------------
 
-/// 构造别名执行环境，将 node_modules/.bin 前置到 PATH。
-pub fn build_alias_env(working_dir: &Path) -> HashMap<String, String> {
+/// 构造别名执行环境，将自定义路径和 node_modules/.bin 前置到 PATH。
+///
+/// `custom_paths` 来自别名文件的 `$paths` 字段，支持 `~` 展开和基于
+/// `working_dir` 的相对路径解析。非字符串元素已在扫描阶段过滤。
+pub fn build_alias_env(working_dir: &Path, custom_paths: &[String]) -> HashMap<String, String> {
     let mut env_map = HashMap::new();
     let existing_path = std::env::var("PATH").unwrap_or_default();
-    let node_bin = working_dir.join("node_modules").join(".bin");
 
+    let mut prefixes: Vec<String> = Vec::new();
+
+    // 解析并前置 $paths 条目（保持配置中的顺序，最前的优先级最高）
+    for raw in custom_paths {
+        let expanded = if raw.starts_with('~') {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            PathBuf::from(raw.replacen('~', &home.to_string_lossy(), 1))
+        } else {
+            PathBuf::from(raw)
+        };
+        let resolved = if expanded.is_relative() {
+            working_dir.join(&expanded)
+        } else {
+            expanded
+        };
+        if resolved.is_dir() {
+            prefixes.push(resolved.to_string_lossy().into_owned());
+        }
+    }
+
+    let node_bin = working_dir.join("node_modules").join(".bin");
     if node_bin.is_dir() {
+        prefixes.push(node_bin.display().to_string());
+    }
+
+    if prefixes.is_empty() {
+        env_map.insert("PATH".to_string(), existing_path);
+    } else {
+        let prepended = prefixes.join(":");
         env_map.insert(
             "PATH".to_string(),
-            format!("{}:{}", node_bin.display(), existing_path),
+            format!("{}:{}", prepended, existing_path),
         );
-    } else {
-        env_map.insert("PATH".to_string(), existing_path);
     }
     env_map
 }
@@ -203,8 +231,8 @@ fn display_interactive_template(command: &str, placeholders: &[String]) {
 }
 
 /// 执行最终命令（sh -c）。
-fn run_command(final_command: &str, working_dir: &Path) -> ! {
-    let env_map = build_alias_env(working_dir);
+fn run_command(final_command: &str, working_dir: &Path, custom_paths: &[String]) -> ! {
+    let env_map = build_alias_env(working_dir, custom_paths);
     let status = Command::new("sh")
         .arg("-c")
         .arg(final_command)
@@ -246,9 +274,9 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
     println!("\n> {} {}", display_source, working_dir.display());
 
     if definition.interactive {
-        execute_interactive_impl(&definition.command, args, &placeholders, &working_dir);
+        execute_interactive_impl(&definition.command, args, &placeholders, &working_dir, &resolved.paths);
     } else {
-        execute_direct_impl(&definition.command, args, &placeholders, &working_dir);
+        execute_direct_impl(&definition.command, args, &placeholders, &working_dir, &resolved.paths);
     }
 }
 
@@ -261,10 +289,11 @@ fn execute_direct_impl(
     args: &[String],
     _placeholders: &[String],
     working_dir: &Path,
+    custom_paths: &[String],
 ) -> ! {
     let (final_command, _) = parse_alias_arguments_with_mapping(command, args, &[]);
     println!("> {}\n", final_command);
-    run_command(&final_command, working_dir);
+    run_command(&final_command, working_dir, custom_paths);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +305,7 @@ fn execute_interactive_impl(
     cli_args: &[String],
     placeholders: &[String],
     working_dir: &Path,
+    custom_paths: &[String],
 ) -> ! {
     // 零占位符：模板行自动追加 ${args}，始终显示 args: 信息
     let no_placeholders = placeholders.is_empty();
@@ -315,7 +345,7 @@ fn execute_interactive_impl(
         }
         println!();
 
-        run_command(&final_command, working_dir);
+        run_command(&final_command, working_dir, custom_paths);
     }
 
     // --- 有占位符: 逐项收集 ---
@@ -525,7 +555,7 @@ fn execute_interactive_impl(
     }
     println!();
 
-    run_command(&final_command, working_dir);
+    run_command(&final_command, working_dir, custom_paths);
 }
 
 /// 解析工作目录，支持 `~` 展开和基于配置文件目录的相对路径解析。
@@ -983,5 +1013,91 @@ mod tests {
         // 无 base_dir 时相对路径直接返回（不解析）
         let result = resolve_working_dir(Some("relative/path"), None);
         assert_eq!(result, PathBuf::from("relative/path"));
+    }
+
+    // ==================== build_alias_env ====================
+
+    #[test]
+    fn env_no_custom_paths_preserves_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = build_alias_env(dir.path(), &[]);
+        let path = env.get("PATH").unwrap();
+        let existing = std::env::var("PATH").unwrap_or_default();
+        assert_eq!(path, &existing);
+    }
+
+    #[test]
+    fn env_custom_paths_prepended() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_dir = dir.path().join("bin");
+        std::fs::create_dir(&bin_dir).unwrap();
+
+        let env = build_alias_env(
+            dir.path(),
+            &[bin_dir.to_string_lossy().into_owned()],
+        );
+        let path = env.get("PATH").unwrap();
+        assert!(path.starts_with(&bin_dir.to_string_lossy().into_owned()));
+    }
+
+    #[test]
+    fn env_skips_nonexistent_custom_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = build_alias_env(
+            dir.path(),
+            &["/nonexistent/path/that/does/not/exist".to_string()],
+        );
+        let path = env.get("PATH").unwrap();
+        assert!(!path.contains("/nonexistent/path"));
+    }
+
+    #[test]
+    fn env_relative_custom_paths_resolved() {
+        let dir = tempfile::tempdir().unwrap();
+        let scripts = dir.path().join("scripts");
+        std::fs::create_dir(&scripts).unwrap();
+
+        let env = build_alias_env(dir.path(), &["scripts".to_string()]);
+        let path = env.get("PATH").unwrap();
+        assert!(path.contains(&scripts.to_string_lossy().into_owned()));
+    }
+
+    #[test]
+    fn env_multiple_custom_paths_order_preserved() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        std::fs::create_dir(&a).unwrap();
+        std::fs::create_dir(&b).unwrap();
+
+        let env = build_alias_env(
+            dir.path(),
+            &[
+                a.to_string_lossy().into_owned(),
+                b.to_string_lossy().into_owned(),
+            ],
+        );
+        let path = env.get("PATH").unwrap();
+        let a_pos = path.find(&a.to_string_lossy().into_owned()).unwrap();
+        let b_pos = path.find(&b.to_string_lossy().into_owned()).unwrap();
+        assert!(a_pos < b_pos, "配置中排前的路径应更靠前");
+    }
+
+    #[test]
+    fn env_node_modules_bin_appended_after_custom() {
+        let dir = tempfile::tempdir().unwrap();
+        let nm_bin = dir.path().join("node_modules").join(".bin");
+        std::fs::create_dir_all(&nm_bin).unwrap();
+        let custom = dir.path().join("custom");
+        std::fs::create_dir(&custom).unwrap();
+
+        let env = build_alias_env(
+            dir.path(),
+            &[custom.to_string_lossy().into_owned()],
+        );
+        let path = env.get("PATH").unwrap();
+        let custom_pos = path.find(&custom.to_string_lossy().into_owned()).unwrap();
+        let nm_pos = path.find(&nm_bin.to_string_lossy().into_owned()).unwrap();
+        assert!(custom_pos < nm_pos, "$paths 应在 node_modules/.bin 之前");
     }
 }

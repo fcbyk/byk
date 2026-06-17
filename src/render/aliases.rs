@@ -160,6 +160,7 @@ mod tests {
             value: aliases::AliasValue::Str(cmd.into()),
             source: "@test".into(),
             source_path: None,
+            paths: Vec::new(),
         }
     }
 
@@ -172,6 +173,7 @@ mod tests {
             },
             source: "@test".into(),
             source_path: None,
+            paths: Vec::new(),
         }
     }
 

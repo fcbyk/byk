@@ -69,6 +69,17 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     // 提取文件级 $interactive（所有子别名默认继承）
     let inherited_interactive = obj.remove("$interactive").and_then(|v| v.as_bool());
 
+    // 提取文件级 $paths（需要前置到 PATH 的目录列表）
+    let inherited_paths = obj
+        .remove("$paths")
+        .and_then(|v| v.as_array().cloned())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
     // 过滤非法 key
     let filtered = filter_invalid_keys(obj);
 
@@ -79,6 +90,7 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         path: path.to_path_buf(),
         inherited_cwd,
         inherited_interactive,
+        inherited_paths,
     })
 }
 
@@ -117,6 +129,7 @@ mod tests {
             path: PathBuf::from(format!("/fake/{}.byk.json", key.trim_start_matches('@'))),
             inherited_cwd: None,
             inherited_interactive: None,
+            inherited_paths: Vec::new(),
         }
     }
 
@@ -175,5 +188,73 @@ mod tests {
         let mut files = vec![make_file("@only", 5)];
         sort_alias_files(&mut files);
         assert_eq!(files[0].key, "@only");
+    }
+
+    // ==================== $paths 提取 ====================
+
+    #[test]
+    fn paths_extracted_from_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(
+            &file,
+            r#"{"$paths": ["./scripts", "~/tools/bin"], "build": "make build"}"#,
+        )
+        .unwrap();
+        let files = scan_alias_files(dir.path(), false);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].inherited_paths, vec!["./scripts", "~/tools/bin"]);
+    }
+
+    #[test]
+    fn paths_empty_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(&file, r#"{"build": "make build"}"#).unwrap();
+        let files = scan_alias_files(dir.path(), false);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].inherited_paths.is_empty());
+    }
+
+    #[test]
+    fn paths_filters_non_string_elements() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(
+            &file,
+            r#"{"$paths": ["./good", 42, null, "./also-good"], "build": "echo"}"#,
+        )
+        .unwrap();
+        let files = scan_alias_files(dir.path(), false);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].inherited_paths, vec!["./good", "./also-good"]);
+    }
+
+    #[test]
+    fn paths_empty_when_not_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(
+            &file,
+            r#"{"$paths": "not-an-array", "build": "echo"}"#,
+        )
+        .unwrap();
+        let files = scan_alias_files(dir.path(), false);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].inherited_paths.is_empty());
+    }
+
+    #[test]
+    fn paths_not_leaked_into_aliases() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(
+            &file,
+            r#"{"$paths": ["./bin"], "build": "make"}"#,
+        )
+        .unwrap();
+        let files = scan_alias_files(dir.path(), false);
+        assert_eq!(files.len(), 1);
+        assert!(!files[0].aliases.contains_key("$paths"));
     }
 }

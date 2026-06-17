@@ -85,6 +85,7 @@ pub fn lookup_exact_alias(
                     value,
                     source: file_key.to_string(),
                     source_path,
+                    paths: f.inherited_paths.clone(),
                 },
                 display_source,
             ));

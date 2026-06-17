@@ -42,7 +42,7 @@ pub struct AliasFile {
     pub key: String,
     /// 优先级
     pub priority: i32,
-    /// 过滤后的原始 JSON（已去除 $priority/$cwd/$interactive，已过滤非法 key）
+    /// 过滤后的原始 JSON（已去除 $priority/$cwd/$interactive/$paths，已过滤非法 key）
     pub aliases: serde_json::Map<String, serde_json::Value>,
     /// 配置文件完整路径
     pub path: PathBuf,
@@ -50,6 +50,8 @@ pub struct AliasFile {
     pub inherited_cwd: Option<String>,
     /// 文件级 $interactive，所有子别名自动继承（除非自行指定）
     pub inherited_interactive: Option<bool>,
+    /// 文件级 $paths，需要前置到 PATH 环境变量的目录列表
+    pub inherited_paths: Vec<String>,
 }
 
 /// 合并后叶子节点，包含来源信息。
@@ -61,6 +63,9 @@ pub struct ResolvedAlias {
     pub source: String,
     /// 来源配置文件所在目录（用于解析别名中的相对路径）
     pub source_path: Option<PathBuf>,
+    /// 来源文件的 $paths，需要前置到 PATH 环境变量的目录列表
+    #[serde(default)]
+    pub paths: Vec<String>,
 }
 
 /// 合并配置树节点。每个节点可以同时拥有别名和子节点。
