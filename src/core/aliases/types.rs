@@ -13,7 +13,7 @@ use serde::Serialize;
 #[serde(untagged)]
 pub enum AliasValue {
     Str(String),
-    /// 对象格式：{ "$cmd": "...", "$cwd": "...", "$interactive": true }
+    /// 对象格式：{ "$cmd": "...", "$cwd": "...", "$interactive": true, "$description": "..." }
     Meta {
         #[serde(rename = "$cmd")]
         cmd: String,
@@ -23,6 +23,9 @@ pub enum AliasValue {
         #[serde(rename = "$interactive")]
         #[serde(default)]
         interactive: Option<bool>,
+        #[serde(rename = "$description")]
+        #[serde(default)]
+        description: Option<String>,
     },
 }
 
@@ -33,6 +36,7 @@ pub struct AliasDefinition {
     pub command: String,
     pub cwd: Option<String>,
     pub interactive: bool,
+    pub description: Option<String>,
 }
 
 /// 单个别名文件的数据结构。

@@ -149,15 +149,18 @@ pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {
             command: command.clone(),
             cwd: None,
             interactive: false,
+            description: None,
         }),
         AliasValue::Meta {
             cmd,
             cwd,
             interactive,
+            description,
         } => Some(AliasDefinition {
             command: cmd.clone(),
             cwd: cwd.clone(),
             interactive: interactive.unwrap_or(false),
+            description: description.clone(),
         }),
     }
 }
@@ -465,6 +468,7 @@ mod tests {
             cmd: "build".into(),
             cwd: Some("/app".into()),
             interactive: Some(true),
+            description: None,
         };
         let def = to_alias_definition(&av).unwrap();
         assert_eq!(def.command, "build");
@@ -478,6 +482,7 @@ mod tests {
             cmd: "run".into(),
             cwd: None,
             interactive: None,
+            description: None,
         };
         let def = to_alias_definition(&av).unwrap();
         assert!(!def.interactive);

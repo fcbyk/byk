@@ -15,6 +15,7 @@ type AliasObject = {
   $cmd?: string;
   $cwd?: string;
   $interactive?: boolean;
+  $description?: string;
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
@@ -22,7 +23,8 @@ type AliasObject = {
 type AliasFileJSON = {
   $priority?: number;      // 优先级，默认本地=10 全局=0
   $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
-  $interactive?: boolean;  // 文件级 / 分组级交互模式，子别名自动继承
+  $interactive?: boolean;   // 文件级 / 分组级交互模式，子别名自动继承
+  $paths?: string[];        // 文件级 PATH 目录列表，子别名自动继承
   [key: string]: string | AliasObject | number | boolean | undefined;
 };
 ```
@@ -44,8 +46,9 @@ type AliasFileJSON = {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `$cmd` | string | 执行命令（必填） |
-| `$cwd` | string | 工作目录（可选） |
-| `$interactive` | boolean | 是否交互执行（可选） |
+| `$cwd` | string | 工作目录（可选，可继承） |
+| `$interactive` | boolean | 是否交互执行（可选，可继承） |
+| `$description` | string | 帮助页描述文本（可选，不可继承） |
 
 :::note
 `$cmd` 开头的 object 为别名叶子节点。仅有 `$cwd` / `$interactive` 而无 `$cmd` 的 object 为带继承属性的分组节点。`$priority` 为文件保留字段。
@@ -179,6 +182,58 @@ byk deploy
 
 :::tip
 交互和非交互模式 header 和 final 行格式完全一致。交互只是多了 `~` 前缀的输入区和确认步骤。
+:::
+
+### 描述文本
+
+`$description` 用于在帮助页中显示描述文本，替代默认的命令映射显示。适合命令本身不够直观的场景。
+
+**不可继承** — 仅对当前别名生效，不会从文件级或分组级继承。
+
+```json
+{
+  "更新版本号": {
+    "$interactive": true,
+    "$cmd": "cz bump {version}",
+    "$description": "交互式更新版本号"
+  }
+}
+```
+
+帮助页显示效果：
+
+```
+Aliases:
+  发布.更新版本号    交互式更新版本号
+```
+
+未设置 `$description` 时，帮助页默认显示命令映射：
+
+```
+Aliases:
+  发布.更新版本号    cz bump {version}
+```
+
+### PATH 目录
+
+`$paths` 用于在执行别名前将指定目录前置到 `PATH` 环境变量，使别名可以访问这些目录下的可执行文件。
+
+**仅支持文件级设置**，所有子别名自动继承。
+
+```json title=".byk.json"
+{
+  "$paths": ["./scripts", "~/tools/bin"],
+  "deploy": "deploy.sh",
+  "check": "lint.sh"
+}
+```
+
+执行 `byk deploy` 时，`./scripts` 和 `~/tools/bin` 会被前置到 `PATH`，因此可以直接调用 `deploy.sh` 而无需指定完整路径。
+
+:::note
+- 相对路径以配置文件所在目录为基准解析
+- 不存在的目录会被静默跳过
+- `$paths` 仅在文件顶层设置，不支持别名级或分组级覆盖
 :::
 
 ### 调用示例

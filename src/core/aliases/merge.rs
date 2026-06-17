@@ -104,19 +104,23 @@ pub(crate) fn apply_inherited(
             cmd,
             cwd: None,
             interactive,
+            description,
         } => AliasValue::Meta {
             cmd,
             cwd: inherited_cwd.map(String::from),
             interactive: interactive.or(inherited_interactive),
+            description, // $description 不继承，直接透传
         },
         AliasValue::Meta {
             cmd,
             cwd: Some(c),
             interactive,
+            description,
         } => AliasValue::Meta {
             cmd,
             cwd: Some(c), // 别名自己的 $cwd 优先
             interactive: interactive.or(inherited_interactive),
+            description, // $description 不继承，直接透传
         },
         AliasValue::Str(cmd) => {
             if inherited_cwd.is_some() || inherited_interactive.is_some() {
@@ -124,6 +128,7 @@ pub(crate) fn apply_inherited(
                     cmd,
                     cwd: inherited_cwd.map(String::from),
                     interactive: inherited_interactive,
+                    description: None,
                 }
             } else {
                 AliasValue::Str(cmd)
@@ -257,7 +262,7 @@ mod tests {
         let av = AliasValue::Str("build".into());
         let result = apply_inherited(av, Some("/app"), None);
         match result {
-            AliasValue::Meta { cmd, cwd, interactive } => {
+            AliasValue::Meta { cmd, cwd, interactive, .. } => {
                 assert_eq!(cmd, "build");
                 assert_eq!(cwd, Some("/app".into()));
                 assert_eq!(interactive, None);
@@ -285,6 +290,7 @@ mod tests {
             cmd: "test".into(),
             cwd: Some("/own".into()),
             interactive: None,
+            description: None,
         };
         let result = apply_inherited(av, Some("/inherit"), None);
         match result {
@@ -301,6 +307,7 @@ mod tests {
             cmd: "test".into(),
             cwd: None,
             interactive: None,
+            description: None,
         };
         let result = apply_inherited(av, Some("/inherit"), None);
         match result {
@@ -317,6 +324,7 @@ mod tests {
             cmd: "ask".into(),
             cwd: None,
             interactive: None,
+            description: None,
         };
         let result = apply_inherited(av, None, Some(true));
         match result {
@@ -333,6 +341,7 @@ mod tests {
             cmd: "ask".into(),
             cwd: None,
             interactive: Some(false),
+            description: None,
         };
         let result = apply_inherited(av, None, Some(true));
         match result {

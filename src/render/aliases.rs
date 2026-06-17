@@ -51,8 +51,12 @@ fn format_lines(merged: &MergedConfig, alias_dir: &Path) -> Vec<(String, String)
                 .as_ref()
                 .map(|c| format!(" ({})", resolve_cwd_display(c, base_dir)))
                 .unwrap_or_default();
-            let display_command = display::escape_for_display(&definition.command);
-            Some((path.clone(), format!("{}{}", display_command, suffix)))
+            let display_text = if let Some(ref desc) = definition.description {
+                desc.clone()
+            } else {
+                display::escape_for_display(&definition.command)
+            };
+            Some((path.clone(), format!("{}{}", display_text, suffix)))
         })
         .collect();
 
@@ -170,6 +174,7 @@ mod tests {
                 cmd: cmd.into(),
                 cwd: Some(cwd.into()),
                 interactive: None,
+                description: None,
             },
             source: "@test".into(),
             source_path: None,
