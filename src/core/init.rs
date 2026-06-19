@@ -1,7 +1,7 @@
 /// `byk init` 子命令逻辑。
 ///
 /// 用户手动按需初始化 CLI 功能，不自动创建任何配置。
-/// npm/pnpm/py 别名模板直接硬编码，与生成文件一一对应。
+/// npm/pnpm 别名模板直接硬编码，与生成文件一一对应。
 
 use colored::Colorize;
 use std::fs;
@@ -42,11 +42,6 @@ pub fn render_init_help() {
         "  {:<8} {}",
         "cache".cyan().bold(),
         "Initialize CLI home & cache directories"
-    );
-    println!(
-        "  {:<8} {}",
-        "py".cyan().bold(),
-        "Enable Python plugin system (global)"
     );
     println!(
         "  {:<8} {}",
@@ -157,97 +152,6 @@ pub fn init_npm(layout: &PathLayout) {
 /// 初始化 pnpm 命令功能。
 pub fn init_pnpm(layout: &PathLayout) {
     init_node_pm(layout, "pnpm");
-}
-
-// ---------------------------------------------------------------------------
-// --init py (全局)
-// ---------------------------------------------------------------------------
-
-/// 初始化全局 Python 插件系统（系统级，不建 venv）。
-///
-/// 检查 bykpy 是否已安装 → 未安装则 pip install →
-/// 运行 bykpy --scan-plugins 写入 cache/app.json。
-/// 二次 init 仅重扫插件，不删除数据。
-pub fn init_py_global(layout: &PathLayout) {
-    let cache_path = layout.cache_dir.join("app.json");
-    let py_exe = crate::core::plugins::get_python_executable(&layout.cache_dir);
-
-    ensure_common_dirs(layout);
-
-    // ① 检查 bykpy 是否已安装
-    let check = Command::new(&py_exe)
-        .args(["-c", "import bykpy"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-
-    let has_bykpy = check.map(|s| s.success()).unwrap_or(false);
-
-    if has_bykpy {
-        println!("{}", "bykpy already installed, skipping pip install.".dimmed());
-    } else {
-        println!("{}", "Installing bykpy (global)...".dimmed());
-        let status = Command::new(&py_exe)
-            .args(["-m", "pip", "install", "bykpy"])
-            .status();
-
-        match status {
-            Ok(s) if s.success() => {
-                println!("  {} bykpy {}", "+".green(), "(installed)".dimmed());
-            }
-            Ok(s) => {
-                eprintln!(
-                    "{} pip install bykpy failed with code {}",
-                    "Error:".red(),
-                    s.code().unwrap_or(1)
-                );
-                return;
-            }
-            Err(e) => {
-                eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                return;
-            }
-        }
-    }
-
-    // ② 扫描插件，生成/更新 cache/app.json
-    println!("{}", "Scanning plugins...".dimmed());
-    let status = Command::new(&py_exe)
-        .args(["-m", "bykpy", "--scan-plugins"])
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {
-            println!(
-                "  {} cache/app.json {}",
-                "+".green(),
-                if cache_path.exists() { "(updated)" } else { "(created)" }.dimmed()
-            );
-        }
-        Ok(s) => {
-            eprintln!(
-                "{} plugin scan failed with code {}",
-                "Error:".red(),
-                s.code().unwrap_or(1)
-            );
-            return;
-        }
-        Err(e) => {
-            eprintln!("{} Failed to run bykpy scan: {}", "Error:".red(), e);
-            return;
-        }
-    }
-
-    println!();
-    println!(
-        "{} {}",
-        "Python plugin system enabled (global).".green(),
-        "(not recommended)".yellow()
-    );
-    println!(
-        "  For isolated env with pip aliases: {}",
-        "byk init py-v".dimmed()
-    );
 }
 
 // ---------------------------------------------------------------------------

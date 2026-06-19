@@ -35,13 +35,13 @@ pub enum Commands {
     },
     /// 移除已初始化的 feature
     Remove {
-        /// 要移除的 feature: py | py-v | comp | node | all
+        /// 要移除的 feature: py-v | comp | node | all
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
     /// 初始化 feature
     Init {
-        /// 要初始化的 feature: npm | pnpm | cache | comp | py | py-v
+        /// 要初始化的 feature: npm | pnpm | cache | comp | py-v
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },

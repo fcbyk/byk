@@ -35,7 +35,6 @@ fn main() {
         }
         Some(Commands::Remove { feature }) => {
             match feature.as_deref() {
-                Some("py") => remove::rm_py(&layout),
                 Some("py-v") => remove::rm_py_v(&layout),
                 Some("comp") => remove::rm_comp(),
                 Some("node") => remove::rm_node(&layout),
@@ -49,7 +48,6 @@ fn main() {
                 Some("npm") => init::init_npm(&layout),
                 Some("pnpm") => init::init_pnpm(&layout),
                 Some("cache") => init::init_cache(&layout),
-                Some("py") => init::init_py_global(&layout),
                 Some("py-v") => init::init_py(&layout),
                 Some("comp") => init::init_completion(),
                 _ => init::render_init_help(),

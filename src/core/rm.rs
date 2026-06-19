@@ -5,7 +5,6 @@
 
 use colored::Colorize;
 use std::fs;
-use std::process::Command;
 
 use super::paths::PathLayout;
 use crate::utils::shell;
@@ -21,11 +20,6 @@ pub fn render_remove_help() {
     println!("{}", " byk remove [feature]".bold());
     println!();
     println!("{}", "Feature:".green().bold());
-    println!(
-        "  {:<8} {}",
-        "py".cyan().bold(),
-        "Remove Python plugin cache (keep byk packages)"
-    );
     println!(
         "  {:<8} {}",
         "py-v".cyan().bold(),
@@ -47,32 +41,6 @@ pub fn render_remove_help() {
         "Remove everything (~/.byk/ + shell completion)"
     );
     println!();
-}
-
-// ---------------------------------------------------------------------------
-// remove py
-// ---------------------------------------------------------------------------
-
-/// 删除全局 Python 插件缓存。
-///
-/// 删除 cache/app.json，检索所有 byk 开头的 pip 包，
-/// 提供一键卸载命令。
-pub fn rm_py(layout: &PathLayout) {
-    let cache_path = layout.cache_dir.join("app.json");
-
-    // 检索 byk 包（无条件）
-    let py_exe = crate::core::plugins::get_python_executable(&layout.cache_dir);
-    let byk_packages = find_byk_packages(&py_exe);
-
-    // 删除缓存（存在时）
-    if cache_path.exists() {
-        let _ = fs::remove_file(&cache_path);
-        println!("  {} cache/app.json {}", "-".red(), "(removed)".dimmed());
-    } else {
-        println!("{}", "Plugin cache not found, skipped.".dimmed());
-    }
-
-    print_byk_packages(byk_packages);
 }
 
 // ---------------------------------------------------------------------------
@@ -419,38 +387,11 @@ pub fn rm_all(layout: &PathLayout) {
         println!();
         println!("{}", "Everything removed.".green());
     }
-
-    // ---------- 4. 全局 byk 包检测（与 ~/.byk/ 是否存在无关） ----------
-    let py_exe = crate::core::plugins::get_python_executable(&layout.cache_dir);
-    let byk_packages = find_byk_packages(&py_exe);
-    print_byk_packages_with_label(byk_packages, "Global");
 }
 
 // ---------------------------------------------------------------------------
 // 内部工具
 // ---------------------------------------------------------------------------
-
-/// 查找所有 byk 开头的 pip 包，返回一键卸载命令字符串。
-fn find_byk_packages(python_exe: &str) -> Option<String> {
-    let output = Command::new(python_exe)
-        .args(["-m", "pip", "list", "--format=json"])
-        .output()
-        .ok()?;
-
-    let packages: Vec<String> = serde_json::from_slice::<serde_json::Value>(&output.stdout)
-        .ok()?
-        .as_array()?
-        .iter()
-        .filter_map(|p| p.get("name")?.as_str().map(String::from))
-        .filter(|name| name.starts_with("byk"))
-        .collect();
-
-    if packages.is_empty() {
-        None
-    } else {
-        Some(format!("pip uninstall {}", packages.join(" ")))
-    }
-}
 
 /// 打印路径（存在时），dimmed 格式。
 fn print_if_exists(path: &std::path::Path) {
@@ -469,42 +410,5 @@ fn remove_if_exists(path: &std::path::Path, label: &str) {
             fs::remove_file(path)
         };
         println!("  {} {} {}", "-".red(), label.dimmed(), "(removed)".dimmed());
-    }
-}
-
-/// 使用 rm_py 的样式输出 byk 包卸载命令。
-fn print_byk_packages(packages: Option<String>) {
-    if let Some(cmd) = packages {
-        println!();
-        println!(
-            "{} {}",
-            "byk-related packages detected:".yellow(),
-            "(copy to uninstall all)".dimmed()
-        );
-        println!("  {}", cmd.white());
-    } else {
-        println!(
-            "  {}",
-            "No byk packages found.".dimmed()
-        );
-    }
-}
-
-/// 使用 rm_all 的样式输出全局 byk 包卸载命令。
-fn print_byk_packages_with_label(packages: Option<String>, label: &str) {
-    if let Some(cmd) = packages {
-        println!();
-        println!(
-            "{} {}",
-            format!("{} byk-related packages detected:", label).yellow(),
-            "(copy to uninstall)".dimmed()
-        );
-        println!("  {}", cmd.white());
-    } else {
-        println!();
-        println!(
-            "  {}",
-            format!("No {} byk packages found.", label.to_lowercase()).dimmed()
-        );
     }
 }

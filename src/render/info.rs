@@ -335,7 +335,6 @@ fn render_python_overview(python: &PythonOverviewInfo) {
 
     if !python.initialized {
         println!("{}", "Python plugin system not initialized.".yellow());
-        println!("  {}   {}", "$ byk init py".dimmed(), "(global)".dimmed());
         println!(
             "  {}   {}",
             "$ byk init py-v".dimmed(),
