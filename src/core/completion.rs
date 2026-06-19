@@ -180,10 +180,10 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
 /// 检查某个词是否是已知的插件命令。
 fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
-    if !layout.home_exists {
+    if !layout.venv_dir.is_dir() {
         return false;
     }
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
     plugin_cache.commands.contains_key(word)
 }
 
@@ -209,8 +209,8 @@ fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     candidates.push("completion".into());
 
     // 插件命令
-    if layout.home_exists {
-        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+    if layout.venv_dir.is_dir() {
+        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
         candidates.extend(plugin_cache.commands.keys().cloned());
     }
 
@@ -302,8 +302,8 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     candidates.push("remove".into());
 
     // 插件命令
-    if layout.home_exists {
-        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+    if layout.venv_dir.is_dir() {
+        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
         candidates.extend(plugin_cache.commands.keys().cloned());
     }
 
@@ -392,7 +392,7 @@ mod tests {
             let logs_dir = temp.path().join("logs");
             let root_dir = temp.path().to_path_buf();
 
-            for d in [&alias_dir, &cache_dir, &node_pkgs_dir, &logs_dir] {
+            for d in [&alias_dir, &cache_dir, &node_pkgs_dir, &venv_dir, &logs_dir] {
                 fs::create_dir_all(d).unwrap();
             }
 
@@ -409,10 +409,11 @@ mod tests {
             // 写入插件缓存
             let plugin_cache = json!({
                 "watched_mtimes": {},
+                "scanned_at": 0,
                 "commands": {"test-plugin": {"module": "test.module:Plugin", "description": "A test plugin"}}
             });
             fs::write(
-                cache_dir.join("app.json"),
+                cache_dir.join("plugins.json"),
                 serde_json::to_string_pretty(&plugin_cache).unwrap(),
             )
             .unwrap();

@@ -172,13 +172,17 @@ const PYTHON_BIN: &str = "python";
 
 /// 初始化 Python 虚拟环境及别名（推荐方式）。
 ///
-/// 创建 ~/.byk/venv/（不存在时），安装 bykpy（未安装时），
-/// 扫描插件更新 cache/app.json，写入/更新 alias/py.byk.json。
-/// 纯切换逻辑，不删除已有数据。
+/// 创建 ~/.byk/venv/（不存在时），写入最小缓存 plugins.json，
+/// 写入/更新 alias/py.byk.json。
+/// 使用系统 python3 创建 venv，不再依赖 bykpy。
 pub fn init_py(layout: &PathLayout) {
     let venv_dir = &layout.venv_dir;
     let alias_path = layout.alias_dir.join("py.byk.json");
-    let py_exe = crate::core::plugins::get_python_executable(&layout.cache_dir);
+
+    #[cfg(windows)]
+    let sys_python = "python";
+    #[cfg(not(windows))]
+    let sys_python = "python3";
 
     ensure_common_dirs(layout);
 
@@ -187,7 +191,7 @@ pub fn init_py(layout: &PathLayout) {
         println!("{}", "venv/ already exists, skipping creation.".dimmed());
     } else {
         println!("{}", "Creating Python virtual environment...".dimmed());
-        let status = Command::new(&py_exe)
+        let status = Command::new(sys_python)
             .args(["-m", "venv", &venv_dir.to_string_lossy()])
             .status();
 
@@ -210,74 +214,26 @@ pub fn init_py(layout: &PathLayout) {
         }
     }
 
-    // ② 检查 bykpy 是否已安装在 venv 中
-    let venv_python = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-    let check = Command::new(&venv_python)
-        .args(["-c", "import bykpy"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+    // ② 写入最小缓存（venv 刚创建，无插件，commands 为空）
+    let cache_file = layout.cache_dir.join("plugins.json");
+    let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+    let commands_cache = crate::core::plugins::PluginCache {
+        watched_mtimes: std::collections::HashMap::new(),
+        scanned_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64(),
+        commands: std::collections::HashMap::new(),
+        python_executable: Some(python_exe.to_string_lossy().to_string()),
+    };
+    crate::utils::json_io::write_json(&cache_file, &commands_cache);
+    println!(
+        "  {} cache/plugins.json {}",
+        "+".green(),
+        "(created)".dimmed()
+    );
 
-    let has_bykpy = check.map(|s| s.success()).unwrap_or(false);
-
-    if has_bykpy {
-        println!("{}", "bykpy already installed, skipping pip install.".dimmed());
-    } else {
-        let pip = venv_dir.join(VENV_BIN).join(if cfg!(windows) { "pip.exe" } else { "pip" });
-        println!("{}", "Installing bykpy...".dimmed());
-        let status = Command::new(&pip)
-            .args(["install", "bykpy"])
-            .status();
-
-        match status {
-            Ok(s) if s.success() => {
-                println!("  {} bykpy {}", "+".green(), "(installed)".dimmed());
-            }
-            Ok(s) => {
-                eprintln!(
-                    "{} pip install bykpy failed with code {}",
-                    "Error:".red(),
-                    s.code().unwrap_or(1)
-                );
-                return;
-            }
-            Err(e) => {
-                eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                return;
-            }
-        }
-    }
-
-    // ③ 扫描插件，生成/更新 cache/app.json
-    println!("{}", "Scanning plugins...".dimmed());
-    let status = Command::new(&venv_python)
-        .args(["-m", "bykpy", "--scan-plugins"])
-        .status();
-
-    let cache_path = layout.cache_dir.join("app.json");
-    match status {
-        Ok(s) if s.success() => {
-            println!(
-                "  {} cache/app.json {}",
-                "+".green(),
-                if cache_path.exists() { "(updated)" } else { "(created)" }.dimmed()
-            );
-        }
-        Ok(s) => {
-            eprintln!(
-                "{} plugin scan failed with code {}",
-                "Error:".red(),
-                s.code().unwrap_or(1)
-            );
-            return;
-        }
-        Err(e) => {
-            eprintln!("{} Failed to run bykpy scan: {}", "Error:".red(), e);
-            return;
-        }
-    }
-
-    // ④ 写入/更新别名模板
+    // ③ 写入/更新别名模板
     let template = serde_json::json!({
         "$cwd": format!("../venv/{}/", VENV_BIN),
         "pi": "./pip install",

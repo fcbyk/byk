@@ -50,6 +50,7 @@ mod tests {
             .collect();
         PluginCache {
             watched_mtimes: HashMap::new(),
+            scanned_at: 0.0,
             commands: map,
             python_executable: None,
         }

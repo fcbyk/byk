@@ -356,11 +356,7 @@ fn render_python_overview(python: &PythonOverviewInfo) {
     println!("{}: {}", "Cache".yellow(), python.cache_file.display());
 
     // 来源提示
-    let source_display = if python.source == "env" {
-        "BYK_PYTHON env var".dimmed()
-    } else {
-        "Cache file (app.json)".dimmed()
-    };
+    let source_display = "Cache file (plugins.json)".dimmed();
     println!("{}:  {}", "Source".yellow(), source_display);
     println!();
 }

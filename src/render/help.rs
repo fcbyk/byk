@@ -43,8 +43,8 @@ pub fn render_commands(layout: &PathLayout) {
     ];
 
     // 插件命令
-    let plugin_cache = if layout.home_exists {
-        plugins::load_plugin_cache(&layout.cache_dir)
+    let plugin_cache = if layout.venv_dir.is_dir() {
+        plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir)
     } else {
         plugins::empty_plugin_cache()
     };

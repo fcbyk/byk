@@ -56,8 +56,8 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
     }
 
     // 2. 插件命令
-    if layout.home_exists {
-        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir);
+    if layout.venv_dir.is_dir() {
+        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
         if let Some(cmd) = plugin_cache.commands.get(name) {
             entries.push(InfoEntry::Plugin {
                 name: name.to_string(),
@@ -223,8 +223,8 @@ fn check_cache_status(cache_dir: &std::path::Path) -> String {
     if cache_dir.exists() {
         let alias_cache = cache_dir.join("alias.json");
         let npm_cache = cache_dir.join("node-pkg.json");
-        let app_cache = cache_dir.join("app.json");
-        let has_any = alias_cache.exists() || npm_cache.exists() || app_cache.exists();
+        let plugins_cache = cache_dir.join("plugins.json");
+        let has_any = alias_cache.exists() || npm_cache.exists() || plugins_cache.exists();
         if has_any {
             "healthy".to_string()
         } else {
@@ -262,18 +262,17 @@ fn check_node_initialized(layout: &PathLayout) -> bool {
 
 /// 检查 Python 状态。
 fn check_python_status(layout: &PathLayout) -> PythonStatus {
-    let py_cache = layout.cache_dir.join("app.json");
+    let py_cache = layout.cache_dir.join("plugins.json");
     let py_venv = layout.venv_dir.exists();
-    let is_env = env::var("BYK_PYTHON").is_ok();
 
-    if !is_env && !py_cache.exists() && !py_venv {
+    if !py_cache.exists() && !py_venv {
         return PythonStatus {
             initialized: false,
             bykpy_installed: false,
         };
     }
 
-    let py_exe = plugins::get_python_executable(&layout.cache_dir);
+    let py_exe = plugins::get_python_executable(&layout.cache_dir, &layout.venv_dir);
     let bykpy_installed = Command::new(&py_exe)
         .args(["-c", "import bykpy"])
         .stdout(std::process::Stdio::null())
@@ -318,8 +317,6 @@ pub struct PythonOverviewInfo {
     pub cache_file: PathBuf,
     /// venv 目录路径
     pub venv_dir: PathBuf,
-    /// 来源: "env" | "cache"
-    pub source: String,
 }
 
 /// 收集总览面板数据。
@@ -339,10 +336,9 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
     let completion = check_completion_status();
     let node_initialized = check_node_initialized(layout);
 
-    let python_exe = plugins::get_python_executable(&layout.cache_dir);
-    let cache_file = layout.cache_dir.join("app.json");
-    let is_env = env::var("BYK_PYTHON").is_ok();
-    let py_initialized = is_env || cache_file.exists() || layout.venv_dir.exists();
+    let python_exe = plugins::get_python_executable(&layout.cache_dir, &layout.venv_dir);
+    let cache_file = layout.cache_dir.join("plugins.json");
+    let py_initialized = cache_file.exists() || layout.venv_dir.exists();
 
     let version = if py_initialized {
         Command::new(&python_exe)
@@ -361,11 +357,6 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
         version,
         cache_file,
         venv_dir: layout.venv_dir.clone(),
-        source: if is_env {
-            "env".to_string()
-        } else {
-            "cache".to_string()
-        },
     };
 
     OverviewInfo {
