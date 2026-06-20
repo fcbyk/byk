@@ -232,7 +232,7 @@ pub fn install_plugin(
         }
     };
 
-    // 5. Ref 引用解析：entry 为字符串 URL 时拉取并替换
+    // 5. Ref 引用解析：entry 为字符串 URL 时拉取完整注册表，取同名 key
     let entry_owned: serde_json::Value;
     let entry = if let Some(url) = entry.as_str() {
         if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -256,8 +256,8 @@ pub fn install_plugin(
                 exit(1);
             }
         };
-        let resolved: serde_json::Value = match serde_json::from_str(&body) {
-            Ok(v) => v,
+        let registry: HashMap<String, serde_json::Value> = match serde_json::from_str(&body) {
+            Ok(r) => r,
             Err(e) => {
                 eprintln!(
                     "{} failed to parse ref response for plugin \"{}\": {}",
@@ -268,15 +268,11 @@ pub fn install_plugin(
                 exit(1);
             }
         };
-        if !resolved.is_object() {
-            eprintln!(
-                "{} ref for plugin \"{}\" returned non-object JSON (expected {{ \"pip\": {{...}} }})",
-                "Error:".red(),
-                key,
-            );
-            exit(1);
-        }
-        entry_owned = resolved;
+        entry_owned = registry
+            .get(&key)
+            .filter(|v| v.is_object())
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
         &entry_owned
     } else {
         entry
