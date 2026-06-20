@@ -15,6 +15,7 @@ use crate::core::info::{
     PythonStatus,
 };
 use crate::core::paths::PathLayout;
+use crate::core::plugins;
 use crate::utils::display;
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,9 @@ pub fn render_topic(topic: &str, layout: &PathLayout) {
     match topic {
         info::TOPIC_DOCTOR => {
             render_doctor(layout);
+        }
+        info::TOPIC_PLUGINS => {
+            render_plugins_list(layout);
         }
         _ => {
             // 非保留词 → 命令名查询路由
@@ -327,6 +331,54 @@ fn render_python_status(python: &PythonStatus) {
         "missing".red()
     };
     println!("  {}: {}", "bykpy".yellow(), status_str);
+}
+
+/// 渲染已安装插件列表（--info plugins）。
+fn render_plugins_list(layout: &PathLayout) {
+    crate::render::banner::render();
+
+    if !layout.venv_dir.is_dir() {
+        println!("{}", "Python venv not initialized.".yellow());
+        println!("  {}", "$ byk init py-v".dimmed());
+        println!();
+        return;
+    }
+
+    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
+
+    if plugin_cache.packages.is_empty() {
+        println!("{}", "No plugins installed.".yellow());
+        println!("  {}", "$ byk add <name>".dimmed());
+        println!();
+        return;
+    }
+
+    let mut keys: Vec<&String> = plugin_cache.packages.keys().collect();
+    keys.sort();
+
+    println!("{}", "Installed plugins:".green().bold());
+    for key in &keys {
+        let pkg = &plugin_cache.packages[*key];
+        let cmds = pkg.commands.join(", ");
+        println!(
+            "  {}    pip: {}    commands: {}",
+            key.cyan().bold(),
+            pkg.name.dimmed(),
+            cmds,
+        );
+        // 显示每个命令的模块路径
+        for cmd_name in &pkg.commands {
+            if let Some(cmd) = plugin_cache.commands.get(cmd_name) {
+                println!(
+                    "    {} → {} {}",
+                    cmd_name.dimmed(),
+                    cmd.module.dimmed(),
+                    format!("({})", cmd.description).dimmed(),
+                );
+            }
+        }
+    }
+    println!();
 }
 
 /// 渲染 Python 总览信息。

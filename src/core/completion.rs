@@ -207,6 +207,7 @@ fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
 
     // 保留词
     candidates.push(super::info::TOPIC_DOCTOR.to_string());
+    candidates.push(super::info::TOPIC_PLUGINS.to_string());
 
     // 内置子命令
     candidates.push("init".into());
