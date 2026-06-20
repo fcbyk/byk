@@ -100,6 +100,7 @@ pub(crate) fn get_python_executable(cache_dir: &Path, venv_dir: &Path) -> String
 /// 通过 venv 内的 Python 获取 site-packages 路径。
 ///
 /// 等价于：`venv/bin/python -c "import site; print(site.getsitepackages()[0])"`
+#[allow(dead_code)]
 fn get_venv_site_packages(venv_dir: &Path) -> Option<PathBuf> {
     let python = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
     let output = Command::new(&python)
@@ -201,6 +202,7 @@ fn scan_plugins_from_site_packages(
 // ---------------------------------------------------------------------------
 
 /// 扫描并构建完整插件缓存。
+#[allow(dead_code)]
 fn scan_and_build_cache(venv_dir: &Path) -> Option<PluginCache> {
     let site_packages = get_venv_site_packages(venv_dir)?;
     let mtime = path_mtime(&site_packages)?;
@@ -229,6 +231,7 @@ fn scan_and_build_cache(venv_dir: &Path) -> Option<PluginCache> {
 // ---------------------------------------------------------------------------
 
 /// 对比缓存中的 mtime 与当前文件系统 mtime，判断缓存是否失效。
+#[allow(dead_code)]
 fn is_plugin_cache_stale(cached_mtimes: &HashMap<String, f64>) -> bool {
     for (path, cached_mtime) in cached_mtimes {
         match path_mtime(Path::new(path)) {
@@ -247,46 +250,18 @@ fn is_plugin_cache_stale(cached_mtimes: &HashMap<String, f64>) -> bool {
 // 缓存加载（主入口）
 // ---------------------------------------------------------------------------
 
-/// 读取插件缓存，失效时自动重建。
+/// 读取插件缓存（从 plugins.json 直接读取，不做扫描或过期检测）。
 ///
-/// - venv 不存在 → 返回空缓存，不触发任何扫描
-/// - 无缓存文件 → 扫描并写入 plugins.json
-/// - 缓存过期 → 重建并写入
-/// - 缓存有效 → 直接返回
+/// - venv 不存在 → 返回空缓存
+/// - 无缓存文件 → 返回空缓存
+/// - 有缓存文件 → 直接返回
 pub fn load_plugin_cache(cache_dir: &Path, venv_dir: &Path) -> PluginCache {
     if !venv_dir.is_dir() {
         return empty_plugin_cache();
     }
 
     let cache_file = cache_dir.join("plugins.json");
-
-    let data: Option<PluginCache> = json_io::read_json(&cache_file);
-
-    match data {
-        None => {
-            // 无缓存 → 扫描并写入
-            if let Some(cache) = scan_and_build_cache(venv_dir) {
-                json_io::write_json(&cache_file, &cache);
-                cache
-            } else {
-                empty_plugin_cache()
-            }
-        }
-        Some(cached) => {
-            if is_plugin_cache_stale(&cached.watched_mtimes) {
-                // 缓存过期 → 重建
-                if let Some(cache) = scan_and_build_cache(venv_dir) {
-                    json_io::write_json(&cache_file, &cache);
-                    cache
-                } else {
-                    // 重建失败 → 返回旧缓存（兜底）
-                    cached
-                }
-            } else {
-                cached
-            }
-        }
-    }
+    json_io::read_json(&cache_file).unwrap_or_else(empty_plugin_cache)
 }
 
 // ---------------------------------------------------------------------------

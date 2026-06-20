@@ -11,6 +11,7 @@ use cli::{Cli, Commands, extract_options};
 use core::aliases;
 use core::completion;
 use core::init;
+use core::install;
 use core::npm_commands;
 use core::paths::PathLayout;
 use core::plugins;
@@ -41,6 +42,10 @@ fn main() {
                 Some("all") => remove::rm_all(&layout),
                 _ => remove::render_remove_help(),
             }
+            return;
+        }
+        Some(Commands::Install { name }) => {
+            install::install_plugin(&name, &layout);
             return;
         }
         Some(Commands::Init { feature }) => {

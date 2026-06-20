@@ -2,6 +2,7 @@ pub mod aliases;
 pub mod completion;
 pub mod info;
 pub mod init;
+pub mod install;
 pub mod npm_commands;
 pub mod paths;
 pub mod plugins;
