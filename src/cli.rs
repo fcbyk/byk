@@ -45,11 +45,17 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
-    /// 添加插件（来自中心或社区仓库）
+    /// 添加插件（来自中心或社区仓库，或本地文件 / editable 目录）
     Add {
         /// 指定分支（默认 main）
         #[arg(long)]
         branch: Option<String>,
+        /// 本地 byk.json 文件路径（跳过网络请求）
+        #[arg(long)]
+        file: Option<String>,
+        /// 可编辑安装目录（pip install -e <dir>，读取 <dir>/byk.json）
+        #[arg(short = 'e', long, value_name = "DIR")]
+        editable: Option<String>,
         /// 插件名 或 user/repo[/key]（留空显示帮助）
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,

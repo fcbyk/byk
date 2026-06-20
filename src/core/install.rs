@@ -113,12 +113,20 @@ fn fetch_registry(url: &str) -> Result<String, String> {
 ///
 /// 流程：
 /// 1. 检查 venv 是否存在
-/// 2. 解析 spec → 构建 URL → 获取 byk.json
-/// 3. 查找 key → 遍历行为列表
-/// 4. 对每个 "pip" 行为：install_target = url ?? name → pip install
+/// 2. -e 读 <dir>/byk.json，--file 读本地文件，否则远程拉取
+/// 3. 查找 key → ref 引用解析 → 遍历行为列表
+/// 4. -e 模式：pip install -e <dir>；否则 --file 模式 local ?? url ?? name，远程 url ?? name
 /// 5. 收集所有行为的 commands，持久化到 plugins/pip.json
-pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout) {
+pub fn install_plugin(
+    spec_str: &str,
+    branch: Option<&str>,
+    file: Option<&str>,
+    editable: Option<&str>,
+    layout: &PathLayout,
+) {
     let branch = branch.unwrap_or(DEFAULT_BRANCH);
+    let is_local = file.is_some();
+    let is_editable = editable.is_some();
 
     // 1. 检查 venv（不存在时提示创建）
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
@@ -144,29 +152,51 @@ pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout)
         }
     }
 
-    // 2. 解析 spec
-    let spec = match parse_spec(spec_str) {
-        Some(s) => s,
-        None => {
-            eprintln!("{} invalid spec: {}", "Error:".red(), spec_str);
-            exit(1);
-        }
-    };
+    // 2. 获取 byk.json（-e 目录 或 --file 本地文件 或 远程仓库）
+    let (body, source_label, lookup_key) = if let Some(dir) = editable {
+        let ed_json = std::path::PathBuf::from(dir).join("byk.json");
+        let content = match std::fs::read_to_string(&ed_json) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{} failed to read {}: {}", "Error:".red(), ed_json.display(), e);
+                exit(1);
+            }
+        };
+        (content, None, spec_str)
+    } else if let Some(f) = file {
+        let content = match std::fs::read_to_string(f) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{} failed to read {}: {}", "Error:".red(), f, e);
+                exit(1);
+            }
+        };
+        (content, None, spec_str)
+    } else {
+        let spec = match parse_spec(spec_str) {
+            Some(s) => s,
+            None => {
+                eprintln!("{} invalid spec: {}", "Error:".red(), spec_str);
+                exit(1);
+            }
+        };
 
-    let (owner, repo, source_label) = match spec.community {
-        Some((u, r)) => (u, r, Some(format!("{}/{}", u, r))),
-        None => (CENTER_OWNER, CENTER_REPO, None),
-    };
+        let (owner, repo, source_label) = match spec.community {
+            Some((u, r)) => (u, r, Some(format!("{}/{}", u, r))),
+            None => (CENTER_OWNER, CENTER_REPO, None),
+        };
 
-    let url = build_registry_url(branch, owner, repo);
+        let url = build_registry_url(branch, owner, repo);
 
-    // 3. 获取 byk.json
-    let body = match fetch_registry(&url) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("{} Failed to fetch registry: {}", "Error:".red(), e);
-            exit(1);
-        }
+        let body = match fetch_registry(&url) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("{} Failed to fetch registry: {}", "Error:".red(), e);
+                exit(1);
+            }
+        };
+
+        (body, source_label, spec.key)
     };
 
     let registry: HashMap<String, serde_json::Value> = match serde_json::from_str(&body) {
@@ -177,19 +207,17 @@ pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout)
         }
     };
 
-    // 4. 确定 key（社区仓库未指定 key 时取第一个）
-    let key: String = if spec.key.is_empty() {
+    // 3. 确定 key（未指定时取第一个）
+    let key: String = if lookup_key.is_empty() {
         registry.keys().next().cloned().unwrap_or_else(|| {
             eprintln!(
-                "{} no plugins found in {}/{}",
+                "{} no plugins found in registry",
                 "Error:".red(),
-                owner,
-                repo,
             );
             exit(1);
         })
     } else {
-        spec.key.to_string()
+        lookup_key.to_string()
     };
 
     let entry = match registry.get(&key) {
@@ -204,7 +232,57 @@ pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout)
         }
     };
 
-    // 5. 遍历行为列表（插件名.行为类型.具体配置）
+    // 5. Ref 引用解析：entry 为字符串 URL 时拉取并替换
+    let entry_owned: serde_json::Value;
+    let entry = if let Some(url) = entry.as_str() {
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            eprintln!(
+                "{} plugin \"{}\" ref is not a valid URL: {}",
+                "Error:".red(),
+                key,
+                url,
+            );
+            exit(1);
+        }
+        let body = match fetch_registry(url) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!(
+                    "{} failed to fetch ref for plugin \"{}\": {}",
+                    "Error:".red(),
+                    key,
+                    e,
+                );
+                exit(1);
+            }
+        };
+        let resolved: serde_json::Value = match serde_json::from_str(&body) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!(
+                    "{} failed to parse ref response for plugin \"{}\": {}",
+                    "Error:".red(),
+                    key,
+                    e,
+                );
+                exit(1);
+            }
+        };
+        if !resolved.is_object() {
+            eprintln!(
+                "{} ref for plugin \"{}\" returned non-object JSON (expected {{ \"pip\": {{...}} }})",
+                "Error:".red(),
+                key,
+            );
+            exit(1);
+        }
+        entry_owned = resolved;
+        &entry_owned
+    } else {
+        entry
+    };
+
+    // 6. 遍历行为列表（插件名.行为类型.具体配置）
     let behaviors = match entry.as_object() {
         Some(obj) => obj,
         None => {
@@ -232,41 +310,62 @@ pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout)
             "pip" => {
                 any_behavior_processed = true;
 
-                // 解析 name（必填）
+                // 解析 name（可编辑模式下可选，其它模式必填）
                 let pkg_name = behavior_config
                     .get("name")
                     .and_then(|v| v.as_str());
 
-                let pkg_name = match pkg_name {
-                    Some(n) => n,
-                    None => {
-                        eprintln!(
-                            "{} plugin \"{}\" pip behavior missing \"name\" field",
-                            "Error:".red(),
-                            key,
-                        );
-                        exit(1);
-                    }
-                };
-
-                // 记录第一个 name 用于缓存（byk remove 时 pip uninstall 使用）
-                if install_name.is_none() {
-                    install_name = Some(pkg_name.to_string());
+                if !is_editable && pkg_name.is_none() {
+                    eprintln!(
+                        "{} plugin \"{}\" pip behavior missing \"name\" field",
+                        "Error:".red(),
+                        key,
+                    );
+                    exit(1);
                 }
 
-                // install_target = url ?? name（无 url 则默认走 PyPI）
-                let install_target = behavior_config
-                    .get("url")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(pkg_name);
+                let effective_name = pkg_name.unwrap_or(&key);
 
-                // pip install
-                let status = Command::new(&pip)
-                    .arg("install")
-                    .arg(install_target)
-                    .status();
+                // 记录第一个 name 用于状态（byk remove 时 pip uninstall 使用）
+                if install_name.is_none() {
+                    install_name = Some(effective_name.to_string());
+                }
 
-                match status {
+                // pip install：可编辑模式用 -e <dir>，否则按 local ?? url ?? name 选择目标
+                let install_result = if is_editable {
+                    let ed_dir = editable.unwrap();
+                    let pyproject_dir = behavior_config
+                        .get("pyproject")
+                        .and_then(|v| v.as_str());
+                    let install_dir = match pyproject_dir {
+                        Some(p) => std::path::PathBuf::from(ed_dir).join(p),
+                        None => std::path::PathBuf::from(ed_dir),
+                    };
+                    Command::new(&pip)
+                        .arg("install")
+                        .arg("-e")
+                        .arg(install_dir)
+                        .status()
+                } else {
+                    let install_target = if is_local {
+                        behavior_config
+                            .get("local")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| behavior_config.get("url").and_then(|v| v.as_str()))
+                            .unwrap_or(pkg_name.unwrap())
+                    } else {
+                        behavior_config
+                            .get("url")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(pkg_name.unwrap())
+                    };
+                    Command::new(&pip)
+                        .arg("install")
+                        .arg(install_target)
+                        .status()
+                };
+
+                match install_result {
                     Ok(s) if s.success() => {}
                     Ok(s) => {
                         eprintln!(
@@ -450,6 +549,16 @@ pub fn render_add_help() {
         "--branch <NAME>".cyan().bold(),
         "Set branch (default: main)",
     );
+    println!(
+        "  {:<16} {}",
+        "--file <PATH>".cyan().bold(),
+        "Use local byk.json instead of remote registry",
+    );
+    println!(
+        "  {:<16} {}",
+        "-e, --editable <DIR>".cyan().bold(),
+        "Editable install (pip install -e <DIR>, reads <DIR>/byk.json)",
+    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
@@ -457,6 +566,8 @@ pub fn render_add_help() {
         ("byk add user/repo/key".into(), "Install from community repo".into()),
         ("byk add user/repo".into(), "Install first key from community repo".into()),
         ("byk add --branch dev hello".into(), "Install from a specific branch".into()),
+        ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
+        ("byk add -e .".into(), "Editable install from current directory".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {

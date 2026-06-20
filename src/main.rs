@@ -44,13 +44,19 @@ fn main() {
             }
             return;
         }
-        Some(Commands::Add { branch, name }) => {
-            match name.as_deref() {
-                None | Some("-h") | Some("--help") => {
+        Some(Commands::Add { branch, file, editable, name }) => {
+            match (name.as_deref(), editable.as_deref()) {
+                (None | Some("-h") | Some("--help"), None) => {
                     install::render_add_help();
                 }
-                Some(spec) => {
-                    install::install_plugin(spec, branch.as_deref(), &layout);
+                (spec, editable) => {
+                    install::install_plugin(
+                        spec.unwrap_or(""),
+                        branch.as_deref(),
+                        file.as_deref(),
+                        editable,
+                        &layout,
+                    );
                 }
             }
             return;
