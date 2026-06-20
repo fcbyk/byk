@@ -1,0 +1,273 @@
+---
+title: 插件注册表 byk.json
+description: 如何编写 byk.json 发布自己的插件，包含 schema 定义、行为类型和完整示例
+---
+
+import { Tab, Tabs } from '@rspress/core/theme';
+
+# 插件注册表 byk.json
+
+每个 byk 插件的发布入口是仓库根目录下的 `byk.json` 文件。它定义了插件的 key、安装行为和注册的命令列表。本文档面向插件发布者，说明如何编写这个文件。
+
+## 文件位置
+
+将 `byk.json` 放在 GitHub 仓库的根目录。byk 通过 `raw.githubusercontent.com` 拉取该文件：
+
+```
+https://raw.githubusercontent.com/{owner}/{repo}/{branch}/byk.json
+```
+
+## 整体结构
+
+`byk.json` 是一个 JSON 对象，每个顶级 key 为一个**插件 key**（即 `byk add <key>` 中的 `<key>`），值为该插件的**行为定义**：
+
+```json
+{
+  "<plugin-key>": {
+    "<behavior-type>": {
+      // 安装行为配置
+    }
+  }
+}
+```
+
+一个 `byk.json` 可以包含多个插件 key，用户通过 `byk add <key>` 指定要安装哪个。
+
+## 插件行为定义
+
+每个插件 key 的值为一个对象，包含一个或多个行为类型（behavior type）。当前支持的行为类型只有 `pip`。
+
+### pip 行为
+
+`pip` 行为在隔离的 venv 中执行 `pip install`，并将指定的命令注册到 byk。
+
+```json
+{
+  "hello": {
+    "pip": {
+      "name": "byk-hello",
+      "commands": {
+        "hello": {
+          "module": "bykhello.main",
+          "description": "Say hello"
+        }
+      }
+    }
+  }
+}
+```
+
+#### 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | 是* | pip 包名，用于 `pip install <name>` |
+| `url` | string | 否 | 远程安装地址（覆盖 `name`） |
+| `local` | string | 否 | 本地安装路径（仅在 `--file` 模式下生效，优先级高于 `url`） |
+| `pyproject` | string | 否 | pyproject.toml 的相对目录（仅在 `-e` 可编辑模式下生效） |
+| `commands` | object | 是 | 注册的命令列表 |
+
+\* 可编辑安装模式（`-e`）下 `name` 可选，其余模式必填。
+
+#### commands 字段
+
+`commands` 是一个对象，每个 key 为注册的命令名（用户通过 `byk <command>` 调用），值为命令定义：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `module` | string | 是 | Python 模块路径，执行时调用 `python -m <module>` |
+| `description` | string | 否 | 命令描述，显示在帮助信息中 |
+
+```json
+{
+  "commands": {
+    "lansend": {
+      "module": "byklansend.main",
+      "description": "Send messages over LAN"
+    },
+    "lanrecv": {
+      "module": "byklansend.recv",
+      "description": "Receive messages over LAN"
+    }
+  }
+}
+```
+
+一个插件可以注册多个命令。每个命令对应一个独立的 Python 模块入口。
+
+## 安装目标选择
+
+byk 根据安装模式选择不同的安装目标传给 `pip install`：
+
+<Tabs>
+<Tab label="远程安装（默认）">
+
+```bash
+byk add hello
+```
+
+安装目标优先级：`url` → `name`
+
+如果指定了 `url`，执行 `pip install <url>`；否则执行 `pip install <name>`（从 PyPI 安装）。
+
+```json
+{
+  "hello": {
+    "pip": {
+      "name": "byk-hello",
+      "url": "https://github.com/fcbyk/byk-hello/archive/main.zip",
+      "commands": { ... }
+    }
+  }
+}
+```
+
+</Tab>
+<Tab label="本地安装（--file）">
+
+```bash
+byk add --file ./local.json hello
+```
+
+安装目标优先级：`local` → `url` → `name`
+
+`local` 字段仅在 `--file` 模式下生效，适合本地调试或离线安装。
+
+```json
+{
+  "hello": {
+    "pip": {
+      "name": "byk-hello",
+      "local": "/path/to/byk-hello",
+      "url": "https://github.com/...",
+      "commands": { ... }
+    }
+  }
+}
+```
+
+</Tab>
+<Tab label="可编辑安装（-e）">
+
+```bash
+byk add -e /path/to/source hello
+```
+
+安装目标：`pip install -e <dir>/<pyproject>`
+
+`pyproject` 字段为相对路径，指向包含 `pyproject.toml` 的子目录（默认为 `<dir>` 本身）。
+
+```json
+{
+  "hello": {
+    "pip": {
+      "pyproject": "packages/hello",
+      "commands": { ... }
+    }
+  }
+}
+```
+
+执行时：`pip install -e /path/to/source/packages/hello`
+
+</Tab>
+</Tabs>
+
+## Ref 引用
+
+如果一个 key 的值为字符串而非对象，byk 会将其视为 **URL 引用**——从该 URL 拉取另一个 `byk.json`，并在其中查找同名 key：
+
+```json title="中心仓库 byk.json"
+{
+  "lansend": "https://raw.githubusercontent.com/fcbyk/byk-lansend/main/byk.json",
+  "hello": {
+    "pip": {
+      "name": "byk-hello",
+      "commands": { ... }
+    }
+  }
+}
+```
+
+当用户执行 `byk add lansend` 时，byk 会：
+
+1. 发现 `lansend` 的值是一个 URL
+2. 从该 URL 拉取完整的 `byk.json`
+3. 在新拉取的内容中查找 key 为 `lansend` 的条目
+4. 使用该条目的行为定义执行安装
+
+Ref 适合将插件定义分散到各自仓库中维护，中心仓库只做索引。
+
+## 社区仓库
+
+任何 GitHub 仓库只要在根目录放一个 `byk.json`，即可作为 byk 插件源使用：
+
+```json title="github.com/myuser/my-byk-plugins/blob/main/byk.json"
+{
+  "my-tool": {
+    "pip": {
+      "name": "my-byk-tool",
+      "commands": {
+        "my-tool": {
+          "module": "mybyktool.cli",
+          "description": "My custom tool"
+        }
+      }
+    }
+  }
+}
+```
+
+用户安装方式：
+
+```bash
+byk add myuser/my-byk-plugins/my-tool    # 指定 key
+byk add myuser/my-byk-plugins            # 安装 byk.json 中第一个 key
+```
+
+## 完整示例
+
+一个包含多个插件、使用 Ref 引用和本地安装路径的 `byk.json`：
+
+```json
+{
+  "lansend": "https://raw.githubusercontent.com/fcbyk/byk-lansend/main/byk.json",
+
+  "hello": {
+    "pip": {
+      "name": "byk-hello",
+      "commands": {
+        "hello": {
+          "module": "bykhello.main",
+          "description": "Say hello from byk"
+        }
+      }
+    }
+  },
+
+  "deploy": {
+    "pip": {
+      "name": "byk-deploy",
+      "url": "https://github.com/fcbyk/byk-deploy/archive/refs/tags/v1.0.zip",
+      "local": "../dist/byk-deploy-1.0-py3-none-any.whl",
+      "commands": {
+        "deploy": {
+          "module": "bykdeploy.cli",
+          "description": "Deploy services to remote servers"
+        },
+        "rollback": {
+          "module": "bykdeploy.rollback",
+          "description": "Rollback last deployment"
+        }
+      }
+    }
+  }
+}
+```
+
+## 注意事项
+
+- `byk.json` 中的 key 不能包含 `/`，因为 `/` 在 spec 语法中用于分隔仓库地址和 key
+- Ref 引用的 URL 必须以 `http://` 或 `https://` 开头
+- 一个插件的 `commands` 中可以注册多个命令，但命令名不要与其他插件冲突，否则会按安装顺序覆盖
+- 社区仓库的 `byk.json` 中如果有多个 key，用户可通过 `user/repo/key` 精确指定要安装的插件

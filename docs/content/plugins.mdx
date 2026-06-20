@@ -1,0 +1,147 @@
+---
+title: 插件系统
+description: byk 插件的安装、执行原理及插件管理
+---
+
+# 插件系统
+
+byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 pip 包。插件基于 Python 模块执行，安装后即可作为一级命令使用。
+
+## 工作原理
+
+插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <name>` 时：
+
+1. 从远程仓库（或本地文件）拉取插件注册表 `byk.json`
+2. 查找匹配的插件 key，解析其 `pip` 行为
+3. 在隔离的 venv 中执行 `pip install`
+4. 将命令名、模块路径、描述信息持久化到 `~/.byk/plugins/pip.json`
+
+之后运行 `byk <command>` 时，byk 直接调用 `python -m <module>` 透传所有参数。
+
+## 初始化
+
+首次使用插件功能时，venv 不存在则 byk 会自动提示创建，也可以手动初始化：
+
+```bash
+byk add <any-plugin>   # 首次 add 时自动创建 venv
+```
+
+## 安装插件
+
+### 从中心仓库安装
+
+中心仓库 `fcbyk/byk-plugins` 托管官方插件列表。只需指定插件 key 即可安装：
+
+```bash
+byk add hello          # 安装中心仓库中 key 为 "hello" 的插件
+```
+
+### 从社区仓库安装
+
+任何 GitHub 仓库只需在根目录放一个 `byk.json` 即可作为 byk 插件源：
+
+```bash
+byk add user/repo           # 安装该仓库 byk.json 中的第一个 key
+byk add user/repo/my-key    # 安装指定 key
+```
+
+### 指定分支
+
+```bash
+byk add --branch dev hello   # 从 dev 分支的 byk.json 拉取
+```
+
+### 本地安装
+
+```bash
+byk add --file ./local.json my-key   # 使用本地 byk.json 文件
+```
+
+### 可编辑安装
+
+适合插件开发场景，将本地源码以可编辑模式安装到 venv：
+
+```bash
+byk add -e .              # 从当前目录可编辑安装（读取 ./byk.json）
+byk add -e /path/to/src   # 从指定目录可编辑安装
+```
+
+## 运行插件
+
+安装完成后，插件命令自动注册为 byk 的一级命令，直接使用即可：
+
+```bash
+byk <command> [args...]
+```
+
+所有命令行参数会原样透传给底层的 Python 模块。
+
+```bash title="示例"
+byk lansend --target 192.168.1.10 "hello"
+# 等价于 venv/bin/python -m byklansend.main --target 192.168.1.10 "hello"
+```
+
+## 查看已安装插件
+
+```bash
+byk --info plugins      # 列出所有已安装插件及其命令详情
+byk --info <command>    # 查询某个命令是否来自插件（含模块路径、描述等）
+```
+
+## 卸载插件
+
+```bash
+byk remove <plugin-key>   # 卸载指定插件
+```
+
+卸载流程：在 venv 中执行 `pip uninstall -y <package>`，然后清除 `pip.json` 中该插件注册的所有命令。
+
+## 目录结构
+
+插件相关的数据存储在以下位置：
+
+```tree
+~/.byk/
+├── venv/               # Python 虚拟环境（python3 -m venv 创建）
+│   ├── bin/            # Python 解释器和 pip
+│   └── lib/
+└── plugins/
+    └── pip.json        # 插件状态文件（命令列表、包信息）
+```
+
+## pip.json 结构
+
+`pip.json` 是插件系统的持久化状态文件，由 `byk add` / `byk remove` 自动维护：
+
+```json
+{
+  "commands": {
+    "lansend": {
+      "module": "byklansend.main",
+      "description": "Send messages via LAN"
+    }
+  },
+  "python_executable": "/Users/coke/.byk/venv/bin/python",
+  "packages": {
+    "lansend": {
+      "name": "byk-lansend",
+      "commands": ["lansend"],
+      "behavior": "pip"
+    }
+  }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `commands` | 命令名 → 模块路径、描述的映射，用于命令路由和帮助显示 |
+| `python_executable` | venv 内 Python 解释器路径，用于执行插件 |
+| `packages` | 插件 key → 包信息的映射，记录 pip 包名、注册的命令列表、来源等 |
+
+:::note
+通常无需手动编辑此文件，`byk add` 和 `byk remove` 会自动维护。如需调试可直接查看。
+:::
+
+## 编写自己的插件
+
+如果你希望将自己的工具发布为 byk 插件，请参考 [插件注册表 byk.json](./plugin-registry)。

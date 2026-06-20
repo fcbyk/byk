@@ -5,6 +5,21 @@
     "label": "概述"
   },
   {
+    "type": "file",
+    "name": "commands",
+    "label": "内置命令"
+  },
+  {
+    "type": "file",
+    "name": "plugins",
+    "label": "插件系统"
+  },
+  {
+    "type": "file",
+    "name": "plugin-registry",
+    "label": "插件注册表"
+  },
+  {
     "type": "dir",
     "name": "alias",
     "label": "命令别名",
