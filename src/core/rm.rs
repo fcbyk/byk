@@ -22,11 +22,6 @@ pub fn render_remove_help() {
     println!("{}", "Feature:".green().bold());
     println!(
         "  {:<8} {}",
-        "py-v".cyan().bold(),
-        "Remove venv, aliases, and plugin cache"
-    );
-    println!(
-        "  {:<8} {}",
         "comp".cyan().bold(),
         "Remove shell completion (zsh/bash)"
     );
@@ -41,48 +36,6 @@ pub fn render_remove_help() {
         "Remove everything (~/.byk/ + shell completion)"
     );
     println!();
-}
-
-// ---------------------------------------------------------------------------
-// remove py-v
-// ---------------------------------------------------------------------------
-
-/// 删除 Python venv 环境及所有关联数据。
-///
-/// 删除 ~/.byk/venv/、alias/py.byk.json、cache/plugins.json。
-/// venv 整体删除，无需额外提示包卸载（目录已不存在）。
-pub fn rm_py_v(layout: &PathLayout) {
-    let venv_dir = &layout.venv_dir;
-    let alias_path = layout.alias_dir.join("py.byk.json");
-    let cache_path = layout.cache_dir.join("plugins.json");
-
-    if !venv_dir.exists() && !alias_path.exists() && !cache_path.exists() {
-        println!(
-            "{}",
-            "Python venv not found. Nothing to remove.".dimmed()
-        );
-        return;
-    }
-
-    // 现有数据提示
-    println!();
-    println!("{}", "This will remove:".yellow());
-    print_if_exists(venv_dir);
-    print_if_exists(&alias_path);
-    print_if_exists(&cache_path);
-    println!();
-
-    if !shell::prompt_confirm("py-v") {
-        return;
-    }
-
-    // 删除
-    remove_if_exists(venv_dir, "venv/");
-    remove_if_exists(&alias_path, "alias/py.byk.json");
-    remove_if_exists(&cache_path, "cache/plugins.json");
-
-    println!();
-    println!("{}", "Python venv removed.".green());
 }
 
 // ---------------------------------------------------------------------------

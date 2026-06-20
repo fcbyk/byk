@@ -43,11 +43,6 @@ pub fn render_init_help() {
         "cache".cyan().bold(),
         "Initialize CLI home & cache directories"
     );
-    println!(
-        "  {:<8} {}",
-        "py-v".cyan().bold(),
-        "Initialize Python venv & aliases (recommended)"
-    );
     println!();
 }
 
@@ -170,14 +165,12 @@ const PYTHON_BIN: &str = "python.exe";
 #[cfg(not(windows))]
 const PYTHON_BIN: &str = "python";
 
-/// 初始化 Python 虚拟环境及别名（推荐方式）。
+/// 初始化 Python 虚拟环境。
 ///
-/// 创建 ~/.byk/venv/（不存在时），写入最小缓存 plugins.json，
-/// 写入/更新 alias/py.byk.json。
-/// 使用系统 python3 创建 venv，不再依赖 bykpy。
+/// 创建 ~/.byk/venv/（不存在时），写入最小缓存 plugins.json。
+/// 使用系统 python3 创建 venv。
 pub fn init_py(layout: &PathLayout) {
     let venv_dir = &layout.venv_dir;
-    let alias_path = layout.alias_dir.join("py.byk.json");
 
     #[cfg(windows)]
     let sys_python = "python";
@@ -218,11 +211,6 @@ pub fn init_py(layout: &PathLayout) {
     let cache_file = layout.cache_dir.join("plugins.json");
     let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
     let commands_cache = crate::core::plugins::PluginCache {
-        watched_mtimes: std::collections::HashMap::new(),
-        scanned_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64(),
         commands: std::collections::HashMap::new(),
         python_executable: Some(python_exe.to_string_lossy().to_string()),
         packages: std::collections::HashMap::new(),
@@ -233,26 +221,6 @@ pub fn init_py(layout: &PathLayout) {
         "+".green(),
         "(created)".dimmed()
     );
-
-    // ③ 写入/更新别名模板
-    let template = serde_json::json!({
-        "$cwd": format!("../venv/{}/", VENV_BIN),
-        "pi": "./pip install",
-        "pu": "./pip uninstall",
-        "pl": "./pip list",
-    });
-    let template_str = serde_json::to_string_pretty(&template).unwrap_or_default();
-    write_file(&alias_path, &template_str, "alias/py.byk.json");
-
-    println!();
-    println!(
-        "{} {}",
-        "Python environment ready.".green(),
-        "(venv)".dimmed()
-    );
-    println!("  Install packages:  byk pi <pkg>");
-    println!("  Remove packages:   byk pu <pkg>");
-    println!("  List packages:     byk pl");
 }
 
 // ---------------------------------------------------------------------------

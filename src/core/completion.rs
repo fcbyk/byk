@@ -129,7 +129,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // init 子命令补全
     if first == "init" {
-        const INIT_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp", "py-v"];
+        const INIT_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp"];
         return INIT_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -144,7 +144,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // remove 子命令补全
     if first == "remove" {
-        const RM_SUBS: &[&str] = &["py-v", "comp", "node", "all"];
+        const RM_SUBS: &[&str] = &["comp", "node", "all"];
         return RM_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))

@@ -4,10 +4,12 @@
 /// pip install / uninstall 指定插件，并将命令注册到 cache/plugins.json。
 
 use std::collections::HashMap;
+use std::io::{self, Write};
 use std::process::{Command, exit};
 
 use colored::Colorize;
 
+use super::init;
 use super::paths::PathLayout;
 use super::plugins::{PackageInfo, PluginCache, PluginCommand, empty_plugin_cache};
 use crate::utils::json_io;
@@ -47,14 +49,28 @@ const REGISTRY_URL: &str = "https://raw.githubusercontent.com/fcbyk/byk-plugins/
 pub fn install_plugin(key: &str, layout: &PathLayout) {
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
 
-    // 1. 检查 venv
+    // 1. 检查 venv（不存在时提示创建）
     if !pip.is_file() {
-        eprintln!(
-            "{} Python venv not found. Run {} first.",
-            "Error:".red(),
-            "`byk init py-v`".bold(),
+        print!(
+            "{} Python venv not found. Create? [Y/n] ",
+            "?".yellow(),
         );
-        exit(1);
+        let _ = io::stdout().flush();
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input).is_err() {
+            exit(1);
+        }
+        let answer = input.trim().to_lowercase();
+        if answer.is_empty() || answer == "y" {
+            init::init_py(layout);
+            // pip 路径可能已变化，重新取
+            let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+            if !pip.is_file() {
+                exit(1);
+            }
+        } else {
+            exit(1);
+        }
     }
 
     // 2. 从中心仓库获取 byk.json

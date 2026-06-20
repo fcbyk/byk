@@ -49,8 +49,6 @@ mod tests {
             .map(|(name, module, desc)| (name.into(), plugin_command(module, desc)))
             .collect();
         PluginCache {
-            watched_mtimes: HashMap::new(),
-            scanned_at: 0.0,
             commands: map,
             python_executable: None,
             packages: HashMap::new(),

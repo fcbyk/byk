@@ -339,7 +339,7 @@ fn render_plugins_list(layout: &PathLayout) {
 
     if !layout.venv_dir.is_dir() {
         println!("{}", "Python venv not initialized.".yellow());
-        println!("  {}", "$ byk init py-v".dimmed());
+        println!("  {}", "$ byk add <name>".dimmed());
         println!();
         return;
     }
@@ -388,9 +388,8 @@ fn render_python_overview(python: &PythonOverviewInfo) {
     if !python.initialized {
         println!("{}", "Python plugin system not initialized.".yellow());
         println!(
-            "  {}   {}",
-            "$ byk init py-v".dimmed(),
-            "(venv, recommended)".dimmed()
+            "  {}",
+            "$ byk add <name>".dimmed(),
         );
         println!();
         return;
