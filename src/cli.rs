@@ -45,10 +45,14 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
-    /// 添加插件（来自中心仓库）
+    /// 添加插件（来自中心或社区仓库）
     Add {
-        /// 插件名
-        name: String,
+        /// 指定分支（默认 main）
+        #[arg(long)]
+        branch: Option<String>,
+        /// 插件名 或 user/repo[/key]（留空显示帮助）
+        #[arg(allow_hyphen_values = true)]
+        name: Option<String>,
     },
     /// 内部：查询补全候选
     #[command(hide = true, name = "__complete")]

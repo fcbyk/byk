@@ -44,8 +44,15 @@ fn main() {
             }
             return;
         }
-        Some(Commands::Add { name }) => {
-            install::install_plugin(&name, &layout);
+        Some(Commands::Add { branch, name }) => {
+            match name.as_deref() {
+                None | Some("-h") | Some("--help") => {
+                    install::render_add_help();
+                }
+                Some(spec) => {
+                    install::install_plugin(spec, branch.as_deref(), &layout);
+                }
+            }
             return;
         }
         Some(Commands::Init { feature }) => {

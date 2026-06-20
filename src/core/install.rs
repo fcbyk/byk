@@ -1,7 +1,7 @@
-/// `byk install` / `byk remove <key>` 命令实现。
+/// `byk add` / `byk remove <key>` 命令实现。
 ///
-/// 从中心仓库 fcbyk/byk-plugins 获取 byk.json，
-/// pip install / uninstall 指定插件，并将命令注册到 cache/plugins.json。
+/// 支持中心仓库 fcbyk/byk-plugins 和社区仓库 user/repo。
+/// pip install / uninstall 指定插件，将命令注册到 cache/plugins.json。
 
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -12,6 +12,7 @@ use colored::Colorize;
 use super::init;
 use super::paths::PathLayout;
 use super::plugins::{PackageInfo, PluginCache, PluginCommand, empty_plugin_cache};
+use crate::utils::display;
 use crate::utils::json_io;
 
 // ---------------------------------------------------------------------------
@@ -29,10 +30,79 @@ const PYTHON_BIN: &str = "python.exe";
 const PYTHON_BIN: &str = "python";
 
 // ---------------------------------------------------------------------------
-// 中心仓库 URL
+// 默认配置
 // ---------------------------------------------------------------------------
 
-const REGISTRY_URL: &str = "https://raw.githubusercontent.com/fcbyk/byk-plugins/main/byk.json";
+const DEFAULT_BRANCH: &str = "main";
+const CENTER_OWNER: &str = "fcbyk";
+const CENTER_REPO: &str = "byk-plugins";
+
+// ---------------------------------------------------------------------------
+// Spec 解析
+// ---------------------------------------------------------------------------
+
+/// Spec 解析结果。
+///
+/// `center` = 中心仓库（无 user/repo 前缀）。
+/// `community(user, repo)` = 社区仓库。
+struct Spec<'a> {
+    /// 社区仓库: Some("user/repo")，中心仓库: None
+    community: Option<(&'a str, &'a str)>,
+    /// 插件 key
+    key: &'a str,
+}
+
+/// 解析 spec 字符串。
+///
+/// - 无 `/` → 中心仓库 + key
+/// - 一个 `/`（user/repo） → 社区仓库 + 取 byk.json 第一个 key
+/// - 两个 `/`（user/repo/key） → 社区仓库 + 指定 key
+fn parse_spec<'a>(spec: &'a str) -> Option<Spec<'a>> {
+    let parts: Vec<&str> = spec.splitn(3, '/').collect();
+    match parts.len() {
+        1 => Some(Spec {
+            community: None,
+            key: parts[0],
+        }),
+        2 => Some(Spec {
+            community: Some((parts[0], parts[1])),
+            key: "", // 稍后从 byk.json 取第一个
+        }),
+        3 => Some(Spec {
+            community: Some((parts[0], parts[1])),
+            key: parts[2],
+        }),
+        _ => None,
+    }
+}
+
+/// 构建 raw.githubusercontent.com URL。
+fn build_registry_url(branch: &str, owner: &str, repo: &str) -> String {
+    format!(
+        "https://raw.githubusercontent.com/{}/{}/{}/byk.json",
+        owner, repo, branch,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// HTTP 请求
+// ---------------------------------------------------------------------------
+
+/// 从指定 URL 获取 byk.json 内容。
+fn fetch_registry(url: &str) -> Result<String, String> {
+    let response = ureq::get(url)
+        .call()
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if response.status() != 200 {
+        return Err(format!("HTTP {} when fetching {}", response.status(), url));
+    }
+
+    response
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read response body: {}", e))
+}
 
 // ---------------------------------------------------------------------------
 // 主入口
@@ -42,14 +112,15 @@ const REGISTRY_URL: &str = "https://raw.githubusercontent.com/fcbyk/byk-plugins/
 ///
 /// 流程：
 /// 1. 检查 venv 是否存在
-/// 2. 从中心仓库获取 byk.json
+/// 2. 解析 spec → 构建 URL → 获取 byk.json
 /// 3. 查找 key → 解析 install.target 和 commands
 /// 4. pip install
 /// 5. 更新 cache/plugins.json
-pub fn install_plugin(key: &str, layout: &PathLayout) {
-    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout) {
+    let branch = branch.unwrap_or(DEFAULT_BRANCH);
 
     // 1. 检查 venv（不存在时提示创建）
+    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
     if !pip.is_file() {
         print!(
             "{} Python venv not found. Create? [Y/n] ",
@@ -63,7 +134,6 @@ pub fn install_plugin(key: &str, layout: &PathLayout) {
         let answer = input.trim().to_lowercase();
         if answer.is_empty() || answer == "y" {
             init::init_py(layout);
-            // pip 路径可能已变化，重新取
             let pip = layout.venv_dir.join(VENV_BIN).join("pip");
             if !pip.is_file() {
                 exit(1);
@@ -73,8 +143,24 @@ pub fn install_plugin(key: &str, layout: &PathLayout) {
         }
     }
 
-    // 2. 从中心仓库获取 byk.json
-    let body = match fetch_registry() {
+    // 2. 解析 spec
+    let spec = match parse_spec(spec_str) {
+        Some(s) => s,
+        None => {
+            eprintln!("{} invalid spec: {}", "Error:".red(), spec_str);
+            exit(1);
+        }
+    };
+
+    let (owner, repo, source_label) = match spec.community {
+        Some((u, r)) => (u, r, Some(format!("{}/{}", u, r))),
+        None => (CENTER_OWNER, CENTER_REPO, None),
+    };
+
+    let url = build_registry_url(branch, owner, repo);
+
+    // 3. 获取 byk.json
+    let body = match fetch_registry(&url) {
         Ok(b) => b,
         Err(e) => {
             eprintln!("{} Failed to fetch registry: {}", "Error:".red(), e);
@@ -90,8 +176,22 @@ pub fn install_plugin(key: &str, layout: &PathLayout) {
         }
     };
 
-    // 3. 查找 key
-    let entry = match registry.get(key) {
+    // 4. 确定 key（社区仓库未指定 key 时取第一个）
+    let key: String = if spec.key.is_empty() {
+        registry.keys().next().cloned().unwrap_or_else(|| {
+            eprintln!(
+                "{} no plugins found in {}/{}",
+                "Error:".red(),
+                owner,
+                repo,
+            );
+            exit(1);
+        })
+    } else {
+        spec.key.to_string()
+    };
+
+    let entry = match registry.get(&key) {
         Some(e) => e,
         None => {
             eprintln!(
@@ -103,7 +203,7 @@ pub fn install_plugin(key: &str, layout: &PathLayout) {
         }
     };
 
-    // 4. 解析 install.target 和 install.name
+    // 5. 解析 install.target 和 install.name
     let install_obj = entry.get("install");
     let target = install_obj
         .and_then(|i| i.get("target"))
@@ -124,14 +224,15 @@ pub fn install_plugin(key: &str, layout: &PathLayout) {
     let install_name = install_obj
         .and_then(|i| i.get("name"))
         .and_then(|n| n.as_str())
-        .unwrap_or(key);
+        .unwrap_or(&key);
 
-    // 5. 解析 commands（新格式：commands 子对象）
+    // 6. 解析 commands（新格式：commands 子对象）
     let commands_obj = entry
         .get("commands")
         .and_then(|c| c.as_object());
 
-    // 6. pip install
+    // 7. pip install
+    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
     let status = Command::new(&pip)
         .arg("install")
         .arg(target)
@@ -153,7 +254,7 @@ pub fn install_plugin(key: &str, layout: &PathLayout) {
         }
     }
 
-    // 7. 更新 cache/plugins.json
+    // 8. 更新 cache/plugins.json
     let cache_file = layout.cache_dir.join("plugins.json");
     let mut cache: PluginCache = json_io::read_json(&cache_file).unwrap_or_else(empty_plugin_cache);
 
@@ -187,10 +288,11 @@ pub fn install_plugin(key: &str, layout: &PathLayout) {
     }
 
     cache.packages.insert(
-        key.to_string(),
+        key.clone(),
         PackageInfo {
             name: install_name.to_string(),
             commands: cmd_names,
+            source: source_label,
         },
     );
 
@@ -209,6 +311,10 @@ pub fn install_plugin(key: &str, layout: &PathLayout) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// 卸载
+// ---------------------------------------------------------------------------
+
 /// 卸载插件。
 ///
 /// 流程：
@@ -225,7 +331,7 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         eprintln!(
             "{} Python venv not found. Run {} first.",
             "Error:".red(),
-            "`byk init py-v`".bold(),
+            "`byk add <name>`".bold(),
         );
         exit(1);
     }
@@ -286,25 +392,34 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP 请求
+// 帮助
 // ---------------------------------------------------------------------------
 
-/// 从中心仓库获取 byk.json 内容。
-fn fetch_registry() -> Result<String, String> {
-    let response = ureq::get(REGISTRY_URL)
-        .call()
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-    if response.status() != 200 {
-        return Err(format!(
-            "HTTP {} when fetching {}",
-            response.status(),
-            REGISTRY_URL,
-        ));
+/// 渲染 `byk add` 帮助信息。
+pub fn render_add_help() {
+    println!();
+    print!("{}", "Usage:".green().bold());
+    println!("{}", " byk add [OPTIONS] <NAME>".bold());
+    println!();
+    println!("{}", "Options:".green().bold());
+    println!(
+        "  {:<16} {}",
+        "--branch <NAME>".cyan().bold(),
+        "Set branch (default: main)",
+    );
+    println!();
+    println!("{}", "Examples:".green().bold());
+    let examples: Vec<(String, String)> = vec![
+        ("byk add hello".into(), "Install from center registry".into()),
+        ("byk add user/repo/key".into(), "Install from community repo".into()),
+        ("byk add user/repo".into(), "Install first key from community repo".into()),
+        ("byk add --branch dev hello".into(), "Install from a specific branch".into()),
+    ];
+    let aligned = display::align_kv_pairs(&examples, "  ");
+    for (name, line) in &aligned {
+        let rest = &line[2 + name.len()..];
+        print!("  {}", name.dimmed());
+        println!("{}", rest);
     }
-
-    response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| format!("Failed to read response body: {}", e))
+    println!();
 }

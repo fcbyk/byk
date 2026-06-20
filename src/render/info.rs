@@ -360,10 +360,16 @@ fn render_plugins_list(layout: &PathLayout) {
     for key in &keys {
         let pkg = &plugin_cache.packages[*key];
         let cmds = pkg.commands.join(", ");
+        let source_str = pkg
+            .source
+            .as_ref()
+            .map(|s| format!("    source: {}", s.dimmed()))
+            .unwrap_or_default();
         println!(
-            "  {}    pip: {}    commands: {}",
+            "  {}    pip: {}{}    commands: {}",
             key.cyan().bold(),
             pkg.name.dimmed(),
+            source_str,
             cmds,
         );
         // 显示每个命令的模块路径
