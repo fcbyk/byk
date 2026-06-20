@@ -53,6 +53,7 @@ mod tests {
             scanned_at: 0.0,
             commands: map,
             python_executable: None,
+            packages: HashMap::new(),
         }
     }
 

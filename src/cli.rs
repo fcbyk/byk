@@ -45,8 +45,8 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
-    /// 安装插件（来自中心仓库）
-    Install {
+    /// 添加插件（来自中心仓库）
+    Add {
         /// 插件名
         name: String,
     },

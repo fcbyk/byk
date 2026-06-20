@@ -43,6 +43,15 @@ pub struct PluginCommand {
     pub description: String,
 }
 
+/// 单个插件的包信息（install 时写入）。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PackageInfo {
+    /// pip 包名（来自 byk.json 的 install.name）
+    pub name: String,
+    /// 该插件注册的命令名列表
+    pub commands: Vec<String>,
+}
+
 /// 插件缓存（持久化到 cache/plugins.json）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginCache {
@@ -56,6 +65,9 @@ pub struct PluginCache {
     /// Python 解释器路径（venv 内的 python）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub python_executable: Option<String>,
+    /// 插件 key → 包信息映射
+    #[serde(default)]
+    pub packages: HashMap<String, PackageInfo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +81,7 @@ pub fn empty_plugin_cache() -> PluginCache {
         scanned_at: 0.0,
         commands: HashMap::new(),
         python_executable: None,
+        packages: HashMap::new(),
     }
 }
 
@@ -223,6 +236,7 @@ fn scan_and_build_cache(venv_dir: &Path) -> Option<PluginCache> {
         scanned_at,
         commands,
         python_executable: Some(python_exe.to_string_lossy().to_string()),
+        packages: HashMap::new(),
     })
 }
 

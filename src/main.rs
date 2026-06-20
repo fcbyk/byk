@@ -40,11 +40,12 @@ fn main() {
                 Some("comp") => remove::rm_comp(),
                 Some("node") => remove::rm_node(&layout),
                 Some("all") => remove::rm_all(&layout),
-                _ => remove::render_remove_help(),
+                Some(key) => install::uninstall_plugin(key, &layout),
+                None => remove::render_remove_help(),
             }
             return;
         }
-        Some(Commands::Install { name }) => {
+        Some(Commands::Add { name }) => {
             install::install_plugin(&name, &layout);
             return;
         }

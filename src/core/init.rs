@@ -225,6 +225,7 @@ pub fn init_py(layout: &PathLayout) {
             .as_secs_f64(),
         commands: std::collections::HashMap::new(),
         python_executable: Some(python_exe.to_string_lossy().to_string()),
+        packages: std::collections::HashMap::new(),
     };
     crate::utils::json_io::write_json(&cache_file, &commands_cache);
     println!(

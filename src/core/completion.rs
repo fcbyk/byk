@@ -137,8 +137,8 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .collect();
     }
 
-    // install 子命令补全（暂无，后续可从中心仓库拉取）
-    if first == "install" {
+    // add 子命令补全（暂无，后续可从中心仓库拉取）
+    if first == "add" {
         return Vec::new();
     }
 
@@ -210,7 +210,7 @@ fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
 
     // 内置子命令
     candidates.push("init".into());
-    candidates.push("install".into());
+    candidates.push("add".into());
     candidates.push("remove".into());
     candidates.push("completion".into());
 
@@ -305,7 +305,7 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
 
     // 内置子命令
     candidates.push("init".into());
-    candidates.push("install".into());
+    candidates.push("add".into());
     candidates.push("remove".into());
 
     // 插件命令
