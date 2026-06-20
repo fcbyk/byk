@@ -8,6 +8,7 @@ pub struct PathLayout {
     pub node_pkgs_dir: PathBuf,
     pub venv_dir: PathBuf,
     pub cache_dir: PathBuf,
+    pub plugins_dir: PathBuf,
     /// ~/.byk/ 目录是否已存在（用于零配置分叉）
     pub home_exists: bool,
 }
@@ -33,6 +34,7 @@ impl PathLayout {
         let node_pkgs_dir = root_dir.join("node-pkgs");
         let venv_dir = root_dir.join("venv");
         let cache_dir = root_dir.join("cache");
+        let plugins_dir = root_dir.join("plugins");
 
         // 子目录不在此处创建，由各子系统按需创建：
         // - cache/  → json_io::write_json 内部 create_dir_all
@@ -46,6 +48,7 @@ impl PathLayout {
             node_pkgs_dir,
             venv_dir,
             cache_dir,
+            plugins_dir,
             home_exists,
         }
     }
@@ -82,6 +85,10 @@ mod tests {
             layout.cache_dir,
             home.join(".fcbyk_test_paths").join("cache")
         );
+        assert_eq!(
+            layout.plugins_dir,
+            home.join(".fcbyk_test_paths").join("plugins")
+        );
     }
 
     #[test]
@@ -93,6 +100,7 @@ mod tests {
         assert!(!layout.logs_dir.exists());
         assert!(!layout.alias_dir.exists());
         assert!(!layout.cache_dir.exists());
+        assert!(!layout.plugins_dir.exists());
         assert!(!layout.node_pkgs_dir.exists());
         assert!(!layout.home_exists);
     }

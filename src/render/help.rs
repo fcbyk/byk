@@ -44,12 +44,12 @@ pub fn render_commands(layout: &PathLayout) {
     ];
 
     // 插件命令
-    let plugin_cache = if layout.venv_dir.is_dir() {
-        plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir)
+    let plugin_state = if layout.venv_dir.is_dir() {
+        plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
     } else {
-        plugins::empty_plugin_cache()
+        plugins::empty_plugin_state()
     };
-    let mut plugins: Vec<(String, String)> = plugin_cache
+    let mut plugins: Vec<(String, String)> = plugin_state
         .commands
         .iter()
         .map(|(name, cmd)| (name.clone(), cmd.description.clone()))

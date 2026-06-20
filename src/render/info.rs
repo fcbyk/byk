@@ -344,21 +344,21 @@ fn render_plugins_list(layout: &PathLayout) {
         return;
     }
 
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
+    let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
 
-    if plugin_cache.packages.is_empty() {
+    if plugin_state.packages.is_empty() {
         println!("{}", "No plugins installed.".yellow());
         println!("  {}", "$ byk add <name>".dimmed());
         println!();
         return;
     }
 
-    let mut keys: Vec<&String> = plugin_cache.packages.keys().collect();
+    let mut keys: Vec<&String> = plugin_state.packages.keys().collect();
     keys.sort();
 
     println!("{}", "Installed plugins:".green().bold());
     for key in &keys {
-        let pkg = &plugin_cache.packages[*key];
+        let pkg = &plugin_state.packages[*key];
         let cmds = pkg.commands.join(", ");
         let source_str = pkg
             .source
@@ -374,7 +374,7 @@ fn render_plugins_list(layout: &PathLayout) {
         );
         // 显示每个命令的模块路径
         for cmd_name in &pkg.commands {
-            if let Some(cmd) = plugin_cache.commands.get(cmd_name) {
+            if let Some(cmd) = plugin_state.commands.get(cmd_name) {
                 println!(
                     "    {} → {} {}",
                     cmd_name.dimmed(),
@@ -409,11 +409,11 @@ fn render_python_overview(python: &PythonOverviewInfo) {
         println!("{}: {}", "Version".yellow(), version);
     }
 
-    // 缓存文件路径
-    println!("{}: {}", "Cache".yellow(), python.cache_file.display());
+    // 状态文件路径
+    println!("{}: {}", "State".yellow(), python.state_file.display());
 
     // 来源提示
-    let source_display = "Cache file (plugins.json)".dimmed();
+    let source_display = "State file (pip.json)".dimmed();
     println!("{}:  {}", "Source".yellow(), source_display);
     println!();
 }

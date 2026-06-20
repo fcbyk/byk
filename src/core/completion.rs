@@ -188,8 +188,8 @@ fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
     if !layout.venv_dir.is_dir() {
         return false;
     }
-    let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
-    plugin_cache.commands.contains_key(word)
+    let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+    plugin_state.commands.contains_key(word)
 }
 
 /// 检查某个词是否是已知的 NPM 命令。
@@ -217,8 +217,8 @@ fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
 
     // 插件命令
     if layout.venv_dir.is_dir() {
-        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
-        candidates.extend(plugin_cache.commands.keys().cloned());
+        let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+        candidates.extend(plugin_state.commands.keys().cloned());
     }
 
     // NPM 命令
@@ -311,8 +311,8 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
 
     // 插件命令
     if layout.venv_dir.is_dir() {
-        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
-        candidates.extend(plugin_cache.commands.keys().cloned());
+        let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+        candidates.extend(plugin_state.commands.keys().cloned());
     }
 
     // NPM 命令
@@ -395,12 +395,13 @@ mod tests {
             let temp = tempfile::tempdir().unwrap();
             let alias_dir = temp.path().join("alias");
             let cache_dir = temp.path().join("cache");
+            let plugins_dir = temp.path().join("plugins");
             let node_pkgs_dir = temp.path().join("node-pkgs");
             let venv_dir = temp.path().join("venv");
             let logs_dir = temp.path().join("logs");
             let root_dir = temp.path().to_path_buf();
 
-            for d in [&alias_dir, &cache_dir, &node_pkgs_dir, &venv_dir, &logs_dir] {
+            for d in [&alias_dir, &cache_dir, &plugins_dir, &node_pkgs_dir, &venv_dir, &logs_dir] {
                 fs::create_dir_all(d).unwrap();
             }
 
@@ -411,18 +412,17 @@ mod tests {
                 node_pkgs_dir,
                 venv_dir,
                 cache_dir: cache_dir.clone(),
+                plugins_dir: plugins_dir.clone(),
                 home_exists: true,
             };
 
-            // 写入插件缓存
-            let plugin_cache = json!({
-                "watched_mtimes": {},
-                "scanned_at": 0,
+            // 写入插件状态
+            let plugin_state = json!({
                 "commands": {"test-plugin": {"module": "test.module:Plugin", "description": "A test plugin"}}
             });
             fs::write(
-                cache_dir.join("plugins.json"),
-                serde_json::to_string_pretty(&plugin_cache).unwrap(),
+                plugins_dir.join("pip.json"),
+                serde_json::to_string_pretty(&plugin_state).unwrap(),
             )
             .unwrap();
 

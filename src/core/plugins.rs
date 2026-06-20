@@ -1,6 +1,6 @@
-/// 插件缓存与执行。
+/// 插件状态管理。
 ///
-/// 插件通过 `byk add` 安装，缓存到 plugins.json。
+/// 插件通过 `byk add` 安装，持久化到 plugins/pip.json。
 /// 执行时直接调用 `python -m <模块>` 透传参数。
 
 use std::collections::HashMap;
@@ -43,18 +43,21 @@ pub struct PluginCommand {
 /// 单个插件的包信息（install 时写入）。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PackageInfo {
-    /// pip 包名（来自 byk.json 的 install.name）
+    /// pip 包名（来自 byk.json 的 behavior.name）
     pub name: String,
     /// 该插件注册的命令名列表
     pub commands: Vec<String>,
     /// 来源仓库：None = 中心仓库，Some("user/repo") = 社区仓库
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// 安装行为类型（目前固定 "pip"，未来扩展 npm 等）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub behavior: Option<String>,
 }
 
-/// 插件缓存（持久化到 cache/plugins.json）。
+/// 插件状态（持久化到 plugins/pip.json）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginCache {
+pub struct PluginState {
     /// 已安装插件的命令列表
     pub commands: HashMap<String, PluginCommand>,
     /// Python 解释器路径（venv 内的 python）
@@ -66,12 +69,12 @@ pub struct PluginCache {
 }
 
 // ---------------------------------------------------------------------------
-// 空缓存
+// 空状态
 // ---------------------------------------------------------------------------
 
-/// 构造空插件缓存（venv 不存在时使用）。
-pub fn empty_plugin_cache() -> PluginCache {
-    PluginCache {
+/// 构造空插件状态（venv 不存在时使用）。
+pub fn empty_plugin_state() -> PluginState {
+    PluginState {
         commands: HashMap::new(),
         python_executable: None,
         packages: HashMap::new(),
@@ -85,11 +88,11 @@ pub fn empty_plugin_cache() -> PluginCache {
 /// 获取 Python 解释器路径。
 ///
 /// 优先级：
-/// 1. 缓存文件（plugins.json）中的 `python_executable`
+/// 1. 状态文件（pip.json）中的 `python_executable`
 /// 2. 如果 venv 存在 → `venv/bin/python`
-pub(crate) fn get_python_executable(cache_dir: &Path, venv_dir: &Path) -> String {
-    let cache_file = cache_dir.join("plugins.json");
-    if let Some(data) = json_io::read_json::<PluginCache>(&cache_file) {
+pub(crate) fn get_python_executable(plugins_dir: &Path, venv_dir: &Path) -> String {
+    let state_file = plugins_dir.join("pip.json");
+    if let Some(data) = json_io::read_json::<PluginState>(&state_file) {
         if let Some(exe) = data.python_executable {
             return exe;
         }
@@ -100,21 +103,21 @@ pub(crate) fn get_python_executable(cache_dir: &Path, venv_dir: &Path) -> String
 }
 
 // ---------------------------------------------------------------------------
-// 缓存加载
+// 状态加载
 // ---------------------------------------------------------------------------
 
-/// 读取插件缓存（从 plugins.json 直接读取，不做扫描或过期检测）。
+/// 读取插件状态（从 pip.json 直接读取，不做扫描或过期检测）。
 ///
-/// - venv 不存在 → 返回空缓存
-/// - 无缓存文件 → 返回空缓存
-/// - 有缓存文件 → 直接返回
-pub fn load_plugin_cache(cache_dir: &Path, venv_dir: &Path) -> PluginCache {
+/// - venv 不存在 → 返回空状态
+/// - 无状态文件 → 返回空状态
+/// - 有状态文件 → 直接返回
+pub fn load_plugin_state(plugins_dir: &Path, venv_dir: &Path) -> PluginState {
     if !venv_dir.is_dir() {
-        return empty_plugin_cache();
+        return empty_plugin_state();
     }
 
-    let cache_file = cache_dir.join("plugins.json");
-    json_io::read_json(&cache_file).unwrap_or_else(empty_plugin_cache)
+    let state_file = plugins_dir.join("pip.json");
+    json_io::read_json(&state_file).unwrap_or_else(empty_plugin_state)
 }
 
 // ---------------------------------------------------------------------------
@@ -127,13 +130,13 @@ pub fn load_plugin_cache(cache_dir: &Path, venv_dir: &Path) -> PluginCache {
 pub fn execute_plugin_command(
     cmd_name: &str,
     cmd_args: &[String],
-    cache_dir: &Path,
+    plugins_dir: &Path,
     venv_dir: &Path,
-    plugin_cache: &PluginCache,
+    plugin_state: &PluginState,
 ) {
-    let python_exe = get_python_executable(cache_dir, venv_dir);
+    let python_exe = get_python_executable(plugins_dir, venv_dir);
 
-    let module = match plugin_cache.commands.get(cmd_name) {
+    let module = match plugin_state.commands.get(cmd_name) {
         Some(cmd) => &cmd.module,
         None => {
             eprintln!(

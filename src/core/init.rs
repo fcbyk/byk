@@ -167,7 +167,7 @@ const PYTHON_BIN: &str = "python";
 
 /// 初始化 Python 虚拟环境。
 ///
-/// 创建 ~/.byk/venv/（不存在时），写入最小缓存 plugins.json。
+/// 创建 ~/.byk/venv/（不存在时），写入最小缓存 pip.json。
 /// 使用系统 python3 创建 venv。
 pub fn init_py(layout: &PathLayout) {
     let venv_dir = &layout.venv_dir;
@@ -207,17 +207,17 @@ pub fn init_py(layout: &PathLayout) {
         }
     }
 
-    // ② 写入最小缓存（venv 刚创建，无插件，commands 为空）
-    let cache_file = layout.cache_dir.join("plugins.json");
+    // ② 写入最小状态（venv 刚创建，无插件，commands 为空）
+    let state_file = layout.plugins_dir.join("pip.json");
     let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-    let commands_cache = crate::core::plugins::PluginCache {
+    let commands_state = crate::core::plugins::PluginState {
         commands: std::collections::HashMap::new(),
         python_executable: Some(python_exe.to_string_lossy().to_string()),
         packages: std::collections::HashMap::new(),
     };
-    crate::utils::json_io::write_json(&cache_file, &commands_cache);
+    crate::utils::json_io::write_json(&state_file, &commands_state);
     println!(
-        "  {} cache/plugins.json {}",
+        "  {} plugins/pip.json {}",
         "+".green(),
         "(created)".dimmed()
     );
@@ -239,11 +239,12 @@ fn ensure_dir(path: &Path, label: &str) {
     }
 }
 
-/// 确保公共目录存在：root、alias、cache。
+/// 确保公共目录存在：root、alias、cache、plugins。
 fn ensure_common_dirs(layout: &PathLayout) {
     ensure_dir(&layout.root_dir, "CLI home");
     ensure_dir(&layout.alias_dir, "alias");
     ensure_dir(&layout.cache_dir, "cache");
+    ensure_dir(&layout.plugins_dir, "plugins");
 }
 
 /// 写入文件内容。

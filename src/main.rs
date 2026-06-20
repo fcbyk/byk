@@ -110,19 +110,19 @@ fn main() {
     let command_args = &cli.trailing[1..];
 
     // Step 2: 检查是否为插件命令（优先级高于 NPM）
-    // 仅 venv 存在时加载插件缓存
-    let plugin_cache = if layout.venv_dir.is_dir() {
-        plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir)
+    // 仅 venv 存在时加载插件状态
+    let plugin_state = if layout.venv_dir.is_dir() {
+        plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
     } else {
-        plugins::empty_plugin_cache()
+        plugins::empty_plugin_state()
     };
-    if plugin_cache.commands.contains_key(command_name) {
+    if plugin_state.commands.contains_key(command_name) {
         plugins::execute_plugin_command(
             command_name,
             command_args,
-            &layout.cache_dir,
+            &layout.plugins_dir,
             &layout.venv_dir,
-            &plugin_cache,
+            &plugin_state,
         );
         return;
     }

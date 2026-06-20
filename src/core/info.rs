@@ -58,8 +58,8 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
 
     // 2. 插件命令
     if layout.venv_dir.is_dir() {
-        let plugin_cache = plugins::load_plugin_cache(&layout.cache_dir, &layout.venv_dir);
-        if let Some(cmd) = plugin_cache.commands.get(name) {
+        let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+        if let Some(cmd) = plugin_state.commands.get(name) {
             entries.push(InfoEntry::Plugin {
                 name: name.to_string(),
                 module: cmd.module.clone(),
@@ -224,8 +224,7 @@ fn check_cache_status(cache_dir: &std::path::Path) -> String {
     if cache_dir.exists() {
         let alias_cache = cache_dir.join("alias.json");
         let npm_cache = cache_dir.join("node-pkg.json");
-        let plugins_cache = cache_dir.join("plugins.json");
-        let has_any = alias_cache.exists() || npm_cache.exists() || plugins_cache.exists();
+        let has_any = alias_cache.exists() || npm_cache.exists();
         if has_any {
             "healthy".to_string()
         } else {
@@ -263,17 +262,17 @@ fn check_node_initialized(layout: &PathLayout) -> bool {
 
 /// 检查 Python 状态。
 fn check_python_status(layout: &PathLayout) -> PythonStatus {
-    let py_cache = layout.cache_dir.join("plugins.json");
+    let py_state = layout.plugins_dir.join("pip.json");
     let py_venv = layout.venv_dir.exists();
 
-    if !py_cache.exists() && !py_venv {
+    if !py_state.exists() && !py_venv {
         return PythonStatus {
             initialized: false,
             bykpy_installed: false,
         };
     }
 
-    let py_exe = plugins::get_python_executable(&layout.cache_dir, &layout.venv_dir);
+    let py_exe = plugins::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
     let bykpy_installed = Command::new(&py_exe)
         .args(["-c", "import bykpy"])
         .stdout(std::process::Stdio::null())
@@ -314,8 +313,8 @@ pub struct PythonOverviewInfo {
     pub python_exe: String,
     /// Python 版本
     pub version: Option<String>,
-    /// 缓存文件路径
-    pub cache_file: PathBuf,
+    /// 状态文件路径
+    pub state_file: PathBuf,
     /// venv 目录路径
     pub venv_dir: PathBuf,
 }
@@ -337,9 +336,9 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
     let completion = check_completion_status();
     let node_initialized = check_node_initialized(layout);
 
-    let python_exe = plugins::get_python_executable(&layout.cache_dir, &layout.venv_dir);
-    let cache_file = layout.cache_dir.join("plugins.json");
-    let py_initialized = cache_file.exists() || layout.venv_dir.exists();
+    let python_exe = plugins::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
+    let state_file = layout.plugins_dir.join("pip.json");
+    let py_initialized = state_file.exists() || layout.venv_dir.exists();
 
     let version = if py_initialized {
         Command::new(&python_exe)
@@ -356,7 +355,7 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
         initialized: py_initialized,
         python_exe,
         version,
-        cache_file,
+        state_file,
         venv_dir: layout.venv_dir.clone(),
     };
 

@@ -1,9 +1,9 @@
 /// Plugin Commands 渲染。
 ///
-/// 将 PluginCache 中的命令列表转为对齐的终端展示行并输出。
+/// 将 PluginState 中的命令列表转为对齐的终端展示行并输出。
 
 #[cfg(test)]
-use crate::core::plugins::PluginCache;
+use crate::core::plugins::PluginState;
 #[cfg(test)]
 use crate::utils::display;
 
@@ -11,12 +11,12 @@ use crate::utils::display;
 ///
 /// 行格式: "  {name}{padding}  {description}"
 #[cfg(test)]
-fn format_lines(cache: &PluginCache) -> Vec<(String, String)> {
-    if cache.commands.is_empty() {
+fn format_lines(state: &PluginState) -> Vec<(String, String)> {
+    if state.commands.is_empty() {
         return Vec::new();
     }
 
-    let mut entries: Vec<(String, String)> = cache
+    let mut entries: Vec<(String, String)> = state
         .commands
         .iter()
         .map(|(name, cmd)| (name.clone(), cmd.description.clone()))
@@ -43,12 +43,12 @@ mod tests {
         }
     }
 
-    fn make_cache(commands: Vec<(&str, &str, &str)>) -> PluginCache {
+    fn make_state(commands: Vec<(&str, &str, &str)>) -> PluginState {
         let map: HashMap<String, PluginCommand> = commands
             .into_iter()
             .map(|(name, module, desc)| (name.into(), plugin_command(module, desc)))
             .collect();
-        PluginCache {
+        PluginState {
             commands: map,
             python_executable: None,
             packages: HashMap::new(),
@@ -57,14 +57,14 @@ mod tests {
 
     #[test]
     fn plugin_format_lines_empty() {
-        let cache = make_cache(vec![]);
-        assert!(format_lines(&cache).is_empty());
+        let state = make_state(vec![]);
+        assert!(format_lines(&state).is_empty());
     }
 
     #[test]
     fn plugin_format_lines_single_command() {
-        let cache = make_cache(vec![("send", "byklansend.main:Plugin", "Send messages")]);
-        let result = format_lines(&cache);
+        let state = make_state(vec![("send", "byklansend.main:Plugin", "Send messages")]);
+        let result = format_lines(&state);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, "send");
         assert_eq!(result[0].1, "  send  Send messages");
@@ -72,12 +72,12 @@ mod tests {
 
     #[test]
     fn plugin_format_lines_sorted_by_name() {
-        let cache = make_cache(vec![
+        let state = make_state(vec![
             ("zzz", "mod3:Plugin", "Last"),
             ("aaa", "mod1:Plugin", "First"),
             ("mmm", "mod2:Plugin", "Middle"),
         ]);
-        let result = format_lines(&cache);
+        let result = format_lines(&state);
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].0, "aaa");
         assert_eq!(result[1].0, "mmm");
@@ -86,11 +86,11 @@ mod tests {
 
     #[test]
     fn plugin_format_lines_key_alignment() {
-        let cache = make_cache(vec![
+        let state = make_state(vec![
             ("verylongcommand", "m:Plugin", "Has a long name"),
             ("x", "m:Plugin", "Short"),
         ]);
-        let result = format_lines(&cache);
+        let result = format_lines(&state);
         assert_eq!(result.len(), 2);
         // 排序后 "verylongcommand" 在前，"x" 在后
         // "x" 应补齐到和 "verylongcommand" 相同的宽度

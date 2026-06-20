@@ -1,7 +1,8 @@
 /// `byk add` / `byk remove <key>` 命令实现。
 ///
 /// 支持中心仓库 fcbyk/byk-plugins 和社区仓库 user/repo。
-/// pip install / uninstall 指定插件，将命令注册到 cache/plugins.json。
+/// 协议：插件名 → 行为类型(pip/npm/…) → 具体配置(name, url, commands)。
+/// 遍历所有行为按顺序安装，将命令持久化到 plugins/pip.json。
 
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -11,7 +12,7 @@ use colored::Colorize;
 
 use super::init;
 use super::paths::PathLayout;
-use super::plugins::{PackageInfo, PluginCache, PluginCommand, empty_plugin_cache};
+use super::plugins::{PackageInfo, PluginState, PluginCommand, empty_plugin_state};
 use crate::utils::display;
 use crate::utils::json_io;
 
@@ -113,9 +114,9 @@ fn fetch_registry(url: &str) -> Result<String, String> {
 /// 流程：
 /// 1. 检查 venv 是否存在
 /// 2. 解析 spec → 构建 URL → 获取 byk.json
-/// 3. 查找 key → 解析 install.target 和 commands
-/// 4. pip install
-/// 5. 更新 cache/plugins.json
+/// 3. 查找 key → 遍历行为列表
+/// 4. 对每个 "pip" 行为：install_target = url ?? name → pip install
+/// 5. 收集所有行为的 commands，持久化到 plugins/pip.json
 pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout) {
     let branch = branch.unwrap_or(DEFAULT_BRANCH);
 
@@ -203,17 +204,12 @@ pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout)
         }
     };
 
-    // 5. 解析 install.target 和 install.name
-    let install_obj = entry.get("install");
-    let target = install_obj
-        .and_then(|i| i.get("target"))
-        .and_then(|t| t.as_str());
-
-    let target = match target {
-        Some(t) => t,
+    // 5. 遍历行为列表（插件名.行为类型.具体配置）
+    let behaviors = match entry.as_object() {
+        Some(obj) => obj,
         None => {
             eprintln!(
-                "{} plugin \"{}\" has no install target in byk.json",
+                "{} plugin \"{}\" has no behaviors in byk.json",
                 "Error:".red(),
                 key,
             );
@@ -221,88 +217,135 @@ pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout)
         }
     };
 
-    let install_name = install_obj
-        .and_then(|i| i.get("name"))
-        .and_then(|n| n.as_str())
-        .unwrap_or(&key);
-
-    // 6. 解析 commands（新格式：commands 子对象）
-    let commands_obj = entry
-        .get("commands")
-        .and_then(|c| c.as_object());
-
-    // 7. pip install
-    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-    let status = Command::new(&pip)
-        .arg("install")
-        .arg(target)
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {}
-        Ok(s) => {
-            eprintln!(
-                "{} pip install failed with exit code {}",
-                "Error:".red(),
-                s.code().unwrap_or(1),
-            );
-            exit(1);
-        }
-        Err(e) => {
-            eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-            exit(1);
-        }
-    }
-
-    // 8. 更新 cache/plugins.json
-    let cache_file = layout.cache_dir.join("plugins.json");
-    let mut cache: PluginCache = json_io::read_json(&cache_file).unwrap_or_else(empty_plugin_cache);
-
+    let mut install_name: Option<String> = None;
     let mut cmd_names: Vec<String> = Vec::new();
+    let mut any_behavior_processed = false;
 
-    if let Some(cmds) = commands_obj {
-        for (cmd_name, cmd_value) in cmds {
-            let module = cmd_value
-                .get("module")
-                .and_then(|v| v.as_str());
+    // 提前准备 state（可能在多个行为间共享写入）
+    let state_file = layout.plugins_dir.join("pip.json");
+    let mut state: PluginState = json_io::read_json(&state_file).unwrap_or_else(empty_plugin_state);
 
-            let module = match module {
-                Some(m) => m,
-                None => continue,
-            };
+    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
 
-            let description = cmd_value
-                .get("description")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+    for (behavior_type, behavior_config) in behaviors {
+        match behavior_type.as_str() {
+            "pip" => {
+                any_behavior_processed = true;
 
-            cmd_names.push(cmd_name.clone());
-            cache.commands.insert(
-                cmd_name.clone(),
-                PluginCommand {
-                    module: module.to_string(),
-                    description: description.to_string(),
-                },
-            );
+                // 解析 name（必填）
+                let pkg_name = behavior_config
+                    .get("name")
+                    .and_then(|v| v.as_str());
+
+                let pkg_name = match pkg_name {
+                    Some(n) => n,
+                    None => {
+                        eprintln!(
+                            "{} plugin \"{}\" pip behavior missing \"name\" field",
+                            "Error:".red(),
+                            key,
+                        );
+                        exit(1);
+                    }
+                };
+
+                // 记录第一个 name 用于缓存（byk remove 时 pip uninstall 使用）
+                if install_name.is_none() {
+                    install_name = Some(pkg_name.to_string());
+                }
+
+                // install_target = url ?? name（无 url 则默认走 PyPI）
+                let install_target = behavior_config
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(pkg_name);
+
+                // pip install
+                let status = Command::new(&pip)
+                    .arg("install")
+                    .arg(install_target)
+                    .status();
+
+                match status {
+                    Ok(s) if s.success() => {}
+                    Ok(s) => {
+                        eprintln!(
+                            "{} pip install failed with exit code {}",
+                            "Error:".red(),
+                            s.code().unwrap_or(1),
+                        );
+                        exit(1);
+                    }
+                    Err(e) => {
+                        eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+
+                // 解析该 behavior 下的 commands
+                if let Some(commands_obj) = behavior_config
+                    .get("commands")
+                    .and_then(|c| c.as_object())
+                {
+                    for (cmd_name, cmd_value) in commands_obj {
+                        let module = cmd_value
+                            .get("module")
+                            .and_then(|v| v.as_str());
+
+                        let module = match module {
+                            Some(m) => m,
+                            None => continue,
+                        };
+
+                        let description = cmd_value
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+
+                        cmd_names.push(cmd_name.clone());
+                        state.commands.insert(
+                            cmd_name.clone(),
+                            PluginCommand {
+                                module: module.to_string(),
+                                description: description.to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+            // 其他 behavior 类型：未来扩展点（npm, alias 等），目前跳过
+            _ => {}
         }
     }
 
-    cache.packages.insert(
+    if !any_behavior_processed {
+        eprintln!(
+            "{} plugin \"{}\" has no supported install behavior",
+            "Error:".red(),
+            key,
+        );
+        exit(1);
+    }
+
+    // 写入状态
+    let install_name = install_name.unwrap_or_else(|| key.clone());
+    state.packages.insert(
         key.clone(),
         PackageInfo {
-            name: install_name.to_string(),
+            name: install_name,
             commands: cmd_names,
             source: source_label,
+            behavior: Some("pip".to_string()),
         },
     );
 
     // 确保 python_executable 已设置
-    if cache.python_executable.is_none() {
+    if state.python_executable.is_none() {
         let py = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-        cache.python_executable = Some(py.to_string_lossy().to_string());
+        state.python_executable = Some(py.to_string_lossy().to_string());
     }
 
-    json_io::write_json(&cache_file, &cache);
+    json_io::write_json(&state_file, &state);
 
     println!(
         "{} plugin: {}",
@@ -318,7 +361,7 @@ pub fn install_plugin(spec_str: &str, branch: Option<&str>, layout: &PathLayout)
 /// 卸载插件。
 ///
 /// 流程：
-/// 1. 读取 plugins.json，在 packages 中查找 key
+/// 1. 读取 pip.json，在 packages 中查找 key
 /// 2. pip uninstall -y
 /// 3. 删除 commands 中该插件的所有命令
 /// 4. 删除 packages 中该 key
@@ -336,11 +379,11 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         exit(1);
     }
 
-    // 2. 读取缓存
-    let cache_file = layout.cache_dir.join("plugins.json");
-    let mut cache: PluginCache = json_io::read_json(&cache_file).unwrap_or_else(empty_plugin_cache);
+    // 2. 读取状态
+    let state_file = layout.plugins_dir.join("pip.json");
+    let mut state: PluginState = json_io::read_json(&state_file).unwrap_or_else(empty_plugin_state);
 
-    let pkg = match cache.packages.get(key) {
+    let pkg = match state.packages.get(key) {
         Some(p) => p.clone(),
         None => {
             eprintln!(
@@ -377,12 +420,12 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
 
     // 4. 删除 commands 中该插件的所有命令
     for cmd_name in &pkg.commands {
-        cache.commands.remove(cmd_name);
+        state.commands.remove(cmd_name);
     }
 
     // 5. 删除 packages 条目并写回
-    cache.packages.remove(key);
-    json_io::write_json(&cache_file, &cache);
+    state.packages.remove(key);
+    json_io::write_json(&state_file, &state);
 
     println!(
         "{} plugin: {}",
