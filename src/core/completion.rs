@@ -137,7 +137,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .collect();
     }
 
-    // add 子命令补全（暂无，后续可从中心仓库拉取）
+    // add 子命令补全（暂无）
     if first == "add" {
         return Vec::new();
     }

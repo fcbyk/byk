@@ -45,7 +45,7 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
-    /// 添加插件（来自中心或社区仓库，或本地文件 / editable 目录）
+    /// 添加插件（来自远程仓库或本地文件 / editable 目录）
     Add {
         /// 指定分支（默认 main）
         #[arg(long)]

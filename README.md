@@ -4,16 +4,6 @@
 
 Features are opt-in. Nothing is created until you need it.
 
-## pip plugins
-
-Run Python-based tools in an isolated virtualenv — no global pip installs.
-
-```bash
-byk init py-v          # first use only, activates & creates pi/pu/pl aliases
-byk pi byk-lansend     # install a plugin (pi = pip install)
-byk lansend            # run it
-```
-
 ## npm commands
 
 Manage npm CLIs under a byk-scoped environment — no global pollution.

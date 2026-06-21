@@ -1,6 +1,5 @@
 /// `byk add` / `byk remove <key>` 命令实现。
 ///
-/// 支持中心仓库 fcbyk/byk-plugins 和社区仓库 user/repo。
 /// 协议：插件名 → 行为类型(pip/npm/…) → 具体配置(name, url, commands)。
 /// 遍历所有行为按顺序安装，将命令持久化到 plugins/pip.json。
 
@@ -35,42 +34,36 @@ const PYTHON_BIN: &str = "python";
 // ---------------------------------------------------------------------------
 
 const DEFAULT_BRANCH: &str = "main";
-const CENTER_OWNER: &str = "fcbyk";
-const CENTER_REPO: &str = "byk-plugins";
 
 // ---------------------------------------------------------------------------
 // Spec 解析
 // ---------------------------------------------------------------------------
 
 /// Spec 解析结果。
-///
-/// `center` = 中心仓库（无 user/repo 前缀）。
-/// `community(user, repo)` = 社区仓库。
 struct Spec<'a> {
-    /// 社区仓库: Some("user/repo")，中心仓库: None
-    community: Option<(&'a str, &'a str)>,
-    /// 插件 key
+    /// 仓库 owner
+    owner: &'a str,
+    /// 仓库名
+    repo: &'a str,
+    /// 插件 key（空字符串表示取 byk.json 第一个 key）
     key: &'a str,
 }
 
 /// 解析 spec 字符串。
 ///
-/// - 无 `/` → 中心仓库 + key
-/// - 一个 `/`（user/repo） → 社区仓库 + 取 byk.json 第一个 key
-/// - 两个 `/`（user/repo/key） → 社区仓库 + 指定 key
+/// - 一个 `/`（user/repo） → 取 byk.json 第一个 key
+/// - 两个 `/`（user/repo/key） → 指定 key
 fn parse_spec<'a>(spec: &'a str) -> Option<Spec<'a>> {
     let parts: Vec<&str> = spec.splitn(3, '/').collect();
     match parts.len() {
-        1 => Some(Spec {
-            community: None,
-            key: parts[0],
-        }),
         2 => Some(Spec {
-            community: Some((parts[0], parts[1])),
-            key: "", // 稍后从 byk.json 取第一个
+            owner: parts[0],
+            repo: parts[1],
+            key: "",
         }),
         3 => Some(Spec {
-            community: Some((parts[0], parts[1])),
+            owner: parts[0],
+            repo: parts[1],
             key: parts[2],
         }),
         _ => None,
@@ -181,10 +174,7 @@ pub fn install_plugin(
             }
         };
 
-        let (owner, repo, source_label) = match spec.community {
-            Some((u, r)) => (u, r, Some(format!("{}/{}", u, r))),
-            None => (CENTER_OWNER, CENTER_REPO, None),
-        };
+        let (owner, repo, source_label) = (spec.owner, spec.repo, Some(format!("{}/{}", spec.owner, spec.repo)));
 
         let url = build_registry_url(branch, owner, repo);
 
@@ -469,7 +459,7 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         eprintln!(
             "{} Python venv not found. Run {} first.",
             "Error:".red(),
-            "`byk add <name>`".bold(),
+            "`byk add <user/repo>`".bold(),
         );
         exit(1);
     }
@@ -537,7 +527,7 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
 pub fn render_add_help() {
     println!();
     print!("{}", "Usage:".green().bold());
-    println!("{}", " byk add [OPTIONS] <NAME>".bold());
+    println!("{}", " byk add [OPTIONS] <USER/REPO[/KEY]>".bold());
     println!();
     println!("{}", "Options:".green().bold());
     println!(
@@ -558,10 +548,9 @@ pub fn render_add_help() {
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
-        ("byk add hello".into(), "Install from center registry".into()),
-        ("byk add user/repo/key".into(), "Install from community repo".into()),
-        ("byk add user/repo".into(), "Install first key from community repo".into()),
-        ("byk add --branch dev hello".into(), "Install from a specific branch".into()),
+        ("byk add user/repo/key".into(), "Install specific key from a repo".into()),
+        ("byk add user/repo".into(), "Install first key from a repo".into()),
+        ("byk add --branch dev user/repo/key".into(), "Install from a specific branch".into()),
         ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
         ("byk add -e .".into(), "Editable install from current directory".into()),
     ];

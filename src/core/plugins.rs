@@ -47,7 +47,7 @@ pub struct PackageInfo {
     pub name: String,
     /// 该插件注册的命令名列表
     pub commands: Vec<String>,
-    /// 来源仓库：None = 中心仓库，Some("user/repo") = 社区仓库
+    /// 来源仓库：None = 本地安装（--file / -e），Some("user/repo") = 远程仓库
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// 安装行为类型（目前固定 "pip"，未来扩展 npm 等）

@@ -103,7 +103,7 @@ byk 根据安装模式选择不同的安装目标传给 `pip install`：
 <Tab label="远程安装（默认）">
 
 ```bash
-byk add hello
+byk add user/repo/hello
 ```
 
 安装目标优先级：`url` → `name`
@@ -177,7 +177,7 @@ byk add -e /path/to/source hello
 
 如果一个 key 的值为字符串而非对象，byk 会将其视为 **URL 引用**——从该 URL 拉取另一个 `byk.json`，并在其中查找同名 key：
 
-```json title="中心仓库 byk.json"
+```json
 {
   "lansend": "https://raw.githubusercontent.com/fcbyk/byk-lansend/main/byk.json",
   "hello": {
@@ -189,16 +189,16 @@ byk add -e /path/to/source hello
 }
 ```
 
-当用户执行 `byk add lansend` 时，byk 会：
+当用户执行 `byk add user/repo/lansend` 时，byk 会：
 
 1. 发现 `lansend` 的值是一个 URL
 2. 从该 URL 拉取完整的 `byk.json`
 3. 在新拉取的内容中查找 key 为 `lansend` 的条目
 4. 使用该条目的行为定义执行安装
 
-Ref 适合将插件定义分散到各自仓库中维护，中心仓库只做索引。
+Ref 适合将插件定义分散到各自仓库中维护，主仓库只做索引。
 
-## 社区仓库
+## 远程仓库
 
 任何 GitHub 仓库只要在根目录放一个 `byk.json`，即可作为 byk 插件源使用：
 
@@ -270,4 +270,4 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中第一个 key
 - `byk.json` 中的 key 不能包含 `/`，因为 `/` 在 spec 语法中用于分隔仓库地址和 key
 - Ref 引用的 URL 必须以 `http://` 或 `https://` 开头
 - 一个插件的 `commands` 中可以注册多个命令，但命令名不要与其他插件冲突，否则会按安装顺序覆盖
-- 社区仓库的 `byk.json` 中如果有多个 key，用户可通过 `user/repo/key` 精确指定要安装的插件
+- 远程仓库的 `byk.json` 中如果有多个 key，用户可通过 `user/repo/key` 精确指定要安装的插件

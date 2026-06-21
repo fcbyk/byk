@@ -9,7 +9,7 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 
 ## 工作原理
 
-插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <name>` 时：
+插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
 1. 从远程仓库（或本地文件）拉取插件注册表 `byk.json`
 2. 查找匹配的插件 key，解析其 `pip` 行为
@@ -28,15 +28,7 @@ byk add <any-plugin>   # 首次 add 时自动创建 venv
 
 ## 安装插件
 
-### 从中心仓库安装
-
-中心仓库 `fcbyk/byk-plugins` 托管官方插件列表。只需指定插件 key 即可安装：
-
-```bash
-byk add hello          # 安装中心仓库中 key 为 "hello" 的插件
-```
-
-### 从社区仓库安装
+### 从远程仓库安装
 
 任何 GitHub 仓库只需在根目录放一个 `byk.json` 即可作为 byk 插件源：
 
