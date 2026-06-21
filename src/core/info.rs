@@ -31,7 +31,8 @@ pub enum InfoEntry {
     Builtin { name: String },
     Plugin {
         name: String,
-        module: String,
+        behavior: String,
+        target: String,
         description: String,
     },
     Npm {
@@ -62,7 +63,8 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
         if let Some(cmd) = plugin_state.commands.get(name) {
             entries.push(InfoEntry::Plugin {
                 name: name.to_string(),
-                module: cmd.module.clone(),
+                behavior: cmd.behavior.clone(),
+                target: cmd.target.clone(),
                 description: cmd.description.clone(),
             });
         }
@@ -262,7 +264,7 @@ fn check_node_initialized(layout: &PathLayout) -> bool {
 
 /// 检查 Python 状态。
 fn check_python_status(layout: &PathLayout) -> PythonStatus {
-    let py_state = layout.plugins_dir.join("pip.json");
+    let py_state = layout.plugins_dir.join("plugins.cmd.json");
     let py_venv = layout.venv_dir.exists();
 
     if !py_state.exists() && !py_venv {
@@ -337,7 +339,7 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
     let node_initialized = check_node_initialized(layout);
 
     let python_exe = plugins::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
-    let state_file = layout.plugins_dir.join("pip.json");
+    let state_file = layout.plugins_dir.join("plugins.cmd.json");
     let py_initialized = state_file.exists() || layout.venv_dir.exists();
 
     let version = if py_initialized {

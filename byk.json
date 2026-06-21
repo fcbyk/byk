@@ -3,17 +3,29 @@
     "py-m": {
       "pip": "byk-hello",
       "url": "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl",
-      "pyproject": "./plugins/python",      
+      "pyproject": "./plugins/python",
       "commands": {
         "hello": {
-          "module": "hello.one",
+          "target": "hello.one",
           "description": "Example subcommand to verify dynamic registration."
         },
         "world": {
-          "module": "hello.two",
+          "target": "hello.two",
           "description": "Second command to verify dynamic registration."
         }
       }
+    }
+  },
+
+  "jiahao":{
+    "py-f":{ 
+      "url": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py",
+      "commands": "jiahao",
+      "description": "装 x 命令",
+      "dependencies":[
+        "rich",
+        "click"
+      ]
     }
   }
 }

@@ -1,9 +1,9 @@
 /// Plugin Commands 渲染。
 ///
-/// 将 PluginState 中的命令列表转为对齐的终端展示行并输出。
+/// 将 CmdState 中的命令列表转为对齐的终端展示行并输出。
 
 #[cfg(test)]
-use crate::core::plugins::PluginState;
+use crate::core::plugins::CmdState;
 #[cfg(test)]
 use crate::utils::display;
 
@@ -11,7 +11,7 @@ use crate::utils::display;
 ///
 /// 行格式: "  {name}{padding}  {description}"
 #[cfg(test)]
-fn format_lines(state: &PluginState) -> Vec<(String, String)> {
+fn format_lines(state: &CmdState) -> Vec<(String, String)> {
     if state.commands.is_empty() {
         return Vec::new();
     }
@@ -36,23 +36,22 @@ mod tests {
     use std::collections::HashMap;
     use crate::core::plugins::PluginCommand;
 
-    fn plugin_command(module: &str, description: &str) -> PluginCommand {
+    fn plugin_command(target: &str, description: &str) -> PluginCommand {
         PluginCommand {
-            module: module.into(),
+            behavior: "py-m".to_string(),
+            target: target.into(),
             description: description.into(),
-            behavior: Some("py-m".to_string()),
         }
     }
 
-    fn make_state(commands: Vec<(&str, &str, &str)>) -> PluginState {
+    fn make_state(commands: Vec<(&str, &str, &str)>) -> CmdState {
         let map: HashMap<String, PluginCommand> = commands
             .into_iter()
-            .map(|(name, module, desc)| (name.into(), plugin_command(module, desc)))
+            .map(|(name, target, desc)| (name.into(), plugin_command(target, desc)))
             .collect();
-        PluginState {
+        CmdState {
             commands: map,
             python_executable: None,
-            packages: HashMap::new(),
         }
     }
 

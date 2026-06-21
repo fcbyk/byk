@@ -12,11 +12,13 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
 1. 从远程仓库（或本地文件）拉取插件协议 `byk.json`
-2. 查找匹配的插件 key，解析其 `py-m` 行为
-3. 在隔离的 venv 中执行 `pip install`
-4. 将命令名、模块路径、描述信息持久化到 `~/.byk/plugins/pip.json`
+2. 查找匹配的插件 key，解析其行为（`py-m` 或 `py-f`）
+3. 在隔离的 venv 中执行 `pip install`（`py-m`）或下载/拷贝脚本文件（`py-f`）
+4. 将命令路由持久化到 `~/.byk/plugins/plugins.cmd.json`，包追踪信息持久化到 `~/.byk/plugins/plugins.pkg.json`
 
-之后运行 `byk <command>` 时，byk 直接调用 `python -m <module>` 透传所有参数。
+之后运行 `byk <command>` 时，byk 根据 `behavior` 字段区分执行方式：
+- `py-m`：执行 `python -m <target>`
+- `py-f`：执行 `python <scripts_dir>/<target>`
 
 ## 初始化
 
@@ -86,7 +88,7 @@ byk --info <command>    # 查询某个命令是否来自插件（含模块路径
 byk remove <plugin-key>   # 卸载指定插件
 ```
 
-卸载流程：在 venv 中执行 `pip uninstall -y <package>`，然后清除 `pip.json` 中该插件注册的所有命令。
+卸载流程：在 venv 中执行 `pip uninstall -y <package>`，然后清除 `plugins.cmd.json` 和 `plugins.pkg.json` 中该插件注册的所有命令。
 
 ## 目录结构
 
@@ -98,27 +100,65 @@ byk remove <plugin-key>   # 卸载指定插件
 │   ├── bin/            # Python 解释器和 pip
 │   └── lib/
 └── plugins/
-    └── pip.json        # 插件状态文件（命令列表、包信息）
+    ├── plugins.cmd.json   # 命令路由（热路径：命令解析、帮助渲染）
+    ├── plugins.pkg.json   # 包追踪（冷路径：卸载、信息查询）
+    └── scripts/           # py-f 脚本文件存放目录
 ```
 
-## pip.json 结构
+## 状态文件
 
-`pip.json` 是插件系统的持久化状态文件，由 `byk add` / `byk remove` 自动维护：
+插件系统使用两个 JSON 文件分别管理命令路由和包追踪，由 `byk add` / `byk remove` 自动维护。
+
+### plugins.cmd.json（命令路由）
+
+热路径文件，用于命令解析、路由和帮助渲染：
 
 ```json
 {
   "commands": {
     "lansend": {
-      "module": "byklansend.main",
+      "behavior": "py-m",
+      "target": "byklansend.main",
       "description": "Send messages via LAN"
+    },
+    "myscript": {
+      "behavior": "py-f",
+      "target": "myscript.py",
+      "description": "My custom script"
     }
   },
-  "python_executable": "/Users/coke/.byk/venv/bin/python",
+  "python_executable": "/Users/coke/.byk/venv/bin/python"
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `commands` | 命令名 → 行为类型、目标、描述的映射 |
+| `python_executable` | venv 内 Python 解释器路径，用于执行插件 |
+| `behavior` | 行为类型：`py-m`（模块）或 `py-f`（脚本） |
+| `target` | 行为目标：`py-m` 为模块路径，`py-f` 为脚本文件名 |
+
+### plugins.pkg.json（包追踪）
+
+冷路径文件，记录每个插件的安装包和注册命令，用于卸载和信息查询：
+
+```json
+{
   "packages": {
     "lansend": {
-      "name": "byk-lansend",
-      "commands": ["lansend"],
-      "behavior": "py-m"
+      "source": "user/repo",
+      "py_m": {
+        "name": "byk-lansend",
+        "commands": ["lansend"]
+      }
+    },
+    "myscript": {
+      "source": null,
+      "py_f": {
+        "scripts": ["myscript.py"],
+        "commands": ["myscript"],
+        "dependencies": ["requests>=2.28"]
+      }
     }
   }
 }
@@ -126,13 +166,10 @@ byk remove <plugin-key>   # 卸载指定插件
 
 | 字段 | 说明 |
 |------|------|
-| `commands` | 命令名 → 模块路径、描述的映射，用于命令路由和帮助显示 |
-| `python_executable` | venv 内 Python 解释器路径，用于执行插件 |
-| `packages` | 插件 key → 包信息的映射，记录 pip 包名、注册的命令列表、来源等 |
-
-:::note
-通常无需手动编辑此文件，`byk add` 和 `byk remove` 会自动维护。如需调试可直接查看。
-:::
+| `packages` | 插件 key → 包信息的映射 |
+| `source` | 插件来源（`user/repo` 格式），本地安装时为 `null` |
+| `py_m` | `py-m` 行为记录：pip 包名和注册的命令列表 |
+| `py_f` | `py-f` 行为记录：脚本文件名、命令列表和依赖列表 |
 
 ## 编写自己的插件
 

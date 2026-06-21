@@ -47,7 +47,7 @@ pub fn render_commands(layout: &PathLayout) {
     let plugin_state = if layout.venv_dir.is_dir() {
         plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
     } else {
-        plugins::empty_plugin_state()
+        plugins::empty_cmd_state()
     };
     let mut plugins: Vec<(String, String)> = plugin_state
         .commands

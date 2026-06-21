@@ -117,18 +117,18 @@ fn main() {
 
     // Step 2: 检查是否为插件命令（优先级高于 NPM）
     // 仅 venv 存在时加载插件状态
-    let plugin_state = if layout.venv_dir.is_dir() {
+    let cmd_state = if layout.venv_dir.is_dir() {
         plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
     } else {
-        plugins::empty_plugin_state()
+        plugins::empty_cmd_state()
     };
-    if plugin_state.commands.contains_key(command_name) {
+    if cmd_state.commands.contains_key(command_name) {
         plugins::execute_plugin_command(
             command_name,
             command_args,
             &layout.plugins_dir,
             &layout.venv_dir,
-            &plugin_state,
+            &cmd_state,
         );
         return;
     }

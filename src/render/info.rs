@@ -114,11 +114,17 @@ fn render_command_info(name: &str, layout: &PathLayout) {
             }
             InfoEntry::Plugin {
                 name,
-                module,
+                behavior,
+                target,
                 description,
             } => {
                 println!("{}: {}", "Plugin".green().bold(), name.cyan().bold());
-                println!("  {}: {}", "Module".yellow(), module);
+                let label = match behavior.as_str() {
+                    "py-f" => "Script",
+                    _ => "Module",
+                };
+                println!("  {}: {}", label.yellow(), target);
+                println!("  {}: {}", "Behavior".yellow(), behavior);
                 println!("  {}: {}", "Description".yellow(), description);
             }
             InfoEntry::Npm {
@@ -344,41 +350,63 @@ fn render_plugins_list(layout: &PathLayout) {
         return;
     }
 
-    let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+    let cmd_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+    let pkg_state = plugins::load_pkg_state(&layout.plugins_dir);
 
-    if plugin_state.packages.is_empty() {
+    if pkg_state.packages.is_empty() {
         println!("{}", "No plugins installed.".yellow());
         println!("  {}", "$ byk add <user/repo>".dimmed());
         println!();
         return;
     }
 
-    let mut keys: Vec<&String> = plugin_state.packages.keys().collect();
+    let mut keys: Vec<&String> = pkg_state.packages.keys().collect();
     keys.sort();
 
     println!("{}", "Installed plugins:".green().bold());
     for key in &keys {
-        let pkg = &plugin_state.packages[*key];
-        let cmds = pkg.commands.join(", ");
+        let pkg = &pkg_state.packages[*key];
         let source_str = pkg
             .source
             .as_ref()
             .map(|s| format!("    source: {}", s.dimmed()))
             .unwrap_or_default();
-        println!(
-            "  {}    pip: {}{}    commands: {}",
-            key.cyan().bold(),
-            pkg.name.dimmed(),
-            source_str,
-            cmds,
-        );
-        // 显示每个命令的模块路径
-        for cmd_name in &pkg.commands {
-            if let Some(cmd) = plugin_state.commands.get(cmd_name) {
+
+        let mut all_cmds: Vec<String> = Vec::new();
+        if let Some(ref py_m) = pkg.py_m {
+            all_cmds.extend(py_m.commands.clone());
+            println!(
+                "  {}    py-m: {}{}",
+                key.cyan().bold(),
+                py_m.name.dimmed(),
+                source_str,
+            );
+        }
+        if let Some(ref py_f) = pkg.py_f {
+            all_cmds.extend(py_f.commands.clone());
+            let scripts_str = py_f.scripts.join(", ");
+            println!(
+                "  {}    py-f: {}{}",
+                key.cyan().bold(),
+                scripts_str.dimmed(),
+                source_str,
+            );
+        }
+        if all_cmds.is_empty() {
+            println!("  {}{}", key.cyan().bold(), source_str);
+        }
+        println!("    commands: {}", all_cmds.join(", "));
+        for cmd_name in &all_cmds {
+            if let Some(cmd) = cmd_state.commands.get(cmd_name) {
+                let target_label = match cmd.behavior.as_str() {
+                    "py-f" => "script",
+                    _ => "module",
+                };
                 println!(
-                    "    {} → {} {}",
+                    "    {} → {} {} {}",
                     cmd_name.dimmed(),
-                    cmd.module.dimmed(),
+                    target_label.dimmed(),
+                    cmd.target.dimmed(),
                     format!("({})", cmd.description).dimmed(),
                 );
             }
@@ -413,7 +441,7 @@ fn render_python_overview(python: &PythonOverviewInfo) {
     println!("{}: {}", "State".yellow(), python.state_file.display());
 
     // 来源提示
-    let source_display = "State file (pip.json)".dimmed();
+    let source_display = "State file (plugins.cmd.json)".dimmed();
     println!("{}:  {}", "Source".yellow(), source_display);
     println!();
 }

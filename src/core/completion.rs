@@ -418,10 +418,10 @@ mod tests {
 
             // 写入插件状态
             let plugin_state = json!({
-                "commands": {"test-plugin": {"module": "test.module:Plugin", "description": "A test plugin"}}
+                "commands": {"test-plugin": {"behavior": "py-m", "target": "test.module:Plugin", "description": "A test plugin"}}
             });
             fs::write(
-                plugins_dir.join("pip.json"),
+                plugins_dir.join("plugins.cmd.json"),
                 serde_json::to_string_pretty(&plugin_state).unwrap(),
             )
             .unwrap();

@@ -167,7 +167,7 @@ const PYTHON_BIN: &str = "python";
 
 /// 初始化 Python 虚拟环境。
 ///
-/// 创建 ~/.byk/venv/（不存在时），写入最小缓存 pip.json。
+/// 创建 ~/.byk/venv/（不存在时），写入 plugins.cmd.json 和 plugins.pkg.json。
 /// 使用系统 python3 创建 venv。
 pub fn init_py(layout: &PathLayout) {
     let venv_dir = &layout.venv_dir;
@@ -208,16 +208,25 @@ pub fn init_py(layout: &PathLayout) {
     }
 
     // ② 写入最小状态（venv 刚创建，无插件，commands 为空）
-    let state_file = layout.plugins_dir.join("pip.json");
+    let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
+    let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
     let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-    let commands_state = crate::core::plugins::PluginState {
+    let cmd_state = crate::core::plugins::CmdState {
         commands: std::collections::HashMap::new(),
         python_executable: Some(python_exe.to_string_lossy().to_string()),
+    };
+    let pkg_state = crate::core::plugins::PkgState {
         packages: std::collections::HashMap::new(),
     };
-    crate::utils::json_io::write_json(&state_file, &commands_state);
+    crate::utils::json_io::write_json(&cmd_file, &cmd_state);
+    crate::utils::json_io::write_json(&pkg_file, &pkg_state);
     println!(
-        "  {} plugins/pip.json {}",
+        "  {} plugins/plugins.cmd.json {}",
+        "+".green(),
+        "(created)".dimmed()
+    );
+    println!(
+        "  {} plugins/plugins.pkg.json {}",
         "+".green(),
         "(created)".dimmed()
     );
