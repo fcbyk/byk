@@ -1,18 +1,17 @@
 {
   "hello": {
-    "install": {
-      "type": "python",
-      "name": "byk-hello",
-      "target": "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl"
-    },
-    "commands": {
-      "hello": {
-        "module": "hello.one",
-        "description": "Example subcommand to verify dynamic registration."
-      },
-      "world": {
-        "module": "hello.two",
-        "description": "Second command to verify dynamic registration."
+    "py-m": {
+      "pip": "byk-hello",
+      "url": "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl",
+      "commands": {
+        "hello": {
+          "module": "hello.one",
+          "description": "Example subcommand to verify dynamic registration."
+        },
+        "world": {
+          "module": "hello.two",
+          "description": "Second command to verify dynamic registration."
+        }
       }
     }
   }

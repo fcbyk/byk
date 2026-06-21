@@ -17,7 +17,7 @@
   {
     "type": "file",
     "name": "plugin-registry",
-    "label": "插件注册表"
+    "label": "插件协议"
   },
   {
     "type": "dir",

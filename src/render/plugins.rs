@@ -40,6 +40,7 @@ mod tests {
         PluginCommand {
             module: module.into(),
             description: description.into(),
+            behavior: Some("py-m".to_string()),
         }
     }
 

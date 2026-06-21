@@ -34,23 +34,26 @@ const PYTHON_BIN: &str = "python";
 /// 单个插件命令的缓存条目。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PluginCommand {
-    /// Python 模块路径，如 "hello.one"
+    /// 目标路径（py-m: 模块路径, py-f: 脚本路径, py-b: 二进制名）
     pub module: String,
     /// 命令描述
     pub description: String,
+    /// 行为类型（"py-m" | "py-f" | "py-b" | ...）
+    #[serde(default)]
+    pub behavior: Option<String>,
 }
 
 /// 单个插件的包信息（install 时写入）。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PackageInfo {
-    /// pip 包名（来自 byk.json 的 behavior.name）
+    /// pip 包名（来自 byk.json 的 py-m.pip）
     pub name: String,
     /// 该插件注册的命令名列表
     pub commands: Vec<String>,
     /// 来源仓库：None = 本地安装（--file / -e），Some("user/repo") = 远程仓库
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// 安装行为类型（目前固定 "pip"，未来扩展 npm 等）
+    /// 安装行为类型（如 "py-m"、"py-f"，未来扩展 js-* 等）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub behavior: Option<String>,
 }
@@ -126,7 +129,7 @@ pub fn load_plugin_state(plugins_dir: &Path, venv_dir: &Path) -> PluginState {
 
 /// 将插件命令转发给 Python 执行。
 ///
-/// 直接通过 `python -m <module> <args>` 调用。
+/// py-m 行为通过 `python -m <module> <args>` 调用。
 pub fn execute_plugin_command(
     cmd_name: &str,
     cmd_args: &[String],

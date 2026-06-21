@@ -293,17 +293,17 @@ pub fn install_plugin(
 
     for (behavior_type, behavior_config) in behaviors {
         match behavior_type.as_str() {
-            "pip" => {
+            "py-m" => {
                 any_behavior_processed = true;
 
-                // 解析 name（可编辑模式下可选，其它模式必填）
+                // 解析 pip 包名（可编辑模式下可选，其它模式必填）
                 let pkg_name = behavior_config
-                    .get("name")
+                    .get("pip")
                     .and_then(|v| v.as_str());
 
                 if !is_editable && pkg_name.is_none() {
                     eprintln!(
-                        "{} plugin \"{}\" pip behavior missing \"name\" field",
+                        "{} plugin \"{}\" py-m behavior missing \"pip\" field",
                         "Error:".red(),
                         key,
                     );
@@ -393,6 +393,7 @@ pub fn install_plugin(
                             PluginCommand {
                                 module: module.to_string(),
                                 description: description.to_string(),
+                                behavior: Some("py-m".to_string()),
                             },
                         );
                     }
@@ -420,7 +421,7 @@ pub fn install_plugin(
             name: install_name,
             commands: cmd_names,
             source: source_label,
-            behavior: Some("pip".to_string()),
+            behavior: Some("py-m".to_string()),
         },
     );
 

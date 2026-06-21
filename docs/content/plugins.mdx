@@ -11,8 +11,8 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 
 插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
-1. 从远程仓库（或本地文件）拉取插件注册表 `byk.json`
-2. 查找匹配的插件 key，解析其 `pip` 行为
+1. 从远程仓库（或本地文件）拉取插件协议 `byk.json`
+2. 查找匹配的插件 key，解析其 `py-m` 行为
 3. 在隔离的 venv 中执行 `pip install`
 4. 将命令名、模块路径、描述信息持久化到 `~/.byk/plugins/pip.json`
 
@@ -118,7 +118,7 @@ byk remove <plugin-key>   # 卸载指定插件
     "lansend": {
       "name": "byk-lansend",
       "commands": ["lansend"],
-      "behavior": "pip"
+      "behavior": "py-m"
     }
   }
 }
@@ -136,4 +136,4 @@ byk remove <plugin-key>   # 卸载指定插件
 
 ## 编写自己的插件
 
-如果你希望将自己的工具发布为 byk 插件，请参考 [插件注册表 byk.json](./plugin-registry)。
+如果你希望将自己的工具发布为 byk 插件，请参考 [插件协议 byk.json](./plugin-registry)。
