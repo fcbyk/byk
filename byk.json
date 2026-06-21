@@ -3,6 +3,7 @@
     "py-m": {
       "pip": "byk-hello",
       "url": "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl",
+      "pyproject": "./plugins/python",      
       "commands": {
         "hello": {
           "module": "hello.one",

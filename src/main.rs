@@ -45,11 +45,11 @@ fn main() {
             return;
         }
         Some(Commands::Add { branch, file, editable, name }) => {
-            match (name.as_deref(), editable.as_deref()) {
-                (None | Some("-h") | Some("--help"), None) => {
+            match (name.as_deref(), editable.as_deref(), file.as_deref()) {
+                (None | Some("-h") | Some("--help"), None, None) => {
                     install::render_add_help();
                 }
-                (spec, editable) => {
+                (spec, editable, _file) => {
                     install::install_plugin(
                         spec.unwrap_or(""),
                         branch.as_deref(),
