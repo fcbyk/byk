@@ -78,7 +78,7 @@ byk remove <feature>
 | `comp` | 移除 shell 补全配置（从 .zshrc / .bashrc 中删除相关行） |
 | `node` | 移除 node-pkgs 环境、别名文件和缓存 |
 | `all` | 移除所有持久化数据（`~/.byk/` 和 shell 补全），需输入确认 |
-| `<plugin-key>` | 卸载指定插件（执行 `pip uninstall -y` 并清除命令缓存） |
+| `<plugin-key>` | 卸载指定插件（删除脚本文件并清除命令缓存，不卸载 pip 包） |
 
 ```bash title="示例"
 byk remove comp        # 移除 shell 补全

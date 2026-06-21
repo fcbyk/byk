@@ -1,7 +1,7 @@
 /// `byk add` / `byk remove <key>` 命令实现。
 ///
-/// 协议：插件名 → 行为类型(py-m/py-f/…) → 具体配置。
-/// 遍历所有行为按顺序安装，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
+/// 协议：插件名 → 操作块(install/download/commands) → 具体配置。
+/// 按 download → install → commands 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
 
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -12,7 +12,7 @@ use colored::Colorize;
 use super::init;
 use super::paths::PathLayout;
 use super::plugins::{
-    CmdState, PluginCommand, PkgState, PkgEntry, PyMInfo, PyFInfo,
+    CmdState, PluginCommand, PkgState, PkgEntry, InstallInfo, DownloadInfo,
     empty_cmd_state, load_pkg_state,
 };
 use crate::utils::display;
@@ -142,8 +142,6 @@ pub fn install_plugin(
     layout: &PathLayout,
 ) {
     let branch = branch.unwrap_or(DEFAULT_BRANCH);
-    let is_local = file.is_some();
-    let is_editable = editable.is_some();
 
     // 1. 检查 venv（不存在时提示创建）
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
@@ -292,20 +290,8 @@ pub fn install_plugin(
         entry
     };
 
-    // 6. 遍历行为列表（插件名.行为类型.具体配置）
-    let behaviors = match entry.as_object() {
-        Some(obj) => obj,
-        None => {
-            eprintln!(
-                "{} plugin \"{}\" has no behaviors in byk.json",
-                "Error:".red(),
-                key,
-            );
-            exit(1);
-        }
-    };
-
-    let mut any_behavior_processed = false;
+    // 6. 按操作块执行：download → install → commands
+    let mut any_operation_processed = false;
 
     // 准备状态文件
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
@@ -314,279 +300,178 @@ pub fn install_plugin(
     let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
     let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
 
-    let mut pkg_entry = PkgEntry {
-        source: source_label,
-        py_m: None,
-        py_f: None,
-    };
-
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
 
-    for (behavior_type, behavior_config) in behaviors {
-        match behavior_type.as_str() {
-            "py-m" => {
-                any_behavior_processed = true;
+    let mut install_info: Option<InstallInfo> = None;
+    let mut download_info: Option<DownloadInfo> = None;
+    let mut registered_commands: Vec<String> = Vec::new();
 
-                let pkg_name = behavior_config
-                    .get("pip")
-                    .and_then(|v| v.as_str());
+    // ---- 6a. download：下载远程文件到本地 scripts 目录 ----
+    if let Some(dl_block) = entry.get("download").and_then(|v| v.as_object()) {
+        any_operation_processed = true;
 
-                if !is_editable && pkg_name.is_none() {
-                    eprintln!(
-                        "{} plugin \"{}\" py-m behavior missing \"pip\" field",
-                        "Error:".red(),
-                        key,
-                    );
+        // 确保 scripts 目录存在
+        if !scripts_dir.exists() {
+            if let Err(e) = std::fs::create_dir_all(&scripts_dir) {
+                eprintln!(
+                    "{} failed to create scripts directory: {}",
+                    "Error:".red(),
+                    e,
+                );
+                exit(1);
+            }
+        }
+
+        let mut downloaded_scripts: Vec<String> = Vec::new();
+
+        if let Some(urls) = dl_block.get("scripts").and_then(|v| v.as_array()) {
+            for url_val in urls {
+                let url = match url_val.as_str() {
+                    Some(u) => u,
+                    None => continue,
+                };
+
+                // 从 URL 最后一个斜杠后提取文件名
+                let filename = url.rsplit('/').next().unwrap_or("script");
+                let dest_path = scripts_dir.join(filename);
+
+                if let Err(e) = download_script(url, &dest_path) {
+                    eprintln!("{} {}", "Error:".red(), e);
                     exit(1);
                 }
 
-                let effective_name = pkg_name.unwrap_or(&key);
-
-                // pip install
-                let install_result = if is_editable {
-                    let ed_dir = editable.unwrap();
-                    let pyproject_dir = behavior_config
-                        .get("pyproject")
-                        .and_then(|v| v.as_str());
-                    let install_dir = match pyproject_dir {
-                        Some(p) => std::path::PathBuf::from(ed_dir).join(p),
-                        None => std::path::PathBuf::from(ed_dir),
-                    };
-                    Command::new(&pip)
-                        .arg("install")
-                        .arg("-e")
-                        .arg(install_dir)
-                        .status()
-                } else {
-                    let install_target = if is_local {
-                        behavior_config
-                            .get("local")
-                            .and_then(|v| v.as_str())
-                            .or_else(|| behavior_config.get("url").and_then(|v| v.as_str()))
-                            .unwrap_or(pkg_name.unwrap())
-                    } else {
-                        behavior_config
-                            .get("url")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(pkg_name.unwrap())
-                    };
-                    Command::new(&pip)
-                        .arg("install")
-                        .arg(install_target)
-                        .status()
-                };
-
-                match install_result {
-                    Ok(s) if s.success() => {}
-                    Ok(s) => {
-                        eprintln!(
-                            "{} pip install failed with exit code {}",
-                            "Error:".red(),
-                            s.code().unwrap_or(1),
-                        );
-                        exit(1);
-                    }
-                    Err(e) => {
-                        eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                }
-
-                // 解析 commands
-                let mut py_m_cmds: Vec<String> = Vec::new();
-                if let Some(commands_obj) = behavior_config
-                    .get("commands")
-                    .and_then(|c| c.as_object())
-                {
-                    for (cmd_name, cmd_value) in commands_obj {
-                        let target = cmd_value
-                            .get("target")
-                            .and_then(|v| v.as_str());
-
-                        let target = match target {
-                            Some(t) => t,
-                            None => continue,
-                        };
-
-                        let description = cmd_value
-                            .get("description")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-
-                        py_m_cmds.push(cmd_name.clone());
-                        cmd_state.commands.insert(
-                            cmd_name.clone(),
-                            PluginCommand {
-                                behavior: "py-m".to_string(),
-                                target: target.to_string(),
-                                description: description.to_string(),
-                            },
-                        );
-                    }
-                }
-
-                pkg_entry.py_m = Some(PyMInfo {
-                    name: effective_name.to_string(),
-                    commands: py_m_cmds,
-                });
+                downloaded_scripts.push(filename.to_string());
             }
+        }
 
-            "py-f" => {
-                any_behavior_processed = true;
-
-                // 确保 scripts 目录存在
-                if !scripts_dir.exists() {
-                    if let Err(e) = std::fs::create_dir_all(&scripts_dir) {
-                        eprintln!(
-                            "{} failed to create scripts directory: {}",
-                            "Error:".red(),
-                            e,
-                        );
-                        exit(1);
-                    }
-                }
-
-                let mut py_f_scripts: Vec<String> = Vec::new();
-                let mut py_f_cmds: Vec<String> = Vec::new();
-                let mut py_f_deps: Vec<String> = Vec::new();
-
-                // py-f 支持对象（单条目）或数组（多条目）两种写法
-                let entries: Vec<&serde_json::Value> = if let Some(arr) = behavior_config.as_array() {
-                    arr.iter().collect()
-                } else if behavior_config.is_object() {
-                    vec![behavior_config]
-                } else {
-                    eprintln!(
-                        "{} plugin \"{}\" py-f must be an object or array",
-                        "Error:".red(),
-                        key,
-                    );
-                    exit(1);
-                };
-
-                for entry in entries {
-                        let cmd_name = entry
-                            .get("commands")
-                            .and_then(|v| v.as_str());
-
-                        let cmd_name = match cmd_name {
-                            Some(c) => c,
-                            None => {
-                                eprintln!(
-                                    "{} plugin \"{}\" py-f entry missing \"commands\" field",
-                                    "Error:".red(),
-                                    key,
-                                );
-                                exit(1);
-                            }
-                        };
-
-                        let script_filename = format!("{}.py", cmd_name);
-                        let dest_path = scripts_dir.join(&script_filename);
-
-                        // 下载或拷贝脚本
-                        // 本地模式优先 local，fallback 到 url；远程模式只用 url
-                        let local_path = entry
-                            .get("local")
-                            .and_then(|v| v.as_str());
-                        let remote_url = entry
-                            .get("url")
-                            .and_then(|v| v.as_str());
-
-                        if let Some(src) = local_path {
-                            if let Err(e) = std::fs::copy(src, &dest_path) {
-                                eprintln!(
-                                    "{} failed to copy script from {} to {}: {}",
-                                    "Error:".red(),
-                                    src,
-                                    dest_path.display(),
-                                    e,
-                                );
-                                exit(1);
-                            }
-                        } else if let Some(u) = remote_url {
-                            if let Err(e) = download_script(u, &dest_path) {
-                                eprintln!("{} {}", "Error:".red(), e);
-                                exit(1);
-                            }
-                        } else {
-                            eprintln!(
-                                "{} plugin \"{}\" py-f entry missing both \"local\" and \"url\" fields",
-                                "Error:".red(),
-                                key,
-                            );
-                            exit(1);
-                        }
-
-                        // 安装依赖
-                        let deps: Vec<String> = entry
-                            .get("dependencies")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|d| d.as_str().map(String::from))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-
-                        if !deps.is_empty() {
-                            let mut pip_cmd = Command::new(&pip);
-                            pip_cmd.arg("install");
-                            for dep in &deps {
-                                pip_cmd.arg(dep);
-                            }
-                            let dep_result = pip_cmd.status();
-                            match dep_result {
-                                Ok(s) if s.success() => {}
-                                Ok(s) => {
-                                    eprintln!(
-                                        "{} pip install dependencies failed with exit code {}",
-                                        "Error:".red(),
-                                        s.code().unwrap_or(1),
-                                    );
-                                    exit(1);
-                                }
-                                Err(e) => {
-                                    eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                                    exit(1);
-                                }
-                            }
-                            py_f_deps.extend(deps);
-                        }
-
-                        let description = entry
-                            .get("description")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-
-                        py_f_scripts.push(script_filename.clone());
-                        py_f_cmds.push(cmd_name.to_string());
-                        cmd_state.commands.insert(
-                            cmd_name.to_string(),
-                            PluginCommand {
-                                behavior: "py-f".to_string(),
-                                target: script_filename,
-                                description: description.to_string(),
-                            },
-                        );
-                    }
-
-                if !py_f_scripts.is_empty() {
-                    pkg_entry.py_f = Some(PyFInfo {
-                        scripts: py_f_scripts,
-                        commands: py_f_cmds,
-                        dependencies: py_f_deps,
-                    });
-                }
-            }
-            // 其他 behavior 类型：未来扩展点
-            _ => {}
+        if !downloaded_scripts.is_empty() {
+            download_info = Some(DownloadInfo {
+                scripts: downloaded_scripts,
+            });
         }
     }
 
-    if !any_behavior_processed {
+    // ---- 6b. install：安装包到 venv（-e 选项决定 pip 还是 pip-e，互斥）----
+    if let Some(inst_block) = entry.get("install").and_then(|v| v.as_object()) {
+        any_operation_processed = true;
+
+        let mut pip_packages: Vec<String> = Vec::new();
+        let mut pip_e_paths: Vec<String> = Vec::new();
+
+        if let Some(ed_dir) = editable {
+            // -e 模式：只执行 pip install -e
+            if let Some(pip_e_list) = inst_block.get("pip-e").and_then(|v| v.as_array()) {
+                for path_val in pip_e_list {
+                    let rel_path = match path_val.as_str() {
+                        Some(p) => p,
+                        None => continue,
+                    };
+
+                    let install_dir = std::path::PathBuf::from(ed_dir).join(rel_path);
+
+                    let status = Command::new(&pip)
+                        .arg("install")
+                        .arg("-e")
+                        .arg(&install_dir)
+                        .status();
+
+                    match status {
+                        Ok(s) if s.success() => {}
+                        Ok(s) => {
+                            eprintln!(
+                                "{} pip install -e failed with exit code {}",
+                                "Error:".red(),
+                                s.code().unwrap_or(1),
+                            );
+                            exit(1);
+                        }
+                        Err(e) => {
+                            eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
+                            exit(1);
+                        }
+                    }
+
+                    pip_e_paths.push(rel_path.to_string());
+                }
+            }
+        } else {
+            // 普通模式：只执行 pip install
+            if let Some(pip_list) = inst_block.get("pip").and_then(|v| v.as_array()) {
+                for pkg_val in pip_list {
+                    let pkg = match pkg_val.as_str() {
+                        Some(p) => p,
+                        None => continue,
+                    };
+
+                    let status = Command::new(&pip)
+                        .arg("install")
+                        .arg(pkg)
+                        .status();
+
+                    match status {
+                        Ok(s) if s.success() => {}
+                        Ok(s) => {
+                            eprintln!(
+                                "{} pip install failed with exit code {}",
+                                "Error:".red(),
+                                s.code().unwrap_or(1),
+                            );
+                            exit(1);
+                        }
+                        Err(e) => {
+                            eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
+                            exit(1);
+                        }
+                    }
+
+                    pip_packages.push(pkg.to_string());
+                }
+            }
+        }
+
+        if !pip_packages.is_empty() || !pip_e_paths.is_empty() {
+            install_info = Some(InstallInfo {
+                pip: pip_packages,
+                pip_e: pip_e_paths,
+            });
+        }
+    }
+
+    // ---- 6c. commands：直接合并到 plugins.cmd.json ----
+    if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object()) {
+        any_operation_processed = true;
+
+        for (cmd_name, cmd_value) in commands_obj {
+            let cmd_type = cmd_value
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("py-m");
+
+            let entry = match cmd_value.get("entry").and_then(|v| v.as_str()) {
+                Some(t) => t,
+                None => continue,
+            };
+
+            let desc = cmd_value
+                .get("desc")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            registered_commands.push(cmd_name.clone());
+            cmd_state.commands.insert(
+                cmd_name.clone(),
+                PluginCommand {
+                    cmd_type: cmd_type.to_string(),
+                    entry: entry.to_string(),
+                    desc: desc.to_string(),
+                },
+            );
+        }
+    }
+
+    if !any_operation_processed {
         eprintln!(
-            "{} plugin \"{}\" has no supported install behavior",
+            "{} plugin \"{}\" has no supported operations (install/download/commands)",
             "Error:".red(),
             key,
         );
@@ -600,6 +485,12 @@ pub fn install_plugin(
     }
 
     // 写入 pkg 状态
+    let pkg_entry = PkgEntry {
+        source: source_label,
+        install: install_info,
+        download: download_info,
+        commands: registered_commands,
+    };
     pkg_state.packages.insert(key.clone(), pkg_entry);
 
     json_io::write_json(&cmd_file, &cmd_state);
@@ -620,15 +511,15 @@ pub fn install_plugin(
 ///
 /// 流程：
 /// 1. 读取 plugins.pkg.json，在 packages 中查找 key
-/// 2. py-m：pip uninstall -y
-/// 3. py-f：删除脚本文件
-/// 4. 从 plugins.cmd.json 删除该插件的所有命令
-/// 5. 从 plugins.pkg.json 删除该 key
-/// 6. 写回
+/// 2. 删除下载的脚本文件
+/// 3. 从 plugins.cmd.json 删除该插件的所有命令
+/// 4. 从 plugins.pkg.json 删除该 key
+/// 5. 写回
+///
+/// 注意：不卸载 pip 包，因为一个包可能被多个插件共享。
 pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
-    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-
     // 1. 检查 venv
+    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
     if !pip.is_file() {
         eprintln!(
             "{} Python venv not found. Run {} first.",
@@ -658,39 +549,9 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         }
     };
 
-    // 3. py-m：pip uninstall -y
-    if let Some(ref py_m) = pkg.py_m {
-        let status = Command::new(&pip)
-            .arg("uninstall")
-            .arg("-y")
-            .arg(&py_m.name)
-            .status();
-
-        match status {
-            Ok(s) if s.success() => {}
-            Ok(s) => {
-                eprintln!(
-                    "{} pip uninstall failed with exit code {}",
-                    "Error:".red(),
-                    s.code().unwrap_or(1),
-                );
-                exit(1);
-            }
-            Err(e) => {
-                eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                exit(1);
-            }
-        }
-
-        // 删除 commands
-        for cmd_name in &py_m.commands {
-            cmd_state.commands.remove(cmd_name);
-        }
-    }
-
-    // 4. py-f：删除脚本文件
-    if let Some(ref py_f) = pkg.py_f {
-        for script in &py_f.scripts {
+    // 3. 删除脚本文件
+    if let Some(ref download) = pkg.download {
+        for script in &download.scripts {
             let script_path = scripts_dir.join(script);
             if script_path.exists() {
                 if let Err(e) = std::fs::remove_file(&script_path) {
@@ -703,11 +564,11 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
                 }
             }
         }
+    }
 
-        // 删除 commands
-        for cmd_name in &py_f.commands {
-            cmd_state.commands.remove(cmd_name);
-        }
+    // 4. 删除 commands
+    for cmd_name in &pkg.commands {
+        cmd_state.commands.remove(cmd_name);
     }
 
     // 5. 删除 packages 条目

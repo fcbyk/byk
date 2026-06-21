@@ -114,18 +114,18 @@ fn render_command_info(name: &str, layout: &PathLayout) {
             }
             InfoEntry::Plugin {
                 name,
-                behavior,
-                target,
-                description,
+                cmd_type,
+                entry,
+                desc,
             } => {
                 println!("{}: {}", "Plugin".green().bold(), name.cyan().bold());
-                let label = match behavior.as_str() {
+                let label = match cmd_type.as_str() {
                     "py-f" => "Script",
                     _ => "Module",
                 };
-                println!("  {}: {}", label.yellow(), target);
-                println!("  {}: {}", "Behavior".yellow(), behavior);
-                println!("  {}: {}", "Description".yellow(), description);
+                println!("  {}: {}", label.yellow(), entry);
+                println!("  {}: {}", "Type".yellow(), cmd_type);
+                println!("  {}: {}", "Desc".yellow(), desc);
             }
             InfoEntry::Npm {
                 name,
@@ -372,21 +372,21 @@ fn render_plugins_list(layout: &PathLayout) {
             .map(|s| format!("    source: {}", s.dimmed()))
             .unwrap_or_default();
 
-        let mut all_cmds: Vec<String> = Vec::new();
-        if let Some(ref py_m) = pkg.py_m {
-            all_cmds.extend(py_m.commands.clone());
+        let all_cmds: Vec<String> = pkg.commands.clone();
+
+        if let Some(ref install) = pkg.install {
+            let pip_str = install.pip.join(", ");
             println!(
-                "  {}    py-m: {}{}",
+                "  {}    pip: {}{}",
                 key.cyan().bold(),
-                py_m.name.dimmed(),
+                pip_str.dimmed(),
                 source_str,
             );
         }
-        if let Some(ref py_f) = pkg.py_f {
-            all_cmds.extend(py_f.commands.clone());
-            let scripts_str = py_f.scripts.join(", ");
+        if let Some(ref download) = pkg.download {
+            let scripts_str = download.scripts.join(", ");
             println!(
-                "  {}    py-f: {}{}",
+                "  {}    scripts: {}{}",
                 key.cyan().bold(),
                 scripts_str.dimmed(),
                 source_str,
@@ -398,7 +398,7 @@ fn render_plugins_list(layout: &PathLayout) {
         println!("    commands: {}", all_cmds.join(", "));
         for cmd_name in &all_cmds {
             if let Some(cmd) = cmd_state.commands.get(cmd_name) {
-                let target_label = match cmd.behavior.as_str() {
+                let target_label = match cmd.cmd_type.as_str() {
                     "py-f" => "script",
                     _ => "module",
                 };
@@ -406,8 +406,8 @@ fn render_plugins_list(layout: &PathLayout) {
                     "    {} → {} {} {}",
                     cmd_name.dimmed(),
                     target_label.dimmed(),
-                    cmd.target.dimmed(),
-                    format!("({})", cmd.description).dimmed(),
+                    cmd.entry.dimmed(),
+                    format!("({})", cmd.desc).dimmed(),
                 );
             }
         }

@@ -19,7 +19,7 @@ fn format_lines(state: &CmdState) -> Vec<(String, String)> {
     let mut entries: Vec<(String, String)> = state
         .commands
         .iter()
-        .map(|(name, cmd)| (name.clone(), cmd.description.clone()))
+        .map(|(name, cmd)| (name.clone(), cmd.desc.clone()))
         .collect();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -38,9 +38,9 @@ mod tests {
 
     fn plugin_command(target: &str, description: &str) -> PluginCommand {
         PluginCommand {
-            behavior: "py-m".to_string(),
-            target: target.into(),
-            description: description.into(),
+            cmd_type: "py-m".to_string(),
+            entry: target.into(),
+            desc: description.into(),
         }
     }
 

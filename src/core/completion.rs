@@ -418,7 +418,7 @@ mod tests {
 
             // 写入插件状态
             let plugin_state = json!({
-                "commands": {"test-plugin": {"behavior": "py-m", "target": "test.module:Plugin", "description": "A test plugin"}}
+                "commands": {"test-plugin": {"type": "py-m", "entry": "test.module:Plugin", "desc": "A test plugin"}}
             });
             fs::write(
                 plugins_dir.join("plugins.cmd.json"),

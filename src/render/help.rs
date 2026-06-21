@@ -52,7 +52,7 @@ pub fn render_commands(layout: &PathLayout) {
     let mut plugins: Vec<(String, String)> = plugin_state
         .commands
         .iter()
-        .map(|(name, cmd)| (name.clone(), cmd.description.clone()))
+        .map(|(name, cmd)| (name.clone(), cmd.desc.clone()))
         .collect();
     plugins.sort_by(|a, b| a.0.cmp(&b.0));
     entries.append(&mut plugins);

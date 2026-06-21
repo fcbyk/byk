@@ -31,9 +31,9 @@ pub enum InfoEntry {
     Builtin { name: String },
     Plugin {
         name: String,
-        behavior: String,
-        target: String,
-        description: String,
+        cmd_type: String,
+        entry: String,
+        desc: String,
     },
     Npm {
         name: String,
@@ -63,9 +63,9 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
         if let Some(cmd) = plugin_state.commands.get(name) {
             entries.push(InfoEntry::Plugin {
                 name: name.to_string(),
-                behavior: cmd.behavior.clone(),
-                target: cmd.target.clone(),
-                description: cmd.description.clone(),
+                cmd_type: cmd.cmd_type.clone(),
+                entry: cmd.entry.clone(),
+                desc: cmd.desc.clone(),
             });
         }
     }

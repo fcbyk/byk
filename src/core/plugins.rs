@@ -35,12 +35,15 @@ const PYTHON_BIN: &str = "python";
 /// 单个插件命令的缓存条目。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PluginCommand {
-    /// 行为类型（"py-m" | "py-f" | ...）
-    pub behavior: String,
-    /// 行为操作对象（py-m: 模块路径, py-f: 脚本文件名）
-    pub target: String,
+    /// 命令类型（"py-m" | "py-f" | ...）
+    #[serde(rename = "type")]
+    pub cmd_type: String,
+    /// 入口点（py-m: 模块路径, py-f: 脚本文件名）
+    #[serde(rename = "entry")]
+    pub entry: String,
     /// 命令描述
-    pub description: String,
+    #[serde(rename = "desc")]
+    pub desc: String,
 }
 
 /// 命令状态（持久化到 plugins/plugins.cmd.json）。
@@ -70,33 +73,34 @@ pub struct PkgEntry {
     /// 来源仓库：None = 本地安装，Some("user/repo") = 远程仓库
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// py-m 行为信息
-    #[serde(rename = "py-m", default, skip_serializing_if = "Option::is_none")]
-    pub py_m: Option<PyMInfo>,
-    /// py-f 行为信息
-    #[serde(rename = "py-f", default, skip_serializing_if = "Option::is_none")]
-    pub py_f: Option<PyFInfo>,
-}
-
-/// py-m 行为信息。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyMInfo {
-    /// pip 包名
-    pub name: String,
-    /// 该行为注册的命令名列表
-    pub commands: Vec<String>,
-}
-
-/// py-f 行为信息。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyFInfo {
-    /// 脚本文件名列表
-    pub scripts: Vec<String>,
-    /// 该行为注册的命令名列表
-    pub commands: Vec<String>,
-    /// pip 依赖列表
+    /// 安装信息（pip install 等）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install: Option<InstallInfo>,
+    /// 下载信息（脚本文件等）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download: Option<DownloadInfo>,
+    /// 该插件注册的命令名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<String>,
+    pub commands: Vec<String>,
+}
+
+/// 安装信息。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallInfo {
+    /// pip install 参数列表（包名 / URL / 版本约束）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pip: Vec<String>,
+    /// pip install -e 路径列表
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "pip-e")]
+    pub pip_e: Vec<String>,
+}
+
+/// 下载信息。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadInfo {
+    /// 脚本文件名列表
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scripts: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -191,9 +195,9 @@ pub fn execute_plugin_command(
         }
     };
 
-    let status = match cmd.behavior.as_str() {
+    let status = match cmd.cmd_type.as_str() {
         "py-f" => {
-            let script_path = plugins_dir.join("scripts").join(&cmd.target);
+            let script_path = plugins_dir.join("scripts").join(&cmd.entry);
             Command::new(&python_exe)
                 .arg(script_path)
                 .args(cmd_args)
@@ -203,7 +207,7 @@ pub fn execute_plugin_command(
             // py-m（默认）
             Command::new(&python_exe)
                 .arg("-m")
-                .arg(&cmd.target)
+                .arg(&cmd.entry)
                 .args(cmd_args)
                 .status()
         }

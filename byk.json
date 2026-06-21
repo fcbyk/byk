@@ -1,31 +1,43 @@
 {
   "hello": {
-    "py-m": {
-      "pip": "byk-hello",
-      "url": "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl",
-      "pyproject": "./plugins/python",
-      "commands": {
-        "hello": {
-          "target": "hello.one",
-          "description": "Example subcommand to verify dynamic registration."
-        },
-        "world": {
-          "target": "hello.two",
-          "description": "Second command to verify dynamic registration."
-        }
+    "install": {
+      "pip": [
+        "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl"
+      ],
+      "pip-e": ["./plugins/python"]
+    },
+
+    "commands": {
+      "hello": {
+        "type": "py-m",
+        "entry": "hello.one",
+        "desc": "Example subcommand to verify dynamic registration."
+      },
+      "world": {
+        "type": "py-m",
+        "entry": "hello.two",
+        "desc": "Second command to verify dynamic registration."
       }
     }
   },
 
-  "jiahao":{
-    "py-f":{ 
-      "url": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py",
-      "commands": "jiahao",
-      "description": "装 x 命令",
-      "dependencies":[
-        "rich",
-        "click"
+  "jiahao": {
+    "install": {
+      "pip": ["rich", "click"]
+    },
+
+    "download": {
+      "scripts": [
+        "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
       ]
+    },
+
+    "commands": {
+      "jiahao": {
+        "type": "py-f",
+        "entry": "jiahao.py",
+        "desc": "装 x 命令"
+      }
     }
   }
 }
