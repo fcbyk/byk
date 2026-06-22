@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cli.fcbyk.com/schemas/byk-plugin.json",
+  "title": "byk Plugin Registry",
+  "description": "Schema for byk.json plugin registry files",
+  "type": "object",
+  "additionalProperties": {
+    "oneOf": [
+      {
+        "type": "string",
+        "description": "Ref 引用：URL 或相对路径，指向另一个 byk.json。示例：\"https://...\" 或 \"./plugins/xxx/byk.json\""
+      },
+      { "$ref": "#/$defs/PluginEntry" }
+    ]
+  },
+  "$defs": {
+    "PluginEntry": {
+      "title": "插件条目",
+      "description": "单个插件的安装、下载和命令定义",
+      "type": "object",
+      "properties": {
+        "install": {
+          "description": "安装依赖到 byk 的隔离虚拟环境",
+          "type": "object",
+          "properties": {
+            "pip": {
+              "description": "pip 包名或 URL 列表，执行 pip install。示例：[\"rich\", \"click>=8.0\"]",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "包名、版本约束或 URL"
+              }
+            },
+            "pip-e": {
+              "description": "可编辑安装路径列表，执行 pip install -e。仅在 -e 模式下生效。未指定时默认为 [\".\"]",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "可编辑安装的本地路径"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "download": {
+          "description": "从远程 URL 下载脚本文件到 ~/.byk/plugins/scripts/",
+          "type": "object",
+          "properties": {
+            "scripts": {
+              "description": "脚本文件 URL 列表，文件名由 URL 自动提取",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "脚本文件的远程 URL"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "commands": {
+          "description": "注册命令到路由表。内容会被零解析直接合并到 plugins.cmd.json",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/CommandEntry" },
+          "minProperties": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "CommandEntry": {
+      "title": "命令条目",
+      "description": "单个命令的定义",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "命令类型",
+          "type": "string",
+          "enum": ["py-module", "py-script", "py-bin"],
+          "enumDescriptions": [
+            "python -m <entry>",
+            "python <scripts_dir>/<entry>",
+            "直接执行 venv/bin/<entry>"
+          ]
+        },
+        "entry": {
+          "description": "入口点：py-module 为模块路径，py-script 为脚本文件名/URL，py-bin 为可执行文件名",
+          "type": "string"
+        },
+        "desc": {
+          "description": "命令描述，显示在帮助信息中",
+          "type": "string"
+        }
+      },
+      "required": ["type", "entry"],
+      "additionalProperties": false
+    }
+  }
+}

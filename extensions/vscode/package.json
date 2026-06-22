@@ -69,6 +69,10 @@
       {
         "fileMatch": "*.byk.json",
         "url": "./schemas/byk-alias.json"
+      },
+      {
+        "fileMatch": "byk.json",
+        "url": "./schemas/byk-plugin.json"
       }
     ],
     "menus": {
