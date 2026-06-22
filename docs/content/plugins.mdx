@@ -56,7 +56,8 @@ byk add --file ./local.json my-key   # 使用本地 byk.json 文件
 适合插件开发场景，将本地源码以可编辑模式安装到 venv：
 
 ```bash
-byk add -e .              # 从当前目录可编辑安装（读取 ./byk.json）
+byk add -e .              # 从当前目录可编辑安装（读取 ./byk.json，安装第一个 key）
+byk add -e . hello        # 安装指定 key
 byk add -e /path/to/src   # 从指定目录可编辑安装
 ```
 

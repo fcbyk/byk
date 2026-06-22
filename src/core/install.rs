@@ -265,6 +265,8 @@ pub fn install_plugin(
     };
 
     // 5. Ref 引用解析：entry 为字符串时拉取完整注册表（URL 或相对路径），取同名 key
+    // 追踪 ref 解析后的有效目录，用于 pip-e 路径解析
+    let mut effective_editable: Option<String> = editable.map(|s| s.to_string());
     let entry_owned: serde_json::Value;
     let entry = if let Some(ref_str) = entry.as_str() {
         let body = if ref_str.starts_with("http://") || ref_str.starts_with("https://") {
@@ -298,6 +300,10 @@ pub fn install_plugin(
                 }
                 RefBase::Local(dir) => {
                     let full = dir.join(ref_str);
+                    // 更新 effective_editable 为 ref 文件所在目录，确保 pip-e 路径基于 ref 文件解析
+                    if let Some(parent) = full.parent() {
+                        effective_editable = Some(parent.to_string_lossy().to_string());
+                    }
                     std::fs::read_to_string(&full).unwrap_or_else(|e| {
                         eprintln!(
                             "{} failed to read ref for plugin \"{}\": {}",
@@ -400,8 +406,8 @@ pub fn install_plugin(
         let mut pip_packages: Vec<String> = Vec::new();
         let mut pip_e_paths: Vec<String> = Vec::new();
 
-        if let Some(ed_dir) = editable {
-            // -e 模式：只执行 pip install -e
+        if let Some(ed_dir) = &effective_editable {
+            // -e 模式：只执行 pip install -e（基于 ref 解析后的有效目录）
             if let Some(pip_e_list) = inst_block.get("pip-e").and_then(|v| v.as_array()) {
                 for path_val in pip_e_list {
                     let rel_path = match path_val.as_str() {
@@ -435,6 +441,32 @@ pub fn install_plugin(
 
                     pip_e_paths.push(rel_path.to_string());
                 }
+            } else {
+                // 默认 pip-e = ["."]，pip install -e <effective_dir>
+                let install_dir = std::path::PathBuf::from(ed_dir);
+                let status = Command::new(&pip)
+                    .arg("install")
+                    .arg("-e")
+                    .arg(&install_dir)
+                    .status();
+
+                match status {
+                    Ok(s) if s.success() => {}
+                    Ok(s) => {
+                        eprintln!(
+                            "{} pip install -e failed with exit code {}",
+                            "Error:".red(),
+                            s.code().unwrap_or(1),
+                        );
+                        exit(1);
+                    }
+                    Err(e) => {
+                        eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+
+                pip_e_paths.push(".".to_string());
             }
         } else {
             // 普通模式：只执行 pip install
@@ -686,7 +718,7 @@ pub fn render_add_help() {
     println!(
         "  {:<16} {}",
         "-e, --editable <DIR>".cyan().bold(),
-        "Editable install (pip install -e <DIR>, reads <DIR>/byk.json)",
+        "Editable install (pip install -e <DIR>, reads <DIR>/byk.json, pip-e defaults to [\".\"])",
     );
     println!();
     println!("{}", "Examples:".green().bold());
@@ -696,6 +728,7 @@ pub fn render_add_help() {
         ("byk add --branch dev user/repo/key".into(), "Install from a specific branch".into()),
         ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
         ("byk add -e .".into(), "Editable install from current directory".into()),
+        ("byk add -e . hello".into(), "Editable install a specific key".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {
