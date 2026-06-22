@@ -49,6 +49,10 @@ fn main() {
                 (None | Some("-h") | Some("--help"), None, None) => {
                     install::render_add_help();
                 }
+                (Some("npm"), None, None) => init::init_npm(&layout),
+                (Some("pnpm"), None, None) => init::init_pnpm(&layout),
+                (Some("cache"), None, None) => init::init_cache(&layout),
+                (Some("comp"), None, None) => init::init_completion(),
                 (spec, editable, _file) => {
                     install::install_plugin(
                         spec.unwrap_or(""),
@@ -58,16 +62,6 @@ fn main() {
                         &layout,
                     );
                 }
-            }
-            return;
-        }
-        Some(Commands::Init { feature }) => {
-            match feature.as_deref() {
-                Some("npm") => init::init_npm(&layout),
-                Some("pnpm") => init::init_pnpm(&layout),
-                Some("cache") => init::init_cache(&layout),
-                Some("comp") => init::init_completion(),
-                _ => init::render_init_help(),
             }
             return;
         }

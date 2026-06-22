@@ -39,24 +39,18 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
-    /// 初始化 feature
-    Init {
-        /// 要初始化的 feature: npm | pnpm | cache | comp | py-v
-        #[arg(allow_hyphen_values = true)]
-        feature: Option<String>,
-    },
-    /// 添加插件（来自远程仓库或本地文件 / editable 目录）
+    /// 添加插件或功能（远程仓库 / 本地文件 / 内置功能）
     Add {
         /// 指定分支（默认 main）
-        #[arg(long)]
+        #[arg(short = 'b', long)]
         branch: Option<String>,
         /// 本地 byk.json 文件路径（跳过网络请求）
-        #[arg(long)]
+        #[arg(short = 'f', long)]
         file: Option<String>,
         /// 可编辑安装目录（pip install -e <dir>，读取 <dir>/byk.json）
         #[arg(short = 'e', long, value_name = "DIR")]
         editable: Option<String>,
-        /// 插件名 或 user/repo[/key]（留空显示帮助）
+        /// 插件名(user/repo[/key]) 或 功能名(npm | pnpm | cache | comp)
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,
     },

@@ -127,19 +127,14 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
         return complete_info_topic(partial, layout);
     }
 
-    // init 子命令补全
-    if first == "init" {
-        const INIT_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp"];
-        return INIT_SUBS
+    // add 子命令补全
+    if first == "add" {
+        const ADD_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp"];
+        return ADD_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
             .map(|s| s.to_string())
             .collect();
-    }
-
-    // add 子命令补全（暂无）
-    if first == "add" {
-        return Vec::new();
     }
 
     // remove 子命令补全
@@ -210,7 +205,6 @@ fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     candidates.push(super::info::TOPIC_PLUGINS.to_string());
 
     // 内置子命令
-    candidates.push("init".into());
     candidates.push("add".into());
     candidates.push("remove".into());
     candidates.push("completion".into());
@@ -305,7 +299,6 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     let mut candidates: Vec<String> = Vec::new();
 
     // 内置子命令
-    candidates.push("init".into());
     candidates.push("add".into());
     candidates.push("remove".into());
 

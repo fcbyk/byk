@@ -7,15 +7,43 @@ import { Tab, Tabs } from '@rspress/core/theme';
 
 # 内置命令
 
-byk 提供一组内置子命令，用于初始化功能、管理插件、生成补全脚本等。运行 `byk -h` 或不带任何参数即可看到帮助信息。
+byk 提供一组内置子命令，用于添加功能、管理插件、生成补全脚本等。运行 `byk -h` 或不带任何参数即可看到帮助信息。
 
-## init
+## add
 
-初始化 byk 的各项功能。byk 不会自动创建任何配置，所有功能都需要用户手动按需初始化。
+添加插件（远程仓库 / 本地文件）或初始化内置功能（npm/pnpm/comp/cache）。
 
 ```bash
-byk init <feature>
+byk add [OPTIONS] <USER/REPO[/KEY] | FEATURE>
 ```
+
+### 插件 (Plugins)
+
+| 选项 | 说明 |
+|------|------|
+| `-b, --branch <NAME>` | 指定仓库分支（默认 `main`） |
+| `-f, --file <PATH>` | 使用本地 `byk.json` 文件代替远程仓库 |
+| `-e, --editable <DIR>` | 可编辑安装（`pip install -e <DIR>`，读取 `<DIR>/byk.json`） |
+
+插件来源支持两种模式：
+
+- **远程仓库**：`byk add user/repo` 或 `byk add user/repo/key` — 从指定 GitHub 仓库安装
+- **本地安装**：`byk add -f ./local.json my-key` 或 `byk add -e .`
+
+```bash title="示例"
+byk add user/repo/key             # 从远程仓库安装指定 key
+byk add user/repo                 # 安装远程仓库 byk.json 中的第一个 key
+byk add -b dev user/repo/key      # 从 dev 分支安装
+byk add -f ./local.json key       # 使用本地 byk.json 安装
+byk add -e .                      # 可编辑安装当前目录（第一个 key）
+byk add -e . hello                # 可编辑安装当前目录的指定 key
+```
+
+:::tip
+首次运行 `byk add` 安装插件时，如果 Python venv 尚未初始化，会提示是否自动创建。
+:::
+
+### 功能 (Features)
 
 | Feature | 说明 |
 |---------|------|
@@ -25,45 +53,13 @@ byk init <feature>
 | `cache` | 初始化 CLI 家目录 `~/.byk/` 及缓存目录结构（alias、cache、logs、plugins） |
 
 ```bash title="示例"
-byk init npm       # 初始化 npm 环境
-byk init comp      # 配置 shell 补全
-byk init cache     # 创建家目录和缓存
+byk add npm       # 初始化 npm 环境
+byk add comp      # 配置 shell 补全
+byk add cache     # 创建家目录和缓存
 ```
 
 :::note
-`init` 操作是幂等的——已存在的目录或已配置的补全会被跳过，不会重复创建。
-:::
-
-## add
-
-从远程仓库或本地文件安装插件。
-
-```bash
-byk add [OPTIONS] <USER/REPO[/KEY]>
-```
-
-| 选项 | 说明 |
-|------|------|
-| `--branch <NAME>` | 指定仓库分支（默认 `main`） |
-| `--file <PATH>` | 使用本地 `byk.json` 文件代替远程仓库 |
-| `-e, --editable <DIR>` | 可编辑安装（`pip install -e <DIR>`，读取 `<DIR>/byk.json`）。`pip-e` 未指定时默认为 `["."]` |
-
-插件来源支持两种模式：
-
-- **远程仓库**：`byk add user/repo` 或 `byk add user/repo/key` — 从指定 GitHub 仓库安装
-- **本地安装**：`byk add --file ./local.json my-key` 或 `byk add -e .`
-
-```bash title="示例"
-byk add user/repo/key             # 从远程仓库安装指定 key
-byk add user/repo                 # 安装远程仓库 byk.json 中的第一个 key
-byk add --branch dev user/repo/key # 从 dev 分支安装
-byk add --file ./local.json key   # 使用本地 byk.json 安装
-byk add -e .                      # 可编辑安装当前目录（第一个 key）
-byk add -e . hello                # 可编辑安装当前目录的指定 key
-```
-
-:::tip
-首次运行 `byk add` 时，如果 Python venv 尚未初始化，会提示是否自动创建。
+功能初始化操作是幂等的——已存在的目录或已配置的补全会被跳过，不会重复创建。
 :::
 
 ## remove
@@ -94,7 +90,7 @@ byk remove all         # 清除所有数据
 
 ## completion
 
-生成指定 shell 的补全脚本并输出到 stdout。通常由 `byk init comp` 自动调用，无需手动使用。
+生成指定 shell 的补全脚本并输出到 stdout。通常由 `byk add comp` 自动调用，无需手动使用。
 
 ```bash
 byk completion <shell>
@@ -142,10 +138,10 @@ byk --info build
 
 当输入 `byk <name>` 时，byk 按以下顺序匹配命令：
 
-1. **内置子命令** — `init`、`add`、`remove`、`completion`
+1. **内置子命令** — `add`、`remove`、`completion`
 2. **全局选项** — `-v`、`-h`、`--info`
 3. **插件命令** — 通过 `byk add` 安装的 Python 插件
-4. **NPM 命令** — 通过 `byk init npm/pnpm` 安装的 npm 包
+4. **NPM 命令** — 通过 `byk add npm/pnpm` 安装的 npm 包
 5. **精确执行语法** — `@file.key`（本地）/ `@@file.key`（全局）
 6. **别名** — 从 `*.byk.json` 文件中加载的别名
 

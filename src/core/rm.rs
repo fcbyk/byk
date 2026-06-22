@@ -1,6 +1,6 @@
 /// `byk remove` 子命令逻辑。
 ///
-/// 删除 `byk init` 创建的持久化数据（venv、缓存、别名等），
+/// 删除 `byk add` 创建的持久化数据（venv、缓存、别名等），
 /// 并提供 byk 包卸载指引。
 
 use colored::Colorize;

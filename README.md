@@ -9,7 +9,7 @@ Features are opt-in. Nothing is created until you need it.
 Manage npm CLIs under a byk-scoped environment — no global pollution.
 
 ```bash
-byk init npm           # first use only, activates & creates ni/nu aliases
+byk add npm           # first use only, activates & creates ni/nu aliases
 byk ni live-server     # install (ni = npm i)
 byk live-server        # run it
 ```

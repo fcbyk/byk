@@ -62,7 +62,7 @@ fn render_overview(layout: &PathLayout, overview: &OverviewInfo) {
         println!("{}:  {}", "Cache".yellow(), "enabled".green());
     } else {
         println!("{}", "Cache not initialized.".yellow());
-        println!("  {}", "$ byk init cache".dimmed());
+        println!("  {}", "$ byk add cache".dimmed());
     }
 
     println!("{}", "-".repeat(29).dimmed());
@@ -76,8 +76,8 @@ fn render_overview(layout: &PathLayout, overview: &OverviewInfo) {
         print_path("Node Packages", &layout.node_pkgs_dir);
     } else {
         println!("{}", "Node package support not initialized.".yellow());
-        println!("  {}   {}", "$ byk init npm".dimmed(), "(node-pkgs)".dimmed());
-        println!("  {}   {}", "$ byk init pnpm".dimmed(), "(node-pkgs)".dimmed());
+        println!("  {}   {}", "$ byk add npm".dimmed(), "(node-pkgs)".dimmed());
+        println!("  {}   {}", "$ byk add pnpm".dimmed(), "(node-pkgs)".dimmed());
     }
 
     // Python 状态
@@ -318,7 +318,7 @@ fn render_completion(completion: &CompletionStatus) {
             );
         } else {
             println!("{}: {}", "Completion".yellow(), "not configured".red());
-            println!("  {}", "$ byk init comp".dimmed());
+            println!("  {}", "$ byk add comp".dimmed());
         }
     }
 }

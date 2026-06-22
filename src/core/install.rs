@@ -702,23 +702,45 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
 pub fn render_add_help() {
     println!();
     print!("{}", "Usage:".green().bold());
-    println!("{}", " byk add [OPTIONS] <USER/REPO[/KEY]>".bold());
+    println!("{}", " byk add [OPTIONS] <USER/REPO[/KEY] | FEATURE>".bold());
     println!();
     println!("{}", "Options:".green().bold());
     println!(
-        "  {:<16} {}",
-        "--branch <NAME>".cyan().bold(),
+        "  {:<22} {}",
+        "-b, --branch <NAME>".cyan().bold(),
         "Set branch (default: main)",
     );
     println!(
-        "  {:<16} {}",
-        "--file <PATH>".cyan().bold(),
+        "  {:<22} {}",
+        "-f, --file <PATH>".cyan().bold(),
         "Use local byk.json instead of remote registry",
     );
     println!(
-        "  {:<16} {}",
+        "  {:<22} {}",
         "-e, --editable <DIR>".cyan().bold(),
-        "Editable install (pip install -e <DIR>, reads <DIR>/byk.json, pip-e defaults to [\".\"])",
+        "Editable install",
+    );
+    println!();
+    println!("{}", "Features:".green().bold());
+    println!(
+        "  {:<8} {}",
+        "npm".cyan().bold(),
+        "Initialize with npm (node-pkgs, ni/nu aliases)"
+    );
+    println!(
+        "  {:<8} {}",
+        "pnpm".cyan().bold(),
+        "Initialize with pnpm (node-pkgs, ni/nu aliases)"
+    );
+    println!(
+        "  {:<8} {}",
+        "comp".cyan().bold(),
+        "Initialize shell completion (zsh/bash)"
+    );
+    println!(
+        "  {:<8} {}",
+        "cache".cyan().bold(),
+        "Initialize CLI home & cache directories"
     );
     println!();
     println!("{}", "Examples:".green().bold());

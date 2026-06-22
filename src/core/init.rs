@@ -1,4 +1,4 @@
-/// `byk init` 子命令逻辑。
+/// `byk add` 功能初始化逻辑。
 ///
 /// 用户手动按需初始化 CLI 功能，不自动创建任何配置。
 /// npm/pnpm 别名模板直接硬编码，与生成文件一一对应。
@@ -11,40 +11,6 @@ use std::process::Command;
 
 use super::paths::PathLayout;
 use crate::utils::shell;
-
-// ---------------------------------------------------------------------------
-// init 帮助
-// ---------------------------------------------------------------------------
-
-/// 渲染 init 帮助信息（无子参数时显示）。
-pub fn render_init_help() {
-    println!();
-    print!("{}", "Usage:".green().bold());
-    println!("{}", " byk init [feature]".bold());
-    println!();
-    println!("{}", "Feature:".green().bold());
-    println!(
-        "  {:<8} {}",
-        "npm".cyan().bold(),
-        "Initialize with npm (node-pkgs)"
-    );
-    println!(
-        "  {:<8} {}",
-        "pnpm".cyan().bold(),
-        "Initialize with pnpm (node-pkgs)"
-    );
-    println!(
-        "  {:<8} {}",
-        "comp".cyan().bold(),
-        "Initialize shell completion (zsh/bash)"
-    );
-    println!(
-        "  {:<8} {}",
-        "cache".cyan().bold(),
-        "Initialize CLI home & cache directories"
-    );
-    println!();
-}
 
 // ---------------------------------------------------------------------------
 // --init comp
