@@ -120,7 +120,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
 /// 查找内置子命令描述。
 pub fn lookup_builtin(name: &str) -> Option<&'static str> {
     match name {
-        "remove" => Some("Remove initialized features"),
+        "remove" => Some("Remove plugins or features"),
         "completion" => Some("Generate shell completion script"),
         _ => None,
     }

@@ -1,5 +1,5 @@
 {
-  "hello": {
+  "pym": {
     "install": {
       "pip": [
         "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl"
@@ -7,12 +7,12 @@
     },
 
     "commands": {
-      "hello": {
+      "hello1": {
         "type": "py-module",
         "entry": "hello.one",
         "desc": "Example subcommand to verify dynamic registration."
       },
-      "world": {
+      "hello2": {
         "type": "py-module",
         "entry": "hello.two",
         "desc": "Second command to verify dynamic registration."

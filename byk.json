@@ -1,17 +1,4 @@
 {
-  "hello": "./plugins/python/byk.json",
-
-  "jiahao": {
-    "install": {
-      "pip": ["rich", "click"]
-    },
-
-    "commands": {
-      "jiahao": {
-        "type": "py-script",
-        "entry": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py",
-        "desc": "装 x 命令"
-      }
-    }
-  }
+  "pym": "./plugins/python/byk.json",
+  "pys": "./plugins/scripts/byk.json"
 }
