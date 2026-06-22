@@ -2,7 +2,7 @@
   "pym": {
     "install": {
       "pip": [
-        "https://github.com/fcbyk/byk/releases/download/plugins/byk_pym-2026.6.21-py3-none-any.whl"
+        "https://github.com/fcbyk/byk/releases/download/assets/byk_pym-2026.6.21-py3-none-any.whl"
       ]
     },
 

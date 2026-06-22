@@ -12,7 +12,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
-    "download-binary": "node scripts/download-binary.mjs"
+    "download-binary": "node scripts/download-binary.mjs",
+    "download-assets": "node scripts/download-assets.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

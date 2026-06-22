@@ -40,20 +40,30 @@ const PLATFORMS = {
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     const file = createWriteStream(dest);
-    get(url, {
+    const req = get(url, {
       headers: { 'User-Agent': 'byk-vscode-downloader' },
     }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         file.close();
+        req.destroy();
         return downloadFile(res.headers.location, dest).then(resolve, reject);
       }
       if (res.statusCode >= 400) {
         file.close();
+        req.destroy();
         return reject(new Error(`HTTP ${res.statusCode} ${url}`));
       }
       res.pipe(file);
-      file.on('finish', resolve);
-    }).on('error', (e) => {
+      file.on('finish', () => {
+        req.destroy();
+        resolve();
+      });
+      file.on('error', (e) => {
+        req.destroy();
+        reject(e);
+      });
+    });
+    req.on('error', (e) => {
       file.close();
       reject(e);
     });
