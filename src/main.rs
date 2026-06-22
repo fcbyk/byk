@@ -38,6 +38,7 @@ fn main() {
                 Some("comp") => remove::rm_comp(),
                 Some("node") => remove::rm_node(&layout),
                 Some("all") => remove::rm_all(&layout),
+                Some("-h") | Some("--help") => render::remove::render(),
                 Some(key) => remove::uninstall_plugin(key, &layout),
                 None => render::remove::render(),
             }
@@ -61,6 +62,15 @@ fn main() {
                         &layout,
                     );
                 }
+            }
+            return;
+        }
+        Some(Commands::Show { topic }) => {
+            match topic.as_deref() {
+                None | Some("-h") | Some("--help") => render::show::render_help(),
+                Some("overview") => render::show::render_overview(&layout),
+                Some("plugins") => render::show::render_plugins(&layout),
+                Some(name) => render::show::render_command(name, &layout),
             }
             return;
         }
@@ -90,15 +100,6 @@ fn main() {
         }
         return;
     }
-    if let Some(topic) = &cli.info {
-        match topic {
-            Some(name) => render::info::render_topic(name, &layout),
-            None => render::info::render_all(&layout),
-        }
-        return;
-    }
-
-    // 无额外参数 → 帮助（上下各空一行）
     if cli.trailing.is_empty() {
         println!();
         render::help::render_all(&layout, &options);

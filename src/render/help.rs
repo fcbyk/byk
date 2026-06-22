@@ -40,6 +40,7 @@ pub fn render_commands(layout: &PathLayout) {
     let mut entries: Vec<(String, String)> = vec![
         ("add".into(), "Add plugins or features".into()),
         ("remove".into(), "Remove plugins or features".into()),
+        ("show".into(), "Show system info, plugins, or command sources".into()),
     ];
 
     // 插件命令

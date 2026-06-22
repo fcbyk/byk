@@ -9,10 +9,6 @@ pub struct Cli {
     #[arg(short = 'v', long = "version")]
     pub version: bool,
 
-    /// Show CLI info (optional: topic or command name)
-    #[arg(long = "info", value_name = "TOPIC")]
-    pub info: Option<Option<String>>,
-
     /// Print help
     #[arg(short = 'h', long = "help", action = clap::ArgAction::SetTrue)]
     pub help: bool,
@@ -53,6 +49,12 @@ pub enum Commands {
         /// 插件名(user/repo[/key]) 或 功能名(npm | pnpm | cache | comp)
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,
+    },
+    /// 查看系统信息、插件、命令来源
+    Show {
+        /// 子命令或命令名: overview | plugins | <command-name>
+        #[arg(allow_hyphen_values = true)]
+        topic: Option<String>,
     },
     /// 内部：查询补全候选
     #[command(hide = true, name = "__complete")]

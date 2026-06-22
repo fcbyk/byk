@@ -1,19 +1,18 @@
-/// CLI 信息格式化渲染（--info 选项）。
+/// `byk show` CLI 信息格式化渲染。
 ///
 /// 三种模式：
-/// - `byk --info` — 总览面板（向后兼容）
-/// - `byk --info doctor` — 诊断检查
-/// - `byk --info <name>` — 命令名全量路由查询
+/// - `byk show` — 帮助信息
+/// - `byk show overview` — 总览面板
+/// - `byk show plugins` — 已安装插件列表
+/// - `byk show <name>` — 命令名全量路由查询
 ///
-/// 本模块只负责格式化输出，业务逻辑在 core::info 中。
+/// 本模块只负责格式化输出，业务逻辑在 core::show 中。
 
 use colored::Colorize;
 
-use crate::core::aliases::{AliasValue, ResolvedAlias};
-use crate::core::info::{
-    self, CompletionStatus, DoctorReport, InfoEntry, OverviewInfo, PythonOverviewInfo,
-    PythonStatus,
-};
+use crate::core::aliases::AliasValue;
+use crate::core::show::{self, CompletionStatus, InfoEntry, OverviewInfo, PythonOverviewInfo};
+use crate::core::aliases::ResolvedAlias;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
 use crate::utils::display;
@@ -22,36 +21,59 @@ use crate::utils::display;
 // 主入口
 // ---------------------------------------------------------------------------
 
-/// 根据 topic 分发到对应渲染函数。
-pub fn render_topic(topic: &str, layout: &PathLayout) {
-    match topic {
-        info::TOPIC_DOCTOR => {
-            render_doctor(layout);
-        }
-        info::TOPIC_PLUGINS => {
-            render_plugins_list(layout);
-        }
-        _ => {
-            // 非保留词 → 命令名查询路由
-            render_command_info(topic, layout);
-        }
+/// 渲染 `byk show` 帮助信息。
+pub fn render_help() {
+    println!();
+    print!("{}", "Usage:".green().bold());
+    println!("{}", " byk show [SUBCOMMAND]".bold());
+    println!();
+    println!("{}", "Subcommands:".green().bold());
+    println!(
+        "  {:<20} {}",
+        "overview".cyan().bold(),
+        "Display system overview (paths, cache, completion, Node, Python)",
+    );
+    println!(
+        "  {:<20} {}",
+        "plugins".cyan().bold(),
+        "List installed plugins and their commands",
+    );
+    println!(
+        "  {:<20} {}",
+        "<command-name>".cyan().bold(),
+        "Query the source of a command (built-in / plugin / NPM / alias)",
+    );
+    println!();
+    println!("{}", "Examples:".green().bold());
+    let examples: Vec<(String, String)> = vec![
+        ("byk show".into(), "Show this help".into()),
+        ("byk show overview".into(), "Display system overview panel".into()),
+        ("byk show plugins".into(), "List all installed plugins".into()),
+        ("byk show build".into(), "Find all sources of the \"build\" command".into()),
+    ];
+    let aligned = display::align_kv_pairs(&examples, "  ");
+    for (name, line) in &aligned {
+        let rest = &line[2 + name.len()..];
+        print!("  {}", name.dimmed());
+        println!("{}", rest);
     }
+    println!();
 }
 
 // ---------------------------------------------------------------------------
-// 总览面板（byk --info 无参数）
+// 总览面板（byk show overview）
 // ---------------------------------------------------------------------------
-
-/// 渲染 CLI 完整信息：banner + 基础信息 + Node + Python。
-pub fn render_all(layout: &PathLayout) {
-    crate::render::banner::render();
-
-    let overview = info::collect_overview(layout);
-    render_overview(layout, &overview);
-}
 
 /// 渲染总览面板。
-fn render_overview(layout: &PathLayout, overview: &OverviewInfo) {
+pub fn render_overview(layout: &PathLayout) {
+    crate::render::banner::render();
+
+    let overview = show::collect_overview(layout);
+    render_overview_panel(layout, &overview);
+}
+
+/// 渲染总览面板内容。
+fn render_overview_panel(layout: &PathLayout, overview: &OverviewInfo) {
     // 目录路径
     print_path("CLI Home", &layout.root_dir);
     print_path("Alias Directory", &layout.alias_dir);
@@ -86,12 +108,64 @@ fn render_overview(layout: &PathLayout, overview: &OverviewInfo) {
 }
 
 // ---------------------------------------------------------------------------
-// 命令名查询路由（byk --info <name>）
+// 插件列表（byk show plugins）
+// ---------------------------------------------------------------------------
+
+/// 渲染已安装插件列表。
+pub fn render_plugins(layout: &PathLayout) {
+    println!();
+
+    if !layout.venv_dir.is_dir() {
+        println!("{}", "Python venv not initialized.".yellow());
+        println!("  {}", "$ byk add <user/repo>".dimmed());
+        println!();
+        return;
+    }
+
+    let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
+
+    if pkg_state.packages.is_empty() {
+        println!("{}", "No plugins installed.".yellow());
+        println!("  {}", "$ byk add <user/repo>".dimmed());
+        println!();
+        return;
+    }
+
+    let mut keys: Vec<&String> = pkg_state.packages.keys().collect();
+    keys.sort();
+
+    let entries: Vec<(String, String)> = keys
+        .iter()
+        .map(|key| {
+            let pkg = &pkg_state.packages[*key];
+            let mut parts: Vec<String> = Vec::new();
+            parts.extend(pkg.commands.clone());
+            if let Some(ref download) = pkg.download {
+                parts.extend(download.scripts.clone());
+            }
+            let tuple = format!("({})", parts.join(", "));
+            (key.to_string(), tuple)
+        })
+        .collect();
+
+    let aligned = display::align_kv_pairs(&entries, "  ");
+
+    println!("{}", "Installed plugins:".green().bold());
+    for (name, line) in &aligned {
+        let rest = &line[2 + name.len()..];
+        print!("  {}", name.cyan().bold());
+        println!("{}", rest);
+    }
+    println!();
+}
+
+// ---------------------------------------------------------------------------
+// 命令名路由查询（byk show <name>）
 // ---------------------------------------------------------------------------
 
 /// 渲染命令名查询结果。
-fn render_command_info(name: &str, layout: &PathLayout) {
-    let entries = info::query_command(name, layout);
+pub fn render_command(name: &str, layout: &PathLayout) {
+    let entries = show::query_command(name, layout);
 
     if entries.is_empty() {
         eprintln!("No match found: {}", name);
@@ -109,7 +183,7 @@ fn render_command_info(name: &str, layout: &PathLayout) {
                 println!(
                     "  {}: {}",
                     "Description".yellow(),
-                    info::lookup_builtin(name).unwrap_or_default()
+                    show::lookup_builtin(name).unwrap_or_default()
                 );
             }
             InfoEntry::Plugin {
@@ -213,7 +287,7 @@ fn render_alias_detail(resolved: &ResolvedAlias) {
     } else {
         println!("  {}:", "Placeholders".yellow());
         for ph in &placeholders {
-            let ph_type = info::classify_placeholder(ph);
+            let ph_type = show::classify_placeholder(ph);
             println!("    {}  {}", ph, ph_type.dimmed());
         }
     }
@@ -224,82 +298,6 @@ fn render_alias_detail(resolved: &ResolvedAlias) {
     } else {
         println!("  {}: {}", "Paths".yellow(), resolved.paths.join(", "));
     }
-}
-
-// ---------------------------------------------------------------------------
-// doctor 主题（byk --info doctor）
-// ---------------------------------------------------------------------------
-
-/// 渲染诊断信息。
-fn render_doctor(layout: &PathLayout) {
-    crate::render::banner::render();
-
-    let report = info::run_diagnostics(layout);
-    render_doctor_report(&report);
-}
-
-/// 渲染诊断报告。
-fn render_doctor_report(report: &DoctorReport) {
-    // 缓存健康
-    print_status("Cache", &report.cache_status);
-
-    // 别名文件统计
-    println!(
-        "{}: {} {}, {} {}",
-        "Alias files".yellow(),
-        report.alias_file_count.to_string().green(),
-        "files".dimmed(),
-        report.alias_count.to_string().green(),
-        "aliases".dimmed(),
-    );
-
-    // 配置校验
-    if report.config_warnings.is_empty() {
-        println!("{}: {}", "Config errors".yellow(), "0".green());
-    } else {
-        println!(
-            "{}: {}",
-            "Config errors".yellow(),
-            report.config_warnings.len().to_string().red()
-        );
-        for w in &report.config_warnings {
-            println!("  {} {}", "-".red(), w);
-        }
-    }
-
-    println!("{}", "-".repeat(29).dimmed());
-
-    // 补全状态
-    render_completion(&report.completion);
-
-    // Node 状态
-    if report.node_initialized {
-        println!("{}: {}", "Node".yellow(), "initialized".green());
-    } else {
-        println!("{}: {}", "Node".yellow(), "not initialized".dimmed());
-    }
-
-    // Python 状态
-    render_python_status(&report.python);
-
-    println!("{}", "-".repeat(29).dimmed());
-
-    // 冲突检测
-    if report.conflicts.is_empty() {
-        println!("{}: {}", "Conflicts".yellow(), "none".green());
-    } else {
-        println!(
-            "{}: {} {}",
-            "Conflicts".yellow(),
-            report.conflicts.len().to_string().red(),
-            "aliases shadowed".dimmed()
-        );
-        for c in &report.conflicts {
-            println!("  {} {}", "-".red(), c);
-        }
-    }
-
-    println!();
 }
 
 // ---------------------------------------------------------------------------
@@ -321,98 +319,6 @@ fn render_completion(completion: &CompletionStatus) {
             println!("  {}", "$ byk add comp".dimmed());
         }
     }
-}
-
-/// 渲染 Python 诊断状态。
-fn render_python_status(python: &PythonStatus) {
-    if !python.initialized {
-        println!("{}: {}", "Python".yellow(), "not initialized".dimmed());
-        return;
-    }
-
-    println!("{}: {}", "Python".yellow(), "initialized".green());
-    let status_str = if python.bykpy_installed {
-        "installed".green()
-    } else {
-        "missing".red()
-    };
-    println!("  {}: {}", "bykpy".yellow(), status_str);
-}
-
-/// 渲染已安装插件列表（--info plugins）。
-fn render_plugins_list(layout: &PathLayout) {
-    crate::render::banner::render();
-
-    if !layout.venv_dir.is_dir() {
-        println!("{}", "Python venv not initialized.".yellow());
-        println!("  {}", "$ byk add <user/repo>".dimmed());
-        println!();
-        return;
-    }
-
-    let cmd_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-    let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
-
-    if pkg_state.packages.is_empty() {
-        println!("{}", "No plugins installed.".yellow());
-        println!("  {}", "$ byk add <user/repo>".dimmed());
-        println!();
-        return;
-    }
-
-    let mut keys: Vec<&String> = pkg_state.packages.keys().collect();
-    keys.sort();
-
-    println!("{}", "Installed plugins:".green().bold());
-    for key in &keys {
-        let pkg = &pkg_state.packages[*key];
-        let source_str = pkg
-            .source
-            .as_ref()
-            .map(|s| format!("    source: {}", s.dimmed()))
-            .unwrap_or_default();
-
-        let all_cmds: Vec<String> = pkg.commands.clone();
-
-        if let Some(ref install) = pkg.install {
-            let pip_str = install.pip.join(", ");
-            println!(
-                "  {}    pip: {}{}",
-                key.cyan().bold(),
-                pip_str.dimmed(),
-                source_str,
-            );
-        }
-        if let Some(ref download) = pkg.download {
-            let scripts_str = download.scripts.join(", ");
-            println!(
-                "  {}    scripts: {}{}",
-                key.cyan().bold(),
-                scripts_str.dimmed(),
-                source_str,
-            );
-        }
-        if all_cmds.is_empty() {
-            println!("  {}{}", key.cyan().bold(), source_str);
-        }
-        println!("    commands: {}", all_cmds.join(", "));
-        for cmd_name in &all_cmds {
-            if let Some(cmd) = cmd_state.commands.get(cmd_name) {
-                let target_label = match cmd.cmd_type.as_str() {
-                    "py-script" => "script",
-                    _ => "module",
-                };
-                println!(
-                    "    {} → {} {} {}",
-                    cmd_name.dimmed(),
-                    target_label.dimmed(),
-                    cmd.entry.dimmed(),
-                    format!("({})", cmd.desc).dimmed(),
-                );
-            }
-        }
-    }
-    println!();
 }
 
 /// 渲染 Python 总览信息。
@@ -444,16 +350,6 @@ fn render_python_overview(python: &PythonOverviewInfo) {
     let source_display = "State file (plugins.cmd.json)".dimmed();
     println!("{}:  {}", "Source".yellow(), source_display);
     println!();
-}
-
-/// 打印状态标签。
-fn print_status(label: &str, status: &str) {
-    let status_display = match status {
-        "healthy" | "installed" | "enabled" | "initialized" => status.green(),
-        "stale" | "missing" | "not configured" | "not initialized" => status.red(),
-        _ => status.normal(),
-    };
-    println!("{}: {}", label.yellow(), status_display);
 }
 
 /// 打印路径，仅路径存在时显示。

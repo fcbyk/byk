@@ -60,7 +60,6 @@ pub fn complete(args: &[String], layout: &PathLayout) {
 const GLOBAL_FLAGS: &[&str] = &[
     "--version",
     "-v",
-    "--info",
     "--help",
     "-h",
 ];
@@ -122,9 +121,9 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .collect();
     }
 
-    // --info 后面补全：保留词 + 所有可用命令名
-    if first == "--info" {
-        return complete_info_topic(partial, layout);
+    // show 子命令补全
+    if first == "show" {
+        return complete_show_topic(partial, layout);
     }
 
     // add 子命令补全
@@ -196,13 +195,13 @@ fn is_known_npm(word: &str, layout: &PathLayout) -> bool {
     }
 }
 
-/// 补全 --info 后面的参数：保留词 + 所有可用命令名。
-fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
+/// 补全 `byk show` 后面的子命令。
+fn complete_show_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
-    // 保留词
-    candidates.push(super::info::TOPIC_DOCTOR.to_string());
-    candidates.push(super::info::TOPIC_PLUGINS.to_string());
+    // show 子命令
+    candidates.push("overview".into());
+    candidates.push("plugins".into());
 
     // 内置子命令
     candidates.push("add".into());
@@ -223,7 +222,6 @@ fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
 
     // 别名路径
     let (merged, _files) = aliases::load_merged_aliases(layout);
-    // 合并树中的所有别名路径（不含 @file 前缀）
     candidates.extend(aliases::collect_merged_paths(&merged, ""));
 
     candidates.sort();
@@ -301,6 +299,7 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     // 内置子命令
     candidates.push("add".into());
     candidates.push("remove".into());
+    candidates.push("show".into());
 
     // 插件命令
     if layout.venv_dir.is_dir() {

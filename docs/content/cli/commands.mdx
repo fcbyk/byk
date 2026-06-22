@@ -115,21 +115,32 @@ byk completion fish | source
 |------|------|
 | `-v, --version` | 打印版本号、构建信息及安装路径 |
 | `-h, --help` | 打印帮助信息（含 Commands、NPM Commands、Aliases 一览） |
-| `--info [TOPIC]` | 查看系统信息面板 |
 
-### --info 详解
+## show
 
-`--info` 是一个多功能信息查询入口，支持三种模式：
+查看系统信息、插件列表或命令来源。
 
 ```bash
-byk --info              # 总览面板：目录路径、缓存状态、补全、Node、Python
-byk --info doctor       # 诊断检查：缓存健康、配置校验、冲突检测
-byk --info plugins      # 已安装插件列表及其命令详情
-byk --info <name>       # 命令名全量路由查询（查找内置命令、插件、NPM、别名中的所有匹配）
+byk show [SUBCOMMAND]
+```
+
+| Subcommand | 说明 |
+|------------|------|
+| `overview` | 总览面板：目录路径、缓存状态、补全、Node、Python |
+| `plugins` | 已安装插件列表及其命令和脚本 |
+| `<command-name>` | 命令名全量路由查询（查找内置命令、插件、NPM、别名中的所有匹配） |
+
+不带子命令时显示帮助信息。
+
+```bash title="示例"
+byk show                     # 显示帮助信息
+byk show overview            # 系统总览面板
+byk show plugins             # 已安装插件列表
+byk show build               # 查询 "build" 命令的所有来源
 ```
 
 ```bash title="命令名查询示例"
-byk --info build
+byk show build
 # 输出所有名为 "build" 的命令来源：
 # Built-in / Plugin / NPM / Alias（含优先级、模板、占位符等详情）
 ```
@@ -138,8 +149,8 @@ byk --info build
 
 当输入 `byk <name>` 时，byk 按以下顺序匹配命令：
 
-1. **内置子命令** — `add`、`remove`、`completion`
-2. **全局选项** — `-v`、`-h`、`--info`
+1. **内置子命令** — `add`、`remove`、`completion`、`show`
+2. **全局选项** — `-v`、`-h`
 3. **插件命令** — 通过 `byk add` 安装的 Python 插件
 4. **NPM 命令** — 通过 `byk add npm/pnpm` 安装的 npm 包
 5. **精确执行语法** — `@file.key`（本地）/ `@@file.key`（全局）
