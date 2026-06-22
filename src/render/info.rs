@@ -350,8 +350,8 @@ fn render_plugins_list(layout: &PathLayout) {
         return;
     }
 
-    let cmd_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-    let pkg_state = plugins::load_pkg_state(&layout.plugins_dir);
+    let cmd_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+    let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
 
     if pkg_state.packages.is_empty() {
         println!("{}", "No plugins installed.".yellow());

@@ -1,42 +1,16 @@
 /// `byk remove` 子命令逻辑。
 ///
 /// 删除 `byk add` 创建的持久化数据（venv、缓存、别名等），
-/// 并提供 byk 包卸载指引。
+/// 并提供插件卸载功能。
 
 use colored::Colorize;
 use std::fs;
+use std::process::exit;
 
 use super::paths::PathLayout;
-use crate::utils::shell;
-
-// ---------------------------------------------------------------------------
-// remove 帮助
-// ---------------------------------------------------------------------------
-
-/// 渲染 remove 帮助信息（无子参数时显示）。
-pub fn render_remove_help() {
-    println!();
-    print!("{}", "Usage:".green().bold());
-    println!("{}", " byk remove [feature]".bold());
-    println!();
-    println!("{}", "Feature:".green().bold());
-    println!(
-        "  {:<8} {}",
-        "comp".cyan().bold(),
-        "Remove shell completion (zsh/bash)"
-    );
-    println!(
-        "  {:<8} {}",
-        "node".cyan().bold(),
-        "Remove node-pkgs, aliases, and cache"
-    );
-    println!(
-        "  {:<8} {}",
-        "all".cyan().bold(),
-        "Remove everything (~/.byk/ + shell completion)"
-    );
-    println!();
-}
+use super::plugins::state::{empty_cmd_state, load_pkg_state};
+use super::plugins::types::*;
+use crate::utils::{json_io, shell};
 
 // ---------------------------------------------------------------------------
 // remove comp
@@ -340,6 +314,88 @@ pub fn rm_all(layout: &PathLayout) {
         println!();
         println!("{}", "Everything removed.".green());
     }
+}
+
+// ---------------------------------------------------------------------------
+// 卸载插件
+// ---------------------------------------------------------------------------
+
+/// 卸载插件。
+///
+/// 流程：
+/// 1. 读取 plugins.pkg.json，在 packages 中查找 key
+/// 2. 删除下载的脚本文件
+/// 3. 从 plugins.cmd.json 删除该插件的所有命令
+/// 4. 从 plugins.pkg.json 删除该 key
+/// 5. 写回
+///
+/// 注意：不卸载 pip 包，因为一个包可能被多个插件共享。
+pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
+    // 1. 检查 venv
+    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+    if !pip.is_file() {
+        eprintln!(
+            "{} Python venv not found. Run {} first.",
+            "Error:".red(),
+            "`byk add <user/repo>`".bold(),
+        );
+        exit(1);
+    }
+
+    // 2. 读取状态
+    let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
+    let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
+    let scripts_dir = layout.plugins_dir.join("scripts");
+
+    let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
+    let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
+
+    let pkg = match pkg_state.packages.get(key) {
+        Some(p) => p.clone(),
+        None => {
+            eprintln!(
+                "{} plugin \"{}\" is not installed",
+                "Error:".red(),
+                key,
+            );
+            exit(1);
+        }
+    };
+
+    // 3. 删除脚本文件
+    if let Some(ref download) = pkg.download {
+        for script in &download.scripts {
+            let script_path = scripts_dir.join(script);
+            if script_path.exists() {
+                if let Err(e) = fs::remove_file(&script_path) {
+                    eprintln!(
+                        "{} Warning: failed to delete script {}: {}",
+                        "Warning:".yellow(),
+                        script_path.display(),
+                        e,
+                    );
+                }
+            }
+        }
+    }
+
+    // 4. 删除 commands
+    for cmd_name in &pkg.commands {
+        cmd_state.commands.remove(cmd_name);
+    }
+
+    // 5. 删除 packages 条目
+    pkg_state.packages.remove(key);
+
+    // 6. 写回
+    json_io::write_json(&cmd_file, &cmd_state);
+    json_io::write_json(&pkg_file, &pkg_state);
+
+    println!(
+        "{} plugin: {}",
+        "Uninstalled".green(),
+        key.bold(),
+    );
 }
 
 // ---------------------------------------------------------------------------

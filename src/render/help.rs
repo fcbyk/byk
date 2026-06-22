@@ -5,7 +5,7 @@
 use colored::Colorize;
 
 use crate::core::aliases;
-use crate::core::npm_commands;
+use crate::core::node;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
 use crate::utils::display;
@@ -21,7 +21,7 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     // 内置 + 插件命令合并到一个 Commands 区块
     render_commands(layout);
 
-    if let Some(npm_cache) = npm_commands::load_npm_cache(
+    if let Some(npm_cache) = node::load_npm_cache(
         &layout.cache_dir.join("node-pkg.json"),
         &layout.node_pkgs_dir,
     ) {
@@ -44,9 +44,9 @@ pub fn render_commands(layout: &PathLayout) {
 
     // 插件命令
     let plugin_state = if layout.venv_dir.is_dir() {
-        plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
+        plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
     } else {
-        plugins::empty_cmd_state()
+        plugins::state::empty_cmd_state()
     };
     let mut plugins: Vec<(String, String)> = plugin_state
         .commands

@@ -4,7 +4,7 @@
 
 use colored::Colorize;
 
-use crate::core::npm_commands::NpmPackageInfo;
+use crate::core::node::NpmPackageInfo;
 use crate::utils::display;
 
 /// 渲染 NPM Commands 区块到终端。

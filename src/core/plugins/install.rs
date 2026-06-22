@@ -1,36 +1,18 @@
-/// `byk add` / `byk remove <key>` 命令实现。
+/// 插件安装流水线。
 ///
 /// 协议：插件名 → 操作块(install/download/commands) → 具体配置。
 /// 按 download → install → commands 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
 
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::path::Path;
 use std::process::{Command, exit};
 
 use colored::Colorize;
 
-use super::init;
-use super::paths::PathLayout;
-use super::plugins::{
-    CmdState, PluginCommand, PkgState, PkgEntry, InstallInfo, DownloadInfo,
-    empty_cmd_state, load_pkg_state,
-};
-use crate::utils::display;
+use super::state::{empty_cmd_state, load_pkg_state};
+use super::types::*;
 use crate::utils::json_io;
-
-// ---------------------------------------------------------------------------
-// 平台常量（与 plugins.rs 保持一致）
-// ---------------------------------------------------------------------------
-
-#[cfg(windows)]
-const VENV_BIN: &str = "Scripts";
-#[cfg(not(windows))]
-const VENV_BIN: &str = "bin";
-
-#[cfg(windows)]
-const PYTHON_BIN: &str = "python.exe";
-#[cfg(not(windows))]
-const PYTHON_BIN: &str = "python";
 
 // ---------------------------------------------------------------------------
 // 默认配置
@@ -114,7 +96,7 @@ fn fetch_registry(url: &str) -> Result<String, String> {
 }
 
 /// 下载脚本文件到目标路径。
-fn download_script(url: &str, dest: &std::path::Path) -> Result<(), String> {
+fn download_script(url: &str, dest: &Path) -> Result<(), String> {
     let response = ureq::get(url)
         .call()
         .map_err(|e| format!("HTTP request failed: {}", e))?;
@@ -151,7 +133,7 @@ pub fn install_plugin(
     branch: Option<&str>,
     file: Option<&str>,
     editable: Option<&str>,
-    layout: &PathLayout,
+    layout: &crate::core::paths::PathLayout,
 ) {
     let branch = branch.unwrap_or(DEFAULT_BRANCH);
 
@@ -169,7 +151,7 @@ pub fn install_plugin(
         }
         let answer = input.trim().to_lowercase();
         if answer.is_empty() || answer == "y" {
-            init::init_py(layout);
+            init_py(layout);
             let pip = layout.venv_dir.join(VENV_BIN).join("pip");
             if !pip.is_file() {
                 exit(1);
@@ -497,7 +479,6 @@ pub fn install_plugin(
                             exit(1);
                         }
                     }
-
                     pip_packages.push(pkg.to_string());
                 }
             }
@@ -613,150 +594,92 @@ pub fn install_plugin(
 }
 
 // ---------------------------------------------------------------------------
-// 卸载
+// Python venv 初始化
 // ---------------------------------------------------------------------------
 
-/// 卸载插件。
+/// 初始化 Python 虚拟环境。
 ///
-/// 流程：
-/// 1. 读取 plugins.pkg.json，在 packages 中查找 key
-/// 2. 删除下载的脚本文件
-/// 3. 从 plugins.cmd.json 删除该插件的所有命令
-/// 4. 从 plugins.pkg.json 删除该 key
-/// 5. 写回
-///
-/// 注意：不卸载 pip 包，因为一个包可能被多个插件共享。
-pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
-    // 1. 检查 venv
-    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-    if !pip.is_file() {
-        eprintln!(
-            "{} Python venv not found. Run {} first.",
-            "Error:".red(),
-            "`byk add <user/repo>`".bold(),
-        );
-        exit(1);
-    }
+/// 创建 ~/.byk/venv/（不存在时），写入 plugins.cmd.json 和 plugins.pkg.json。
+/// 使用系统 python3 创建 venv。
+pub fn init_py(layout: &crate::core::paths::PathLayout) {
+    let venv_dir = &layout.venv_dir;
 
-    // 2. 读取状态
-    let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
-    let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
-    let scripts_dir = layout.plugins_dir.join("scripts");
+    #[cfg(windows)]
+    let sys_python = "python";
+    #[cfg(not(windows))]
+    let sys_python = "python3";
 
-    let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
-    let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
+    // ensure common dirs
+    ensure_dir(&layout.root_dir, "CLI home");
+    ensure_dir(&layout.alias_dir, "alias");
+    ensure_dir(&layout.cache_dir, "cache");
+    ensure_dir(&layout.plugins_dir, "plugins");
 
-    let pkg = match pkg_state.packages.get(key) {
-        Some(p) => p.clone(),
-        None => {
-            eprintln!(
-                "{} plugin \"{}\" is not installed",
-                "Error:".red(),
-                key,
-            );
-            exit(1);
-        }
-    };
+    // ① 创建 venv（不存在时）
+    if venv_dir.exists() {
+        println!("{}", "venv/ already exists, skipping creation.".dimmed());
+    } else {
+        println!("{}", "Creating Python virtual environment...".dimmed());
+        let status = Command::new(sys_python)
+            .args(["-m", "venv", &venv_dir.to_string_lossy()])
+            .status();
 
-    // 3. 删除脚本文件
-    if let Some(ref download) = pkg.download {
-        for script in &download.scripts {
-            let script_path = scripts_dir.join(script);
-            if script_path.exists() {
-                if let Err(e) = std::fs::remove_file(&script_path) {
-                    eprintln!(
-                        "{} Warning: failed to delete script {}: {}",
-                        "Warning:".yellow(),
-                        script_path.display(),
-                        e,
-                    );
-                }
+        match status {
+            Ok(s) if s.success() => {
+                println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+            }
+            Ok(s) => {
+                eprintln!(
+                    "{} venv creation failed with code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1)
+                );
+                return;
+            }
+            Err(e) => {
+                eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
+                return;
             }
         }
     }
 
-    // 4. 删除 commands
-    for cmd_name in &pkg.commands {
-        cmd_state.commands.remove(cmd_name);
-    }
-
-    // 5. 删除 packages 条目
-    pkg_state.packages.remove(key);
-
-    // 6. 写回
+    // ② 写入最小状态（venv 刚创建，无插件，commands 为空）
+    let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
+    let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
+    let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+    let cmd_state = CmdState {
+        commands: std::collections::HashMap::new(),
+        python_executable: Some(python_exe.to_string_lossy().to_string()),
+    };
+    let pkg_state = PkgState {
+        packages: std::collections::HashMap::new(),
+    };
     json_io::write_json(&cmd_file, &cmd_state);
     json_io::write_json(&pkg_file, &pkg_state);
-
     println!(
-        "{} plugin: {}",
-        "Uninstalled".green(),
-        key.bold(),
+        "  {} plugins/plugins.cmd.json {}",
+        "+".green(),
+        "(created)".dimmed()
+    );
+    println!(
+        "  {} plugins/plugins.pkg.json {}",
+        "+".green(),
+        "(created)".dimmed()
     );
 }
 
 // ---------------------------------------------------------------------------
-// 帮助
+// 内部工具
 // ---------------------------------------------------------------------------
 
-/// 渲染 `byk add` 帮助信息。
-pub fn render_add_help() {
-    println!();
-    print!("{}", "Usage:".green().bold());
-    println!("{}", " byk add [OPTIONS] <USER/REPO[/KEY] | FEATURE>".bold());
-    println!();
-    println!("{}", "Options:".green().bold());
-    println!(
-        "  {:<22} {}",
-        "-b, --branch <NAME>".cyan().bold(),
-        "Set branch (default: main)",
-    );
-    println!(
-        "  {:<22} {}",
-        "-f, --file <PATH>".cyan().bold(),
-        "Use local byk.json instead of remote registry",
-    );
-    println!(
-        "  {:<22} {}",
-        "-e, --editable <DIR>".cyan().bold(),
-        "Editable install",
-    );
-    println!();
-    println!("{}", "Features:".green().bold());
-    println!(
-        "  {:<8} {}",
-        "npm".cyan().bold(),
-        "Initialize with npm (node-pkgs, ni/nu aliases)"
-    );
-    println!(
-        "  {:<8} {}",
-        "pnpm".cyan().bold(),
-        "Initialize with pnpm (node-pkgs, ni/nu aliases)"
-    );
-    println!(
-        "  {:<8} {}",
-        "comp".cyan().bold(),
-        "Initialize shell completion (zsh/bash)"
-    );
-    println!(
-        "  {:<8} {}",
-        "cache".cyan().bold(),
-        "Initialize CLI home & cache directories"
-    );
-    println!();
-    println!("{}", "Examples:".green().bold());
-    let examples: Vec<(String, String)> = vec![
-        ("byk add user/repo/key".into(), "Install specific key from a repo".into()),
-        ("byk add user/repo".into(), "Install first key from a repo".into()),
-        ("byk add --branch dev user/repo/key".into(), "Install from a specific branch".into()),
-        ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
-        ("byk add -e .".into(), "Editable install from current directory".into()),
-        ("byk add -e . hello".into(), "Editable install a specific key".into()),
-    ];
-    let aligned = display::align_kv_pairs(&examples, "  ");
-    for (name, line) in &aligned {
-        let rest = &line[2 + name.len()..];
-        print!("  {}", name.dimmed());
-        println!("{}", rest);
+/// 创建目录，打印操作信息。
+fn ensure_dir(path: &Path, label: &str) {
+    if path.exists() {
+        println!("  {} {} {}", "+".dimmed(), label.dimmed(), "(exists)".dimmed());
+    } else {
+        std::fs::create_dir_all(path).unwrap_or_else(|e| {
+            eprintln!("Failed to create {}: {}", label, e);
+        });
+        println!("  {} {}", "+".green(), label.dimmed());
     }
-    println!();
 }

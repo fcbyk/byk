@@ -1,4 +1,4 @@
-/// NPM Commands 扫描与缓存。
+/// Node 包扫描与缓存。
 ///
 /// 扫描 ~/.byk/node-pkgs 下主动安装的 npm 包，提取可执行命令。
 /// 缓存至 cache/node-pkg.json，node-pkgs/package.json 或 node_modules

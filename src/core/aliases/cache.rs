@@ -1,7 +1,7 @@
 /// 别名缓存：持久化扫描结果与合并配置，避免每次启动重复 I/O 和计算。
 ///
 /// 缓存 ~/.byk/cache/alias.json，通过文件 mtime 快照检测失效。
-/// 模式与 npm_commands 和 plugins 缓存一致。
+/// 模式与 node 和 plugins 缓存一致。
 
 use std::collections::HashMap;
 use std::fs;

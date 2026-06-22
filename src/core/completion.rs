@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use super::aliases::{self, MergedNode};
-use super::npm_commands;
+use super::node;
 use super::paths::PathLayout;
 use super::plugins;
 
@@ -183,14 +183,14 @@ fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
     if !layout.venv_dir.is_dir() {
         return false;
     }
-    let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
     plugin_state.commands.contains_key(word)
 }
 
 /// 检查某个词是否是已知的 NPM 命令。
 fn is_known_npm(word: &str, layout: &PathLayout) -> bool {
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    match npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+    match node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
         Some(npm_cache) => npm_cache.bin_map.contains_key(word),
         None => false,
     }
@@ -211,13 +211,13 @@ fn complete_info_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
 
     // 插件命令
     if layout.venv_dir.is_dir() {
-        let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
         candidates.extend(plugin_state.commands.keys().cloned());
     }
 
     // NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(npm_cache) = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+    if let Some(npm_cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
         candidates.extend(npm_cache.bin_map.keys().cloned());
     }
 
@@ -304,13 +304,13 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
 
     // 插件命令
     if layout.venv_dir.is_dir() {
-        let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
         candidates.extend(plugin_state.commands.keys().cloned());
     }
 
     // NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(npm_cache) = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+    if let Some(npm_cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
         candidates.extend(npm_cache.bin_map.keys().cloned());
     }
 

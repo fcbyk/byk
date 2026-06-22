@@ -10,9 +10,8 @@ use std::process::exit;
 use cli::{Cli, Commands, extract_options};
 use core::aliases;
 use core::completion;
-use core::init;
-use core::install;
-use core::npm_commands;
+use core::add;
+use core::node;
 use core::paths::PathLayout;
 use core::plugins;
 use core::remove;
@@ -39,22 +38,22 @@ fn main() {
                 Some("comp") => remove::rm_comp(),
                 Some("node") => remove::rm_node(&layout),
                 Some("all") => remove::rm_all(&layout),
-                Some(key) => install::uninstall_plugin(key, &layout),
-                None => remove::render_remove_help(),
+                Some(key) => remove::uninstall_plugin(key, &layout),
+                None => render::remove::render(),
             }
             return;
         }
         Some(Commands::Add { branch, file, editable, name }) => {
             match (name.as_deref(), editable.as_deref(), file.as_deref()) {
                 (None | Some("-h") | Some("--help"), None, None) => {
-                    install::render_add_help();
+                    render::add::render();
                 }
-                (Some("npm"), None, None) => init::init_npm(&layout),
-                (Some("pnpm"), None, None) => init::init_pnpm(&layout),
-                (Some("cache"), None, None) => init::init_cache(&layout),
-                (Some("comp"), None, None) => init::init_completion(),
+                (Some("npm"), None, None) => add::init_npm(&layout),
+                (Some("pnpm"), None, None) => add::init_pnpm(&layout),
+                (Some("cache"), None, None) => add::init_cache(&layout),
+                (Some("comp"), None, None) => add::init_completion(),
                 (spec, editable, _file) => {
-                    install::install_plugin(
+                    add::install_plugin(
                         spec.unwrap_or(""),
                         branch.as_deref(),
                         file.as_deref(),
@@ -112,12 +111,12 @@ fn main() {
     // Step 2: 检查是否为插件命令（优先级高于 NPM）
     // 仅 venv 存在时加载插件状态
     let cmd_state = if layout.venv_dir.is_dir() {
-        plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
+        plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
     } else {
-        plugins::empty_cmd_state()
+        plugins::state::empty_cmd_state()
     };
     if cmd_state.commands.contains_key(command_name) {
-        plugins::execute_plugin_command(
+        plugins::execute::execute_plugin_command(
             command_name,
             command_args,
             &layout.plugins_dir,
@@ -129,9 +128,9 @@ fn main() {
 
     // Step 3: 检查是否为 NPM Command
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(cache) = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+    if let Some(cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
         if cache.bin_map.contains_key(command_name) {
-            npm_commands::execute_npm_command(command_name, command_args, &layout);
+            node::execute_npm_command(command_name, command_args, &layout);
             return;
         }
     }

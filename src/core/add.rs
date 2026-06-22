@@ -1,19 +1,21 @@
-/// `byk add` 功能初始化逻辑。
+/// `byk add` 子命令逻辑。
 ///
-/// 用户手动按需初始化 CLI 功能，不自动创建任何配置。
-/// npm/pnpm 别名模板直接硬编码，与生成文件一一对应。
+/// 包含：
+/// - 插件安装（委托给 plugins 模块）
+/// - 内置功能初始化（npm、pnpm、cache、comp）
 
 use colored::Colorize;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use std::process::Command;
-
 use super::paths::PathLayout;
 use crate::utils::shell;
 
+// 重导出插件安装入口
+pub use super::plugins::install::install_plugin;
+
 // ---------------------------------------------------------------------------
-// --init comp
+// --add comp（原 --init comp）
 // ---------------------------------------------------------------------------
 
 /// 初始化 shell 补全。
@@ -89,7 +91,7 @@ pub fn init_completion() {
 }
 
 // ---------------------------------------------------------------------------
-// --init cache
+// --add cache（原 --init cache）
 // ---------------------------------------------------------------------------
 
 /// 初始化 CLI 家目录及缓存目录结构。
@@ -102,10 +104,10 @@ pub fn init_cache(layout: &PathLayout) {
 }
 
 // ---------------------------------------------------------------------------
-// --init npm / --init pnpm
+// --add npm / --add pnpm
 // ---------------------------------------------------------------------------
 
-/// 初始化 npm / pnpm 命令功能。
+/// 初始化 npm 命令功能。
 pub fn init_npm(layout: &PathLayout) {
     init_node_pm(layout, "npm");
 }
@@ -113,89 +115,6 @@ pub fn init_npm(layout: &PathLayout) {
 /// 初始化 pnpm 命令功能。
 pub fn init_pnpm(layout: &PathLayout) {
     init_node_pm(layout, "pnpm");
-}
-
-// ---------------------------------------------------------------------------
-// --init py-v
-// ---------------------------------------------------------------------------
-
-/// 获取 venv 内 bin 目录名（Windows: Scripts, Unix: bin）。
-#[cfg(windows)]
-const VENV_BIN: &str = "Scripts";
-#[cfg(not(windows))]
-const VENV_BIN: &str = "bin";
-
-/// 获取 venv 内 Python 可执行文件名。
-#[cfg(windows)]
-const PYTHON_BIN: &str = "python.exe";
-#[cfg(not(windows))]
-const PYTHON_BIN: &str = "python";
-
-/// 初始化 Python 虚拟环境。
-///
-/// 创建 ~/.byk/venv/（不存在时），写入 plugins.cmd.json 和 plugins.pkg.json。
-/// 使用系统 python3 创建 venv。
-pub fn init_py(layout: &PathLayout) {
-    let venv_dir = &layout.venv_dir;
-
-    #[cfg(windows)]
-    let sys_python = "python";
-    #[cfg(not(windows))]
-    let sys_python = "python3";
-
-    ensure_common_dirs(layout);
-
-    // ① 创建 venv（不存在时）
-    if venv_dir.exists() {
-        println!("{}", "venv/ already exists, skipping creation.".dimmed());
-    } else {
-        println!("{}", "Creating Python virtual environment...".dimmed());
-        let status = Command::new(sys_python)
-            .args(["-m", "venv", &venv_dir.to_string_lossy()])
-            .status();
-
-        match status {
-            Ok(s) if s.success() => {
-                println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
-            }
-            Ok(s) => {
-                eprintln!(
-                    "{} venv creation failed with code {}",
-                    "Error:".red(),
-                    s.code().unwrap_or(1)
-                );
-                return;
-            }
-            Err(e) => {
-                eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
-                return;
-            }
-        }
-    }
-
-    // ② 写入最小状态（venv 刚创建，无插件，commands 为空）
-    let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
-    let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
-    let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-    let cmd_state = crate::core::plugins::CmdState {
-        commands: std::collections::HashMap::new(),
-        python_executable: Some(python_exe.to_string_lossy().to_string()),
-    };
-    let pkg_state = crate::core::plugins::PkgState {
-        packages: std::collections::HashMap::new(),
-    };
-    crate::utils::json_io::write_json(&cmd_file, &cmd_state);
-    crate::utils::json_io::write_json(&pkg_file, &pkg_state);
-    println!(
-        "  {} plugins/plugins.cmd.json {}",
-        "+".green(),
-        "(created)".dimmed()
-    );
-    println!(
-        "  {} plugins/plugins.pkg.json {}",
-        "+".green(),
-        "(created)".dimmed()
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -239,14 +158,7 @@ fn write_file(path: &Path, content: &str, label: &str) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// 共享初始化逻辑
-// ---------------------------------------------------------------------------
-
-fn init_node_pm(
-    layout: &PathLayout,
-    pm: &str,
-) {
+fn init_node_pm(layout: &PathLayout, pm: &str) {
     let template = serde_json::json!({
         "$cwd": "../node-pkgs/",
         "ni": format!("{} i", pm),
@@ -277,11 +189,11 @@ fn init_node_pm(
         println!();
         println!(
             "{}",
-            "This will permanently remove ALL existing node packages,".red().bold()
+            "This will permanently remove ALL existing node packages".red().bold()
         );
         println!(
             "{}",
-            "aliases, and cache. This action cannot be undone.".red().bold()
+            "aliases and cache. This action cannot be undone.".red().bold()
         );
         println!();
 
@@ -316,7 +228,7 @@ fn init_node_pm(
     println!(
         "{} ({})",
         "Node package support initialized.".green(),
-        pm.dimmed(),
+        pm.dimmed()
     );
     println!("  Install packages:  {} <pkg>", "byk ni".dimmed());
     println!("  Remove packages:   {} <pkg>", "byk nu".dimmed());

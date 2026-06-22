@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use crate::core::aliases::{self, AliasFile, ResolvedAlias};
-use crate::core::npm_commands;
+use crate::core::node;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
 
@@ -59,7 +59,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
 
     // 2. 插件命令
     if layout.venv_dir.is_dir() {
-        let plugin_state = plugins::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
         if let Some(cmd) = plugin_state.commands.get(name) {
             entries.push(InfoEntry::Plugin {
                 name: name.to_string(),
@@ -72,7 +72,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
 
     // 3. NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(npm_cache) = npm_commands::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
+    if let Some(npm_cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
         if let Some(pkg_name) = npm_cache.bin_map.get(name) {
             let version = npm_cache
                 .packages
@@ -273,7 +273,7 @@ fn check_python_status(layout: &PathLayout) -> PythonStatus {
         };
     }
 
-    let py_exe = plugins::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
+    let py_exe = plugins::state::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
     let bykpy_installed = Command::new(&py_exe)
         .args(["-c", "import bykpy"])
         .stdout(std::process::Stdio::null())
@@ -337,7 +337,7 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
     let completion = check_completion_status();
     let node_initialized = check_node_initialized(layout);
 
-    let python_exe = plugins::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
+    let python_exe = plugins::state::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
     let state_file = layout.plugins_dir.join("plugins.cmd.json");
     let py_initialized = state_file.exists() || layout.venv_dir.exists();
 

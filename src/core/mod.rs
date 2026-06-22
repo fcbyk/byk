@@ -1,10 +1,8 @@
+pub mod add;
 pub mod aliases;
 pub mod completion;
 pub mod info;
-pub mod init;
-pub mod install;
-pub mod npm_commands;
+pub mod node;
 pub mod paths;
 pub mod plugins;
-pub mod rm;
-pub use rm as remove;
+pub mod remove;
