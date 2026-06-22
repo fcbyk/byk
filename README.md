@@ -19,7 +19,7 @@ byk live-server        # run it
 Give long commands short names.
 
 ```JSON
-# ~/.byk/alias/global.byk.json
+// ~/.byk/alias/global.byk.json
 {
   "ssh": {
     "prod": "ssh -i ~/.ssh/prod.pem ubuntu@203.0.113.42"

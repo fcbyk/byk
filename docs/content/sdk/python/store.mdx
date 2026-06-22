@@ -1,0 +1,107 @@
+---
+description: 基于 JSON 文件的持久化存储，支持插件专属和全局共享
+---
+
+import { Tab, Tabs } from '@rspress/core/theme';
+
+# StateStore
+
+基于 JSON 文件的持久化存储，通过 `plugin()` 上下文或直接创建使用。
+
+## 获取方式
+
+### 通过插件上下文
+
+```python
+from byksdk import plugin
+
+ctx = plugin("server")
+ctx.state()              # plugins/server/state.json
+ctx.state("config")      # plugins/server/config.json
+ctx.app.store()          # state/plugins.state.json
+ctx.app.store("shared")  # state/shared.json
+```
+
+### 直接创建
+
+```python
+from byksdk.state import StateStore
+from byksdk.paths import PLUGINS_DIR, STATE_DIR
+
+store = StateStore(PLUGINS_DIR / "server" / "state.json")
+store = StateStore(STATE_DIR / "shared.json")
+```
+
+## API
+
+<Tabs>
+<Tab label="接口定义">
+
+```python
+class StateStore:
+    path: Path                     # 数据文件路径
+
+    def load(self) -> dict         # 读取全部数据
+    def save(self, data) -> dict   # 覆盖保存，返回保存后的数据
+    def get(self, key, default)    # 获取单个值，key 不存在返回 default
+    def set(self, key, value)      # 设置单个值，返回完整数据
+    def update(self, values)       # 批量更新，返回更新后的数据
+    def delete(self, key)          # 删除单个值，返回剩余数据
+    def clear(self)                # 清空所有数据，返回空字典
+```
+
+</Tab>
+<Tab label="使用示例">
+
+```python
+ctx = plugin("server")
+
+# 写入
+ctx.state().set("port", 8080)
+ctx.state().set("host", "localhost")
+ctx.state().update({"debug": True, "timeout": 30})
+
+# 读取
+ctx.state().get("port")          # 8080
+ctx.state().get("missing", 30)   # 30
+ctx.state().load()               # {'port': 8080, ...}
+
+# 删除
+ctx.state().delete("host")
+
+# 覆盖
+ctx.state().save({"new": "data"})
+
+# 清空
+ctx.state().clear()
+```
+
+</Tab>
+</Tabs>
+
+## 注意事项
+
+### 数据类型
+
+数据必须是 JSON 可序列化的类型：
+
+```python
+# ✅ 支持
+ctx.state().set("string", "text")
+ctx.state().set("number", 123)
+ctx.state().set("list", [1, 2, 3])
+ctx.state().set("dict", {"key": "value"})
+ctx.state().set("none", None)
+
+# ❌ 不支持
+ctx.state().set("set", {1, 2, 3})        # set 不可序列化
+ctx.state().set("bytes", b"data")        # bytes 不可序列化
+```
+
+### 原子写入
+
+写入操作使用临时文件 + rename，保证数据完整性。
+
+### 容错
+
+文件不存在或 JSON 损坏时自动返回空字典，不会抛出异常。默认值通过 `get(key, default)` 指定。

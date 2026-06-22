@@ -1,0 +1,115 @@
+---
+description: 插件上下文，通过 plugin() 工厂函数获取持久化、日志和目录
+---
+
+import { Tab, Tabs } from '@rspress/core/theme';
+
+# Context
+
+通过 `plugin()` 工厂函数获取插件上下文，统一管理持久化、日志和目录。
+
+## PluginContext
+
+<Tabs>
+<Tab label="数据结构">
+
+```python
+from dataclasses import dataclass
+from pathlib import Path
+import logging
+
+@dataclass
+class PluginContext:
+    """插件上下文"""
+
+    name: str                    # 插件名称
+    home: Path                   # 插件专属目录 plugins/{name}/
+    logger: logging.Logger       # 插件专属日志器
+    app: _AppContext             # 应用上下文
+
+    def state(self, name: str = "state") -> StateStore:
+        """获取插件专属持久化实例"""
+```
+
+</Tab>
+<Tab label="_AppContext">
+
+```python
+@dataclass
+class _AppContext:
+    """应用上下文，跨插件共享"""
+
+    logger: logging.Logger       # 全局日志器
+
+    def store(self, name: str = "plugins.state") -> StateStore:
+        """获取全局持久化实例"""
+```
+
+</Tab>
+</Tabs>
+
+## plugin()
+
+工厂函数，创建插件上下文。
+
+<Tabs>
+<Tab label="函数签名">
+
+```python
+def plugin(name: str) -> PluginContext:
+    """
+    Args:
+        name: 插件名
+
+    Returns:
+        PluginContext，home 为 plugins/{name}/，
+        state() 默认路径为 plugins/{name}/state.json，
+        app.store() 默认路径为 state/plugins.state.json，
+        logger 写入 plugins/{name}/{name}.log
+    """
+```
+
+</Tab>
+<Tab label="使用示例">
+
+```python
+from byksdk import plugin
+
+ctx = plugin("server")
+
+# 插件专属持久化
+ctx.state().set("port", 8080)
+ctx.state("config").set("timeout", 30)
+
+# 插件专属日志
+ctx.logger.info("server started")
+
+# 全局持久化
+ctx.app.store().set("theme", "dark")
+ctx.app.store("shared").set("key", "value")
+
+# 全局日志
+ctx.app.logger.info("app started")
+
+# 插件目录
+print(ctx.home)  # ~/.byk/plugins/server/
+```
+
+</Tab>
+</Tabs>
+
+## 持久化路径
+
+```tree
+~/.byk/
+├── plugins/
+│   └── server/
+│       ├── state.json       # ctx.state()
+│       ├── config.json      # ctx.state("config")
+│       └── server.log       # ctx.logger
+├── state/
+│   ├── plugins.state.json   # ctx.app.store()
+│   └── shared.json          # ctx.app.store("shared")
+└── logs/
+    └── plugins.log          # ctx.app.logger
+```
