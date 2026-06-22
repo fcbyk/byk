@@ -1,13 +1,13 @@
 /// 插件命令执行引擎。
 ///
 /// 支持多种执行类型，通过 `PluginExecutor` trait 实现可扩展架构。
-/// 当前内置：py-module、py-script。
+/// 当前内置：py-module、py-script、py-bin。
 
 use std::path::Path;
 use std::process::{Command, exit};
 
 use super::state::get_python_executable;
-use super::types::CmdState;
+use super::types::{CmdState, VENV_BIN};
 
 // ---------------------------------------------------------------------------
 // 执行器 trait
@@ -20,15 +20,17 @@ pub trait PluginExecutor {
 
     /// 执行插件命令。
     ///
-    /// - `entry`：入口点（模块路径或脚本文件名）
+    /// - `entry`：入口点（模块路径、脚本文件名或 bin 名）
     /// - `args`：用户传入的额外参数
     /// - `plugins_dir`：plugins 目录路径
+    /// - `venv_dir`：venv 根目录路径
     /// - `python_exe`：Python 解释器路径
     fn execute(
         &self,
         entry: &str,
         args: &[String],
         plugins_dir: &Path,
+        venv_dir: &Path,
         python_exe: &str,
     ) -> std::process::ExitStatus;
 }
@@ -50,6 +52,7 @@ impl PluginExecutor for PyModuleExecutor {
         entry: &str,
         args: &[String],
         _plugins_dir: &Path,
+        _venv_dir: &Path,
         python_exe: &str,
     ) -> std::process::ExitStatus {
         Command::new(python_exe)
@@ -77,6 +80,7 @@ impl PluginExecutor for PyScriptExecutor {
         entry: &str,
         args: &[String],
         plugins_dir: &Path,
+        _venv_dir: &Path,
         python_exe: &str,
     ) -> std::process::ExitStatus {
         let script_path = plugins_dir.join("scripts").join(entry);
@@ -86,6 +90,36 @@ impl PluginExecutor for PyScriptExecutor {
             .status()
             .unwrap_or_else(|e| {
                 eprintln!("Failed to start Python runtime: {}", e);
+                exit(1);
+            })
+    }
+}
+
+/// Python bin 执行器（直接执行 venv/bin/ 下的控制台脚本）。
+///
+/// 适用于通过 pip 安装的 whl 包，其 `[project.scripts]` 声明的
+/// 入口点会被 pip 自动生成到 venv/bin/ 目录下。
+pub struct PyBinExecutor;
+
+impl PluginExecutor for PyBinExecutor {
+    fn cmd_type(&self) -> &'static str {
+        "py-bin"
+    }
+
+    fn execute(
+        &self,
+        entry: &str,
+        args: &[String],
+        _plugins_dir: &Path,
+        venv_dir: &Path,
+        _python_exe: &str,
+    ) -> std::process::ExitStatus {
+        let bin_path = venv_dir.join(VENV_BIN).join(entry);
+        Command::new(bin_path)
+            .args(args)
+            .status()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to start plugin binary: {}", e);
                 exit(1);
             })
     }
@@ -102,6 +136,7 @@ fn executors() -> Vec<Box<dyn PluginExecutor>> {
     vec![
         Box::new(PyModuleExecutor),
         Box::new(PyScriptExecutor),
+        Box::new(PyBinExecutor),
     ]
 }
 
@@ -139,10 +174,10 @@ pub fn execute_plugin_command(
         .find(|e| e.cmd_type() == cmd.cmd_type.as_str());
 
     let status = match executor {
-        Some(e) => e.execute(&cmd.entry, cmd_args, plugins_dir, &python_exe),
+        Some(e) => e.execute(&cmd.entry, cmd_args, plugins_dir, venv_dir, &python_exe),
         None => {
             // fallback: 默认使用 py-module
-            PyModuleExecutor.execute(&cmd.entry, cmd_args, plugins_dir, &python_exe)
+            PyModuleExecutor.execute(&cmd.entry, cmd_args, plugins_dir, venv_dir, &python_exe)
         }
     };
 
