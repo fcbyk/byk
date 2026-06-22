@@ -1,41 +1,15 @@
 {
-  "hello": {
-    "install": {
-      "pip": [
-        "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl"
-      ],
-      "pip-e": ["./plugins/python"]
-    },
-
-    "commands": {
-      "hello": {
-        "type": "py-module",
-        "entry": "hello.one",
-        "desc": "Example subcommand to verify dynamic registration."
-      },
-      "world": {
-        "type": "py-module",
-        "entry": "hello.two",
-        "desc": "Second command to verify dynamic registration."
-      }
-    }
-  },
+  "hello": "./plugins/python/byk.json",
 
   "jiahao": {
     "install": {
       "pip": ["rich", "click"]
     },
 
-    "download": {
-      "scripts": [
-        "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
-      ]
-    },
-
     "commands": {
       "jiahao": {
         "type": "py-script",
-        "entry": "jiahao.py",
+        "entry": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py",
         "desc": "装 x 命令"
       }
     }

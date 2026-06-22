@@ -190,9 +190,50 @@ byk add -e /path/to/source hello
 
 一个插件可以注册多个命令，每个命令对应一个独立的入口点。
 
+#### 语法糖：py-script 入口 URL
+
+对于 `py-script` 类型的命令，`entry` 可以直接填写远程 URL。byk 会自动下载脚本到 `scripts/` 目录，并将 `entry` 替换为本地文件名：
+
+```json
+{
+  "commands": {
+    "jiahao": {
+      "type": "py-script",
+      "entry": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py",
+      "desc": "装 x 命令"
+    }
+  }
+}
+```
+
+等价于同时使用 `download.scripts` 和 `commands`：
+
+```json
+{
+  "download": {
+    "scripts": ["https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"]
+  },
+  "commands": {
+    "jiahao": {
+      "type": "py-script",
+      "entry": "jiahao.py",
+      "desc": "装 x 命令"
+    }
+  }
+}
+```
+
+:::note
+原来的 `download.scripts` 写法仍然支持，两者可以共存。URL 语法糖只是简化写法，`plugins.cmd.json` 中始终存储的是本地文件名。
+:::
+
 ## Ref 引用
 
-如果一个 key 的值为字符串而非对象，byk 会将其视为 **URL 引用**——从该 URL 拉取另一个 `byk.json`，并在其中查找同名 key：
+当一个 key 的值为字符串时，byk 会将其视为引用，从该位置拉取另一个 `byk.json`，并在其中查找同名 key。
+
+### URL 引用
+
+如果字符串以 `http://` 或 `https://` 开头，byk 直接将其作为 URL 拉取：
 
 ```json
 {
@@ -213,7 +254,33 @@ byk add -e /path/to/source hello
 3. 在新拉取的内容中查找 key 为 `lansend` 的条目
 4. 使用该条目的操作定义执行安装
 
-Ref 适合将插件定义分散到各自仓库中维护，主仓库只做索引。
+### 相对路径引用
+
+如果字符串不以 `http` 开头，byk 将其视为**相对路径**，根据安装模式解析：
+
+- **远程模式**（`byk add user/repo`）：拼接到 `https://raw.githubusercontent.com/{user}/{repo}/{branch}/` 后
+- **本地模式**（`--file` 或 `-e`）：相对于当前 `byk.json` 所在目录解析
+
+```json
+{
+  "hello": "./plugins/python/byk.json"
+}
+```
+
+当用户执行 `byk add user/repo/hello` 时，byk 会：
+
+1. 发现 `hello` 的值是相对路径 `./plugins/python/byk.json`
+2. 拼接为 `https://raw.githubusercontent.com/user/repo/main/plugins/python/byk.json`
+3. 拉取该文件，查找 key 为 `hello` 的条目
+4. 使用该条目的操作定义执行安装
+
+:::note
+- `./` 前缀可选，`plugins/python/byk.json` 与 `./plugins/python/byk.json` 等效
+- URL 引用**不受安装模式影响**，始终直接拉取
+- 相对路径引用适用于将插件定义拆分到子目录的场景
+:::
+
+Ref 适合将插件定义分散到各自仓库或子目录中维护，主仓库只做索引。
 
 ## 远程仓库
 
@@ -276,15 +343,10 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中第一个 key
     "install": {
       "pip": ["rich", "click"]
     },
-    "download": {
-      "scripts": [
-        "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
-      ]
-    },
     "commands": {
       "jiahao": {
         "type": "py-script",
-        "entry": "jiahao.py",
+        "entry": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py",
         "desc": "装 x 命令"
       }
     }
@@ -295,7 +357,7 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中第一个 key
 ## 注意事项
 
 - `byk.json` 中的 key 不能包含 `/`，因为 `/` 在 spec 语法中用于分隔仓库地址和 key
-- Ref 引用的 URL 必须以 `http://` 或 `https://` 开头
+- Ref 引用支持 URL（`http(s)://`）和相对路径两种写法
 - 一个插件的 `commands` 中可以注册多个命令，但命令名不要与其他插件冲突，否则会按安装顺序覆盖
 - 远程仓库的 `byk.json` 中如果有多个 key，用户可通过 `user/repo/key` 精确指定要安装的插件
 - 操作块按固定顺序执行：`download` → `install` → `commands`，与声明顺序无关

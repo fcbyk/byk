@@ -73,6 +73,18 @@ fn parse_spec<'a>(spec: &'a str) -> Option<Spec<'a>> {
     }
 }
 
+/// 引用解析的根路径。
+enum RefBase {
+    /// 远程：https://raw.githubusercontent.com/{owner}/{repo}/{branch}/
+    Remote {
+        owner: String,
+        repo: String,
+        branch: String,
+    },
+    /// 本地：文件所在目录
+    Local(std::path::PathBuf),
+}
+
 /// 构建 raw.githubusercontent.com URL。
 fn build_registry_url(branch: &str, owner: &str, repo: &str) -> String {
     format!(
@@ -168,7 +180,7 @@ pub fn install_plugin(
     }
 
     // 2. 获取 byk.json（-e 目录 或 --file 本地文件 或 远程仓库）
-    let (body, source_label, lookup_key) = if let Some(dir) = editable {
+    let (body, source_label, lookup_key, ref_base) = if let Some(dir) = editable {
         let ed_json = std::path::PathBuf::from(dir).join("byk.json");
         let content = match std::fs::read_to_string(&ed_json) {
             Ok(c) => c,
@@ -177,7 +189,7 @@ pub fn install_plugin(
                 exit(1);
             }
         };
-        (content, None, spec_str)
+        (content, None, spec_str, RefBase::Local(std::path::PathBuf::from(dir)))
     } else if let Some(f) = file {
         let content = match std::fs::read_to_string(f) {
             Ok(c) => c,
@@ -186,7 +198,11 @@ pub fn install_plugin(
                 exit(1);
             }
         };
-        (content, None, spec_str)
+        let base = std::path::PathBuf::from(f)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        (content, None, spec_str, RefBase::Local(base))
     } else {
         let spec = match parse_spec(spec_str) {
             Some(s) => s,
@@ -208,7 +224,11 @@ pub fn install_plugin(
             }
         };
 
-        (body, source_label, spec.key)
+        (body, source_label, spec.key, RefBase::Remote {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            branch: branch.to_string(),
+        })
     };
 
     let registry: HashMap<String, serde_json::Value> = match serde_json::from_str(&body) {
@@ -244,21 +264,11 @@ pub fn install_plugin(
         }
     };
 
-    // 5. Ref 引用解析：entry 为字符串 URL 时拉取完整注册表，取同名 key
+    // 5. Ref 引用解析：entry 为字符串时拉取完整注册表（URL 或相对路径），取同名 key
     let entry_owned: serde_json::Value;
-    let entry = if let Some(url) = entry.as_str() {
-        if !url.starts_with("http://") && !url.starts_with("https://") {
-            eprintln!(
-                "{} plugin \"{}\" ref is not a valid URL: {}",
-                "Error:".red(),
-                key,
-                url,
-            );
-            exit(1);
-        }
-        let body = match fetch_registry(url) {
-            Ok(b) => b,
-            Err(e) => {
+    let entry = if let Some(ref_str) = entry.as_str() {
+        let body = if ref_str.starts_with("http://") || ref_str.starts_with("https://") {
+            fetch_registry(ref_str).unwrap_or_else(|e| {
                 eprintln!(
                     "{} failed to fetch ref for plugin \"{}\": {}",
                     "Error:".red(),
@@ -266,6 +276,38 @@ pub fn install_plugin(
                     e,
                 );
                 exit(1);
+            })
+        } else {
+            // 相对路径：按模式解析
+            match &ref_base {
+                RefBase::Remote { owner, repo, branch } => {
+                    let clean = ref_str.strip_prefix("./").unwrap_or(ref_str);
+                    let url = format!(
+                        "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                        owner, repo, branch, clean,
+                    );
+                    fetch_registry(&url).unwrap_or_else(|e| {
+                        eprintln!(
+                            "{} failed to fetch ref for plugin \"{}\": {}",
+                            "Error:".red(),
+                            key,
+                            e,
+                        );
+                        exit(1);
+                    })
+                }
+                RefBase::Local(dir) => {
+                    let full = dir.join(ref_str);
+                    std::fs::read_to_string(&full).unwrap_or_else(|e| {
+                        eprintln!(
+                            "{} failed to read ref for plugin \"{}\": {}",
+                            "Error:".red(),
+                            key,
+                            e,
+                        );
+                        exit(1);
+                    })
+                }
             }
         };
         let registry: HashMap<String, serde_json::Value> = match serde_json::from_str(&body) {
@@ -447,10 +489,45 @@ pub fn install_plugin(
                 .and_then(|v| v.as_str())
                 .unwrap_or("py-module");
 
-            let entry = match cmd_value.get("entry").and_then(|v| v.as_str()) {
-                Some(t) => t,
+            let mut entry_val = match cmd_value.get("entry").and_then(|v| v.as_str()) {
+                Some(t) => t.to_string(),
                 None => continue,
             };
+
+            // 语法糖：py-script 的 entry 如果是远程 URL，自动下载到 scripts/ 目录
+            if cmd_type == "py-script"
+                && (entry_val.starts_with("http://") || entry_val.starts_with("https://"))
+            {
+                if !scripts_dir.exists() {
+                    if let Err(e) = std::fs::create_dir_all(&scripts_dir) {
+                        eprintln!(
+                            "{} failed to create scripts directory: {}",
+                            "Error:".red(),
+                            e,
+                        );
+                        exit(1);
+                    }
+                }
+
+                let filename = entry_val.rsplit('/').next().unwrap_or("script").to_string();
+                let dest_path = scripts_dir.join(&filename);
+
+                if let Err(e) = download_script(&entry_val, &dest_path) {
+                    eprintln!("{} {}", "Error:".red(), e);
+                    exit(1);
+                }
+
+                match &mut download_info {
+                    Some(info) => info.scripts.push(filename.clone()),
+                    None => {
+                        download_info = Some(DownloadInfo {
+                            scripts: vec![filename.clone()],
+                        });
+                    }
+                }
+
+                entry_val = filename;
+            }
 
             let desc = cmd_value
                 .get("desc")
@@ -462,7 +539,7 @@ pub fn install_plugin(
                 cmd_name.clone(),
                 PluginCommand {
                     cmd_type: cmd_type.to_string(),
-                    entry: entry.to_string(),
+                    entry: entry_val,
                     desc: desc.to_string(),
                 },
             );
