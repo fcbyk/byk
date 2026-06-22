@@ -1,7 +1,7 @@
 {
-  "name": "byk-alias-runner",
-  "displayName": "Byk Alias Runner",
-  "description": "Run alias scripts from *.byk.json files with right-click menu",
+  "name": "byk",
+  "displayName": "BYK",
+  "description": "BYK CLI integration for VS Code — run tasks, manage plugins, and validate configs",
   "version": "2026.6.10",
   "publisher": "fcbyk",
   "license": "MIT",
@@ -34,17 +34,17 @@
   ],
   "contributes": {
     "configuration": {
-      "title": "Byk Alias Runner",
+      "title": "%configuration.title%",
       "properties": {
         "byk.useSystemBinary": {
           "type": "boolean",
           "default": false,
-          "description": "优先使用系统 PATH 中的 byk 二进制文件"
+          "description": "%byk.useSystemBinary.description%"
         },
         "byk.binaryPath": {
           "type": "string",
           "default": "",
-          "description": "自定义 byk 二进制文件的完整路径。设置后将优先使用此路径，支持 ~ 展开"
+          "description": "%byk.binaryPath.description%"
         }
       }
     },
@@ -57,13 +57,13 @@
     ],
     "commands": [
       {
-        "command": "byk-alias.runAtCursor",
-        "title": "Run Alias (Exact)",
+        "command": "byk.runAtCursor",
+        "title": "%command.runAtCursor.title%",
         "icon": "$(run)"
       },
       {
-        "command": "byk-alias.runScript",
-        "title": "Choose Alias…"
+        "command": "byk.runScript",
+        "title": "%command.runScript.title%"
       }
     ],
     "jsonValidation": [
@@ -79,31 +79,31 @@
     "menus": {
       "explorer/context": [
         {
-          "command": "byk-alias.runScript",
+          "command": "byk.runScript",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation"
         }
       ],
       "editor/context": [
         {
-          "command": "byk-alias.runAtCursor",
+          "command": "byk.runAtCursor",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@1"
         },
         {
-          "command": "byk-alias.runScript",
+          "command": "byk.runScript",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@2"
         }
       ],
       "editor/title/context": [
         {
-          "command": "byk-alias.runAtCursor",
+          "command": "byk.runAtCursor",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@1"
         },
         {
-          "command": "byk-alias.runScript",
+          "command": "byk.runScript",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@2"
         }

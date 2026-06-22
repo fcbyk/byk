@@ -462,7 +462,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Right-click: precisely run the alias under the cursor (byk @stem.key)
   context.subscriptions.push(
-    vscode.commands.registerCommand('byk-alias.runAtCursor', () => {
+    vscode.commands.registerCommand('byk.runAtCursor', () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
 
@@ -499,7 +499,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Right-click "Choose Alias…": show QuickPick with all aliases from this file
   context.subscriptions.push(
-    vscode.commands.registerCommand('byk-alias.runScript', async (uri?: vscode.Uri) => {
+    vscode.commands.registerCommand('byk.runScript', async (uri?: vscode.Uri) => {
       let fileUri = uri;
       if (!fileUri) {
         const editor = vscode.window.activeTextEditor;
