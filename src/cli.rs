@@ -33,9 +33,9 @@ pub enum Commands {
         /// 目标 shell: zsh | bash | fish
         shell: String,
     },
-    /// 移除已初始化的 feature
+    /// 移除插件或已初始化的功能
     Remove {
-        /// 要移除的 feature: py-v | comp | node | all
+        /// 插件 key 或功能名: comp | node | all
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
