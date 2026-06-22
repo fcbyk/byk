@@ -38,7 +38,7 @@ mod tests {
 
     fn plugin_command(target: &str, description: &str) -> PluginCommand {
         PluginCommand {
-            cmd_type: "py-m".to_string(),
+            cmd_type: "py-module".to_string(),
             entry: target.into(),
             desc: description.into(),
         }

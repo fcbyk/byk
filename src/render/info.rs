@@ -120,7 +120,7 @@ fn render_command_info(name: &str, layout: &PathLayout) {
             } => {
                 println!("{}: {}", "Plugin".green().bold(), name.cyan().bold());
                 let label = match cmd_type.as_str() {
-                    "py-f" => "Script",
+                    "py-script" => "Script",
                     _ => "Module",
                 };
                 println!("  {}: {}", label.yellow(), entry);
@@ -399,7 +399,7 @@ fn render_plugins_list(layout: &PathLayout) {
         for cmd_name in &all_cmds {
             if let Some(cmd) = cmd_state.commands.get(cmd_name) {
                 let target_label = match cmd.cmd_type.as_str() {
-                    "py-f" => "script",
+                    "py-script" => "script",
                     _ => "module",
                 };
                 println!(

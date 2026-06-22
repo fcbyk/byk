@@ -132,7 +132,7 @@ fn download_script(url: &str, dest: &std::path::Path) -> Result<(), String> {
 /// 1. 检查 venv 是否存在
 /// 2. -e 读 <dir>/byk.json，--file 读本地文件，否则远程拉取
 /// 3. 查找 key → ref 引用解析 → 遍历行为列表
-/// 4. py-m：pip install；py-f：下载/拷贝脚本 + pip install 依赖
+/// 4. py-module：pip install；py-script：下载/拷贝脚本 + pip install 依赖
 /// 5. 持久化到 plugins.cmd.json 和 plugins.pkg.json
 pub fn install_plugin(
     spec_str: &str,
@@ -445,7 +445,7 @@ pub fn install_plugin(
             let cmd_type = cmd_value
                 .get("type")
                 .and_then(|v| v.as_str())
-                .unwrap_or("py-m");
+                .unwrap_or("py-module");
 
             let entry = match cmd_value.get("entry").and_then(|v| v.as_str()) {
                 Some(t) => t,

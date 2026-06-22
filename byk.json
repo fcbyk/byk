@@ -9,12 +9,12 @@
 
     "commands": {
       "hello": {
-        "type": "py-m",
+        "type": "py-module",
         "entry": "hello.one",
         "desc": "Example subcommand to verify dynamic registration."
       },
       "world": {
-        "type": "py-m",
+        "type": "py-module",
         "entry": "hello.two",
         "desc": "Second command to verify dynamic registration."
       }
@@ -34,7 +34,7 @@
 
     "commands": {
       "jiahao": {
-        "type": "py-f",
+        "type": "py-script",
         "entry": "jiahao.py",
         "desc": "装 x 命令"
       }

@@ -17,8 +17,8 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 4. 将命令路由直接合并到 `~/.byk/plugins/plugins.cmd.json`，包追踪信息持久化到 `~/.byk/plugins/plugins.pkg.json`
 
 之后运行 `byk <command>` 时，byk 根据 `type` 字段区分执行方式：
-- `py-m`：执行 `python -m <entry>`
-- `py-f`：执行 `python <scripts_dir>/<entry>`
+- `py-module`：执行 `python -m <entry>`
+- `py-script`：执行 `python <scripts_dir>/<entry>`
 
 ## 初始化
 
@@ -106,7 +106,7 @@ byk remove <plugin-key>   # 卸载指定插件
 └── plugins/
     ├── plugins.cmd.json   # 命令路由（热路径：命令解析、帮助渲染）
     ├── plugins.pkg.json   # 包追踪（冷路径：卸载、信息查询）
-    └── scripts/           # py-f 脚本文件存放目录
+    └── scripts/           # py-script 脚本文件存放目录
 ```
 
 ## 状态文件
@@ -121,12 +121,12 @@ byk remove <plugin-key>   # 卸载指定插件
 {
   "commands": {
     "lansend": {
-      "type": "py-m",
+      "type": "py-module",
       "entry": "byklansend.main",
       "desc": "Send messages via LAN"
     },
     "myscript": {
-      "type": "py-f",
+      "type": "py-script",
       "entry": "myscript.py",
       "desc": "My custom script"
     }
@@ -137,8 +137,8 @@ byk remove <plugin-key>   # 卸载指定插件
 | 字段 | 说明 |
 |------|------|
 | `commands` | 命令名 → 类型、入口点、描述的映射 |
-| `type` | 命令类型：`py-m`（模块）或 `py-f`（脚本） |
-| `entry` | 入口点：`py-m` 为模块路径，`py-f` 为脚本文件名 |
+| `type` | 命令类型：`py-module`（模块）或 `py-script`（脚本） |
+| `entry` | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名 |
 | `desc` | 命令描述，显示在帮助信息中 |
 
 ### plugins.pkg.json（包追踪）

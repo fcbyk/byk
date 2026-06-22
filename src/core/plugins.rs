@@ -35,10 +35,10 @@ const PYTHON_BIN: &str = "python";
 /// 单个插件命令的缓存条目。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PluginCommand {
-    /// 命令类型（"py-m" | "py-f" | ...）
+    /// 命令类型（"py-module" | "py-script" | ...）
     #[serde(rename = "type")]
     pub cmd_type: String,
-    /// 入口点（py-m: 模块路径, py-f: 脚本文件名）
+    /// 入口点（py-module: 模块路径, py-script: 脚本文件名）
     #[serde(rename = "entry")]
     pub entry: String,
     /// 命令描述
@@ -173,8 +173,8 @@ pub fn load_pkg_state(plugins_dir: &Path) -> PkgState {
 
 /// 将插件命令转发给 Python 执行。
 ///
-/// - py-m：`python -m <target> <args>`
-/// - py-f：`python <scripts_dir>/<target> <args>`
+/// - py-module：`python -m <target> <args>`
+/// - py-script：`python <scripts_dir>/<target> <args>`
 pub fn execute_plugin_command(
     cmd_name: &str,
     cmd_args: &[String],
@@ -196,7 +196,7 @@ pub fn execute_plugin_command(
     };
 
     let status = match cmd.cmd_type.as_str() {
-        "py-f" => {
+        "py-script" => {
             let script_path = plugins_dir.join("scripts").join(&cmd.entry);
             Command::new(&python_exe)
                 .arg(script_path)
@@ -204,7 +204,7 @@ pub fn execute_plugin_command(
                 .status()
         }
         _ => {
-            // py-m（默认）
+            // py-module（默认）
             Command::new(&python_exe)
                 .arg("-m")
                 .arg(&cmd.entry)
