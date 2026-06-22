@@ -75,10 +75,11 @@ function flattenAliases(
         exactCommand: `@${stem}.${fullPath}`,
       });
     } else if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) {
-      // Object‑mode alias: { $cmd, $cwd?, $interactive? }
+      // Object‑mode alias: { $cmd, $cwd?, $interactive?, $description? }
       const v = value as Record<string, unknown>;
       const cmd = typeof v.$cmd === 'string' ? v.$cmd : '';
-      const parts = [cmd];
+      const desc = typeof v.$description === 'string' ? v.$description : '';
+      const parts = desc ? [desc] : [cmd];
       if (v.$cwd) parts.push(`cwd:${v.$cwd}`);
       if (v.$interactive) parts.push('interactive');
       items.push({
@@ -196,7 +197,7 @@ function findKeyPositions(document: vscode.TextDocument): Map<string, vscode.Ran
   return map;
 }
 
-// ── $cwd Path Completion ───────────────────────────────────────────
+// ── $cwd / $paths Path Completion ──────────────────────────────────
 
 /** Return whether the cursor sits inside a "$cwd" string value. */
 function isInCwdValue(
@@ -214,65 +215,138 @@ function isInCwdValue(
   return { valueStart, line };
 }
 
+/** Return whether the cursor sits inside a "$paths" array string element. */
+function isInPathsValue(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): { valueStart: number; line: string } | null {
+  const text = document.getText();
+  const offset = document.offsetAt(position);
+
+  // Find the last "$paths" before the cursor
+  const pathsPattern = /"\$paths"\s*:\s*\[/g;
+  let match: RegExpExecArray | null;
+  let lastPathsEnd = -1;
+
+  while ((match = pathsPattern.exec(text)) !== null) {
+    if (match.index >= offset) break;
+    lastPathsEnd = match.index + match[0].length;
+  }
+
+  if (lastPathsEnd === -1) return null;
+
+  // Count bracket balance from after [ to cursor, skipping strings
+  let bracketBalance = 0;
+  let inString = false;
+  let esc = false;
+  for (let i = lastPathsEnd; i < offset; i++) {
+    const ch = text[i];
+    if (esc) { esc = false; continue; }
+    if (ch === '\\') { esc = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (!inString) {
+      if (ch === '[') bracketBalance++;
+      if (ch === ']') bracketBalance--;
+    }
+  }
+
+  // bracketBalance === 0 means we're still inside the array (no closing ] passed)
+  if (bracketBalance !== 0) return null;
+
+  // Check if cursor is inside a string value on the current line
+  const line = document.lineAt(position.line).text;
+  const strPattern = /"([^"\\]|\\.)*"/g;
+  while ((match = strPattern.exec(line)) !== null) {
+    const strStart = match.index;
+    const strEnd = strStart + match[0].length;
+    if (position.character > strStart && position.character < strEnd) {
+      // Verify this string is after $paths[ in the document
+      const lineStartOffset = document.offsetAt(new vscode.Position(position.line, 0));
+      if (lineStartOffset + strStart >= lastPathsEnd) {
+        return { valueStart: strStart + 1, line }; // +1 to skip opening quote
+      }
+    }
+  }
+
+  return null;
+}
+
+/** Resolve completion items for a partial path. */
+function resolvePathCompletions(
+  partialPath: string,
+  fileDir: string,
+  valueStart: number,
+  position: vscode.Position,
+): vscode.CompletionItem[] | undefined {
+  let searchDir: string;
+
+  if (partialPath.startsWith('/')) {
+    const lastSlash = partialPath.lastIndexOf('/');
+    searchDir = partialPath.substring(0, lastSlash + 1) || '/';
+  } else if (partialPath.startsWith('~/')) {
+    const home = process.env.HOME || '/';
+    const rel = partialPath.slice(2);
+    const lastSlash = rel.lastIndexOf('/');
+    searchDir = path.join(home, lastSlash >= 0 ? rel.slice(0, lastSlash + 1) : '');
+  } else {
+    const resolved = path.join(fileDir, partialPath);
+    const lastSlash = resolved.lastIndexOf('/');
+    searchDir = resolved.slice(0, lastSlash + 1);
+  }
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(searchDir, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+
+  const prefix = partialPath.slice(partialPath.lastIndexOf('/') + 1);
+  const items: vscode.CompletionItem[] = [];
+
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') && prefix === '') continue;
+    if (prefix && !entry.name.toLowerCase().startsWith(prefix.toLowerCase())) continue;
+
+    const item = new vscode.CompletionItem(entry.name);
+    item.kind = entry.isDirectory()
+      ? vscode.CompletionItemKind.Folder
+      : vscode.CompletionItemKind.File;
+
+    item.range = new vscode.Range(
+      position.line,
+      valueStart + partialPath.lastIndexOf('/') + 1,
+      position.line,
+      position.character,
+    );
+    item.insertText = entry.name + (entry.isDirectory() ? '/' : '');
+    item.sortText = (entry.isDirectory() ? '0' : '1') + entry.name;
+
+    items.push(item);
+  }
+
+  return items;
+}
+
 const bykCompletionProvider: vscode.CompletionItemProvider = {
   provideCompletionItems(document, position) {
+    const fileDir = path.dirname(document.uri.fsPath);
+
+    // Check $cwd (single string value)
     const cwd = isInCwdValue(document, position);
-    if (!cwd) return undefined;
-
-    const partialPath = cwd.line.substring(cwd.valueStart, position.character);
-
-    // Resolve the directory to list
-    let searchDir: string;
-
-    if (partialPath.startsWith('/')) {
-      const lastSlash = partialPath.lastIndexOf('/');
-      searchDir = partialPath.substring(0, lastSlash + 1) || '/';
-    } else if (partialPath.startsWith('~/')) {
-      const home = process.env.HOME || '/';
-      const rel = partialPath.slice(2);
-      const lastSlash = rel.lastIndexOf('/');
-      searchDir = path.join(home, lastSlash >= 0 ? rel.slice(0, lastSlash + 1) : '');
-    } else {
-      // Relative to the .byk.json file's directory
-      const fileDir = path.dirname(document.uri.fsPath);
-      const resolved = path.join(fileDir, partialPath);
-      const lastSlash = resolved.lastIndexOf('/');
-      searchDir = resolved.slice(0, lastSlash + 1);
+    if (cwd) {
+      const partialPath = cwd.line.substring(cwd.valueStart, position.character);
+      return resolvePathCompletions(partialPath, fileDir, cwd.valueStart, position);
     }
 
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(searchDir, { withFileTypes: true });
-    } catch {
-      return undefined;
+    // Check $paths (array string element)
+    const paths = isInPathsValue(document, position);
+    if (paths) {
+      const partialPath = paths.line.substring(paths.valueStart, position.character);
+      return resolvePathCompletions(partialPath, fileDir, paths.valueStart, position);
     }
 
-    const prefix = partialPath.slice(partialPath.lastIndexOf('/') + 1);
-    const items: vscode.CompletionItem[] = [];
-
-    for (const entry of entries) {
-      if (entry.name.startsWith('.') && prefix === '') continue;
-      if (prefix && !entry.name.toLowerCase().startsWith(prefix.toLowerCase())) continue;
-
-      const item = new vscode.CompletionItem(entry.name);
-      item.kind = entry.isDirectory()
-        ? vscode.CompletionItemKind.Folder
-        : vscode.CompletionItemKind.File;
-
-      // Replace only the part after the last slash
-      item.range = new vscode.Range(
-        position.line,
-        cwd.valueStart + partialPath.lastIndexOf('/') + 1,
-        position.line,
-        position.character,
-      );
-      item.insertText = entry.name + (entry.isDirectory() ? '/' : '');
-      item.sortText = (entry.isDirectory() ? '0' : '1') + entry.name;
-
-      items.push(item);
-    }
-
-    return items;
+    return undefined;
   },
 };
 

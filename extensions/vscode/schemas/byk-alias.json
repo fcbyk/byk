@@ -16,6 +16,13 @@
     "$interactive": {
       "description": "文件级交互模式，子别名自动继承。",
       "type": "boolean"
+    },
+    "$paths": {
+      "description": "文件级 PATH 目录列表，前置到 PATH 环境变量，子别名自动继承。支持 ~ 和相对路径。示例：[\"./scripts\", \"~/tools/bin\"]",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "additionalProperties": {
@@ -48,6 +55,10 @@
         "$interactive": {
           "description": "是否启用交互模式（可选）。",
           "type": "boolean"
+        },
+        "$description": {
+          "description": "描述文本，在帮助页中替代命令映射显示。仅对当前别名生效，不可继承。",
+          "type": "string"
         }
       },
       "additionalProperties": {
