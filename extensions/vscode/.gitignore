@@ -1,0 +1,7 @@
+node_modules
+out
+*.vsix
+bin
+.workbuddy
+.DS_Store
+assets

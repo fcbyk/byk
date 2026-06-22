@@ -1,0 +1,10 @@
+.vscode/**
+src/**
+scripts/**
+tsconfig.json
+.gitignore
+node_modules/.cache
+alias.byk.json
+alias.md
+.workbuddy/**
+pnpm-lock.yaml

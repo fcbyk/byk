@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "shell",
+      "command": "pnpm run compile",
+      "options": {
+        "cwd": "${workspaceFolder}/extensions/vscode"
+      },
+      "group": "build",
+      "problemMatcher": ["$tsc"],
+      "label": "pnpm: compile",
+      "detail": "tsc -p ./"
+    }
+  ]
+}

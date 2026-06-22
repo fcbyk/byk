@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cli.fcbyk.com/schemas/byk-alias.json",
+  "title": "byk CLI Alias Configuration",
+  "description": "Schema for *.byk.json alias configuration files",
+  "type": "object",
+  "properties": {
+    "$priority": {
+      "description": "优先级，默认本地=10 全局=0。设为负数（如 -1）的文件不参与优先级合并，仅可通过 @filename.key 精确语法调用。",
+      "type": "integer"
+    },
+    "$cwd": {
+      "description": "文件级工作目录，所有子别名未单独指定 $cwd 时会自动继承。",
+      "type": "string"
+    },
+    "$interactive": {
+      "description": "文件级交互模式，子别名自动继承。",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": {
+    "oneOf": [
+      {
+        "type": "string",
+        "description": "简写形式：key 直接映射命令字符串。示例：\"dev\": \"vite\""
+      },
+      { "$ref": "#/$defs/AliasObject" },
+      {
+        "type": "boolean",
+        "description": "布尔值属性。"
+      }
+    ]
+  },
+  "$defs": {
+    "AliasObject": {
+      "title": "别名对象（对象模式）",
+      "description": "使用 $cmd / $cwd / $interactive 系统字段配置别名，可嵌套子别名。",
+      "type": "object",
+      "properties": {
+        "$cmd": {
+          "description": "执行命令（可选）。示例：\"npm i\"",
+          "type": "string"
+        },
+        "$cwd": {
+          "description": "工作目录（可选），覆盖继承的 $cwd。示例：\"/project/web\"",
+          "type": "string"
+        },
+        "$interactive": {
+          "description": "是否启用交互模式（可选）。",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          { "$ref": "#/$defs/AliasObject" },
+          { "type": "boolean" }
+        ]
+      }
+    }
+  }
+}
