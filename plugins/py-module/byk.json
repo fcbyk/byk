@@ -1,0 +1,22 @@
+{
+  "pym": {
+    "install": {
+      "pip": [
+        "https://github.com/fcbyk/byk/releases/download/plugins/byk_pym-2026.6.21-py3-none-any.whl"
+      ]
+    },
+
+    "commands": {
+      "hello1": {
+        "type": "py-module",
+        "entry": "bykpym.one",
+        "desc": "example plugin for py-module one"
+      },
+      "hello2": {
+        "type": "py-module",
+        "entry": "bykpym.two",
+        "desc": "example plugin for py-module two"
+      }
+    }
+  }
+}

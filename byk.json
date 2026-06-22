@@ -1,4 +1,5 @@
 {
-  "pym": "./plugins/python/byk.json",
-  "pys": "./plugins/scripts/byk.json"
+  "pym": "./plugins/py-module/byk.json",
+  "pys": "./plugins/py-script/byk.json",
+  "pyb": "./plugins/py-bin/byk.json"
 }

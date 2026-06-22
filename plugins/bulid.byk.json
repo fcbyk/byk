@@ -1,3 +1,5 @@
 {
-    "pyhon": "python3 -m build ./python"
-}
+    "py-plugin-build": "python3 -m build ${0} --wheel --outdir ../dist",
+    "pym": "byk py-plugin-build ./py-module",
+    "pyb": "byk py-plugin-build ./py-bin"
+} 

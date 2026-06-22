@@ -1,0 +1,17 @@
+{
+  "pyb": {
+    "install": {
+      "pip": [
+        "https://github.com/fcbyk/byk/releases/download/plugins/byk_pyb-2026.6.22-py3-none-any.whl"
+      ]
+    },
+
+    "commands": {
+      "hello4": {
+        "type": "py-bin",
+        "entry": "hello4",
+        "desc": "example plugin for py-bin"
+      }
+    }
+  }
+}

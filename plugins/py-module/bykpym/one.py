@@ -3,7 +3,7 @@ from __future__ import annotations
 import click
 
 
-@click.command(help="Example subcommand to verify dynamic registration.")
+@click.command(help="example plugin for py-module one")
 @click.option("--name", default="world", show_default=True, help="The object to greet.")
 def hello(name: str,) -> None:
     click.echo(f"hello {name}")

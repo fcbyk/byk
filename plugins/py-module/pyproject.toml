@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "byk-hello"
+name = "byk-pym"
 version = "2026.6.21"
 description = "byk example plugin"
 requires-python = ">=3.10"

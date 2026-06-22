@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import click
 
-@click.command(help="second command")
+@click.command(help="example plugin for py-module two")
 def world():
     click.echo("second command -> hello world")
 
