@@ -48,6 +48,11 @@ pub fn render() {
         "cache".cyan().bold(),
         "Initialize CLI home & cache directories"
     );
+    println!(
+        "  {:<8} {}",
+        "py-v".cyan().bold(),
+        "Initialize Python venv & pip aliases"
+    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![

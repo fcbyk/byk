@@ -37,6 +37,7 @@ fn main() {
             match feature.as_deref() {
                 Some("comp") => remove::rm_comp(),
                 Some("node") => remove::rm_node(&layout),
+                Some("py-v") => remove::rm_py_v(&layout),
                 Some("all") => remove::rm_all(&layout),
                 Some("-h") | Some("--help") => render::remove::render(),
                 Some(key) => remove::uninstall_plugin(key, &layout),
@@ -53,6 +54,7 @@ fn main() {
                 (Some("pnpm"), None, None) => add::init_pnpm(&layout),
                 (Some("cache"), None, None) => add::init_cache(&layout),
                 (Some("comp"), None, None) => add::init_completion(),
+                (Some("py-v"), None, None) => add::init_py_v(&layout),
                 (spec, editable, _file) => {
                     add::install_plugin(
                         spec.unwrap_or(""),

@@ -8,6 +8,7 @@ use colored::Colorize;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::process::Command;
 use super::paths::PathLayout;
 use crate::utils::shell;
 
@@ -115,6 +116,80 @@ pub fn init_npm(layout: &PathLayout) {
 /// 初始化 pnpm 命令功能。
 pub fn init_pnpm(layout: &PathLayout) {
     init_node_pm(layout, "pnpm");
+}
+
+// ---------------------------------------------------------------------------
+// --add py-v
+// ---------------------------------------------------------------------------
+
+/// 获取 venv 内 bin 目录名（Windows: Scripts, Unix: bin）。
+#[cfg(windows)]
+const VENV_BIN: &str = "Scripts";
+#[cfg(not(windows))]
+const VENV_BIN: &str = "bin";
+
+/// 初始化 Python 虚拟环境及 pip 别名。
+///
+/// 创建 ~/.byk/venv/（不存在时），写入/更新 alias/py.byk.json。
+/// 仅创建 venv 和别名，不安装任何 Python 包。
+pub fn init_py_v(layout: &PathLayout) {
+    let venv_dir = &layout.venv_dir;
+    let alias_path = layout.alias_dir.join("py.byk.json");
+
+    #[cfg(windows)]
+    let sys_python = "python";
+    #[cfg(not(windows))]
+    let sys_python = "python3";
+
+    ensure_common_dirs(layout);
+
+    // ① 创建 venv（不存在时）
+    if venv_dir.exists() {
+        println!("{}", "venv/ already exists, skipping creation.".dimmed());
+    } else {
+        println!("{}", "Creating Python virtual environment...".dimmed());
+        let status = Command::new(sys_python)
+            .args(["-m", "venv", &venv_dir.to_string_lossy()])
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+            }
+            Ok(s) => {
+                eprintln!(
+                    "{} venv creation failed with code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1)
+                );
+                return;
+            }
+            Err(e) => {
+                eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
+                return;
+            }
+        }
+    }
+
+    // ② 写入/更新别名模板
+    let template = serde_json::json!({
+        "$cwd": format!("../venv/{}/", VENV_BIN),
+        "pi": "./pip install",
+        "pu": "./pip uninstall",
+        "pl": "./pip list",
+    });
+    let template_str = serde_json::to_string_pretty(&template).unwrap_or_default();
+    write_file(&alias_path, &template_str, "alias/py.byk.json");
+
+    println!();
+    println!(
+        "{} {}",
+        "Python environment ready.".green(),
+        "(venv)".dimmed()
+    );
+    println!("  Install packages:  byk pi <pkg>");
+    println!("  Remove packages:   byk pu <pkg>");
+    println!("  List packages:     byk pl");
 }
 
 // ---------------------------------------------------------------------------
