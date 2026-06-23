@@ -1,8 +1,8 @@
-/// Node 包扫描与缓存。
-///
-/// 扫描 ~/.byk/node-pkgs 下主动安装的 npm 包，提取可执行命令。
-/// 缓存至 cache/node-pkg.json，node-pkgs/package.json 或 node_modules
-/// mtime 变化时自动重建。
+//! Node 包扫描与缓存。
+//!
+//! 扫描 ~/.byk/node-pkgs 下主动安装的 npm 包，提取可执行命令。
+//! 缓存至 cache/node-pkg.json，node-pkgs/package.json 或 node_modules
+//! mtime 变化时自动重建。
 
 use std::collections::HashMap;
 use std::fs;
@@ -138,7 +138,7 @@ fn extract_bins(pkg_data: &serde_json::Value, pkg_name: &str) -> Vec<String> {
 ///
 /// 对于 scoped 包（@scope/name），返回 scope 后面的部分。
 fn bin_name_from_package(pkg_name: &str) -> String {
-    pkg_name.split('/').last().unwrap_or(pkg_name).to_string()
+    pkg_name.split('/').next_back().unwrap_or(pkg_name).to_string()
 }
 
 /// 构建 bin 命令名 → 包名 的映射，用于命令路由。
@@ -293,13 +293,11 @@ fn get_watched_mtimes(node_pkgs_dir: &Path) -> HashMap<String, u64> {
         node_pkgs_dir.join("node_modules"),
     ];
     for p in &targets {
-        if let Ok(meta) = fs::metadata(p) {
-            if let Ok(modified) = meta.modified() {
-                if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+        if let Ok(meta) = fs::metadata(p)
+            && let Ok(modified) = meta.modified()
+                && let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
                     mtimes.insert(p.to_string_lossy().to_string(), duration.as_secs());
                 }
-            }
-        }
     }
     mtimes
 }

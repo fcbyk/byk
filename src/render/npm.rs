@@ -1,6 +1,6 @@
-/// NPM Commands 渲染。
-///
-/// 将 NpmPackageInfo 列表转为对齐的终端展示行并输出。
+//! NPM Commands 渲染。
+//!
+//! 将 NpmPackageInfo 列表转为对齐的终端展示行并输出。
 
 use colored::Colorize;
 

@@ -1,4 +1,4 @@
-/// 别名执行：危险命令检测、环境构建、交互模式、执行入口。
+//! 别名执行：危险命令检测、环境构建、交互模式、执行入口。
 
 use std::collections::{HashMap, HashSet};
 use rustyline::DefaultEditor;
@@ -162,11 +162,9 @@ fn pre_fill_from_cli(
     // 位置占位符 ${N}
     for ph in positional {
         let n = &ph[2..ph.len() - 1];
-        if let Ok(idx) = n.parse::<usize>() {
-            if idx < cli_args.len() && !consumed.contains(&idx) {
-                pre_filled.insert((*ph).clone(), cli_args[idx].clone());
-                consumed.insert(idx);
-            }
+        if let Ok(idx) = n.parse::<usize>() && idx < cli_args.len() && !consumed.contains(&idx) {
+            pre_filled.insert((*ph).clone(), cli_args[idx].clone());
+            consumed.insert(idx);
         }
     }
 
@@ -505,7 +503,7 @@ fn execute_interactive_impl(
                 exit(0);
             }
         };
-        for arg in input.trim().split_whitespace() {
+        for arg in input.split_whitespace() {
             if !arg.is_empty() {
                 interactive_args.push(arg.to_string());
             }
@@ -523,11 +521,9 @@ fn execute_interactive_impl(
     let mut all_args: Vec<String> = Vec::new();
     let mut pre_consumed: Vec<usize> = Vec::new();
     for (i, ph) in positional.iter().enumerate() {
-        if let Some(val) = resolved_map.get(ph.as_str()) {
-            if !val.is_empty() {
-                pre_consumed.push(i);
-                all_args.push(val.clone());
-            }
+        if let Some(val) = resolved_map.get(ph.as_str()) && !val.is_empty() {
+            pre_consumed.push(i);
+            all_args.push(val.clone());
         }
     }
     all_args.extend(interactive_args.clone());
@@ -576,15 +572,13 @@ fn resolve_working_dir(cwd: Option<&str>, base_dir: Option<&Path>) -> PathBuf {
     };
 
     // 相对路径以配置文件所在目录为基准解析
-    if path.is_relative() {
-        if let Some(base) = base_dir {
-            let joined = base.join(&path);
-            // 规范化路径（消除 .. 等），失败时回退到拼接结果
-            if let Ok(canonical) = joined.canonicalize() {
-                return canonical;
-            }
-            return joined;
+    if path.is_relative() && let Some(base) = base_dir {
+        let joined = base.join(&path);
+        // 规范化路径（消除 .. 等），失败时回退到拼接结果
+        if let Ok(canonical) = joined.canonicalize() {
+            return canonical;
         }
+        return joined;
     }
     path
 }

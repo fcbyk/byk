@@ -1,4 +1,4 @@
-/// CLI 参数定义与选项提取。
+//! CLI 参数定义与选项提取。
 
 use clap::{Parser, Subcommand};
 

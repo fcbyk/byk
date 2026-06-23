@@ -1,10 +1,10 @@
-/// 占位符解析：模板占位符收集、条件渲染、参数解析。
-///
-/// 支持四类占位符：
-/// - `{xxx}`    — 具名占位符，匹配 argv 中 xxx 后面的值
-/// - `{{xxx}}`  — 可选透传，有值则渲染 "xxx value"，无则消失
-/// - `{xxx?}`   — 条件渲染，匹配时渲染真分支
-/// - `${args}` / `${N}` / `${...args}` — 系统占位符
+//! 占位符解析：模板占位符收集、条件渲染、参数解析。
+//!
+//! 支持四类占位符：
+//! - `{xxx}`    — 具名占位符，匹配 argv 中 xxx 后面的值
+//! - `{{xxx}}`  — 可选透传，有值则渲染 "xxx value"，无则消失
+//! - `{xxx?}`   — 条件渲染，匹配时渲染真分支
+//! - `${args}` / `${N}` / `${...args}` — 系统占位符
 
 use std::collections::{HashMap, HashSet};
 
@@ -118,7 +118,7 @@ fn resolve_nested_impl(
 ) -> String {
     let mut result = value.to_string();
     let mut keys: Vec<&String> = resolved.keys().collect();
-    keys.sort_by(|a, b| b.len().cmp(&a.len()));
+    keys.sort_by_key(|b| std::cmp::Reverse(b.len()));
     for placeholder in &keys {
         if result.contains(*placeholder) {
             if !visited.insert((*placeholder).clone()) {
@@ -283,7 +283,7 @@ pub fn parse_alias_arguments_with_mapping(
     // 第二趟：模板替换，长的先替换
     let mut result = command.to_string();
     let mut sorted: Vec<&String> = resolved.keys().collect();
-    sorted.sort_by(|a, b| b.len().cmp(&a.len()));
+    sorted.sort_by_key(|b| std::cmp::Reverse(b.len()));
     for ph in &sorted {
         result = result.replace(*ph, &resolved[*ph]);
     }

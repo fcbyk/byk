@@ -1,7 +1,7 @@
-/// `byk remove` 子命令逻辑。
-///
-/// 删除 `byk add` 创建的持久化数据（venv、缓存、别名等），
-/// 并提供插件卸载功能。
+//! `byk remove` 子命令逻辑。
+//!
+//! 删除 `byk add` 创建的持久化数据（venv、缓存、别名等），
+//! 并提供插件卸载功能。
 
 use colored::Colorize;
 use std::fs;
@@ -268,12 +268,11 @@ pub fn rm_all(layout: &PathLayout) {
                 );
             }
         }
-        if has_comp {
-            if let Some(p) = shell::rc_path() {
+        if has_comp
+            && let Some(p) = shell::rc_path() {
                 println!("  {}", p.display().to_string().dimmed());
                 println!("    {}", "(byk completion line)".dimmed());
             }
-        }
         println!();
 
         if !shell::prompt_confirm("all") {
@@ -343,8 +342,8 @@ pub fn rm_all(layout: &PathLayout) {
                 );
             }
         }
-        if has_comp {
-            if let Some(p) = shell::rc_path() {
+        if has_comp
+            && let Some(p) = shell::rc_path() {
                 let content = fs::read_to_string(&p).unwrap_or_default();
                 let new_content = shell::strip_completion_lines(&content);
                 let _ = fs::write(&p, new_content);
@@ -354,7 +353,6 @@ pub fn rm_all(layout: &PathLayout) {
                     p.display().to_string().dimmed()
                 );
             }
-        }
         println!();
         println!("{}", "Everything removed.".green());
     }
@@ -410,8 +408,8 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     if let Some(ref download) = pkg.download {
         for script in &download.scripts {
             let script_path = scripts_dir.join(script);
-            if script_path.exists() {
-                if let Err(e) = fs::remove_file(&script_path) {
+            if script_path.exists()
+                && let Err(e) = fs::remove_file(&script_path) {
                     eprintln!(
                         "{} Warning: failed to delete script {}: {}",
                         "Warning:".yellow(),
@@ -419,7 +417,6 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
                         e,
                     );
                 }
-            }
         }
     }
 

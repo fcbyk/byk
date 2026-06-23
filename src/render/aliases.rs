@@ -1,7 +1,7 @@
-/// 别名渲染。
-///
-/// 将合并后的别名配置转为对齐的终端展示行并输出，
-/// 包含 CJK 显示宽度对齐和终端宽度感知的自动换行。
+//! 别名渲染。
+//!
+//! 将合并后的别名配置转为对齐的终端展示行并输出，
+//! 包含 CJK 显示宽度对齐和终端宽度感知的自动换行。
 
 use colored::Colorize;
 use std::path::{Path, PathBuf};
@@ -123,11 +123,10 @@ pub(crate) fn resolve_cwd_display(cwd: &str, base_dir: Option<&Path>) -> String 
     } else {
         normalize(cwd_path)
     };
-    if let Some(home) = dirs::home_dir() {
-        if let Ok(rest) = resolved.strip_prefix(&home) {
+    if let Some(home) = dirs::home_dir()
+        && let Ok(rest) = resolved.strip_prefix(&home) {
             return format!("~/{}", rest.display());
         }
-    }
     resolved.display().to_string()
 }
 

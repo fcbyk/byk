@@ -2,6 +2,7 @@
     "$priority": -1,
     "开发":{
         "测试": "cargo test",
+        "lint": "cargo clippy",
         "覆盖率报告": "cargo llvm-cov",
         "运行": "cargo run",
         "构建": "cargo build --release",

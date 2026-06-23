@@ -93,14 +93,11 @@ fn main() {
             env!("GIT_HASH"),
             env!("BUILD_DATE"),
         );
-        match std::env::current_exe() {
-            Ok(exe_path) => println!(
-                "{} {}",
-                "installed at".dimmed(),
-                exe_path.display().to_string().dimmed(),
-            ),
-            Err(_) => {}
-        }
+        if let Ok(exe_path) = std::env::current_exe() { println!(
+            "{} {}",
+            "installed at".dimmed(),
+            exe_path.display().to_string().dimmed(),
+        ) }
         return;
     }
     if cli.trailing.is_empty() {
@@ -132,12 +129,11 @@ fn main() {
 
     // Step 3: 检查是否为 NPM Command
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
-        if cache.bin_map.contains_key(command_name) {
+    if let Some(cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir)
+        && cache.bin_map.contains_key(command_name) {
             node::execute_npm_command(command_name, command_args, &layout);
             return;
         }
-    }
 
     // 提前加载别名数据（精确执行和普通查找共用）
     let (merged, files) = aliases::load_merged_aliases(&layout);
@@ -168,8 +164,7 @@ fn main() {
     match aliases::resolve_merged_alias(&merged, command_name) {
         Some(resolved) => {
             let display_source = format!("{}.{}", resolved.source, command_name);
-            aliases::execute_alias(&resolved, command_args, &display_source);
-            return;
+            aliases::execute_alias(resolved, command_args, &display_source);
         }
         None => {
             // 生成建议列表

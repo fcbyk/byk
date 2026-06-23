@@ -1,6 +1,6 @@
-/// Banner 渲染。
-///
-/// 后续可扩展多种 banner 风格，按需选择。
+//! Banner 渲染。
+//!
+//! 后续可扩展多种 banner 风格，按需选择。
 
 use colored::Colorize;
 

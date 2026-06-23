@@ -1,7 +1,7 @@
-/// 插件安装流水线。
-///
-/// 协议：插件名 → 操作块(install/download/commands) → 具体配置。
-/// 按 download → install → commands 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
+//! 插件安装流水线。
+//!
+//! 协议：插件名 → 操作块(install/download/commands) → 具体配置。
+//! 按 download → install → commands 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
 
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -342,8 +342,8 @@ pub fn install_plugin(
         any_operation_processed = true;
 
         // 确保 scripts 目录存在
-        if !scripts_dir.exists() {
-            if let Err(e) = std::fs::create_dir_all(&scripts_dir) {
+        if !scripts_dir.exists()
+            && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
                 eprintln!(
                     "{} failed to create scripts directory: {}",
                     "Error:".red(),
@@ -351,7 +351,6 @@ pub fn install_plugin(
                 );
                 exit(1);
             }
-        }
 
         let mut downloaded_scripts: Vec<String> = Vec::new();
 
@@ -449,8 +448,8 @@ pub fn install_plugin(
             if cmd_type == "py-script"
                 && (entry_val.starts_with("http://") || entry_val.starts_with("https://"))
             {
-                if !scripts_dir.exists() {
-                    if let Err(e) = std::fs::create_dir_all(&scripts_dir) {
+                if !scripts_dir.exists()
+                    && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
                         eprintln!(
                             "{} failed to create scripts directory: {}",
                             "Error:".red(),
@@ -458,7 +457,6 @@ pub fn install_plugin(
                         );
                         exit(1);
                     }
-                }
 
                 let filename = entry_val.rsplit('/').next().unwrap_or("script").to_string();
                 let dest_path = scripts_dir.join(&filename);

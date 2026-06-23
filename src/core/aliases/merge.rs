@@ -1,7 +1,7 @@
-/// 深度合并、别名加载、路径收集与解析。
-///
-/// 将多个 AliasFile 按优先级合并为一棵 MergedConfig 树，
-/// 并提供路径遍历和别名查找能力。
+//! 深度合并、别名加载、路径收集与解析。
+//!
+//! 将多个 AliasFile 按优先级合并为一棵 MergedConfig 树，
+//! 并提供路径遍历和别名查找能力。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -9,12 +9,23 @@ use std::path::{Path, PathBuf};
 use super::cache::load_alias_cache;
 use super::parse::{is_alias_value, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
-use super::types::{AliasFile, AliasValue, MergedConfig, MergedNode, ResolvedAlias};
+use super::types::{AliasFile, AliasValue, MergedConfig, ResolvedAlias};
 use crate::core::paths::PathLayout;
 
 // ---------------------------------------------------------------------------
 // 深度合并
 // ---------------------------------------------------------------------------
+
+/// 深度合并上下文，打包所有跨递归传递的参数。
+#[derive(Copy, Clone)]
+struct MergeContext<'a> {
+    file_key: &'a str,
+    source_path: Option<&'a Path>,
+    priority: i32,
+    inherited_cwd: Option<&'a str>,
+    inherited_interactive: Option<bool>,
+    inherited_paths: &'a [String],
+}
 
 /// 将 source 深度合并到 target。
 ///
@@ -29,22 +40,17 @@ use crate::core::paths::PathLayout;
 fn deep_merge_dict(
     target: &mut MergedConfig,
     source: &serde_json::Map<String, serde_json::Value>,
-    file_key: &str,
-    source_path: Option<&Path>,
-    priority: i32,
-    inherited_cwd: Option<&str>,
-    inherited_interactive: Option<bool>,
-    inherited_paths: &[String],
+    ctx: &MergeContext,
 ) {
     // 提取当前分组的 $cwd / $interactive，子级覆盖父级
     let group_cwd = source
         .get("$cwd")
         .and_then(|v| v.as_str())
-        .or(inherited_cwd);
+        .or(ctx.inherited_cwd);
     let group_interactive = source
         .get("$interactive")
         .and_then(|v| v.as_bool())
-        .or(inherited_interactive);
+        .or(ctx.inherited_interactive);
 
     for (key, val) in source {
         if key.starts_with('$') {
@@ -57,41 +63,39 @@ fn deep_merge_dict(
                 let av = apply_inherited(av, group_cwd, group_interactive);
                 let entry = target
                     .entry(key.clone())
-                    .or_insert_with(MergedNode::default);
+                    .or_default();
                 entry.alias = Some(ResolvedAlias {
                     value: av,
-                    source: file_key.to_string(),
-                    source_path: source_path.map(|p| p.to_path_buf()),
-                    priority,
-                    paths: inherited_paths.to_vec(),
+                    source: ctx.file_key.to_string(),
+                    source_path: ctx.source_path.map(|p| p.to_path_buf()),
+                    priority: ctx.priority,
+                    paths: ctx.inherited_paths.to_vec(),
                 });
 
                 if let serde_json::Value::Object(inner) = val {
                     deep_merge_dict(
                         &mut entry.children,
                         inner,
-                        file_key,
-                        source_path,
-                        priority,
-                        group_cwd,
-                        group_interactive,
-                        inherited_paths,
+                        &MergeContext {
+                            inherited_cwd: group_cwd,
+                            inherited_interactive: group_interactive,
+                            ..*ctx
+                        },
                     );
                 }
             }
         } else if let serde_json::Value::Object(inner) = val {
             let entry = target
                 .entry(key.clone())
-                .or_insert_with(MergedNode::default);
+                .or_default();
             deep_merge_dict(
                 &mut entry.children,
                 inner,
-                file_key,
-                source_path,
-                priority,
-                group_cwd,
-                group_interactive,
-                inherited_paths,
+                &MergeContext {
+                    inherited_cwd: group_cwd,
+                    inherited_interactive: group_interactive,
+                    ..*ctx
+                },
             );
         }
     }
@@ -157,12 +161,14 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
         deep_merge_dict(
             &mut merged,
             &f.aliases,
-            &f.key,
-            Some(f.path.as_path()),
-            f.priority,
-            f.inherited_cwd.as_deref(),
-            f.inherited_interactive,
-            &f.inherited_paths,
+            &MergeContext {
+                file_key: &f.key,
+                source_path: Some(f.path.as_path()),
+                priority: f.priority,
+                inherited_cwd: f.inherited_cwd.as_deref(),
+                inherited_interactive: f.inherited_interactive,
+                inherited_paths: &f.inherited_paths,
+            },
         );
     }
     merged
@@ -261,17 +267,15 @@ pub fn lookup_all_aliases(files: &[AliasFile], name: &str) -> Vec<ResolvedAlias>
 
             if i == parts.len() - 1 {
                 // 最后一级：检查是否为别名值
-                if is_alias_value(val) {
-                    if let Some(av) = to_alias_value(val) {
-                        let av = apply_inherited(av, group_cwd, group_interactive);
-                        results.push(ResolvedAlias {
-                            value: av,
-                            source: f.key.clone(),
-                            source_path: Some(f.path.clone()),
-                            priority: f.priority,
-                            paths: f.inherited_paths.clone(),
-                        });
-                    }
+                if is_alias_value(val) && let Some(av) = to_alias_value(val) {
+                    let av = apply_inherited(av, group_cwd, group_interactive);
+                    results.push(ResolvedAlias {
+                        value: av,
+                        source: f.key.clone(),
+                        source_path: Some(f.path.clone()),
+                        priority: f.priority,
+                        paths: f.inherited_paths.clone(),
+                    });
                 }
                 break;
             }
@@ -282,10 +286,8 @@ pub fn lookup_all_aliases(files: &[AliasFile], name: &str) -> Vec<ResolvedAlias>
                 if let Some(c) = inner.get("$cwd").and_then(|v| v.as_str()) {
                     group_cwd = Some(c);
                 }
-                if let Some(v) = inner.get("$interactive") {
-                    if let Some(b) = v.as_bool() {
-                        group_interactive = Some(b);
-                    }
+                if let Some(v) = inner.get("$interactive") && let Some(b) = v.as_bool() {
+                    group_interactive = Some(b);
                 }
                 current = inner;
             } else {
@@ -306,6 +308,7 @@ pub fn lookup_all_aliases(files: &[AliasFile], name: &str) -> Vec<ResolvedAlias>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::aliases::types::MergedNode;
 
     fn make_alias(cmd: &str) -> ResolvedAlias {
         ResolvedAlias {

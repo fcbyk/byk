@@ -1,4 +1,4 @@
-/// 精确执行语法：@file.key 和 @@file.key。
+//! 精确执行语法：@file.key 和 @@file.key。
 
 use super::merge::apply_inherited;
 use super::parse::{is_alias_value, to_alias_value};
@@ -19,10 +19,10 @@ use super::types::{AliasFile, ResolvedAlias};
 /// 无 . 或 alias_key 为空 → None（走普通查找）
 #[allow(dead_code)]
 pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
-    let (prefix, rest) = if input.starts_with("@@") {
-        ("@@", &input[2..])
-    } else if input.starts_with('@') {
-        ("@", &input[1..])
+    let (prefix, rest) = if let Some(rest) = input.strip_prefix("@@") {
+        ("@@", rest)
+    } else if let Some(rest) = input.strip_prefix('@') {
+        ("@", rest)
     } else {
         return None;
     };
@@ -63,10 +63,8 @@ pub fn lookup_exact_alias(
             if let Some(c) = obj.get("$cwd").and_then(|v| v.as_str()) {
                 group_cwd = Some(c);
             }
-            if let Some(v) = obj.get("$interactive") {
-                if let Some(b) = v.as_bool() {
-                    group_interactive = Some(b);
-                }
+            if let Some(v) = obj.get("$interactive") && let Some(b) = v.as_bool() {
+                group_interactive = Some(b);
             }
             current = obj.get(*part)?;
             if i < parts.len() - 1 && !current.is_object() {

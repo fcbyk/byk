@@ -1,6 +1,6 @@
-/// 插件状态加载与持久化。
-///
-/// 从 plugins.cmd.json 和 plugins.pkg.json 读写插件状态。
+//! 插件状态加载与持久化。
+//!
+//! 从 plugins.cmd.json 和 plugins.pkg.json 读写插件状态。
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -38,11 +38,10 @@ pub fn empty_pkg_state() -> PkgState {
 /// 2. 如果 venv 存在 → `venv/bin/python`
 pub(crate) fn get_python_executable(plugins_dir: &Path, venv_dir: &Path) -> String {
     let cmd_file = plugins_dir.join("plugins.cmd.json");
-    if let Some(data) = json_io::read_json::<CmdState>(&cmd_file) {
-        if let Some(exe) = data.python_executable {
+    if let Some(data) = json_io::read_json::<CmdState>(&cmd_file)
+        && let Some(exe) = data.python_executable {
             return exe;
         }
-    }
 
     let venv_python = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
     venv_python.to_string_lossy().to_string()

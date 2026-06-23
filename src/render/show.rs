@@ -1,12 +1,12 @@
-/// `byk show` CLI 信息格式化渲染。
-///
-/// 三种模式：
-/// - `byk show` — 帮助信息
-/// - `byk show overview` — 总览面板
-/// - `byk show plugins` — 已安装插件列表
-/// - `byk show <name>` — 命令名全量路由查询
-///
-/// 本模块只负责格式化输出，业务逻辑在 core::show 中。
+//! `byk show` CLI 信息格式化渲染。
+//!
+//! 三种模式：
+//! - `byk show` — 帮助信息
+//! - `byk show overview` — 总览面板
+//! - `byk show plugins` — 已安装插件列表
+//! - `byk show <name>` — 命令名全量路由查询
+//!
+//! 本模块只负责格式化输出，业务逻辑在 core::show 中。
 
 use colored::Colorize;
 
@@ -29,19 +29,16 @@ pub fn render_help() {
     println!();
     println!("{}", "Subcommands:".green().bold());
     println!(
-        "  {:<20} {}",
+        "  {:<20} Display system overview (paths, cache, completion, Node, Python)",
         "overview".cyan().bold(),
-        "Display system overview (paths, cache, completion, Node, Python)",
     );
     println!(
-        "  {:<20} {}",
+        "  {:<20} List installed plugins and their commands",
         "plugins".cyan().bold(),
-        "List installed plugins and their commands",
     );
     println!(
-        "  {:<20} {}",
+        "  {:<20} Query the source of a command (built-in / plugin / NPM / alias)",
         "<command-name>".cyan().bold(),
-        "Query the source of a command (built-in / plugin / NPM / alias)",
     );
     println!();
     println!("{}", "Examples:".green().bold());

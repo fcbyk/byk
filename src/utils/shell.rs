@@ -1,6 +1,6 @@
-/// Shell 检测与 RC 文件操作工具。
-///
-/// 供 `init`、`rm`、`completion` 模块共用，避免重复代码。
+//! Shell 检测与 RC 文件操作工具。
+//!
+//! 供 `init`、`rm`、`completion` 模块共用，避免重复代码。
 
 use colored::Colorize;
 use std::env;

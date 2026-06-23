@@ -1,4 +1,4 @@
-/// 文件扫描：扫描目录下的 *.byk.json 文件并解析为 AliasFile。
+//! 文件扫描：扫描目录下的 *.byk.json 文件并解析为 AliasFile。
 
 use std::fs;
 use std::path::Path;

@@ -1,4 +1,4 @@
-/// `byk remove` 帮助信息渲染。
+//! `byk remove` 帮助信息渲染。
 
 use colored::Colorize;
 
@@ -12,31 +12,26 @@ pub fn render() {
     println!();
     println!("{}", "Features:".green().bold());
     println!(
-        "  {:<8} {}",
-        "comp".cyan().bold(),
-        "Remove shell completion (zsh/bash)"
+        "  {:<8} Remove shell completion (zsh/bash)",
+        "comp".cyan().bold()
     );
     println!(
-        "  {:<8} {}",
-        "node".cyan().bold(),
-        "Remove node-pkgs, aliases, and cache"
+        "  {:<8} Remove node-pkgs, aliases, and cache",
+        "node".cyan().bold()
     );
     println!(
-        "  {:<8} {}",
-        "all".cyan().bold(),
-        "Remove everything (~/.byk/ + shell completion)"
+        "  {:<8} Remove everything (~/.byk/ + shell completion)",
+        "all".cyan().bold()
     );
     println!(
-        "  {:<8} {}",
-        "py".cyan().bold(),
-        "Remove Python venv & aliases"
+        "  {:<8} Remove Python venv & aliases",
+        "py".cyan().bold()
     );
     println!();
     println!("{}", "Plugins:".green().bold());
     println!(
-        "  {:<15} {}",
-        "<plugin-key>".cyan().bold(),
-        "Uninstall a plugin by its key"
+        "  {:<15} Uninstall a plugin by its key",
+        "<plugin-key>".cyan().bold()
     );
     println!();
     println!("{}", "Examples:".green().bold());

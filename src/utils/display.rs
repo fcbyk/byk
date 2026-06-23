@@ -1,7 +1,7 @@
-/// 终端显示工具函数。
-///
-/// 提供 CJK 兼容的显示宽度计算、对齐、换行等通用渲染能力。
-/// 对应 Python `infra/display.py`。
+//! 终端显示工具函数。
+//!
+//! 提供 CJK 兼容的显示宽度计算、对齐、换行等通用渲染能力。
+//! 对应 Python `infra/display.py`。
 
 use unicode_width::UnicodeWidthStr;
 

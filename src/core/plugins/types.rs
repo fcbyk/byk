@@ -1,8 +1,8 @@
-/// 插件系统数据结构。
-///
-/// 插件通过 `byk add` 安装，持久化到 plugins/ 目录。
-/// - plugins.cmd.json：命令路由（热路径，每次执行读）
-/// - plugins.pkg.json：包追踪（冷路径，install/uninstall 时读写）
+//! 插件系统数据结构。
+//!
+//! 插件通过 `byk add` 安装，持久化到 plugins/ 目录。
+//! - plugins.cmd.json：命令路由（热路径，每次执行读）
+//! - plugins.pkg.json：包追踪（冷路径，install/uninstall 时读写）
 
 use std::collections::HashMap;
 

@@ -1,7 +1,7 @@
-/// 别名解析：校验、过滤、类型转换。
-///
-/// 处理原始 JSON → 结构化数据的转换链路，
-/// 包括文件名校验、优先级解析、非法 key 过滤、值类型判断与转换。
+//! 别名解析：校验、过滤、类型转换。
+//!
+//! 处理原始 JSON → 结构化数据的转换链路，
+//! 包括文件名校验、优先级解析、非法 key 过滤、值类型判断与转换。
 
 use super::types::{AliasDefinition, AliasValue};
 
@@ -14,8 +14,8 @@ use super::types::{AliasDefinition, AliasValue};
 /// stem 是从完整文件名中提取的部分：
 /// - "release" (来自 release.byk.json)
 /// - "" (来自 .byk.json)
-/// 合法：空字符串或仅含字母、数字、-、_、中文
-/// 非法：含 . 或 @ 等特殊字符
+///   合法：空字符串或仅含字母、数字、-、_、中文
+///   非法：含 . 或 @ 等特殊字符
 pub(crate) fn validate_filename(stem: &str) -> bool {
     if stem.is_empty() {
         return true;

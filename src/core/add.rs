@@ -1,8 +1,8 @@
-/// `byk add` 子命令逻辑。
-///
-/// 包含：
-/// - 插件安装（委托给 plugins 模块）
-/// - 内置功能初始化（npm、pnpm、cache、comp）
+//! `byk add` 子命令逻辑。
+//!
+//! 包含：
+//! - 插件安装（委托给 plugins 模块）
+//! - 内置功能初始化（npm、pnpm、cache、comp）
 
 use colored::Colorize;
 use std::fs;

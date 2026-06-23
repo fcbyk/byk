@@ -1,7 +1,7 @@
-/// 别名缓存：持久化扫描结果与合并配置，避免每次启动重复 I/O 和计算。
-///
-/// 缓存 ~/.byk/cache/alias.json，通过文件 mtime 快照检测失效。
-/// 模式与 node 和 plugins 缓存一致。
+//! 别名缓存：持久化扫描结果与合并配置，避免每次启动重复 I/O 和计算。
+//!
+//! 缓存 ~/.byk/cache/alias.json，通过文件 mtime 快照检测失效。
+//! 模式与 node 和 plugins 缓存一致。
 
 use std::collections::HashMap;
 use std::fs;
@@ -53,15 +53,14 @@ pub(crate) fn get_watched_mtimes(dir: &Path) -> HashMap<String, u64> {
         if !file_name.ends_with(".byk.json") {
             continue;
         }
-        if let Ok(meta) = fs::metadata(&path) {
-            if let Ok(modified) = meta.modified() {
-                if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
-                    mtimes.insert(
-                        path.to_string_lossy().to_string(),
-                        duration.as_secs(),
-                    );
-                }
-            }
+        if let Ok(meta) = fs::metadata(&path)
+            && let Ok(modified) = meta.modified()
+            && let Ok(duration) = modified.duration_since(UNIX_EPOCH)
+        {
+            mtimes.insert(
+                path.to_string_lossy().to_string(),
+                duration.as_secs(),
+            );
         }
     }
     mtimes
@@ -95,12 +94,11 @@ pub fn load_alias_cache(
     // 尝试读取缓存
     let cached: Option<AliasCache> = json_io::read_json(cache_file);
 
-    if let Some(cache) = cached {
-        if cache.watched_mtimes == current_mtimes {
-            // 缓存命中，直接返回
-            return (cache.merged, cache.files);
-        }
-        // 缓存失效，继续重建
+    if let Some(cache) = cached
+        && cache.watched_mtimes == current_mtimes
+    {
+        // 缓存命中，直接返回
+        return (cache.merged, cache.files);
     }
 
     // 无缓存或缓存失效 → 完整重建

@@ -1,4 +1,4 @@
-/// `byk add` 帮助信息渲染。
+//! `byk add` 帮助信息渲染。
 
 use colored::Colorize;
 
@@ -12,51 +12,42 @@ pub fn render() {
     println!();
     println!("{}", "Options:".green().bold());
     println!(
-        "  {:<22} {}",
+        "  {:<22} Set branch (default: main)",
         "-b, --branch <NAME>".cyan().bold(),
-        "Set branch (default: main)",
     );
     println!(
-        "  {:<22} {}",
+        "  {:<22} Use local byk.json instead of remote registry",
         "-f, --file <PATH>".cyan().bold(),
-        "Use local byk.json instead of remote registry",
     );
     println!(
-        "  {:<22} {}",
+        "  {:<22} Editable install",
         "-e, --editable <DIR>".cyan().bold(),
-        "Editable install",
     );
     println!();
     println!("{}", "Features:".green().bold());
     println!(
-        "  {:<8} {}",
-        "npm".cyan().bold(),
-        "Initialize with npm (node-pkgs, ni/nu aliases)"
+        "  {:<8} Initialize with npm (node-pkgs, ni/nu aliases)",
+        "npm".cyan().bold()
     );
     println!(
-        "  {:<8} {}",
-        "pnpm".cyan().bold(),
-        "Initialize with pnpm (node-pkgs, ni/nu aliases)"
+        "  {:<8} Initialize with pnpm (node-pkgs, ni/nu aliases)",
+        "pnpm".cyan().bold()
     );
     println!(
-        "  {:<8} {}",
-        "comp".cyan().bold(),
-        "Initialize shell completion (zsh/bash)"
+        "  {:<8} Initialize shell completion (zsh/bash)",
+        "comp".cyan().bold()
     );
     println!(
-        "  {:<8} {}",
-        "cache".cyan().bold(),
-        "Initialize CLI home & cache directories"
+        "  {:<8} Initialize CLI home & cache directories",
+        "cache".cyan().bold()
     );
     println!(
-        "  {:<8} {}",
-        "py-v".cyan().bold(),
-        "Initialize Python venv & pip aliases"
+        "  {:<8} Initialize Python venv & pip aliases",
+        "py-v".cyan().bold()
     );
     println!(
-        "  {:<8} {}",
-        "uv".cyan().bold(),
-        "Initialize Python venv & uv aliases (uv add/remove)"
+        "  {:<8} Initialize Python venv & uv aliases (uv add/remove)",
+        "uv".cyan().bold()
     );
     println!();
     println!("{}", "Examples:".green().bold());

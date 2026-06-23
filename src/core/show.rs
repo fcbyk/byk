@@ -1,7 +1,7 @@
-/// `byk show` 命令的业务逻辑层。
-///
-/// 提供命令名查询、总览数据收集等核心逻辑，
-/// render 层仅负责格式化输出。
+//! `byk show` 命令的业务逻辑层。
+//!
+//! 提供命令名查询、总览数据收集等核心逻辑，
+//! render 层仅负责格式化输出。
 
 use std::env;
 use std::fs;
@@ -64,8 +64,8 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
 
     // 3. NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(npm_cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
-        if let Some(pkg_name) = npm_cache.bin_map.get(name) {
+    if let Some(npm_cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir)
+        && let Some(pkg_name) = npm_cache.bin_map.get(name) {
             let version = npm_cache
                 .packages
                 .iter()
@@ -78,7 +78,6 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
                 version,
             });
         }
-    }
 
     // 4. 精确别名 (@file.key / @@file.key)
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(name) {
@@ -221,7 +220,7 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
 fn check_completion_status() -> CompletionStatus {
     match detect_shell() {
         Some(shell_name) => {
-            let (_, configured) = check_completion(&shell_name);
+            let (_, configured) = check_completion(shell_name);
             CompletionStatus {
                 shell: Some(shell_name.to_string()),
                 configured,

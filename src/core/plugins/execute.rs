@@ -1,7 +1,7 @@
-/// 插件命令执行引擎。
-///
-/// 支持多种执行类型，通过 `PluginExecutor` trait 实现可扩展架构。
-/// 当前内置：py-module、py-script、py-bin。
+//! 插件命令执行引擎。
+//!
+//! 支持多种执行类型，通过 `PluginExecutor` trait 实现可扩展架构。
+//! 当前内置：py-module、py-script、py-bin。
 
 use std::path::Path;
 use std::process::{Command, exit};

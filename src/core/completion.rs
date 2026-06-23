@@ -1,9 +1,9 @@
-/// Shell 补全脚本生成与动态补全查询。
-///
-/// 通过 `byk completion <shell>` 输出对应 shell 的补全包装脚本（到 stdout），
-/// 通过 `byk __complete <words...>` 查询补全候选（供补全脚本回调）。
-///
-/// 支持 zsh、bash、fish。
+//! Shell 补全脚本生成与动态补全查询。
+//!
+//! 通过 `byk completion <shell>` 输出对应 shell 的补全包装脚本（到 stdout），
+//! 通过 `byk __complete <words...>` 查询补全候选（供补全脚本回调）。
+//!
+//! 支持 zsh、bash、fish。
 
 use std::collections::HashMap;
 
@@ -197,16 +197,13 @@ fn is_known_npm(word: &str, layout: &PathLayout) -> bool {
 
 /// 补全 `byk show` 后面的子命令。
 fn complete_show_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
-    let mut candidates: Vec<String> = Vec::new();
-
-    // show 子命令
-    candidates.push("overview".into());
-    candidates.push("plugins".into());
-
-    // 内置子命令
-    candidates.push("add".into());
-    candidates.push("remove".into());
-    candidates.push("completion".into());
+    let mut candidates: Vec<String> = vec![
+        "overview".into(),
+        "plugins".into(),
+        "add".into(),
+        "remove".into(),
+        "completion".into(),
+    ];
 
     // 插件命令
     if layout.venv_dir.is_dir() {
@@ -321,7 +318,7 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     candidates.extend(scope_files);
 
     // 合并树中的顶 key
-    for (key, _) in &merged {
+    for key in merged.keys() {
         // 有 alias 或有 children 的节点都可补全
         candidates.push(key.clone());
     }
