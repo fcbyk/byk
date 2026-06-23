@@ -53,6 +53,11 @@ pub fn render() {
         "py-v".cyan().bold(),
         "Initialize Python venv & pip aliases"
     );
+    println!(
+        "  {:<8} {}",
+        "uv".cyan().bold(),
+        "Initialize Python venv & uv aliases (uv add/remove)"
+    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![

@@ -137,26 +137,29 @@ pub fn install_plugin(
 ) {
     let branch = branch.unwrap_or(DEFAULT_BRANCH);
 
-    // 1. 检查 venv（不存在时提示创建）
+    // 1. 检查 venv（不存在时提示选择包管理器）
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-    if !pip.is_file() {
-        print!(
-            "{} Python venv not found. Create? [Y/n] ",
-            "?".yellow(),
-        );
+    let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+    let venv_ready = pip.is_file() || py_exe.is_file();
+    if !venv_ready {
+        println!("{}", "? Python venv not found.".yellow());
+        println!("Choose package manager:");
+        println!("[1] pip  [2] uv  [n] cancel");
+        print!("Enter your choice: ");
         let _ = io::stdout().flush();
         let mut input = String::new();
         if io::stdin().read_line(&mut input).is_err() {
             exit(1);
         }
         let answer = input.trim().to_lowercase();
-        if answer.is_empty() || answer == "y" {
-            init_py(layout);
-            let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-            if !pip.is_file() {
-                exit(1);
-            }
-        } else {
+        match answer.as_str() {
+            "1" | "y" => init_py(layout, false),
+            "2" => init_py(layout, true),
+            _ => exit(1),
+        }
+        let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+        let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+        if !pip.is_file() && !py_exe.is_file() {
             exit(1);
         }
     }
@@ -330,8 +333,6 @@ pub fn install_plugin(
     let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
     let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
 
-    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-
     let mut install_info: Option<InstallInfo> = None;
     let mut download_info: Option<DownloadInfo> = None;
     let mut registered_commands: Vec<String> = Vec::new();
@@ -389,7 +390,7 @@ pub fn install_plugin(
         let mut pip_e_paths: Vec<String> = Vec::new();
 
         if let Some(ed_dir) = &effective_editable {
-            // -e 模式：只执行 pip install -e（基于 ref 解析后的有效目录）
+            // -e 模式：pip install -e / uv add --editable
             if let Some(pip_e_list) = inst_block.get("pip-e").and_then(|v| v.as_array()) {
                 for path_val in pip_e_list {
                     let rel_path = match path_val.as_str() {
@@ -398,87 +399,24 @@ pub fn install_plugin(
                     };
 
                     let install_dir = std::path::PathBuf::from(ed_dir).join(rel_path);
-
-                    let status = Command::new(&pip)
-                        .arg("install")
-                        .arg("-e")
-                        .arg(&install_dir)
-                        .status();
-
-                    match status {
-                        Ok(s) if s.success() => {}
-                        Ok(s) => {
-                            eprintln!(
-                                "{} pip install -e failed with exit code {}",
-                                "Error:".red(),
-                                s.code().unwrap_or(1),
-                            );
-                            exit(1);
-                        }
-                        Err(e) => {
-                            eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                            exit(1);
-                        }
-                    }
-
+                    install_python_package("", layout, Some(&install_dir));
                     pip_e_paths.push(rel_path.to_string());
                 }
             } else {
-                // 默认 pip-e = ["."]，pip install -e <effective_dir>
+                // 默认 pip-e = ["."]
                 let install_dir = std::path::PathBuf::from(ed_dir);
-                let status = Command::new(&pip)
-                    .arg("install")
-                    .arg("-e")
-                    .arg(&install_dir)
-                    .status();
-
-                match status {
-                    Ok(s) if s.success() => {}
-                    Ok(s) => {
-                        eprintln!(
-                            "{} pip install -e failed with exit code {}",
-                            "Error:".red(),
-                            s.code().unwrap_or(1),
-                        );
-                        exit(1);
-                    }
-                    Err(e) => {
-                        eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                }
-
+                install_python_package("", layout, Some(&install_dir));
                 pip_e_paths.push(".".to_string());
             }
         } else {
-            // 普通模式：只执行 pip install
+            // 普通模式：pip install / uv add
             if let Some(pip_list) = inst_block.get("pip").and_then(|v| v.as_array()) {
                 for pkg_val in pip_list {
                     let pkg = match pkg_val.as_str() {
                         Some(p) => p,
                         None => continue,
                     };
-
-                    let status = Command::new(&pip)
-                        .arg("install")
-                        .arg(pkg)
-                        .status();
-
-                    match status {
-                        Ok(s) if s.success() => {}
-                        Ok(s) => {
-                            eprintln!(
-                                "{} pip install failed with exit code {}",
-                                "Error:".red(),
-                                s.code().unwrap_or(1),
-                            );
-                            exit(1);
-                        }
-                        Err(e) => {
-                            eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
-                            exit(1);
-                        }
-                    }
+                    install_python_package(pkg, layout, None);
                     pip_packages.push(pkg.to_string());
                 }
             }
@@ -594,15 +532,92 @@ pub fn install_plugin(
 }
 
 // ---------------------------------------------------------------------------
+// Python 包安装工具
+// ---------------------------------------------------------------------------
+
+/// 检测是否为 uv 管理模式（pyproject.toml 存在）
+fn is_uv_mode(layout: &crate::core::paths::PathLayout) -> bool {
+    layout.py_venv_dir.join("pyproject.toml").is_file()
+}
+
+/// 安装 Python 包（自动检测 py-v / uv 模式）
+fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout, editable: Option<&std::path::Path>) {
+    if is_uv_mode(layout) {
+        let mut args: Vec<&str> = vec!["add"];
+        let ed_str;
+        if let Some(ed) = editable {
+            args.push("--editable");
+            ed_str = ed.to_string_lossy().to_string();
+            args.push(&ed_str);
+        } else {
+            args.push(pkg);
+        }
+        let status = Command::new("uv")
+            .args(&args)
+            .current_dir(&layout.py_venv_dir)
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                let label = if editable.is_some() { "uv add --editable" } else { "uv add" };
+                eprintln!(
+                    "{} {} failed with exit code {}",
+                    "Error:".red(),
+                    label,
+                    s.code().unwrap_or(1),
+                );
+                exit(1);
+            }
+            Err(e) => {
+                eprintln!("{} Failed to run uv: {}", "Error:".red(), e);
+                exit(1);
+            }
+        }
+    } else {
+        let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+        let mut args: Vec<&str> = vec!["install"];
+        let ed_str;
+        if let Some(ed) = editable {
+            args.push("-e");
+            ed_str = ed.to_string_lossy().to_string();
+            args.push(&ed_str);
+        } else {
+            args.push(pkg);
+        }
+        let status = Command::new(&pip)
+            .args(&args)
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                eprintln!(
+                    "{} pip install failed with exit code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1),
+                );
+                exit(1);
+            }
+            Err(e) => {
+                eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
+                exit(1);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Python venv 初始化
 // ---------------------------------------------------------------------------
 
 /// 初始化 Python 虚拟环境。
 ///
-/// 创建 ~/.byk/venv/（不存在时），写入 plugins.cmd.json 和 plugins.pkg.json。
-/// 使用系统 python3 创建 venv。
-pub fn init_py(layout: &crate::core::paths::PathLayout) {
+/// 创建 ~/.byk/py-venv/.venv/（不存在时），写入 plugins.cmd.json、plugins.pkg.json
+/// 和 alias/py.byk.json。is_uv=true 时使用 uv venv + uv init 创建 pyproject.toml。
+pub fn init_py(layout: &crate::core::paths::PathLayout, is_uv: bool) {
     let venv_dir = &layout.venv_dir;
+    let py_venv_dir = &layout.py_venv_dir;
+    let alias_path = layout.alias_dir.join("py.byk.json");
+    let pyproject_toml = py_venv_dir.join("pyproject.toml");
 
     #[cfg(windows)]
     let sys_python = "python";
@@ -617,33 +632,107 @@ pub fn init_py(layout: &crate::core::paths::PathLayout) {
 
     // ① 创建 venv（不存在时）
     if venv_dir.exists() {
-        println!("{}", "venv/ already exists, skipping creation.".dimmed());
+        println!("{}", "venv already exists, skipping creation.".dimmed());
     } else {
         println!("{}", "Creating Python virtual environment...".dimmed());
-        let status = Command::new(sys_python)
-            .args(["-m", "venv", &venv_dir.to_string_lossy()])
-            .status();
+        if is_uv {
+            let status = Command::new("uv")
+                .args(["venv", &venv_dir.to_string_lossy()])
+                .status();
+            match status {
+                Ok(s) if s.success() => {
+                    println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+                }
+                Ok(s) => {
+                    eprintln!(
+                        "{} uv venv failed with code {}",
+                        "Error:".red(),
+                        s.code().unwrap_or(1)
+                    );
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to run uv venv: {}", "Error:".red(), e);
+                    return;
+                }
+            }
+        } else {
+            let status = Command::new(sys_python)
+                .args(["-m", "venv", &venv_dir.to_string_lossy()])
+                .status();
+            match status {
+                Ok(s) if s.success() => {
+                    println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+                }
+                Ok(s) => {
+                    eprintln!(
+                        "{} venv creation failed with code {}",
+                        "Error:".red(),
+                        s.code().unwrap_or(1)
+                    );
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
+                    return;
+                }
+            }
+        }
+    }
 
+    // ② uv 模式：创建 pyproject.toml
+    if is_uv && !pyproject_toml.is_file() {
+        println!("{}", "Initializing uv project...".dimmed());
+        let status = Command::new("uv")
+            .args(["init", "--name", "byk", "--no-readme", "--no-pin-python"])
+            .current_dir(py_venv_dir)
+            .status();
         match status {
             Ok(s) if s.success() => {
-                println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+                println!("  {} pyproject.toml {}", "+".green(), "(created)".dimmed());
             }
             Ok(s) => {
                 eprintln!(
-                    "{} venv creation failed with code {}",
+                    "{} uv init failed with code {}",
                     "Error:".red(),
                     s.code().unwrap_or(1)
                 );
                 return;
             }
             Err(e) => {
-                eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
+                eprintln!("{} Failed to run uv init: {}", "Error:".red(), e);
                 return;
             }
         }
     }
 
-    // ② 写入最小状态（venv 刚创建，无插件，commands 为空）
+    // ③ 写入别名模板
+    let template = if is_uv {
+        serde_json::json!({
+            "$cwd": "../py-venv/",
+            "pi": "uv add",
+            "pu": "uv remove",
+            "pl": "uv tree",
+        })
+    } else {
+        serde_json::json!({
+            "$cwd": format!("../py-venv/.venv/{}/", VENV_BIN),
+            "pi": "./pip install",
+            "pu": "./pip uninstall",
+            "pl": "./pip list",
+        })
+    };
+    let template_str = serde_json::to_string_pretty(&template).unwrap_or_default();
+    if alias_path.exists() {
+        println!("  {} alias/py.byk.json {}", "*".dimmed(), "(updated)".dimmed());
+    } else {
+        println!("  {} alias/py.byk.json {}", "+".green(), "(created)".dimmed());
+    }
+    std::fs::write(&alias_path, template_str).unwrap_or_else(|e| {
+        eprintln!("Failed to write alias/py.byk.json: {}", e);
+    });
+
+    // ④ 写入最小状态（venv 刚创建，无插件，commands 为空）
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
     let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
     let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
@@ -665,6 +754,13 @@ pub fn init_py(layout: &crate::core::paths::PathLayout) {
         "  {} plugins/plugins.pkg.json {}",
         "+".green(),
         "(created)".dimmed()
+    );
+
+    println!();
+    println!(
+        "{} {}",
+        "Python environment ready.".green(),
+        if is_uv { "(uv)".dimmed() } else { "(pip)".dimmed() }
     );
 }
 

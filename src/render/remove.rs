@@ -28,8 +28,8 @@ pub fn render() {
     );
     println!(
         "  {:<8} {}",
-        "py-v".cyan().bold(),
-        "Remove Python venv & pip aliases"
+        "py".cyan().bold(),
+        "Remove Python venv & aliases"
     );
     println!();
     println!("{}", "Plugins:".green().bold());

@@ -128,7 +128,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // add 子命令补全
     if first == "add" {
-        const ADD_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp", "py-v"];
+        const ADD_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp", "py-v", "uv"];
         return ADD_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -138,7 +138,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // remove 子命令补全
     if first == "remove" {
-        const RM_SUBS: &[&str] = &["comp", "node", "all", "py-v"];
+        const RM_SUBS: &[&str] = &["comp", "node", "all", "py"];
         return RM_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -389,11 +389,12 @@ mod tests {
             let cache_dir = temp.path().join("cache");
             let plugins_dir = temp.path().join("plugins");
             let node_pkgs_dir = temp.path().join("node-pkgs");
-            let venv_dir = temp.path().join("venv");
+            let py_venv_dir = temp.path().join("py-venv");
+            let venv_dir = py_venv_dir.join(".venv");
             let logs_dir = temp.path().join("logs");
             let root_dir = temp.path().to_path_buf();
 
-            for d in [&alias_dir, &cache_dir, &plugins_dir, &node_pkgs_dir, &venv_dir, &logs_dir] {
+            for d in [&alias_dir, &cache_dir, &plugins_dir, &node_pkgs_dir, &py_venv_dir, &venv_dir, &logs_dir] {
                 fs::create_dir_all(d).unwrap();
             }
 
@@ -402,6 +403,7 @@ mod tests {
                 logs_dir,
                 alias_dir,
                 node_pkgs_dir,
+                py_venv_dir,
                 venv_dir,
                 cache_dir: cache_dir.clone(),
                 plugins_dir: plugins_dir.clone(),

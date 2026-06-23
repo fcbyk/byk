@@ -6,6 +6,7 @@ pub struct PathLayout {
     pub logs_dir: PathBuf,
     pub alias_dir: PathBuf,
     pub node_pkgs_dir: PathBuf,
+    pub py_venv_dir: PathBuf,
     pub venv_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub plugins_dir: PathBuf,
@@ -32,7 +33,8 @@ impl PathLayout {
         let logs_dir = root_dir.join("logs");
         let alias_dir = root_dir.join("alias");
         let node_pkgs_dir = root_dir.join("node-pkgs");
-        let venv_dir = root_dir.join("venv");
+        let py_venv_dir = root_dir.join("py-venv");
+        let venv_dir = py_venv_dir.join(".venv");
         let cache_dir = root_dir.join("cache");
         let plugins_dir = root_dir.join("plugins");
 
@@ -46,6 +48,7 @@ impl PathLayout {
             logs_dir,
             alias_dir,
             node_pkgs_dir,
+            py_venv_dir,
             venv_dir,
             cache_dir,
             plugins_dir,
@@ -79,7 +82,11 @@ mod tests {
         );
         assert_eq!(
             layout.venv_dir,
-            home.join(".fcbyk_test_paths").join("venv")
+            home.join(".fcbyk_test_paths").join("py-venv").join(".venv")
+        );
+        assert_eq!(
+            layout.py_venv_dir,
+            home.join(".fcbyk_test_paths").join("py-venv")
         );
         assert_eq!(
             layout.cache_dir,
@@ -102,6 +109,7 @@ mod tests {
         assert!(!layout.cache_dir.exists());
         assert!(!layout.plugins_dir.exists());
         assert!(!layout.node_pkgs_dir.exists());
+        assert!(!layout.venv_dir.exists());
         assert!(!layout.home_exists);
     }
 }

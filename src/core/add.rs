@@ -119,7 +119,7 @@ pub fn init_pnpm(layout: &PathLayout) {
 }
 
 // ---------------------------------------------------------------------------
-// --add py-v
+// --add py-v / --add uv
 // ---------------------------------------------------------------------------
 
 /// 获取 venv 内 bin 目录名（Windows: Scripts, Unix: bin）。
@@ -130,54 +130,156 @@ const VENV_BIN: &str = "bin";
 
 /// 初始化 Python 虚拟环境及 pip 别名。
 ///
-/// 创建 ~/.byk/venv/（不存在时），写入/更新 alias/py.byk.json。
+/// 创建 ~/.byk/py-venv/.venv/（不存在时），写入/更新 alias/py.byk.json。
 /// 仅创建 venv 和别名，不安装任何 Python 包。
 pub fn init_py_v(layout: &PathLayout) {
+    init_py_env(layout, "py-v");
+}
+
+/// 初始化 uv 管理的 Python 虚拟环境。
+///
+/// 创建 ~/.byk/py-venv/.venv/（使用 uv venv），
+/// 运行 uv init 创建 pyproject.toml，写入 alias/py.byk.json。
+pub fn init_uv(layout: &PathLayout) {
+    init_py_env(layout, "uv");
+}
+
+/// 统一的 Python 环境初始化入口。
+fn init_py_env(layout: &PathLayout, mode: &str) {
     let venv_dir = &layout.venv_dir;
+    let py_venv_dir = &layout.py_venv_dir;
     let alias_path = layout.alias_dir.join("py.byk.json");
+    let pyproject_toml = py_venv_dir.join("pyproject.toml");
 
     #[cfg(windows)]
     let sys_python = "python";
     #[cfg(not(windows))]
     let sys_python = "python3";
 
+    let is_uv = mode == "uv";
+    let current_mode = if pyproject_toml.is_file() { "uv" } else if venv_dir.is_dir() { "py-v" } else { "" };
+
     ensure_common_dirs(layout);
 
-    // ① 创建 venv（不存在时）
+    // 检测已有环境，提示切换
+    if !current_mode.is_empty() && current_mode != mode {
+        println!();
+        println!(
+            "{} {}",
+            "Existing Python environment detected".yellow(),
+            format!("({})", current_mode).dimmed()
+        );
+        println!();
+        println!("  {} Remove py-venv/ and rebuild", "-".dimmed());
+        println!("  {} Update alias config", "*".dimmed());
+        println!();
+
+        if !shell::prompt_confirm("py-venv") {
+            return;
+        }
+
+        // 删除整个 py-venv/ 目录，从头重建
+        if py_venv_dir.is_dir() {
+            if let Err(e) = fs::remove_dir_all(py_venv_dir) {
+                eprintln!("{} Failed to remove py-venv/: {}", "Error:".red(), e);
+                return;
+            }
+            println!("  {} py-venv/ {}", "-".dimmed(), "(removed)".dimmed());
+        }
+    }
+
+    // 创建 venv（不存在时）
     if venv_dir.exists() {
-        println!("{}", "venv/ already exists, skipping creation.".dimmed());
+        println!("{}", "venv already exists, skipping creation.".dimmed());
     } else {
         println!("{}", "Creating Python virtual environment...".dimmed());
-        let status = Command::new(sys_python)
-            .args(["-m", "venv", &venv_dir.to_string_lossy()])
-            .status();
+        if is_uv {
+            let status = Command::new("uv")
+                .args(["venv", &venv_dir.to_string_lossy()])
+                .status();
+            match status {
+                Ok(s) if s.success() => {
+                    println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+                }
+                Ok(s) => {
+                    eprintln!(
+                        "{} uv venv failed with code {}",
+                        "Error:".red(),
+                        s.code().unwrap_or(1)
+                    );
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to run uv venv: {}", "Error:".red(), e);
+                    return;
+                }
+            }
+        } else {
+            let status = Command::new(sys_python)
+                .args(["-m", "venv", &venv_dir.to_string_lossy()])
+                .status();
+            match status {
+                Ok(s) if s.success() => {
+                    println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+                }
+                Ok(s) => {
+                    eprintln!(
+                        "{} venv creation failed with code {}",
+                        "Error:".red(),
+                        s.code().unwrap_or(1)
+                    );
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
+                    return;
+                }
+            }
+        }
+    }
 
+    // uv 模式：创建 pyproject.toml
+    if is_uv && !pyproject_toml.is_file() {
+        println!("{}", "Initializing uv project...".dimmed());
+        let status = Command::new("uv")
+            .args(["init", "--name", "byk", "--no-readme", "--no-pin-python"])
+            .current_dir(py_venv_dir)
+            .status();
         match status {
             Ok(s) if s.success() => {
-                println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+                println!("  {} pyproject.toml {}", "+".green(), "(created)".dimmed());
             }
             Ok(s) => {
                 eprintln!(
-                    "{} venv creation failed with code {}",
+                    "{} uv init failed with code {}",
                     "Error:".red(),
                     s.code().unwrap_or(1)
                 );
                 return;
             }
             Err(e) => {
-                eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
+                eprintln!("{} Failed to run uv init: {}", "Error:".red(), e);
                 return;
             }
         }
     }
 
-    // ② 写入/更新别名模板
-    let template = serde_json::json!({
-        "$cwd": format!("../venv/{}/", VENV_BIN),
-        "pi": "./pip install",
-        "pu": "./pip uninstall",
-        "pl": "./pip list",
-    });
+    // 写入/更新别名模板
+    let template = if is_uv {
+        serde_json::json!({
+            "$cwd": "../py-venv/",
+            "pi": "uv add",
+            "pu": "uv remove",
+            "pl": "uv tree",
+        })
+    } else {
+        serde_json::json!({
+            "$cwd": format!("../py-venv/.venv/{}/", VENV_BIN),
+            "pi": "./pip install",
+            "pu": "./pip uninstall",
+            "pl": "./pip list",
+        })
+    };
     let template_str = serde_json::to_string_pretty(&template).unwrap_or_default();
     write_file(&alias_path, &template_str, "alias/py.byk.json");
 
@@ -185,11 +287,17 @@ pub fn init_py_v(layout: &PathLayout) {
     println!(
         "{} {}",
         "Python environment ready.".green(),
-        "(venv)".dimmed()
+        format!("({})", mode).dimmed()
     );
-    println!("  Install packages:  byk pi <pkg>");
-    println!("  Remove packages:   byk pu <pkg>");
-    println!("  List packages:     byk pl");
+    if is_uv {
+        println!("  Install packages:  byk pi <pkg>    (uv add)");
+        println!("  Remove packages:   byk pu <pkg>    (uv remove)");
+        println!("  Show dependency tree: byk pl       (uv tree)");
+    } else {
+        println!("  Install packages:  byk pi <pkg>");
+        println!("  Remove packages:   byk pu <pkg>");
+        println!("  List packages:     byk pl");
+    }
 }
 
 // ---------------------------------------------------------------------------
