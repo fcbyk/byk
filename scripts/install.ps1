@@ -17,8 +17,6 @@ Expand-Archive -Path "$TempDir\byk.zip" -DestinationPath $TempDir -Force
 Write-Host "Installing to $InstallDir\byk.exe..."
 New-Item -ItemType Directory -Force $InstallDir | Out-Null
 Copy-Item -Path "$TempDir\byk.exe" -Destination "$InstallDir\byk.exe" -Force
-# Create fcbyk.exe as a copy (Windows symlinks require admin)
-Copy-Item -Path "$TempDir\byk.exe" -Destination "$InstallDir\fcbyk.exe" -Force
 
 # Add to user PATH if not already present
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User") ?? ""

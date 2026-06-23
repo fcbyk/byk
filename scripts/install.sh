@@ -29,7 +29,6 @@ echo "Installing to ${INSTALL_DIR}/byk..."
 mkdir -p "${INSTALL_DIR}"
 cp "${TMP_DIR}/byk" "${INSTALL_DIR}/byk"
 chmod +x "${INSTALL_DIR}/byk"
-ln -sf byk "${INSTALL_DIR}/fcbyk"
 
 echo ""
 echo "byk installed successfully!"

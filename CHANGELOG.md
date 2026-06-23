@@ -1,3 +1,30 @@
+## v0.3.0 (2026-06-23)
+
+## Breaking Changes
+
+- remove init/remove py-v, auto-create venv in `byk add` (#7)
+- merge `init` subcommand into `add`
+- replace --info option with `show` subcommand
+- replace bykpy with native Rust plugin discovery，plugin protocol is operation-driven design 
+- remove global py feature, keep only py-v
+
+### Features
+
+- **remove**: track installed packages and add `byk remove <key>` uninstall (#7)
+- **alias**: add $description field for alias help display
+- **alias**: add $paths field to alias files for PATH prepending
+
+### Chores
+
+- add VS Code extension from external repository
+- add optional python sdk from external repository
+- add py-bin、py-script、py-module example plugins
+
+### Documentation
+
+- add sdk documentation
+- add CLI commands, plugin system, and plugin registry docs
+
 ## v0.2.0 (2026-06-14)
 
 ### Features
