@@ -670,11 +670,7 @@ pub fn install_plugin(
             };
 
             // py-script 的 entry 解析：相对路径/URL → 下载或拷贝到 scripts/，entry 简化为纯文件名
-            if cmd_type == "py-script"
-                && (entry_val.starts_with("http://")
-                    || entry_val.starts_with("https://")
-                    || entry_val.starts_with('.'))
-            {
+            if cmd_type == "py-script" {
                 if !scripts_dir.exists()
                     && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
                         eprintln!(
@@ -771,11 +767,7 @@ pub fn install_plugin(
         };
 
         // py-script 的 entry 解析：相对路径/URL → 下载或拷贝到 scripts/，entry 简化为纯文件名
-        if cmd_type == "py-script"
-            && (entry_val.starts_with("http://")
-                || entry_val.starts_with("https://")
-                || entry_val.starts_with('.'))
-        {
+        if cmd_type == "py-script" {
             if !scripts_dir.exists()
                 && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
                     eprintln!(
