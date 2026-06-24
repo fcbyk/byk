@@ -79,6 +79,35 @@ fn build_registry_url(branch: &str, owner: &str, repo: &str) -> String {
     )
 }
 
+/// 将 raw.githubusercontent.com URL 转换为 jsDelivr CDN URL。
+///
+/// raw:  https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}
+/// cdn:  https://cdn.jsdelivr.net/gh/{owner}/{repo}@{branch}/{path}
+fn to_jsdelivr_url(raw_url: &str) -> String {
+    let prefix = "https://raw.githubusercontent.com/";
+    if let Some(rest) = raw_url.strip_prefix(prefix) {
+        let parts: Vec<&str> = rest.splitn(3, '/').collect();
+        if parts.len() >= 3 {
+            let owner = parts[0];
+            let repo = parts[1];
+            let branch_and_path = parts[2];
+            let (branch, path) = branch_and_path
+                .split_once('/')
+                .unwrap_or((branch_and_path, ""));
+            return format!("https://cdn.jsdelivr.net/gh/{}/{}@{}/{}", owner, repo, branch, path);
+        }
+    }
+    raw_url.to_string()
+}
+
+/// 构建 jsDelivr CDN 的 registry URL。
+fn build_cdn_registry_url(branch: &str, owner: &str, repo: &str) -> String {
+    format!(
+        "https://cdn.jsdelivr.net/gh/{}/{}@{}/byk.json",
+        owner, repo, branch,
+    )
+}
+
 /// 将相对路径拼接为完整 URL。
 ///
 /// 例如 base_url="https://example.com/foo/byk.json", rel="./bar/other.json"
@@ -150,6 +179,7 @@ pub fn install_plugin(
     branch: Option<&str>,
     file: Option<&str>,
     layout: &crate::core::paths::PathLayout,
+    cdn: bool,
 ) {
     let branch = branch.unwrap_or(DEFAULT_BRANCH);
 
@@ -218,7 +248,11 @@ pub fn install_plugin(
 
         let (owner, repo, source_label) = (spec.owner, spec.repo, Some(format!("{}/{}", spec.owner, spec.repo)));
 
-        let url = build_registry_url(branch, owner, repo);
+        let url = if cdn {
+            build_cdn_registry_url(branch, owner, repo)
+        } else {
+            build_registry_url(branch, owner, repo)
+        };
 
         let body = match fetch_registry(&url) {
             Ok(b) => b,
@@ -286,10 +320,17 @@ pub fn install_plugin(
             match &ref_base {
                 RefBase::Remote { owner, repo, branch } => {
                     let clean = ref_str.strip_prefix("./").unwrap_or(ref_str);
-                    let url = format!(
-                        "https://raw.githubusercontent.com/{}/{}/{}/{}",
-                        owner, repo, branch, clean,
-                    );
+                    let url = if cdn {
+                        format!(
+                            "https://cdn.jsdelivr.net/gh/{}/{}@{}/{}",
+                            owner, repo, branch, clean,
+                        )
+                    } else {
+                        format!(
+                            "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                            owner, repo, branch, clean,
+                        )
+                    };
                     fetch_registry(&url).unwrap_or_else(|e| {
                         eprintln!(
                             "{} failed to fetch ref for plugin \"{}\": {}",
@@ -386,11 +427,16 @@ pub fn install_plugin(
                     None => continue,
                 };
 
-                // 从 URL 最后一个斜杠后提取文件名
+                let url = if cdn && url.starts_with("https://raw.githubusercontent.com/") {
+                    to_jsdelivr_url(url)
+                } else {
+                    url.to_string()
+                };
+
                 let filename = url.rsplit('/').next().unwrap_or("script");
                 let dest_path = scripts_dir.join(filename);
 
-                if let Err(e) = download_script(url, &dest_path) {
+                if let Err(e) = download_script(&url, &dest_path) {
                     eprintln!("{} {}", "Error:".red(), e);
                     exit(1);
                 }
@@ -459,10 +505,16 @@ pub fn install_plugin(
                         exit(1);
                     }
 
-                let filename = entry_val.rsplit('/').next().unwrap_or("script").to_string();
+                let download_url = if cdn && entry_val.starts_with("https://raw.githubusercontent.com/") {
+                    to_jsdelivr_url(&entry_val)
+                } else {
+                    entry_val.clone()
+                };
+
+                let filename = download_url.rsplit('/').next().unwrap_or("script").to_string();
                 let dest_path = scripts_dir.join(&filename);
 
-                if let Err(e) = download_script(&entry_val, &dest_path) {
+                if let Err(e) = download_script(&download_url, &dest_path) {
                     eprintln!("{} {}", "Error:".red(), e);
                     exit(1);
                 }

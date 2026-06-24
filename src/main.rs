@@ -45,7 +45,7 @@ fn main() {
             }
             return;
         }
-        Some(Commands::Add { branch, file, name }) => {
+        Some(Commands::Add { branch, file, name, cdn }) => {
             match (name.as_deref(), file.as_deref()) {
                 (None | Some("-h") | Some("--help"), None) => {
                     render::add::render();
@@ -62,6 +62,7 @@ fn main() {
                         branch.as_deref(),
                         file.as_deref(),
                         &layout,
+                        cdn,
                     );
                 }
             }

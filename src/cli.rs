@@ -43,6 +43,9 @@ pub enum Commands {
         /// Use byk.json file path or URL instead of remote registry
         #[arg(short = 'f', long)]
         file: Option<String>,
+        /// 通过 jsDelivr CDN 访问 GitHub 仓库（仅对 GitHub 仓库生效）
+        #[arg(long)]
+        cdn: bool,
         /// 插件名(user/repo[/key]) 或 功能名(npm | pnpm | cache | comp)
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,

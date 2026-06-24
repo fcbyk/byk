@@ -19,6 +19,10 @@ pub fn render() {
         "  {:<22} Use byk.json file path or URL",
         "-f, --file <PATH>".cyan().bold(),
     );
+    println!(
+        "  {:<22} Access GitHub repo via jsDelivr CDN",
+        "--cdn".cyan().bold(),
+    );
     println!();
     println!("{}", "Features:".green().bold());
     println!(
