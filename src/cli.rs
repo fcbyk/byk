@@ -40,7 +40,7 @@ pub enum Commands {
         /// 指定分支（默认 main）
         #[arg(short = 'b', long)]
         branch: Option<String>,
-        /// 本地 byk.json 文件路径（跳过网络请求）
+        /// Use byk.json file path or URL instead of remote registry
         #[arg(short = 'f', long)]
         file: Option<String>,
         /// 插件名(user/repo[/key]) 或 功能名(npm | pnpm | cache | comp)

@@ -65,6 +65,10 @@ enum RefBase {
     },
     /// 本地：文件所在目录
     Local(std::path::PathBuf),
+    /// 远程 URL：byk.json 所在目录的 URL（用于解析相对 ref）
+    UrlBase {
+        base_url: String,
+    },
 }
 
 /// 构建 raw.githubusercontent.com URL。
@@ -73,6 +77,19 @@ fn build_registry_url(branch: &str, owner: &str, repo: &str) -> String {
         "https://raw.githubusercontent.com/{}/{}/{}/byk.json",
         owner, repo, branch,
     )
+}
+
+/// 将相对路径拼接为完整 URL。
+///
+/// 例如 base_url="https://example.com/foo/byk.json", rel="./bar/other.json"
+/// → "https://example.com/foo/bar/other.json"
+fn resolve_relative_url(base_url: &str, rel: &str) -> String {
+    let rel = rel.strip_prefix("./").unwrap_or(rel);
+    let base = match base_url.rsplit_once('/') {
+        Some((parent, _)) => parent,
+        None => base_url,
+    };
+    format!("{}/{}", base, rel)
 }
 
 // ---------------------------------------------------------------------------
@@ -163,20 +180,33 @@ pub fn install_plugin(
         }
     }
 
-    // 2. 获取 byk.json（--file 本地文件 或 远程仓库）
+    // 2. 获取 byk.json（--file 本地文件/URL 或 远程仓库）
     let (body, source_label, lookup_key, ref_base) = if let Some(f) = file {
-        let content = match std::fs::read_to_string(f) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{} failed to read {}: {}", "Error:".red(), f, e);
-                exit(1);
-            }
-        };
-        let base = std::path::PathBuf::from(f)
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
-        (content, None, spec_str, RefBase::Local(base))
+        if f.starts_with("http://") || f.starts_with("https://") {
+            let body = match fetch_registry(f) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("{} failed to fetch {}: {}", "Error:".red(), f, e);
+                    exit(1);
+                }
+            };
+            (body, None, spec_str, RefBase::UrlBase {
+                base_url: f.to_string(),
+            })
+        } else {
+            let content = match std::fs::read_to_string(f) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("{} failed to read {}: {}", "Error:".red(), f, e);
+                    exit(1);
+                }
+            };
+            let base = std::path::PathBuf::from(f)
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            (content, None, spec_str, RefBase::Local(base))
+        }
     } else {
         let spec = match parse_spec(spec_str) {
             Some(s) => s,
@@ -275,6 +305,18 @@ pub fn install_plugin(
                     std::fs::read_to_string(&full).unwrap_or_else(|e| {
                         eprintln!(
                             "{} failed to read ref for plugin \"{}\": {}",
+                            "Error:".red(),
+                            key,
+                            e,
+                        );
+                        exit(1);
+                    })
+                }
+                RefBase::UrlBase { base_url } => {
+                    let url = resolve_relative_url(base_url, ref_str);
+                    fetch_registry(&url).unwrap_or_else(|e| {
+                        eprintln!(
+                            "{} failed to fetch ref for plugin \"{}\": {}",
                             "Error:".red(),
                             key,
                             e,

@@ -16,7 +16,7 @@ pub fn render() {
         "-b, --branch <NAME>".cyan().bold(),
     );
     println!(
-        "  {:<22} Use local byk.json instead of remote registry",
+        "  {:<22} Use byk.json file path or URL",
         "-f, --file <PATH>".cyan().bold(),
     );
     println!();
@@ -52,6 +52,7 @@ pub fn render() {
         ("byk add user/repo".into(), "Install first key from a repo".into()),
         ("byk add --branch dev user/repo/key".into(), "Install from a specific branch".into()),
         ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
+        ("byk add --file https://example.com/byk.json key".into(), "Install from remote registry URL".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {
