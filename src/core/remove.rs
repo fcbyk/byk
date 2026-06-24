@@ -374,9 +374,10 @@ pub fn rm_all(layout: &PathLayout) {
 ///
 /// 注意：pip-keep 中的包不卸载（共享依赖）。
 pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
-    // 1. 检查 venv
+    // 1. 检查 venv（与 install_plugin 一致：pip 或 python 可执行文件存在即可）
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-    if !pip.is_file() {
+    let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+    if !pip.is_file() && !py_exe.is_file() {
         eprintln!(
             "{} Python venv not found. Run {} first.",
             "Error:".red(),
@@ -384,6 +385,8 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         );
         exit(1);
     }
+
+    let is_uv = layout.py_venv_dir.join("pyproject.toml").is_file();
 
     // 2. 读取状态
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
@@ -405,33 +408,59 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         }
     };
 
-    // 3. 卸载 pip 包（pip 字段，非 pip-keep）
+    // 3. 卸载 Python 包（pip 字段，非 pip-keep）
     if let Some(ref pip_list) = pkg.pip {
         for item in pip_list {
             let name = extract_pkg_name(item);
             if name.is_empty() {
                 continue;
             }
-            let status = std::process::Command::new(&pip)
-                .args(["uninstall", "-y", name])
-                .status();
-            match status {
-                Ok(s) if s.success() => {}
-                Ok(s) => {
-                    eprintln!(
-                        "{} pip uninstall {} failed (exit {})",
-                        "Warning:".yellow(),
-                        name,
-                        s.code().unwrap_or(1),
-                    );
+            if is_uv {
+                let status = std::process::Command::new("uv")
+                    .args(["remove", name])
+                    .current_dir(&layout.py_venv_dir)
+                    .status();
+                match status {
+                    Ok(s) if s.success() => {}
+                    Ok(s) => {
+                        eprintln!(
+                            "{} uv remove {} failed (exit {})",
+                            "Warning:".yellow(),
+                            name,
+                            s.code().unwrap_or(1),
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{} Failed to run uv remove {}: {}",
+                            "Warning:".yellow(),
+                            name,
+                            e,
+                        );
+                    }
                 }
-                Err(e) => {
-                    eprintln!(
-                        "{} Failed to run pip uninstall {}: {}",
-                        "Warning:".yellow(),
-                        name,
-                        e,
-                    );
+            } else {
+                let status = std::process::Command::new(&pip)
+                    .args(["uninstall", "-y", name])
+                    .status();
+                match status {
+                    Ok(s) if s.success() => {}
+                    Ok(s) => {
+                        eprintln!(
+                            "{} pip uninstall {} failed (exit {})",
+                            "Warning:".yellow(),
+                            name,
+                            s.code().unwrap_or(1),
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{} Failed to run pip uninstall {}: {}",
+                            "Warning:".yellow(),
+                            name,
+                            e,
+                        );
+                    }
                 }
             }
         }
