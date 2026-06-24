@@ -30,29 +30,49 @@ struct Spec<'a> {
     owner: &'a str,
     /// 仓库名
     repo: &'a str,
+    /// 分支/tag/哈希（默认 main）
+    branch: &'a str,
     /// 插件 key（空字符串表示取 byk.json 第一个 key）
     key: &'a str,
 }
 
-/// 解析 spec 字符串。
+/// 解析 spec 字符串，支持 `@` 指定分支。
 ///
-/// - 一个 `/`（user/repo） → 取 byk.json 第一个 key
-/// - 两个 `/`（user/repo/key） → 指定 key
+/// - `user/repo@branch/key` → 指定分支和 key
+/// - `user/repo@branch`     → 指定分支，取 byk.json 第一个 key
+/// - `user/repo/key`        → 默认 main 分支，指定 key
+/// - `user/repo`            → 默认 main 分支，取 byk.json 第一个 key
 fn parse_spec<'a>(spec: &'a str) -> Option<Spec<'a>> {
     let parts: Vec<&str> = spec.splitn(3, '/').collect();
     match parts.len() {
-        2 => Some(Spec {
-            owner: parts[0],
-            repo: parts[1],
-            key: "",
-        }),
-        3 => Some(Spec {
-            owner: parts[0],
-            repo: parts[1],
-            key: parts[2],
-        }),
+        2 => {
+            let (repo_part, branch) = split_branch(parts[1]);
+            Some(Spec {
+                owner: parts[0],
+                repo: repo_part,
+                branch,
+                key: "",
+            })
+        }
+        3 => {
+            let (repo_part, branch) = split_branch(parts[1]);
+            Some(Spec {
+                owner: parts[0],
+                repo: repo_part,
+                branch,
+                key: parts[2],
+            })
+        }
         _ => None,
     }
+}
+
+/// 从 repo 部分分离分支名。
+///
+/// - `repo@branch` → (repo, branch)
+/// - `repo`        → (repo, "main")
+fn split_branch(repo_part: &str) -> (&str, &str) {
+    repo_part.split_once('@').unwrap_or((repo_part, DEFAULT_BRANCH))
 }
 
 /// 引用解析的根路径。
@@ -176,12 +196,10 @@ fn download_script(url: &str, dest: &Path) -> Result<(), String> {
 /// 5. 持久化到 plugins.cmd.json 和 plugins.pkg.json
 pub fn install_plugin(
     spec_str: &str,
-    branch: Option<&str>,
     file: Option<&str>,
     layout: &crate::core::paths::PathLayout,
     cdn: bool,
 ) {
-    let branch = branch.unwrap_or(DEFAULT_BRANCH);
 
     // 1. 检查 venv（不存在时提示选择包管理器）
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
@@ -249,9 +267,9 @@ pub fn install_plugin(
         let (owner, repo, source_label) = (spec.owner, spec.repo, Some(format!("{}/{}", spec.owner, spec.repo)));
 
         let url = if cdn {
-            build_cdn_registry_url(branch, owner, repo)
+            build_cdn_registry_url(spec.branch, owner, repo)
         } else {
-            build_registry_url(branch, owner, repo)
+            build_registry_url(spec.branch, owner, repo)
         };
 
         let body = match fetch_registry(&url) {
@@ -265,7 +283,7 @@ pub fn install_plugin(
         (body, source_label, spec.key, RefBase::Remote {
             owner: owner.to_string(),
             repo: repo.to_string(),
-            branch: branch.to_string(),
+            branch: spec.branch.to_string(),
         })
     };
 

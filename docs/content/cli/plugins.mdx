@@ -41,8 +41,11 @@ byk add user/repo/my-key    # 安装指定 key
 
 ### 指定分支
 
+使用 `@` 语法指定分支、tag 或 commit，与 [jsDelivr](https://www.jsdelivr.com/) 一致：
+
 ```bash
-byk add --branch dev hello   # 从 dev 分支的 byk.json 拉取
+byk add user/repo@dev/hello   # 从 dev 分支的 byk.json 拉取
+byk add user/repo@v1.0/my-key # 从 v1.0 tag 拉取
 ```
 
 ### 本地安装

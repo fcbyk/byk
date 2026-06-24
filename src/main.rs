@@ -45,7 +45,7 @@ fn main() {
             }
             return;
         }
-        Some(Commands::Add { branch, file, name, cdn }) => {
+        Some(Commands::Add { file, name, cdn }) => {
             match (name.as_deref(), file.as_deref()) {
                 (None | Some("-h") | Some("--help"), None) => {
                     render::add::render();
@@ -59,7 +59,6 @@ fn main() {
                 (spec, _file) => {
                     add::install_plugin(
                         spec.unwrap_or(""),
-                        branch.as_deref(),
                         file.as_deref(),
                         &layout,
                         cdn,

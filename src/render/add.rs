@@ -8,13 +8,9 @@ use crate::utils::display;
 pub fn render() {
     println!();
     print!("{}", "Usage:".green().bold());
-    println!("{}", " byk add [OPTIONS] <USER/REPO[/KEY] | FEATURE>".bold());
+    println!("{}", " byk add [OPTIONS] <USER/REPO[@BRANCH][/KEY] | FEATURE>".bold());
     println!();
     println!("{}", "Options:".green().bold());
-    println!(
-        "  {:<22} Set branch (default: main)",
-        "-b, --branch <NAME>".cyan().bold(),
-    );
     println!(
         "  {:<22} Use byk.json file path or URL",
         "-f, --file <PATH>".cyan().bold(),
@@ -54,7 +50,7 @@ pub fn render() {
     let examples: Vec<(String, String)> = vec![
         ("byk add user/repo/key".into(), "Install specific key from a repo".into()),
         ("byk add user/repo".into(), "Install first key from a repo".into()),
-        ("byk add --branch dev user/repo/key".into(), "Install from a specific branch".into()),
+        ("byk add user/repo@dev/key".into(), "Install from a specific branch/tag".into()),
         ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
         ("byk add --file https://example.com/byk.json key".into(), "Install from remote registry URL".into()),
     ];
