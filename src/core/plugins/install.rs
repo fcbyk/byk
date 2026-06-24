@@ -76,14 +76,18 @@ fn split_branch(repo_part: &str) -> (&str, &str) {
 }
 
 /// 引用解析的根路径。
+/// 每个 byk.json 自治：相对路径始终相对于该文件所在目录。
+/// 解析 ref 时 ref_base 跟随更新到新文件所在目录。
 enum RefBase {
-    /// 远程：https://raw.githubusercontent.com/{owner}/{repo}/{branch}/
+    /// 远程：https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{subpath}
+    /// subpath 为空字符串时表示仓库根目录
     Remote {
         owner: String,
         repo: String,
         branch: String,
+        subpath: String,
     },
-    /// 本地：文件所在目录
+    /// 本地：byk.json 所在目录
     Local(std::path::PathBuf),
     /// 远程 URL：byk.json 所在目录的 URL（用于解析相对 ref）
     UrlBase {
@@ -183,6 +187,170 @@ fn download_script(url: &str, dest: &Path) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// 资源路径解析
+// ---------------------------------------------------------------------------
+
+/// 资源定位结果。
+enum ResolvedAsset {
+    /// 远程 URL
+    Url(String),
+    /// 本地文件路径
+    LocalPath(std::path::PathBuf),
+}
+
+/// 提取文件名（URL 或路径的最后一段）。
+fn extract_filename(path_or_url: &str) -> String {
+    path_or_url
+        .rsplit('/')
+        .next()
+        .unwrap_or("script")
+        .to_string()
+}
+
+/// 校验相对路径：拒绝 ../、/xxx、~ 前缀。
+fn validate_relative_path(raw: &str) -> Result<&str, String> {
+    if raw.starts_with('/') {
+        return Err(format!(
+            "absolute path '{}' is not allowed in plugin protocol.\n   Use './xxx' for relative paths or a full URL.",
+            raw,
+        ));
+    }
+    if raw.starts_with('~') {
+        return Err(format!(
+            "home path '{}' is not allowed in plugin protocol.\n   Use './xxx' for relative paths or a full URL.",
+            raw,
+        ));
+    }
+    if raw.contains("../") {
+        return Err(format!(
+            "'../' is not allowed in plugin protocol: '{}'.\n   Use './xxx' for subdirectory paths or a full URL.",
+            raw,
+        ));
+    }
+    if raw == ".." {
+        return Err(
+            "'..' is not allowed in plugin protocol.\n   Use './xxx' for subdirectory paths or a full URL."
+                .to_string(),
+        );
+    }
+    Ok(raw)
+}
+
+/// 根据 RefBase 和 cdn 标志解析相对路径，返回资源定位。
+///
+/// 路径规则：
+/// - `https://...` → 远程 URL
+/// - `./xxx` 或 `xxx` → 相对于 byk.json 所在目录
+/// - `../`、`/xxx`、`~` → 报错
+fn resolve_asset(raw: &str, ref_base: &RefBase, cdn: bool) -> Result<ResolvedAsset, String> {
+    if raw.starts_with("http://") || raw.starts_with("https://") {
+        let url = if cdn && raw.starts_with("https://raw.githubusercontent.com/") {
+            to_jsdelivr_url(raw)
+        } else {
+            raw.to_string()
+        };
+        return Ok(ResolvedAsset::Url(url));
+    }
+
+    validate_relative_path(raw)?;
+    let clean = raw.strip_prefix("./").unwrap_or(raw);
+
+    match ref_base {
+        RefBase::Remote { owner, repo, branch, subpath } => {
+            let path = if subpath.is_empty() {
+                clean.to_string()
+            } else {
+                format!("{}/{}", subpath, clean)
+            };
+            let url = if cdn {
+                format!(
+                    "https://cdn.jsdelivr.net/gh/{}/{}@{}/{}",
+                    owner, repo, branch, path,
+                )
+            } else {
+                format!(
+                    "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                    owner, repo, branch, path,
+                )
+            };
+            Ok(ResolvedAsset::Url(url))
+        }
+        RefBase::Local(dir) => {
+            Ok(ResolvedAsset::LocalPath(dir.join(clean)))
+        }
+        RefBase::UrlBase { base_url } => {
+            let url = resolve_relative_url(base_url, raw);
+            Ok(ResolvedAsset::Url(url))
+        }
+    }
+}
+
+/// 根据 RefBase 解析 ref 引用，返回 (新 byk.json 内容, 更新后的 ref_base)。
+fn resolve_ref(ref_str: &str, ref_base: &RefBase, cdn: bool) -> Result<(String, RefBase), String> {
+    if ref_str.starts_with("http://") || ref_str.starts_with("https://") {
+        let url = if cdn && ref_str.starts_with("https://raw.githubusercontent.com/") {
+            to_jsdelivr_url(ref_str)
+        } else {
+            ref_str.to_string()
+        };
+        let body = fetch_registry(&url)?;
+        let new_base = RefBase::UrlBase {
+            base_url: url,
+        };
+        return Ok((body, new_base));
+    }
+
+    validate_relative_path(ref_str)?;
+    let clean = ref_str.strip_prefix("./").unwrap_or(ref_str);
+
+    match ref_base {
+        RefBase::Remote { owner, repo, branch, subpath } => {
+            let new_subpath = if subpath.is_empty() {
+                clean.to_string()
+            } else {
+                format!("{}/{}", subpath, clean)
+            };
+            let url = if cdn {
+                format!(
+                    "https://cdn.jsdelivr.net/gh/{}/{}@{}/{}",
+                    owner, repo, branch, new_subpath,
+                )
+            } else {
+                format!(
+                    "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                    owner, repo, branch, new_subpath,
+                )
+            };
+            let body = fetch_registry(&url)?;
+            let parent_subpath = Path::new(&new_subpath)
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or("");
+            Ok((body, RefBase::Remote {
+                owner: owner.clone(),
+                repo: repo.clone(),
+                branch: branch.clone(),
+                subpath: parent_subpath.to_string(),
+            }))
+        }
+        RefBase::Local(dir) => {
+            let full = dir.join(clean);
+            let body = std::fs::read_to_string(&full)
+                .map_err(|e| format!("failed to read ref: {}", e))?;
+            let parent = full.parent().map(|p| p.to_path_buf())
+                .unwrap_or_else(|| dir.clone());
+            Ok((body, RefBase::Local(parent)))
+        }
+        RefBase::UrlBase { base_url } => {
+            let url = resolve_relative_url(base_url, ref_str);
+            let body = fetch_registry(&url)?;
+            let new_base = RefBase::UrlBase { base_url: url };
+            Ok((body, new_base))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 主入口
 // ---------------------------------------------------------------------------
 
@@ -229,7 +397,7 @@ pub fn install_plugin(
     }
 
     // 2. 获取 byk.json（--file 本地文件/URL 或 远程仓库）
-    let (body, source_label, lookup_key, ref_base) = if let Some(f) = file {
+    let (body, source_label, lookup_key, mut ref_base) = if let Some(f) = file {
         if f.starts_with("http://") || f.starts_with("https://") {
             let body = match fetch_registry(f) {
                 Ok(b) => b,
@@ -284,6 +452,7 @@ pub fn install_plugin(
             owner: owner.to_string(),
             repo: repo.to_string(),
             branch: spec.branch.to_string(),
+            subpath: String::new(),
         })
     };
 
@@ -356,68 +525,19 @@ pub fn install_plugin(
     // 5. Ref 引用解析：entry 为字符串时拉取完整注册表（URL 或相对路径），取同名 key
     let entry_owned: serde_json::Value;
     let entry = if let Some(ref_str) = entry.as_str() {
-        let body = if ref_str.starts_with("http://") || ref_str.starts_with("https://") {
-            fetch_registry(ref_str).unwrap_or_else(|e| {
+        let (body, new_ref_base) = match resolve_ref(ref_str, &ref_base, cdn) {
+            Ok(result) => result,
+            Err(e) => {
                 eprintln!(
-                    "{} failed to fetch ref for plugin \"{}\": {}",
+                    "{} failed to resolve ref for plugin \"{}\": {}",
                     "Error:".red(),
                     key,
                     e,
                 );
                 exit(1);
-            })
-        } else {
-            // 相对路径：按模式解析
-            match &ref_base {
-                RefBase::Remote { owner, repo, branch } => {
-                    let clean = ref_str.strip_prefix("./").unwrap_or(ref_str);
-                    let url = if cdn {
-                        format!(
-                            "https://cdn.jsdelivr.net/gh/{}/{}@{}/{}",
-                            owner, repo, branch, clean,
-                        )
-                    } else {
-                        format!(
-                            "https://raw.githubusercontent.com/{}/{}/{}/{}",
-                            owner, repo, branch, clean,
-                        )
-                    };
-                    fetch_registry(&url).unwrap_or_else(|e| {
-                        eprintln!(
-                            "{} failed to fetch ref for plugin \"{}\": {}",
-                            "Error:".red(),
-                            key,
-                            e,
-                        );
-                        exit(1);
-                    })
-                }
-                RefBase::Local(dir) => {
-                    let full = dir.join(ref_str);
-                    std::fs::read_to_string(&full).unwrap_or_else(|e| {
-                        eprintln!(
-                            "{} failed to read ref for plugin \"{}\": {}",
-                            "Error:".red(),
-                            key,
-                            e,
-                        );
-                        exit(1);
-                    })
-                }
-                RefBase::UrlBase { base_url } => {
-                    let url = resolve_relative_url(base_url, ref_str);
-                    fetch_registry(&url).unwrap_or_else(|e| {
-                        eprintln!(
-                            "{} failed to fetch ref for plugin \"{}\": {}",
-                            "Error:".red(),
-                            key,
-                            e,
-                        );
-                        exit(1);
-                    })
-                }
             }
         };
+        ref_base = new_ref_base;
         let registry: HashMap<String, serde_json::Value> = match serde_json::from_str(&body) {
             Ok(r) => r,
             Err(e) => {
@@ -440,7 +560,7 @@ pub fn install_plugin(
         entry
     };
 
-    // 6. 按操作块执行：download → install → commands
+    // 6. 按操作块执行：install → commands
     let mut any_operation_processed = false;
 
     // 准备状态文件
@@ -454,56 +574,7 @@ pub fn install_plugin(
     let mut download_info: Option<DownloadInfo> = None;
     let mut registered_commands: Vec<String> = Vec::new();
 
-    // ---- 6a. download：下载远程文件到本地 scripts 目录 ----
-    if let Some(dl_block) = entry.get("download").and_then(|v| v.as_object()) {
-        any_operation_processed = true;
-
-        // 确保 scripts 目录存在
-        if !scripts_dir.exists()
-            && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
-                eprintln!(
-                    "{} failed to create scripts directory: {}",
-                    "Error:".red(),
-                    e,
-                );
-                exit(1);
-            }
-
-        let mut downloaded_scripts: Vec<String> = Vec::new();
-
-        if let Some(urls) = dl_block.get("scripts").and_then(|v| v.as_array()) {
-            for url_val in urls {
-                let url = match url_val.as_str() {
-                    Some(u) => u,
-                    None => continue,
-                };
-
-                let url = if cdn && url.starts_with("https://raw.githubusercontent.com/") {
-                    to_jsdelivr_url(url)
-                } else {
-                    url.to_string()
-                };
-
-                let filename = url.rsplit('/').next().unwrap_or("script");
-                let dest_path = scripts_dir.join(filename);
-
-                if let Err(e) = download_script(&url, &dest_path) {
-                    eprintln!("{} {}", "Error:".red(), e);
-                    exit(1);
-                }
-
-                downloaded_scripts.push(filename.to_string());
-            }
-        }
-
-        if !downloaded_scripts.is_empty() {
-            download_info = Some(DownloadInfo {
-                scripts: downloaded_scripts,
-            });
-        }
-    }
-
-    // ---- 6b. install：安装包到 venv ----
+    // ---- 6a. install：安装包到 venv ----
     if let Some(inst_block) = entry.get("install").and_then(|v| v.as_object()) {
         any_operation_processed = true;
 
@@ -527,7 +598,7 @@ pub fn install_plugin(
         }
     }
 
-    // ---- 6c. commands：直接合并到 plugins.cmd.json ----
+    // ---- 6b. commands：直接合并到 plugins.cmd.json ----
     if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object()) {
         any_operation_processed = true;
 
@@ -542,9 +613,11 @@ pub fn install_plugin(
                 None => continue,
             };
 
-            // 语法糖：py-script 的 entry 如果是远程 URL，自动下载到 scripts/ 目录
+            // py-script 的 entry 解析：相对路径/URL → 下载或拷贝到 scripts/，entry 简化为纯文件名
             if cmd_type == "py-script"
-                && (entry_val.starts_with("http://") || entry_val.starts_with("https://"))
+                && (entry_val.starts_with("http://")
+                    || entry_val.starts_with("https://")
+                    || entry_val.starts_with('.'))
             {
                 if !scripts_dir.exists()
                     && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
@@ -556,18 +629,31 @@ pub fn install_plugin(
                         exit(1);
                     }
 
-                let download_url = if cdn && entry_val.starts_with("https://raw.githubusercontent.com/") {
-                    to_jsdelivr_url(&entry_val)
-                } else {
-                    entry_val.clone()
-                };
-
-                let filename = download_url.rsplit('/').next().unwrap_or("script").to_string();
+                let filename = extract_filename(&entry_val);
                 let dest_path = scripts_dir.join(&filename);
 
-                if let Err(e) = download_script(&download_url, &dest_path) {
-                    eprintln!("{} {}", "Error:".red(), e);
-                    exit(1);
+                match resolve_asset(&entry_val, &ref_base, cdn) {
+                    Ok(ResolvedAsset::Url(url)) => {
+                        if let Err(e) = download_script(&url, &dest_path) {
+                            eprintln!("{} {}", "Error:".red(), e);
+                            exit(1);
+                        }
+                    }
+                    Ok(ResolvedAsset::LocalPath(path)) => {
+                        if let Err(e) = std::fs::copy(&path, &dest_path) {
+                            eprintln!(
+                                "{} failed to copy script from {}: {}",
+                                "Error:".red(),
+                                path.display(),
+                                e,
+                            );
+                            exit(1);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
                 }
 
                 match &mut download_info {
@@ -601,7 +687,7 @@ pub fn install_plugin(
 
     if !any_operation_processed {
         eprintln!(
-            "{} plugin \"{}\" has no supported operations (install/download/commands)",
+            "{} plugin \"{}\" has no supported operations (install/commands)",
             "Error:".red(),
             key,
         );

@@ -14,7 +14,7 @@
     "oneOf": [
       {
         "type": "string",
-        "description": "Ref 引用：URL 或相对路径，指向另一个 byk.json。示例：\"https://...\" 或 \"./plugins/xxx/byk.json\""
+        "description": "Ref 引用：URL 或相对路径，指向另一个 byk.json。\n- URL: \"https://...\"\n- 相对路径: \"./xxx\" 或 \"xxx\"（相对于当前 byk.json 所在目录）\n- 不允许: \"../\"、\"/xxx\"、\"~\""
       },
       { "$ref": "#/$defs/PluginEntry" }
     ]
@@ -22,7 +22,7 @@
   "$defs": {
     "PluginEntry": {
       "title": "插件条目",
-      "description": "单个插件的安装、下载和命令定义",
+      "description": "单个插件的安装和命令定义",
       "type": "object",
       "properties": {
         "install": {
@@ -35,21 +35,6 @@
               "items": {
                 "type": "string",
                 "description": "包名、版本约束或 URL"
-              }
-            }
-          },
-          "additionalProperties": false
-        },
-        "download": {
-          "description": "从远程 URL 下载脚本文件到 ~/.byk/plugins/scripts/",
-          "type": "object",
-          "properties": {
-            "scripts": {
-              "description": "脚本文件 URL 列表，文件名由 URL 自动提取",
-              "type": "array",
-              "items": {
-                "type": "string",
-                "description": "脚本文件的远程 URL"
               }
             }
           },
@@ -80,7 +65,7 @@
           ]
         },
         "entry": {
-          "description": "入口点：py-module 为模块路径，py-script 为脚本文件名/URL，py-bin 为可执行文件名",
+          "description": "入口点：py-module 为模块路径，py-script 为脚本文件名/URL/相对路径，py-bin 为可执行文件名\npy-script 支持：远程 URL（自动下载）、相对路径 ./xxx（自动拷贝）、纯文件名（直接使用）",
           "type": "string"
         },
         "desc": {

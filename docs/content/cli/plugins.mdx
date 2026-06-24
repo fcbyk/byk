@@ -12,13 +12,14 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
 1. 从远程仓库（或本地文件）拉取插件协议 `byk.json`
-2. 查找匹配的插件 key，按固定顺序执行操作块：`download` → `install` → `commands`
-3. 在隔离的 venv 中执行 `pip install`（`install` 块）、下载脚本文件（`download` 块）
+2. 查找匹配的插件 key，按固定顺序执行操作块：`install` → `commands`
+3. 在隔离的 venv 中执行 `pip install`（`install` 块）、下载/拷贝脚本文件（`py-script` entry）
 4. 将命令路由直接合并到 `~/.byk/plugins/plugins.cmd.json`，包追踪信息持久化到 `~/.byk/plugins/plugins.pkg.json`
 
 之后运行 `byk <command>` 时，byk 根据 `type` 字段区分执行方式：
 - `py-module`：执行 `python -m <entry>`
 - `py-script`：执行 `python <scripts_dir>/<entry>`
+- `py-bin`：直接执行 `venv/bin/<entry>`
 
 ## 初始化
 
@@ -46,6 +47,14 @@ byk add user/repo/my-key    # 安装指定 key
 ```bash
 byk add user/repo@dev/hello   # 从 dev 分支的 byk.json 拉取
 byk add user/repo@v1.0/my-key # 从 v1.0 tag 拉取
+```
+
+### CDN 加速
+
+使用 `--cdn` 选项将 `raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN，加速下载：
+
+```bash
+byk add --cdn user/repo/hello   # 所有 raw.githubusercontent.com URL 加入 CDN 加速
 ```
 
 ### 本地安装
@@ -131,8 +140,8 @@ byk remove <plugin-key>   # 卸载指定插件
 | 字段 | 说明 |
 |------|------|
 | `commands` | 命令名 → 类型、入口点、描述的映射 |
-| `type` | 命令类型：`py-module`（模块）或 `py-script`（脚本） |
-| `entry` | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名 |
+| `type` | 命令类型：`py-module`（模块）、`py-script`（脚本）或 `py-bin`（可执行文件） |
+| `entry` | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名，`py-bin` 为可执行文件名 |
 | `desc` | 命令描述，显示在帮助信息中 |
 
 ### plugins.pkg.json（包追踪）
@@ -168,7 +177,6 @@ byk remove <plugin-key>   # 卸载指定插件
 | `packages` | 插件 key → 包信息的映射 |
 | `source` | 插件来源（`user/repo` 格式），本地安装时为 `null` |
 | `install` | 安装依赖：`pip` 为包名/URL 列表 |
-| `download` | 下载资源：`scripts` 为脚本文件名列表 |
 | `commands` | 该插件注册的所有命令名列表 |
 
 ## 编写自己的插件
