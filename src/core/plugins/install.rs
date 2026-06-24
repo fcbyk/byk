@@ -277,30 +277,63 @@ pub fn install_plugin(
         }
     };
 
-    // 3. 确定 key（未指定时取第一个）
-    let key: String = if lookup_key.is_empty() {
-        registry.keys().next().cloned().unwrap_or_else(|| {
-            eprintln!(
-                "{} no plugins found in registry",
-                "Error:".red(),
-            );
-            exit(1);
-        })
-    } else {
-        lookup_key.to_string()
-    };
+    // 3. 确定 key
+    let valid_keys: Vec<&String> = registry
+        .keys()
+        .filter(|k| !k.starts_with('$'))
+        .collect();
 
-    let entry = match registry.get(&key) {
-        Some(e) => e,
-        None => {
+    let key: String = if lookup_key.is_empty() {
+        // 未指定 key：$default > 唯一 key > 报错
+        if let Some(default_val) = registry.get("$default") {
+            let default_key = default_val.as_str().unwrap_or("").to_string();
+            if default_key.is_empty() || !registry.contains_key(&default_key) {
+                eprintln!(
+                    "{} $default \"{}\" is not a valid plugin key",
+                    "Error:".red(),
+                    default_key,
+                );
+                exit(1);
+            }
+            default_key
+        } else if valid_keys.len() == 1 {
+            valid_keys[0].to_string()
+        } else if valid_keys.is_empty() {
+            eprintln!("{} no plugins found in registry", "Error:".red());
+            exit(1);
+        } else {
+            let keys_str = valid_keys
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             eprintln!(
-                "{} plugin \"{}\" not found in registry",
+                "{} no default plugin specified\n   Available keys: {}\n   Tip: use 'byk add <user>/<repo>/<key>' or set \"$default\" in byk.json",
                 "Error:".red(),
-                key,
+                keys_str,
             );
             exit(1);
         }
+    } else {
+        let key_str = lookup_key.to_string();
+        if !registry.contains_key(&key_str) {
+            let keys_str = valid_keys
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            eprintln!(
+                "{} plugin \"{}\" not found in registry\n   Available keys: {}",
+                "Error:".red(),
+                key_str,
+                keys_str,
+            );
+            exit(1);
+        }
+        key_str
     };
+
+    let entry = &registry[&key];
 
     // 5. Ref 引用解析：entry 为字符串时拉取完整注册表（URL 或相对路径），取同名 key
     let entry_owned: serde_json::Value;

@@ -4,6 +4,12 @@
   "title": "byk Plugin Registry",
   "description": "Schema for byk.json plugin registry files",
   "type": "object",
+  "properties": {
+    "$default": {
+      "type": "string",
+      "description": "默认插件 key。当用户不指定 key（byk add user/repo）时使用此 key。必须指向一个存在的有效 key。"
+    }
+  },
   "additionalProperties": {
     "oneOf": [
       {
