@@ -5,7 +5,6 @@
 
 use std::env;
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 
 use crate::core::aliases::{self, ResolvedAlias};
@@ -152,16 +151,15 @@ pub struct OverviewInfo {
     pub completion: CompletionStatus,
     pub node_initialized: bool,
     pub python: PythonOverviewInfo,
+    pub plugin_count: usize,
+    pub alias_count: usize,
 }
 
 /// Python 总览信息。
 #[derive(Debug)]
 pub struct PythonOverviewInfo {
     pub initialized: bool,
-    pub python_exe: String,
     pub version: Option<String>,
-    pub state_file: PathBuf,
-    pub venv_dir: PathBuf,
 }
 
 /// 收集总览面板数据。
@@ -198,17 +196,26 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
 
     let python = PythonOverviewInfo {
         initialized: py_initialized,
-        python_exe,
         version,
-        state_file,
-        venv_dir: layout.venv_dir.clone(),
     };
+
+    let plugin_count = if layout.venv_dir.is_dir() {
+        let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
+        pkg_state.packages.len()
+    } else {
+        0
+    };
+
+    let (merged, _files) = aliases::load_merged_aliases(layout);
+    let alias_count = merged.len();
 
     OverviewInfo {
         cache_initialized,
         completion,
         node_initialized,
         python,
+        plugin_count,
+        alias_count,
     }
 }
 

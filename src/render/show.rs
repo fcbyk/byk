@@ -11,7 +11,7 @@
 use colored::Colorize;
 
 use crate::core::aliases::AliasValue;
-use crate::core::show::{self, CompletionStatus, InfoEntry, OverviewInfo, PythonOverviewInfo};
+use crate::core::show::{self, InfoEntry, OverviewInfo};
 use crate::core::aliases::ResolvedAlias;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
@@ -40,6 +40,10 @@ pub fn render_help() {
         "  {:<20} Query the source of a command (built-in / plugin / NPM / alias)",
         "<command-name>".cyan().bold(),
     );
+    println!(
+        "  {:<20} Display CLI paths and file locations",
+        "paths".cyan().bold(),
+    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
@@ -66,42 +70,68 @@ pub fn render_overview(layout: &PathLayout) {
     crate::render::banner::render();
 
     let overview = show::collect_overview(layout);
-    render_overview_panel(layout, &overview);
+    render_overview_panel(&overview);
 }
 
 /// 渲染总览面板内容。
-fn render_overview_panel(layout: &PathLayout, overview: &OverviewInfo) {
-    // 目录路径
-    print_path("CLI Home", &layout.root_dir);
-    print_path("Alias Directory", &layout.alias_dir);
-    print_path("Logs Directory", &layout.logs_dir);
+fn render_overview_panel(overview: &OverviewInfo) {
+    println!(
+        "{}：{}",
+        "插件数量".yellow(),
+        overview.plugin_count.to_string().cyan().bold()
+    );
+    println!(
+        "{}：{}",
+        "别名数量".yellow(),
+        overview.alias_count.to_string().cyan().bold()
+    );
 
-    // 缓存状态
+    println!("{}", "-".repeat(29).dimmed());
+
     if overview.cache_initialized {
-        println!("{}:  {}", "Cache".yellow(), "enabled".green());
+        println!("{}: {}", "Cache".yellow(), "enabled".green());
     } else {
-        println!("{}", "Cache not initialized.".yellow());
-        println!("  {}", "$ byk add cache".dimmed());
+        println!("{}: {}", "Cache".yellow(), "disabled".dimmed());
     }
 
-    println!("{}", "-".repeat(29).dimmed());
+    if let Some(shell_name) = &overview.completion.shell {
+        if overview.completion.configured {
+            println!(
+                "{}: {} ({})",
+                "Completion".yellow(),
+                "enabled".green(),
+                shell_name
+            );
+        } else {
+            println!("{}: {}", "Completion".yellow(), "disabled".dimmed());
+        }
+    } else {
+        println!("{}: {}", "Completion".yellow(), "disabled".dimmed());
+    }
 
-    // 补全状态
-    render_completion(&overview.completion);
+    if overview.python.initialized {
+        let version_display = overview
+            .python
+            .version
+            .as_deref()
+            .unwrap_or("unknown");
+        println!(
+            "{}: {} ({})",
+            "Python Venv".yellow(),
+            "enabled".green(),
+            version_display
+        );
+    } else {
+        println!("{}: {}", "Python Venv".yellow(), "disabled".dimmed());
+    }
 
-    // Node 状态
-    println!("{}", "-".repeat(29).dimmed());
     if overview.node_initialized {
-        print_path("Node Packages", &layout.node_pkgs_dir);
+        println!("{}: {}", "Node Modules".yellow(), "enabled".green());
     } else {
-        println!("{}", "Node package support not initialized.".yellow());
-        println!("  {}   {}", "$ byk add npm".dimmed(), "(node-pkgs)".dimmed());
-        println!("  {}   {}", "$ byk add pnpm".dimmed(), "(node-pkgs)".dimmed());
+        println!("{}: {}", "Node Modules".yellow(), "disabled".dimmed());
     }
 
-    // Python 状态
-    println!("{}", "-".repeat(29).dimmed());
-    render_python_overview(&overview.python);
+    println!();
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +183,30 @@ pub fn render_plugins(layout: &PathLayout) {
         print!("  {}", name.cyan().bold());
         println!("{}", rest);
     }
+    println!();
+}
+
+// ---------------------------------------------------------------------------
+// 路径显示（byk show paths）
+// ---------------------------------------------------------------------------
+
+/// 渲染 CLI 路径和文件位置。
+pub fn render_paths(layout: &PathLayout) {
+    println!();
+
+    let python_exe = plugins::state::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
+    let cmd_state_file = layout.plugins_dir.join("plugins.cmd.json");
+
+    println!("{}: {}", "Python".yellow(), python_exe);
+    println!("{}: {}", "Commands".yellow(), cmd_state_file.display());
+    println!("{}", "-".repeat(29).dimmed());
+    println!("{}: {}", "CLI Home".yellow(), layout.root_dir.display());
+    println!("{}: {}", "Cache".yellow(), layout.cache_dir.display());
+    println!("{}: {}", "Alias".yellow(), layout.alias_dir.display());
+    println!("{}: {}", "Plugins".yellow(), layout.plugins_dir.display());
+    println!("{}: {}", "Python Venv".yellow(), layout.py_venv_dir.display());
+    println!("{}: {}", "Node Modules".yellow(), layout.node_pkgs_dir.display());
+
     println!();
 }
 
@@ -295,64 +349,4 @@ fn render_alias_detail(resolved: &ResolvedAlias) {
     } else {
         println!("  {}: {}", "Paths".yellow(), resolved.paths.join(", "));
     }
-}
-
-// ---------------------------------------------------------------------------
-// 共享渲染组件
-// ---------------------------------------------------------------------------
-
-/// 渲染补全状态。
-fn render_completion(completion: &CompletionStatus) {
-    if let Some(shell_name) = &completion.shell {
-        if completion.configured {
-            println!(
-                "{}: {} ({})",
-                "Completion".yellow(),
-                "enabled".green(),
-                shell_name
-            );
-        } else {
-            println!("{}: {}", "Completion".yellow(), "not configured".red());
-            println!("  {}", "$ byk add comp".dimmed());
-        }
-    }
-}
-
-/// 渲染 Python 总览信息。
-fn render_python_overview(python: &PythonOverviewInfo) {
-    print_path("Python venv", &python.venv_dir);
-
-    if !python.initialized {
-        println!("{}", "Python plugin system not initialized.".yellow());
-        println!(
-            "  {}",
-            "$ byk add <user/repo>".dimmed(),
-        );
-        println!();
-        return;
-    }
-
-    // Python 解释器路径
-    println!("{}: {}", "Python".yellow(), python.python_exe);
-
-    // Python 版本
-    if let Some(version) = &python.version {
-        println!("{}: {}", "Version".yellow(), version);
-    }
-
-    // 状态文件路径
-    println!("{}: {}", "State".yellow(), python.state_file.display());
-
-    // 来源提示
-    let source_display = "State file (plugins.cmd.json)".dimmed();
-    println!("{}:  {}", "Source".yellow(), source_display);
-    println!();
-}
-
-/// 打印路径，仅路径存在时显示。
-fn print_path(label: &str, path: &std::path::Path) {
-    if !path.exists() {
-        return;
-    }
-    println!("{}: {}", label.yellow(), path.display());
 }

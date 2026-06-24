@@ -73,6 +73,7 @@ fn main() {
                 None | Some("-h") | Some("--help") => render::show::render_help(),
                 Some("overview") => render::show::render_overview(&layout),
                 Some("plugins") => render::show::render_plugins(&layout),
+                Some("paths") => render::show::render_paths(&layout),
                 Some(name) => render::show::render_command(name, &layout),
             }
             return;

@@ -200,6 +200,7 @@ fn complete_show_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = vec![
         "overview".into(),
         "plugins".into(),
+        "paths".into(),
         "add".into(),
         "remove".into(),
         "completion".into(),
