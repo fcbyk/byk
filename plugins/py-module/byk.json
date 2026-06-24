@@ -3,14 +3,14 @@
     "pip": [
       "byk_pym @ https://github.com/fcbyk/byk/releases/download/assets/byk_pym-2026.6.21-py3-none-any.whl"
     ],
-
+    
     "commands": {
-      "hello1": {
+      "pym1": {
         "type": "py-module",
         "entry": "bykpym.one",
         "desc": "example plugin for py-module one"
       },
-      "hello2": {
+      "pym2": {
         "type": "py-module",
         "entry": "bykpym.two",
         "desc": "example plugin for py-module two"

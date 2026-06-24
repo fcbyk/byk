@@ -702,9 +702,109 @@ pub fn install_plugin(
         }
     }
 
+    // ---- 6d. command：注册单个命令（命令名 = 插件 key） ----
+    if let Some(cmd_value) = entry.get("command") {
+        any_operation_processed = true;
+
+        // 冲突检测：commands 中不能有与插件 key 同名的子命令
+        if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object())
+            && commands_obj.contains_key(&key)
+        {
+            eprintln!(
+                "{} command name conflict: \"{}\" is defined in both 'command' and 'commands'",
+                "Error:".red(),
+                key,
+            );
+            exit(1);
+        }
+
+        let cmd_type = cmd_value
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("py-module");
+
+        let mut entry_val = match cmd_value.get("entry").and_then(|v| v.as_str()) {
+            Some(t) => t.to_string(),
+            None => {
+                eprintln!("{} 'command' field requires 'entry'", "Error:".red());
+                exit(1);
+            }
+        };
+
+        // py-script 的 entry 解析：相对路径/URL → 下载或拷贝到 scripts/，entry 简化为纯文件名
+        if cmd_type == "py-script"
+            && (entry_val.starts_with("http://")
+                || entry_val.starts_with("https://")
+                || entry_val.starts_with('.'))
+        {
+            if !scripts_dir.exists()
+                && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
+                    eprintln!(
+                        "{} failed to create scripts directory: {}",
+                        "Error:".red(),
+                        e,
+                    );
+                    exit(1);
+                }
+
+            let filename = extract_filename(&entry_val);
+            let dest_path = scripts_dir.join(&filename);
+
+            match resolve_asset(&entry_val, &ref_base, cdn) {
+                Ok(ResolvedAsset::Url(url)) => {
+                    if let Err(e) = download_script(&url, &dest_path) {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+                Ok(ResolvedAsset::LocalPath(path)) => {
+                    if let Err(e) = std::fs::copy(&path, &dest_path) {
+                        eprintln!(
+                            "{} failed to copy script from {}: {}",
+                            "Error:".red(),
+                            path.display(),
+                            e,
+                        );
+                        exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red(), e);
+                    exit(1);
+                }
+            }
+
+            match &mut download_info {
+                Some(info) => info.scripts.push(filename.clone()),
+                None => {
+                    download_info = Some(DownloadInfo {
+                        scripts: vec![filename.clone()],
+                    });
+                }
+            }
+
+            entry_val = filename;
+        }
+
+        let desc = cmd_value
+            .get("desc")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        registered_commands.push(key.clone());
+        cmd_state.commands.insert(
+            key.clone(),
+            PluginCommand {
+                cmd_type: cmd_type.to_string(),
+                entry: entry_val,
+                desc: desc.to_string(),
+            },
+        );
+    }
+
     if !any_operation_processed {
         eprintln!(
-            "{} plugin \"{}\" has no supported operations (pip/pip-keep/commands)",
+            "{} plugin \"{}\" has no supported operations (pip/pip-keep/command/commands)",
             "Error:".red(),
             key,
         );

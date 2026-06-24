@@ -1,11 +1,9 @@
 {
   "pys": {
-    "commands": {
-      "hello3": {
-        "type": "py-script",
-        "entry": "hello_world.py",
-        "desc": "example plugin for py-script"
-      }
+    "command": {
+      "type": "py-script",
+      "entry": "hello_world.py",
+      "desc": "example plugin for py-script"
     }
   }
 }

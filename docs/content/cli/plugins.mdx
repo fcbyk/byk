@@ -12,7 +12,7 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
 1. 从远程仓库（或本地文件）拉取插件协议 `byk.json`
-2. 查找匹配的插件 key，按固定顺序执行操作块：`pip` / `pip-keep` → `commands`
+2. 查找匹配的插件 key，按固定顺序执行操作块：`pip` / `pip-keep` → `command` / `commands`
 3. 在隔离的 venv 中执行 `pip install`（`pip` / `pip-keep` 块）、下载/拷贝脚本文件（`py-script` entry）
 4. 将命令路由直接合并到 `~/.byk/plugins/plugins.cmd.json`，包追踪信息持久化到 `~/.byk/plugins/plugins.pkg.json`
 

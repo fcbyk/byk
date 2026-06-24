@@ -41,8 +41,12 @@
             "description": "包名、版本约束或 URL"
           }
         },
+        "command": {
+          "description": "注册单个命令（命令名 = 插件 key）。推荐单命令插件使用，与 commands 可共存",
+          "$ref": "#/$defs/CommandEntry"
+        },
         "commands": {
-          "description": "注册命令到路由表。内容会被零解析直接合并到 plugins.cmd.json",
+          "description": "注册多个命令到路由表。内容会被零解析直接合并到 plugins.cmd.json",
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/CommandEntry" },
           "minProperties": 1
