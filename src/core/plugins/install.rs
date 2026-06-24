@@ -351,6 +351,45 @@ fn resolve_ref(ref_str: &str, ref_base: &RefBase, cdn: bool) -> Result<(String, 
 }
 
 // ---------------------------------------------------------------------------
+// JSON 预处理：$var 变量替换
+// ---------------------------------------------------------------------------
+
+/// 预处理 byk.json：提取 $var，对原始 JSON 字符串做 {var} 占位符替换。
+///
+/// 每个变量替换一次（k 个变量 = k 遍），未定义变量静默保留原文。
+/// 变量作用域仅限当前 JSON 文件，不穿透到 ref 引用的文件。
+fn preprocess_registry(body: &str) -> Result<HashMap<String, serde_json::Value>, String> {
+    // 先解析一次提取 $var
+    let temp: HashMap<String, serde_json::Value> =
+        serde_json::from_str(body).map_err(|e| format!("Failed to parse registry: {}", e))?;
+
+    let vars = match temp.get("$var") {
+        None => return Ok(temp),
+        Some(v) => v
+            .as_object()
+            .ok_or_else(|| "\"$var\" must be a map".to_string())?,
+    };
+
+    // 收集所有字符串类型的变量
+    let pairs: Vec<(&str, &str)> = vars
+        .iter()
+        .filter_map(|(k, val)| val.as_str().map(|s| (k.as_str(), s)))
+        .collect();
+
+    if pairs.is_empty() {
+        return Ok(temp);
+    }
+
+    // 直接在原始字符串上逐变量 replace
+    let mut body = body.to_string();
+    for (key, val) in &pairs {
+        body = body.replace(&format!("{{{key}}}"), val);
+    }
+
+    serde_json::from_str(&body).map_err(|e| format!("Failed to parse registry: {}", e))
+}
+
+// ---------------------------------------------------------------------------
 // 主入口
 // ---------------------------------------------------------------------------
 
@@ -456,10 +495,10 @@ pub fn install_plugin(
         })
     };
 
-    let registry: HashMap<String, serde_json::Value> = match serde_json::from_str(&body) {
+    let registry: HashMap<String, serde_json::Value> = match preprocess_registry(&body) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("{} Failed to parse registry: {}", "Error:".red(), e);
+            eprintln!("{} {}", "Error:".red(), e);
             exit(1);
         }
     };
@@ -538,11 +577,11 @@ pub fn install_plugin(
             }
         };
         ref_base = new_ref_base;
-        let registry: HashMap<String, serde_json::Value> = match serde_json::from_str(&body) {
+        let registry: HashMap<String, serde_json::Value> = match preprocess_registry(&body) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!(
-                    "{} failed to parse ref response for plugin \"{}\": {}",
+                    "{} failed to parse ref for plugin \"{}\": {}",
                     "Error:".red(),
                     key,
                     e,

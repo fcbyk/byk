@@ -1,7 +1,10 @@
 {
+  "$var": {
+    "url":"https://github.com/fcbyk/byk/releases/download/assets"
+  },
   "pyb": {
     "pip": [
-      "byk_pyb @ https://github.com/fcbyk/byk/releases/download/assets/byk_pyb-2026.6.22-py3-none-any.whl"
+      "byk_pyb @ {url}/byk_pyb-2026.6.22-py3-none-any.whl"
     ],
 
     "command": {

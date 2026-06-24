@@ -8,6 +8,14 @@
     "$default": {
       "type": "string",
       "description": "默认插件 key。当用户不指定 key（byk add user/repo）时使用此 key。必须指向一个存在的有效 key。"
+    },
+    "$var": {
+      "type": "object",
+      "description": "变量定义映射。定义后可使用 {变量名} 语法在顶层字符串值中引用，作用域仅限当前 JSON 文件。\n示例：{ \"p\": \"./plugins\" } → \"{p}/py-module/byk.json\" → \"./plugins/py-module/byk.json\"",
+      "additionalProperties": {
+        "type": "string",
+        "description": "变量值，替换对应 {key} 占位符。仅支持字符串类型。"
+      }
     }
   },
   "additionalProperties": {

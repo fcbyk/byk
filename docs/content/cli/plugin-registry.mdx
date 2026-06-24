@@ -63,11 +63,77 @@ JSON key 的声明顺序即执行顺序，阅读即执行。
 | 无 `$default`，只有一个有效 key | 自动使用该 key（无需显式声明） |
 | 无 `$default`，多个有效 key | 报错，提示可用 key 列表 |
 
-:::note
+::::note
 - `$default` 的值必须是 `byk.json` 中存在的有效 key，否则安装时报错
 - 只有一个 key 时无需声明 `$default`，byk 会自动推断
 - 有效 key 指不以 `$` 开头的顶级字段
-:::
+::::
+
+### $var — 变量替换
+
+`$var` 字段用于定义可复用的变量，减少路径或 URL 中的重复字符串。定义后可在任意位置的字符串值中使用 `{变量名}` 语法引用。
+
+```json
+{
+  "$var": {
+    "p": "./plugins"
+  },
+  "pym": "{p}/py-module/byk.json",
+  "pys": "{p}/py-script/byk.json",
+  "pyb": "{p}/py-bin/byk.json"
+}
+```
+
+上例中三个 plugin key 的路径前缀 `./plugins` 被提取到 `$var.p`，通过 `{p}` 引用，**等价于**：
+
+```json
+{
+  "pym": "./plugins/py-module/byk.json",
+  "pys": "./plugins/py-script/byk.json",
+  "pyb": "./plugins/py-bin/byk.json"
+}
+```
+
+变量也常用于减少 `pip` 中的重复 URL：
+
+```json
+{
+  "$var": {
+    "url": "https://github.com/fcbyk/byk/releases/download/assets"
+  },
+  "pym": {
+    "pip": [
+      "byk_pym @ {url}/byk_pym-2026.6.21-py3-none-any.whl"
+    ],
+    "commands": { ... }
+  }
+}
+```
+
+#### 规则
+
+| 规则 | 说明 |
+|------|------|
+| 作用域 | 仅限当前 `byk.json` 文件，**不穿透到 Ref 引用的文件** |
+| 替换目标 | 对原始 JSON 字符串逐变量替换，覆盖任意位置的字符串值 |
+| 未定义变量 | 静默保留原文，用户自行负责 |
+| `$var` 值类型 | 必须是字符串，不接受数字、布尔、数组等 |
+
+#### 处理顺序
+
+```
+byk.json 文件
+  → 1. 解析 JSON，提取 $var
+  → 2. 在原始 JSON 字符串上逐变量替换 {var} 占位符
+  → 3. 解析 Ref 引用（已替换为完整路径）
+  → 4. Ref 引用的文件回到步骤 1（独立的 $var 作用域）
+```
+
+::::note
+- `$var` 的 value 同样参与替换，交叉引用（如 `"a": "{b}/foo"`）会逐变量传递替换
+- `$var` 不会传递到 Ref 引用的子文件，每个 `byk.json` 拥有独立的变量作用域
+- 变量替换发生在 Ref 解析之前，因此 `"{p}/py-module/byk.json"` 会先变成 `"./plugins/py-module/byk.json"`，再作为相对路径被解析
+::::
 
 ## 操作块
 
@@ -209,11 +275,11 @@ byk add user/repo/hello
 }
 ```
 
-:::note
+::::note
 - `plugins.cmd.json` 中始终存储的是纯文件名，URL 和相对路径在安装时自动解析
 - 相对路径仅支持 `./xxx` 和 `xxx` 两种写法，`../`、`/xxx`、`~` 不被允许
 - 使用 `--cdn` 时，`raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
-:::
+::::
 
 ## Ref 引用
 
@@ -268,13 +334,15 @@ byk add user/repo/hello
 | `https://...` | 远程 URL ✅ |
 | `../`、`/xxx`、`~` | 不允许 ❌ |
 
-:::note
+::::note
 - `./` 前缀可选，`plugins/python/byk.json` 与 `./plugins/python/byk.json` 等效
 - URL 引用**不受安装模式影响**，始终直接拉取
 - `../` 等路径逃逸写法不被允许，如需引用外部资源请使用完整 URL
 - 相对路径引用适用于将插件定义拆分到子目录的场景
 - 每个 byk.json 自治：嵌套 byk.json 中的相对路径始终相对于自身所在目录
-:::
+::::
+
+> 配合 `$var` 使用：`$var` 可以进一步减少 Ref 路径中的重复前缀，详见 [$var — 变量替换](#var--变量替换)。
 
 Ref 适合将插件定义分散到各自仓库或子目录中维护，主仓库只做索引。
 
@@ -347,3 +415,4 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中的默认 key
 - 单命令插件推荐使用 `command`，多命令插件使用 `commands`
 - 操作块按固定顺序执行：`pip` / `pip-keep` → `commands`，与声明顺序无关
 - 使用 `--cdn` 时，所有 `raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
+- 顶层 `$var`/`$default` 为系统字段，不会被视为有效 plugin key
