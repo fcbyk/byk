@@ -124,7 +124,7 @@ fn download_script(url: &str, dest: &Path) -> Result<(), String> {
 ///
 /// 流程：
 /// 1. 检查 venv 是否存在
-/// 2. -e 读 <dir>/byk.json，--file 读本地文件，否则远程拉取
+/// 2. --file 读本地文件，否则远程拉取
 /// 3. 查找 key → ref 引用解析 → 遍历行为列表
 /// 4. py-module：pip install；py-script：下载/拷贝脚本 + pip install 依赖
 /// 5. 持久化到 plugins.cmd.json 和 plugins.pkg.json
@@ -132,7 +132,6 @@ pub fn install_plugin(
     spec_str: &str,
     branch: Option<&str>,
     file: Option<&str>,
-    editable: Option<&str>,
     layout: &crate::core::paths::PathLayout,
 ) {
     let branch = branch.unwrap_or(DEFAULT_BRANCH);
@@ -164,18 +163,8 @@ pub fn install_plugin(
         }
     }
 
-    // 2. 获取 byk.json（-e 目录 或 --file 本地文件 或 远程仓库）
-    let (body, source_label, lookup_key, ref_base) = if let Some(dir) = editable {
-        let ed_json = std::path::PathBuf::from(dir).join("byk.json");
-        let content = match std::fs::read_to_string(&ed_json) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{} failed to read {}: {}", "Error:".red(), ed_json.display(), e);
-                exit(1);
-            }
-        };
-        (content, None, spec_str, RefBase::Local(std::path::PathBuf::from(dir)))
-    } else if let Some(f) = file {
+    // 2. 获取 byk.json（--file 本地文件 或 远程仓库）
+    let (body, source_label, lookup_key, ref_base) = if let Some(f) = file {
         let content = match std::fs::read_to_string(f) {
             Ok(c) => c,
             Err(e) => {
@@ -250,8 +239,6 @@ pub fn install_plugin(
     };
 
     // 5. Ref 引用解析：entry 为字符串时拉取完整注册表（URL 或相对路径），取同名 key
-    // 追踪 ref 解析后的有效目录，用于 pip-e 路径解析
-    let mut effective_editable: Option<String> = editable.map(|s| s.to_string());
     let entry_owned: serde_json::Value;
     let entry = if let Some(ref_str) = entry.as_str() {
         let body = if ref_str.starts_with("http://") || ref_str.starts_with("https://") {
@@ -285,10 +272,6 @@ pub fn install_plugin(
                 }
                 RefBase::Local(dir) => {
                     let full = dir.join(ref_str);
-                    // 更新 effective_editable 为 ref 文件所在目录，确保 pip-e 路径基于 ref 文件解析
-                    if let Some(parent) = full.parent() {
-                        effective_editable = Some(parent.to_string_lossy().to_string());
-                    }
                     std::fs::read_to_string(&full).unwrap_or_else(|e| {
                         eprintln!(
                             "{} failed to read ref for plugin \"{}\": {}",
@@ -381,50 +364,26 @@ pub fn install_plugin(
         }
     }
 
-    // ---- 6b. install：安装包到 venv（-e 选项决定 pip 还是 pip-e，互斥）----
+    // ---- 6b. install：安装包到 venv ----
     if let Some(inst_block) = entry.get("install").and_then(|v| v.as_object()) {
         any_operation_processed = true;
 
         let mut pip_packages: Vec<String> = Vec::new();
-        let mut pip_e_paths: Vec<String> = Vec::new();
 
-        if let Some(ed_dir) = &effective_editable {
-            // -e 模式：pip install -e / uv add --editable
-            if let Some(pip_e_list) = inst_block.get("pip-e").and_then(|v| v.as_array()) {
-                for path_val in pip_e_list {
-                    let rel_path = match path_val.as_str() {
-                        Some(p) => p,
-                        None => continue,
-                    };
-
-                    let install_dir = std::path::PathBuf::from(ed_dir).join(rel_path);
-                    install_python_package("", layout, Some(&install_dir));
-                    pip_e_paths.push(rel_path.to_string());
-                }
-            } else {
-                // 默认 pip-e = ["."]
-                let install_dir = std::path::PathBuf::from(ed_dir);
-                install_python_package("", layout, Some(&install_dir));
-                pip_e_paths.push(".".to_string());
-            }
-        } else {
-            // 普通模式：pip install / uv add
-            if let Some(pip_list) = inst_block.get("pip").and_then(|v| v.as_array()) {
-                for pkg_val in pip_list {
-                    let pkg = match pkg_val.as_str() {
-                        Some(p) => p,
-                        None => continue,
-                    };
-                    install_python_package(pkg, layout, None);
-                    pip_packages.push(pkg.to_string());
-                }
+        if let Some(pip_list) = inst_block.get("pip").and_then(|v| v.as_array()) {
+            for pkg_val in pip_list {
+                let pkg = match pkg_val.as_str() {
+                    Some(p) => p,
+                    None => continue,
+                };
+                install_python_package(pkg, layout);
+                pip_packages.push(pkg.to_string());
             }
         }
 
-        if !pip_packages.is_empty() || !pip_e_paths.is_empty() {
+        if !pip_packages.is_empty() {
             install_info = Some(InstallInfo {
                 pip: pip_packages,
-                pip_e: pip_e_paths,
             });
         }
     }
@@ -539,17 +498,9 @@ fn is_uv_mode(layout: &crate::core::paths::PathLayout) -> bool {
 }
 
 /// 安装 Python 包（自动检测 py-v / uv 模式）
-fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout, editable: Option<&std::path::Path>) {
+fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout) {
     if is_uv_mode(layout) {
-        let mut args: Vec<&str> = vec!["add"];
-        let ed_str;
-        if let Some(ed) = editable {
-            args.push("--editable");
-            ed_str = ed.to_string_lossy().to_string();
-            args.push(&ed_str);
-        } else {
-            args.push(pkg);
-        }
+        let args = vec!["add", pkg];
         let status = Command::new("uv")
             .args(&args)
             .current_dir(&layout.py_venv_dir)
@@ -557,11 +508,9 @@ fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout, ed
         match status {
             Ok(s) if s.success() => {}
             Ok(s) => {
-                let label = if editable.is_some() { "uv add --editable" } else { "uv add" };
                 eprintln!(
-                    "{} {} failed with exit code {}",
+                    "{} uv add failed with exit code {}",
                     "Error:".red(),
-                    label,
                     s.code().unwrap_or(1),
                 );
                 exit(1);
@@ -573,15 +522,7 @@ fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout, ed
         }
     } else {
         let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-        let mut args: Vec<&str> = vec!["install"];
-        let ed_str;
-        if let Some(ed) = editable {
-            args.push("-e");
-            ed_str = ed.to_string_lossy().to_string();
-            args.push(&ed_str);
-        } else {
-            args.push(pkg);
-        }
+        let args = vec!["install", pkg];
         let status = Command::new(&pip)
             .args(&args)
             .status();

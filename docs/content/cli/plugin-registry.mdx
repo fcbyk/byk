@@ -3,8 +3,6 @@ title: 插件协议 byk.json
 description: 如何编写 byk.json 发布自己的插件，包含操作块定义和完整示例
 ---
 
-import { Tab, Tabs } from '@rspress/core/theme';
-
 # 插件协议 byk.json
 
 每个 byk 插件的发布入口是仓库根目录下的 `byk.json` 文件。它定义了插件的安装方式、下载资源和注册的命令。本文档面向插件发布者，说明如何编写这个文件。
@@ -49,14 +47,13 @@ JSON key 的声明顺序即执行顺序，阅读即执行。
 
 ### install — 安装依赖
 
-安装依赖到 byk 的隔离虚拟环境。当前支持 `pip`（PyPI 包名 / URL）和 `pip-e`（可编辑安装）。
+安装依赖到 byk 的隔离虚拟环境。当前支持 `pip`（PyPI 包名 / URL）。
 
 ```json
 {
   "hello": {
     "install": {
-      "pip": ["byk-hello"],
-      "pip-e": ["./plugins/python"]
+      "pip": ["byk-hello"]
     },
     "commands": { ... }
   }
@@ -68,14 +65,10 @@ JSON key 的声明顺序即执行顺序，阅读即执行。
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `pip` | string[] | 否 | pip 包名或 URL 列表，执行 `pip install <item>` |
-| `pip-e` | string[] | 否 | 可编辑安装路径列表，执行 `pip install -e <dir>/<path>`（仅在 `-e` 模式下生效）。未指定时默认为 `["."]`，即 `pip install -e <dir>` |
 
 `pip` 数组中的每一项可以是：
 - **包名**：`"rich"`、`"click>=8.0"`、`"requests==2.28.0"` — 从 PyPI 安装
 - **URL**：`"https://github.com/.../xxx.whl"` — 从远程 URL 安装
-
-<Tabs>
-<Tab label="远程安装（默认）">
 
 ```bash
 byk add user/repo/hello
@@ -95,35 +88,6 @@ byk add user/repo/hello
   }
 }
 ```
-
-</Tab>
-<Tab label="可编辑安装（-e）">
-
-```bash
-byk add -e /path/to/source hello
-```
-
-执行 `install.pip-e`，以可编辑模式安装到 venv。若未指定 `pip-e`，默认执行 `pip install -e /path/to/source`。
-
-```json
-{
-  "hello": {
-    "install": {
-      "pip-e": ["./plugins/python"]
-    },
-    "commands": { ... }
-  }
-}
-```
-
-执行时：`pip install -e /path/to/source/plugins/python`
-
-</Tab>
-</Tabs>
-
-:::note
-`pip` 和 `pip-e` 互斥：不带 `-e` 时只执行 `pip`，带 `-e` 时只执行 `pip-e`。`-e` 模式下若未指定 `pip-e`，默认执行 `pip install -e <dir>`（`pip-e` 默认为 `["."]`）。
-:::
 
 ### download — 下载资源
 
@@ -259,7 +223,7 @@ byk add -e /path/to/source hello
 如果字符串不以 `http` 开头，byk 将其视为**相对路径**，根据安装模式解析：
 
 - **远程模式**（`byk add user/repo`）：拼接到 `https://raw.githubusercontent.com/{user}/{repo}/{branch}/` 后
-- **本地模式**（`--file` 或 `-e`）：相对于当前 `byk.json` 所在目录解析。被引用文件中的 `pip-e` 路径也基于被引用文件所在目录解析。
+- **本地模式**（`--file`）：相对于当前 `byk.json` 所在目录解析
 
 ```json
 {
@@ -322,8 +286,7 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中第一个 key
     "install": {
       "pip": [
         "https://github.com/fcbyk/byk/releases/download/plugins/byk_hello-2026.6.21-py3-none-any.whl"
-      ],
-      "pip-e": ["./plugins/python"]
+      ]
     },
     "commands": {
       "hello": {

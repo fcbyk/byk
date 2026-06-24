@@ -51,16 +51,6 @@ byk add --branch dev hello   # 从 dev 分支的 byk.json 拉取
 byk add --file ./local.json my-key   # 使用本地 byk.json 文件
 ```
 
-### 可编辑安装
-
-适合插件开发场景，将本地源码以可编辑模式安装到 venv：
-
-```bash
-byk add -e .              # 从当前目录可编辑安装（读取 ./byk.json，安装第一个 key）
-byk add -e . hello        # 安装指定 key
-byk add -e /path/to/src   # 从指定目录可编辑安装
-```
-
 ## 运行插件
 
 安装完成后，插件命令自动注册为 byk 的一级命令，直接使用即可：
@@ -152,8 +142,7 @@ byk remove <plugin-key>   # 卸载指定插件
     "hello": {
       "source": "user/repo",
       "install": {
-        "pip": ["byk-hello"],
-        "pip-e": ["./plugins/python"]
+        "pip": ["byk-hello"]
       },
       "commands": ["hello", "world"]
     },
@@ -175,7 +164,7 @@ byk remove <plugin-key>   # 卸载指定插件
 |------|------|
 | `packages` | 插件 key → 包信息的映射 |
 | `source` | 插件来源（`user/repo` 格式），本地安装时为 `null` |
-| `install` | 安装依赖：`pip` 为包名/URL 列表，`pip-e` 为可编辑安装路径列表 |
+| `install` | 安装依赖：`pip` 为包名/URL 列表 |
 | `download` | 下载资源：`scripts` 为脚本文件名列表 |
 | `commands` | 该插件注册的所有命令名列表 |
 

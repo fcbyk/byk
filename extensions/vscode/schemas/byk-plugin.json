@@ -30,14 +30,6 @@
                 "type": "string",
                 "description": "包名、版本约束或 URL"
               }
-            },
-            "pip-e": {
-              "description": "可编辑安装路径列表，执行 pip install -e。仅在 -e 模式下生效。未指定时默认为 [\".\"]",
-              "type": "array",
-              "items": {
-                "type": "string",
-                "description": "可编辑安装的本地路径"
-              }
             }
           },
           "additionalProperties": false

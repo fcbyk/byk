@@ -86,9 +86,6 @@ pub struct InstallInfo {
     /// pip install 参数列表（包名 / URL / 版本约束）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pip: Vec<String>,
-    /// pip install -e 路径列表
-    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "pip-e")]
-    pub pip_e: Vec<String>,
 }
 
 /// 下载信息。

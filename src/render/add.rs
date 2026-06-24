@@ -19,10 +19,6 @@ pub fn render() {
         "  {:<22} Use local byk.json instead of remote registry",
         "-f, --file <PATH>".cyan().bold(),
     );
-    println!(
-        "  {:<22} Editable install",
-        "-e, --editable <DIR>".cyan().bold(),
-    );
     println!();
     println!("{}", "Features:".green().bold());
     println!(
@@ -56,8 +52,6 @@ pub fn render() {
         ("byk add user/repo".into(), "Install first key from a repo".into()),
         ("byk add --branch dev user/repo/key".into(), "Install from a specific branch".into()),
         ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
-        ("byk add -e .".into(), "Editable install from current directory".into()),
-        ("byk add -e . hello".into(), "Editable install a specific key".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {

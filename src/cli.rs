@@ -43,9 +43,6 @@ pub enum Commands {
         /// 本地 byk.json 文件路径（跳过网络请求）
         #[arg(short = 'f', long)]
         file: Option<String>,
-        /// 可编辑安装目录（pip install -e <dir>，读取 <dir>/byk.json）
-        #[arg(short = 'e', long, value_name = "DIR")]
-        editable: Option<String>,
         /// 插件名(user/repo[/key]) 或 功能名(npm | pnpm | cache | comp)
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,

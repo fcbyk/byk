@@ -23,20 +23,17 @@ byk add [OPTIONS] <USER/REPO[/KEY] | FEATURE>
 |------|------|
 | `-b, --branch <NAME>` | 指定仓库分支（默认 `main`） |
 | `-f, --file <PATH>` | 使用本地 `byk.json` 文件代替远程仓库 |
-| `-e, --editable <DIR>` | 可编辑安装（`pip install -e <DIR>`，读取 `<DIR>/byk.json`） |
 
 插件来源支持两种模式：
 
 - **远程仓库**：`byk add user/repo` 或 `byk add user/repo/key` — 从指定 GitHub 仓库安装
-- **本地安装**：`byk add -f ./local.json my-key` 或 `byk add -e .`
+- **本地安装**：`byk add -f ./local.json my-key`
 
 ```bash title="示例"
 byk add user/repo/key             # 从远程仓库安装指定 key
 byk add user/repo                 # 安装远程仓库 byk.json 中的第一个 key
 byk add -b dev user/repo/key      # 从 dev 分支安装
 byk add -f ./local.json key       # 使用本地 byk.json 安装
-byk add -e .                      # 可编辑安装当前目录（第一个 key）
-byk add -e . hello                # 可编辑安装当前目录的指定 key
 ```
 
 :::tip

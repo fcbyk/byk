@@ -45,23 +45,22 @@ fn main() {
             }
             return;
         }
-        Some(Commands::Add { branch, file, editable, name }) => {
-            match (name.as_deref(), editable.as_deref(), file.as_deref()) {
-                (None | Some("-h") | Some("--help"), None, None) => {
+        Some(Commands::Add { branch, file, name }) => {
+            match (name.as_deref(), file.as_deref()) {
+                (None | Some("-h") | Some("--help"), None) => {
                     render::add::render();
                 }
-                (Some("npm"), None, None) => add::init_npm(&layout),
-                (Some("pnpm"), None, None) => add::init_pnpm(&layout),
-                (Some("cache"), None, None) => add::init_cache(&layout),
-                (Some("comp"), None, None) => add::init_completion(),
-                (Some("py-v"), None, None) => add::init_py_v(&layout),
-                (Some("uv"), None, None) => add::init_uv(&layout),
-                (spec, editable, _file) => {
+                (Some("npm"), None) => add::init_npm(&layout),
+                (Some("pnpm"), None) => add::init_pnpm(&layout),
+                (Some("cache"), None) => add::init_cache(&layout),
+                (Some("comp"), None) => add::init_completion(),
+                (Some("py-v"), None) => add::init_py_v(&layout),
+                (Some("uv"), None) => add::init_uv(&layout),
+                (spec, _file) => {
                     add::install_plugin(
                         spec.unwrap_or(""),
                         branch.as_deref(),
                         file.as_deref(),
-                        editable,
                         &layout,
                     );
                 }
