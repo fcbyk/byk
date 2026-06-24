@@ -366,12 +366,13 @@ pub fn rm_all(layout: &PathLayout) {
 ///
 /// 流程：
 /// 1. 读取 plugins.pkg.json，在 packages 中查找 key
-/// 2. 删除下载的脚本文件
-/// 3. 从 plugins.cmd.json 删除该插件的所有命令
-/// 4. 从 plugins.pkg.json 删除该 key
-/// 5. 写回
+/// 2. 卸载 pip 包（pip 字段中的包，解析 name @ url 提取包名）
+/// 3. 删除下载的脚本文件
+/// 4. 从 plugins.cmd.json 删除该插件的所有命令
+/// 5. 从 plugins.pkg.json 删除该 key
+/// 6. 写回
 ///
-/// 注意：不卸载 pip 包，因为一个包可能被多个插件共享。
+/// 注意：pip-keep 中的包不卸载（共享依赖）。
 pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     // 1. 检查 venv
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
@@ -404,7 +405,39 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         }
     };
 
-    // 3. 删除脚本文件
+    // 3. 卸载 pip 包（pip 字段，非 pip-keep）
+    if let Some(ref pip_list) = pkg.pip {
+        for item in pip_list {
+            let name = extract_pkg_name(item);
+            if name.is_empty() {
+                continue;
+            }
+            let status = std::process::Command::new(&pip)
+                .args(["uninstall", "-y", name])
+                .status();
+            match status {
+                Ok(s) if s.success() => {}
+                Ok(s) => {
+                    eprintln!(
+                        "{} pip uninstall {} failed (exit {})",
+                        "Warning:".yellow(),
+                        name,
+                        s.code().unwrap_or(1),
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "{} Failed to run pip uninstall {}: {}",
+                        "Warning:".yellow(),
+                        name,
+                        e,
+                    );
+                }
+            }
+        }
+    }
+
+    // 4. 删除脚本文件
     if let Some(ref download) = pkg.download {
         for script in &download.scripts {
             let script_path = scripts_dir.join(script);
@@ -420,15 +453,15 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         }
     }
 
-    // 4. 删除 commands
+    // 5. 删除 commands
     for cmd_name in &pkg.commands {
         cmd_state.commands.remove(cmd_name);
     }
 
-    // 5. 删除 packages 条目
+    // 6. 删除 packages 条目
     pkg_state.packages.remove(key);
 
-    // 6. 写回
+    // 7. 写回
     json_io::write_json(&cmd_file, &cmd_state);
     json_io::write_json(&pkg_file, &pkg_state);
 
@@ -437,6 +470,24 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         "Uninstalled".green(),
         key.bold(),
     );
+}
+
+// ---------------------------------------------------------------------------
+// 内部工具
+// ---------------------------------------------------------------------------
+
+/// 从 pip 安装字符串中提取包名。
+/// - "name @ url" → "name"
+/// - "name" → "name"
+/// - "https://..." → ""（纯 URL，无法卸载）
+fn extract_pkg_name(raw: &str) -> &str {
+    if let Some(pos) = raw.find(" @ ") {
+        raw[..pos].trim()
+    } else if raw.starts_with("http://") || raw.starts_with("https://") {
+        ""
+    } else {
+        raw.trim()
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -12,8 +12,8 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
 1. 从远程仓库（或本地文件）拉取插件协议 `byk.json`
-2. 查找匹配的插件 key，按固定顺序执行操作块：`install` → `commands`
-3. 在隔离的 venv 中执行 `pip install`（`install` 块）、下载/拷贝脚本文件（`py-script` entry）
+2. 查找匹配的插件 key，按固定顺序执行操作块：`pip` / `pip-keep` → `commands`
+3. 在隔离的 venv 中执行 `pip install`（`pip` / `pip-keep` 块）、下载/拷贝脚本文件（`py-script` entry）
 4. 将命令路由直接合并到 `~/.byk/plugins/plugins.cmd.json`，包追踪信息持久化到 `~/.byk/plugins/plugins.pkg.json`
 
 之后运行 `byk <command>` 时，byk 根据 `type` 字段区分执行方式：
@@ -153,16 +153,13 @@ byk remove <plugin-key>   # 卸载指定插件
   "packages": {
     "hello": {
       "source": "user/repo",
-      "install": {
-        "pip": ["byk-hello"]
-      },
+      "pip": ["byk-hello"],
       "commands": ["hello", "world"]
     },
     "jiahao": {
       "source": null,
-      "install": {
-        "pip": ["rich", "click"]
-      },
+      "pip": ["rich", "click"],
+      "pip-keep": ["requests"],
       "download": {
         "scripts": ["jiahao.py"]
       },
@@ -176,7 +173,8 @@ byk remove <plugin-key>   # 卸载指定插件
 |------|------|
 | `packages` | 插件 key → 包信息的映射 |
 | `source` | 插件来源（`user/repo` 格式），本地安装时为 `null` |
-| `install` | 安装依赖：`pip` 为包名/URL 列表 |
+| `pip` | pip 安装的包名/URL 列表，卸载时自动清理 |
+| `pip-keep` | pip 安装的包名/URL 列表，卸载时保留（共享依赖） |
 | `commands` | 该插件注册的所有命令名列表 |
 
 ## 编写自己的插件

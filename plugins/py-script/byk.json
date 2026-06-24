@@ -3,7 +3,7 @@
     "commands": {
       "hello3": {
         "type": "py-script",
-        "entry": "https://raw.githubusercontent.com/fcbyk/byk/main/plugins/py-script/hello_world.py",
+        "entry": "hello_world.py",
         "desc": "example plugin for py-script"
       }
     }

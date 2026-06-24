@@ -69,23 +69,19 @@ pub struct PkgEntry {
     /// 来源仓库：None = 本地安装，Some("user/repo") = 远程仓库
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// 安装信息（pip install 等）
+    /// pip 安装列表（包名 / URL / 版本约束），卸载插件时自动 pip uninstall
+    /// URL 包需使用 "name @ url" 格式才能卸载，纯 URL 静默跳过
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub install: Option<InstallInfo>,
+    pub pip: Option<Vec<String>>,
+    /// pip 保留列表，安装后不随插件卸载（共享依赖）
+    #[serde(default, rename = "pip-keep", skip_serializing_if = "Option::is_none")]
+    pub pip_keep: Option<Vec<String>>,
     /// 下载信息（脚本文件等）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download: Option<DownloadInfo>,
     /// 该插件注册的命令名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<String>,
-}
-
-/// 安装信息。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InstallInfo {
-    /// pip install 参数列表（包名 / URL / 版本约束）
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub pip: Vec<String>,
 }
 
 /// 下载信息。

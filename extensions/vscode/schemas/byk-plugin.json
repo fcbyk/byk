@@ -25,20 +25,21 @@
       "description": "单个插件的安装和命令定义",
       "type": "object",
       "properties": {
-        "install": {
-          "description": "安装依赖到 byk 的隔离虚拟环境",
-          "type": "object",
-          "properties": {
-            "pip": {
-              "description": "pip 包名或 URL 列表，执行 pip install。示例：[\"rich\", \"click>=8.0\"]",
-              "type": "array",
-              "items": {
-                "type": "string",
-                "description": "包名、版本约束或 URL"
-              }
-            }
-          },
-          "additionalProperties": false
+        "pip": {
+          "description": "pip 包名或 URL 列表，卸载插件时自动 pip uninstall。URL 包需使用 \"name @ url\" 格式才能卸载",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "包名、版本约束、URL，或 \"name @ url\" 格式"
+          }
+        },
+        "pip-keep": {
+          "description": "pip 包名或 URL 列表，安装后不随插件卸载（共享依赖）。示例：[\"rich\", \"click\"]",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "包名、版本约束或 URL"
+          }
         },
         "commands": {
           "description": "注册命令到路由表。内容会被零解析直接合并到 plugins.cmd.json",

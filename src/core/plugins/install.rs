@@ -1,7 +1,7 @@
 //! 插件安装流水线。
 //!
-//! 协议：插件名 → 操作块(install/download/commands) → 具体配置。
-//! 按 download → install → commands 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
+//! 协议：插件名 → 操作块(pip/pip-keep/download/commands) → 具体配置。
+//! 按 download → pip/pip-keep → commands 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
 
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -560,7 +560,7 @@ pub fn install_plugin(
         entry
     };
 
-    // 6. 按操作块执行：install → commands
+    // 6. 按操作块执行：pip → pip-keep → commands
     let mut any_operation_processed = false;
 
     // 准备状态文件
@@ -570,35 +570,52 @@ pub fn install_plugin(
     let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
     let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
 
-    let mut install_info: Option<InstallInfo> = None;
+    let mut pip_packages: Option<Vec<String>> = None;
+    let mut pip_keep_packages: Option<Vec<String>> = None;
     let mut download_info: Option<DownloadInfo> = None;
     let mut registered_commands: Vec<String> = Vec::new();
 
-    // ---- 6a. install：安装包到 venv ----
-    if let Some(inst_block) = entry.get("install").and_then(|v| v.as_object()) {
+    // ---- 6a. pip：安装 Python 包到 venv（卸载时自动清理） ----
+    if let Some(pip_list) = entry.get("pip").and_then(|v| v.as_array()) {
         any_operation_processed = true;
 
-        let mut pip_packages: Vec<String> = Vec::new();
+        let mut packages: Vec<String> = Vec::new();
 
-        if let Some(pip_list) = inst_block.get("pip").and_then(|v| v.as_array()) {
-            for pkg_val in pip_list {
-                let pkg = match pkg_val.as_str() {
-                    Some(p) => p,
-                    None => continue,
-                };
-                install_python_package(pkg, layout);
-                pip_packages.push(pkg.to_string());
-            }
+        for pkg_val in pip_list {
+            let pkg = match pkg_val.as_str() {
+                Some(p) => p,
+                None => continue,
+            };
+            install_python_package(pkg, layout);
+            packages.push(pkg.to_string());
         }
 
-        if !pip_packages.is_empty() {
-            install_info = Some(InstallInfo {
-                pip: pip_packages,
-            });
+        if !packages.is_empty() {
+            pip_packages = Some(packages);
         }
     }
 
-    // ---- 6b. commands：直接合并到 plugins.cmd.json ----
+    // ---- 6b. pip-keep：安装 Python 包到 venv（卸载时保留） ----
+    if let Some(pip_keep_list) = entry.get("pip-keep").and_then(|v| v.as_array()) {
+        any_operation_processed = true;
+
+        let mut packages: Vec<String> = Vec::new();
+
+        for pkg_val in pip_keep_list {
+            let pkg = match pkg_val.as_str() {
+                Some(p) => p,
+                None => continue,
+            };
+            install_python_package(pkg, layout);
+            packages.push(pkg.to_string());
+        }
+
+        if !packages.is_empty() {
+            pip_keep_packages = Some(packages);
+        }
+    }
+
+    // ---- 6c. commands：直接合并到 plugins.cmd.json ----
     if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object()) {
         any_operation_processed = true;
 
@@ -687,7 +704,7 @@ pub fn install_plugin(
 
     if !any_operation_processed {
         eprintln!(
-            "{} plugin \"{}\" has no supported operations (install/commands)",
+            "{} plugin \"{}\" has no supported operations (pip/pip-keep/commands)",
             "Error:".red(),
             key,
         );
@@ -703,7 +720,8 @@ pub fn install_plugin(
     // 写入 pkg 状态
     let pkg_entry = PkgEntry {
         source: source_label,
-        install: install_info,
+        pip: pip_packages,
+        pip_keep: pip_keep_packages,
         download: download_info,
         commands: registered_commands,
     };
