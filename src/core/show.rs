@@ -201,7 +201,7 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
 
     let plugin_count = if layout.venv_dir.is_dir() {
         let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
-        pkg_state.packages.len()
+        pkg_state.len()
     } else {
         0
     };

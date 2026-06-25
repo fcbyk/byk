@@ -611,7 +611,7 @@ pub fn install_plugin(
 
     let mut pip_packages: Option<Vec<String>> = None;
     let mut pip_keep_packages: Option<Vec<String>> = None;
-    let mut download_info: Option<DownloadInfo> = None;
+    let mut scripts: Vec<String> = Vec::new();
     let mut registered_commands: Vec<String> = Vec::new();
 
     // ---- 6a. pip：安装 Python 包到 venv（卸载时自动清理） ----
@@ -708,14 +708,7 @@ pub fn install_plugin(
                     }
                 }
 
-                match &mut download_info {
-                    Some(info) => info.scripts.push(filename.clone()),
-                    None => {
-                        download_info = Some(DownloadInfo {
-                            scripts: vec![filename.clone()],
-                        });
-                    }
-                }
+                scripts.push(filename.clone());
 
                 entry_val = filename;
             }
@@ -805,14 +798,7 @@ pub fn install_plugin(
                 }
             }
 
-            match &mut download_info {
-                Some(info) => info.scripts.push(filename.clone()),
-                None => {
-                    download_info = Some(DownloadInfo {
-                        scripts: vec![filename.clone()],
-                    });
-                }
-            }
+            scripts.push(filename.clone());
 
             entry_val = filename;
         }
@@ -853,10 +839,10 @@ pub fn install_plugin(
         source: source_label,
         pip: pip_packages,
         pip_keep: pip_keep_packages,
-        download: download_info,
+        scripts,
         commands: registered_commands,
     };
-    pkg_state.packages.insert(key.clone(), pkg_entry);
+    pkg_state.insert(key.clone(), pkg_entry);
 
     json_io::write_json(&cmd_file, &cmd_state);
     json_io::write_json(&pkg_file, &pkg_state);
@@ -1059,9 +1045,7 @@ pub fn init_py(layout: &crate::core::paths::PathLayout, is_uv: bool) {
         commands: std::collections::HashMap::new(),
         python_executable: Some(python_exe.to_string_lossy().to_string()),
     };
-    let pkg_state = PkgState {
-        packages: std::collections::HashMap::new(),
-    };
+    let pkg_state: PkgState = std::collections::HashMap::new();
     json_io::write_json(&cmd_file, &cmd_state);
     json_io::write_json(&pkg_file, &pkg_state);
     println!(

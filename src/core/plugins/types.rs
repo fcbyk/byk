@@ -57,11 +57,8 @@ pub struct CmdState {
 // ---------------------------------------------------------------------------
 
 /// 包状态（持久化到 plugins/plugins.pkg.json）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PkgState {
-    /// 插件 key → 包信息映射
-    pub packages: HashMap<String, PkgEntry>,
-}
+/// 插件 key → 包信息映射。
+pub type PkgState = HashMap<String, PkgEntry>;
 
 /// 单个插件的包条目。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,18 +73,10 @@ pub struct PkgEntry {
     /// pip 保留列表，安装后不随插件卸载（共享依赖）
     #[serde(default, rename = "pip-keep", skip_serializing_if = "Option::is_none")]
     pub pip_keep: Option<Vec<String>>,
-    /// 下载信息（脚本文件等）
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub download: Option<DownloadInfo>,
-    /// 该插件注册的命令名列表
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub commands: Vec<String>,
-}
-
-/// 下载信息。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DownloadInfo {
     /// 脚本文件名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scripts: Vec<String>,
+    /// 该插件注册的命令名列表
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<String>,
 }

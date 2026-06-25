@@ -151,39 +151,60 @@ pub fn render_plugins(layout: &PathLayout) {
 
     let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
 
-    if pkg_state.packages.is_empty() {
+    if pkg_state.is_empty() {
         println!("{}", "No plugins installed.".yellow());
         println!("  {}", "$ byk add <user/repo>".dimmed());
         println!();
         return;
     }
 
-    let mut keys: Vec<&String> = pkg_state.packages.keys().collect();
+    let mut keys: Vec<&String> = pkg_state.keys().collect();
     keys.sort();
 
-    let entries: Vec<(String, String)> = keys
-        .iter()
-        .map(|key| {
-            let pkg = &pkg_state.packages[*key];
-            let mut parts: Vec<String> = Vec::new();
-            parts.extend(pkg.commands.clone());
-            if let Some(ref download) = pkg.download {
-                parts.extend(download.scripts.clone());
+    let separator = "-".repeat(29);
+
+    for (i, key) in keys.iter().enumerate() {
+        if i > 0 {
+            println!("{}", separator.dimmed());
+        }
+
+        let pkg = &pkg_state[*key];
+
+        println!("{}: {}", "name".yellow(), key.cyan().bold());
+
+        if !pkg.commands.is_empty() {
+            println!("{}: {}", "cmd".yellow(), pkg.commands.join(", "));
+        }
+
+        if !pkg.scripts.is_empty() {
+            println!("{}: {}", "scripts".yellow(), pkg.scripts.join(", "));
+        }
+
+        if let Some(ref pip_list) = pkg.pip {
+            let names: Vec<&str> = pip_list
+                .iter()
+                .filter_map(|item| extract_display_name(item))
+                .collect();
+            if !names.is_empty() {
+                println!("{}: {}", "pip".yellow(), names.join(", "));
             }
-            let tuple = format!("({})", parts.join(", "));
-            (key.to_string(), tuple)
-        })
-        .collect();
-
-    let aligned = display::align_kv_pairs(&entries, "  ");
-
-    println!("{}", "Installed plugins:".green().bold());
-    for (name, line) in &aligned {
-        let rest = &line[2 + name.len()..];
-        print!("  {}", name.cyan().bold());
-        println!("{}", rest);
+        }
     }
     println!();
+}
+
+/// 从 pip 安装字符串中提取可展示的包名。
+/// - "name @ url" → "name"
+/// - "name" → "name"
+/// - "https://..." → None（纯 URL 不展示）
+fn extract_display_name(raw: &str) -> Option<&str> {
+    if raw.starts_with("http://") || raw.starts_with("https://") {
+        None
+    } else if let Some(pos) = raw.find(" @ ") {
+        Some(raw[..pos].trim())
+    } else {
+        Some(raw.trim())
+    }
 }
 
 // ---------------------------------------------------------------------------

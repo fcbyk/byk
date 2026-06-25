@@ -22,9 +22,7 @@ pub fn empty_cmd_state() -> CmdState {
 
 /// 构造空包状态。
 pub fn empty_pkg_state() -> PkgState {
-    PkgState {
-        packages: HashMap::new(),
-    }
+    HashMap::new()
 }
 
 // ---------------------------------------------------------------------------

@@ -396,7 +396,7 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
     let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
 
-    let pkg = match pkg_state.packages.get(key) {
+    let pkg = match pkg_state.get(key) {
         Some(p) => p.clone(),
         None => {
             eprintln!(
@@ -467,19 +467,17 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     }
 
     // 4. 删除脚本文件
-    if let Some(ref download) = pkg.download {
-        for script in &download.scripts {
-            let script_path = scripts_dir.join(script);
-            if script_path.exists()
-                && let Err(e) = fs::remove_file(&script_path) {
-                    eprintln!(
-                        "{} Warning: failed to delete script {}: {}",
-                        "Warning:".yellow(),
-                        script_path.display(),
-                        e,
-                    );
-                }
-        }
+    for script in &pkg.scripts {
+        let script_path = scripts_dir.join(script);
+        if script_path.exists()
+            && let Err(e) = fs::remove_file(&script_path) {
+                eprintln!(
+                    "{} Warning: failed to delete script {}: {}",
+                    "Warning:".yellow(),
+                    script_path.display(),
+                    e,
+                );
+            }
     }
 
     // 5. 删除 commands
@@ -488,7 +486,7 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     }
 
     // 6. 删除 packages 条目
-    pkg_state.packages.remove(key);
+    pkg_state.remove(key);
 
     // 7. 写回
     json_io::write_json(&cmd_file, &cmd_state);
