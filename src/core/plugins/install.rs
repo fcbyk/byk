@@ -1,7 +1,7 @@
 //! 插件安装流水线。
 //!
-//! 协议：插件名 → 操作块(pip/pip-keep/download/commands) → 具体配置。
-//! 按 download → pip/pip-keep → commands 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
+//! 协议：插件名 → 操作块(pip/pip-keep/scripts/commands) → 具体配置。
+//! 按 pip → pip-keep → scripts → commands/command 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
 
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -198,15 +198,6 @@ enum ResolvedAsset {
     LocalPath(std::path::PathBuf),
 }
 
-/// 提取文件名（URL 或路径的最后一段）。
-fn extract_filename(path_or_url: &str) -> String {
-    path_or_url
-        .rsplit('/')
-        .next()
-        .unwrap_or("script")
-        .to_string()
-}
-
 /// 校验相对路径：拒绝 ../、/xxx、~ 前缀。
 fn validate_relative_path(raw: &str) -> Result<&str, String> {
     if raw.starts_with('/') {
@@ -398,8 +389,8 @@ fn preprocess_registry(body: &str) -> Result<HashMap<String, serde_json::Value>,
 /// 流程：
 /// 1. 检查 venv 是否存在
 /// 2. --file 读本地文件，否则远程拉取
-/// 3. 查找 key → ref 引用解析 → 遍历行为列表
-/// 4. py-module：pip install；py-script：下载/拷贝脚本 + pip install 依赖
+/// 3. 查找 key → ref 引用解析 → 按顺序执行操作块
+/// 4. pip → pip-keep → script → commands/command
 /// 5. 持久化到 plugins.cmd.json 和 plugins.pkg.json
 pub fn install_plugin(
     spec_str: &str,
@@ -599,7 +590,7 @@ pub fn install_plugin(
         entry
     };
 
-    // 6. 按操作块执行：pip → pip-keep → commands
+    // 6. 按操作块执行：pip → pip-keep → scripts → commands
     let mut any_operation_processed = false;
 
     // 准备状态文件
@@ -654,113 +645,16 @@ pub fn install_plugin(
         }
     }
 
-    // ---- 6c. commands：直接合并到 plugins.cmd.json ----
-    if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object()) {
+    // ---- 6c. scripts：下载/拷贝脚本文件到 plugins/scripts/ ----
+    if let Some(script_map) = entry.get("scripts").and_then(|v| v.as_object()) {
         any_operation_processed = true;
 
-        for (cmd_name, cmd_value) in commands_obj {
-            let cmd_type = cmd_value
-                .get("type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("py-module");
-
-            let mut entry_val = match cmd_value.get("entry").and_then(|v| v.as_str()) {
-                Some(t) => t.to_string(),
+        for (filename, src_value) in script_map {
+            let src = match src_value.as_str() {
+                Some(s) => s,
                 None => continue,
             };
 
-            // py-script 的 entry 解析：相对路径/URL → 下载或拷贝到 scripts/，entry 简化为纯文件名
-            if cmd_type == "py-script" {
-                if !scripts_dir.exists()
-                    && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
-                        eprintln!(
-                            "{} failed to create scripts directory: {}",
-                            "Error:".red(),
-                            e,
-                        );
-                        exit(1);
-                    }
-
-                let filename = extract_filename(&entry_val);
-                let dest_path = scripts_dir.join(&filename);
-
-                match resolve_asset(&entry_val, &ref_base, cdn) {
-                    Ok(ResolvedAsset::Url(url)) => {
-                        if let Err(e) = download_script(&url, &dest_path) {
-                            eprintln!("{} {}", "Error:".red(), e);
-                            exit(1);
-                        }
-                    }
-                    Ok(ResolvedAsset::LocalPath(path)) => {
-                        if let Err(e) = std::fs::copy(&path, &dest_path) {
-                            eprintln!(
-                                "{} failed to copy script from {}: {}",
-                                "Error:".red(),
-                                path.display(),
-                                e,
-                            );
-                            exit(1);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                }
-
-                scripts.push(filename.clone());
-
-                entry_val = filename;
-            }
-
-            let desc = cmd_value
-                .get("desc")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-
-            registered_commands.push(cmd_name.clone());
-            cmd_state.commands.insert(
-                cmd_name.clone(),
-                PluginCommand {
-                    cmd_type: cmd_type.to_string(),
-                    entry: entry_val,
-                    desc: desc.to_string(),
-                },
-            );
-        }
-    }
-
-    // ---- 6d. command：注册单个命令（命令名 = 插件 key） ----
-    if let Some(cmd_value) = entry.get("command") {
-        any_operation_processed = true;
-
-        // 冲突检测：commands 中不能有与插件 key 同名的子命令
-        if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object())
-            && commands_obj.contains_key(&key)
-        {
-            eprintln!(
-                "{} command name conflict: \"{}\" is defined in both 'command' and 'commands'",
-                "Error:".red(),
-                key,
-            );
-            exit(1);
-        }
-
-        let cmd_type = cmd_value
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("py-module");
-
-        let mut entry_val = match cmd_value.get("entry").and_then(|v| v.as_str()) {
-            Some(t) => t.to_string(),
-            None => {
-                eprintln!("{} 'command' field requires 'entry'", "Error:".red());
-                exit(1);
-            }
-        };
-
-        // py-script 的 entry 解析：相对路径/URL → 下载或拷贝到 scripts/，entry 简化为纯文件名
-        if cmd_type == "py-script" {
             if !scripts_dir.exists()
                 && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
                     eprintln!(
@@ -771,10 +665,9 @@ pub fn install_plugin(
                     exit(1);
                 }
 
-            let filename = extract_filename(&entry_val);
-            let dest_path = scripts_dir.join(&filename);
+            let dest_path = scripts_dir.join(filename);
 
-            match resolve_asset(&entry_val, &ref_base, cdn) {
+            match resolve_asset(src, &ref_base, cdn) {
                 Ok(ResolvedAsset::Url(url)) => {
                     if let Err(e) = download_script(&url, &dest_path) {
                         eprintln!("{} {}", "Error:".red(), e);
@@ -799,9 +692,69 @@ pub fn install_plugin(
             }
 
             scripts.push(filename.clone());
-
-            entry_val = filename;
         }
+    }
+
+    // ---- 6d. commands：命令注册（不包含下载逻辑） ----
+    if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object()) {
+        any_operation_processed = true;
+
+        for (cmd_name, cmd_value) in commands_obj {
+            let cmd_type = cmd_value
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("py-module");
+
+            let entry_val = match cmd_value.get("entry").and_then(|v| v.as_str()) {
+                Some(t) => t.to_string(),
+                None => continue,
+            };
+
+            let desc = cmd_value
+                .get("desc")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            registered_commands.push(cmd_name.clone());
+            cmd_state.commands.insert(
+                cmd_name.clone(),
+                PluginCommand {
+                    cmd_type: cmd_type.to_string(),
+                    entry: entry_val,
+                    desc: desc.to_string(),
+                },
+            );
+        }
+    }
+
+    // ---- 6e. command：注册单个命令（命令名 = 插件 key，不包含下载逻辑） ----
+    if let Some(cmd_value) = entry.get("command") {
+        any_operation_processed = true;
+
+        // 冲突检测：commands 中不能有与插件 key 同名的子命令
+        if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object())
+            && commands_obj.contains_key(&key)
+        {
+            eprintln!(
+                "{} command name conflict: \"{}\" is defined in both 'command' and 'commands'",
+                "Error:".red(),
+                key,
+            );
+            exit(1);
+        }
+
+        let cmd_type = cmd_value
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("py-module");
+
+        let entry_val = match cmd_value.get("entry").and_then(|v| v.as_str()) {
+            Some(t) => t.to_string(),
+            None => {
+                eprintln!("{} 'command' field requires 'entry'", "Error:".red());
+                exit(1);
+            }
+        };
 
         let desc = cmd_value
             .get("desc")
@@ -821,7 +774,7 @@ pub fn install_plugin(
 
     if !any_operation_processed {
         eprintln!(
-            "{} plugin \"{}\" has no supported operations (pip/pip-keep/command/commands)",
+            "{} plugin \"{}\" has no supported operations (pip/pip-keep/scripts/command/commands)",
             "Error:".red(),
             key,
         );
@@ -1209,29 +1162,6 @@ mod tests {
     #[test]
     fn validate_rejects_nested_parent() {
         assert!(validate_relative_path("a/../../b").is_err());
-    }
-
-    // ==================== extract_filename ====================
-
-    #[test]
-    fn extract_filename_from_url() {
-        assert_eq!(extract_filename("https://example.com/path/to/script.py"), "script.py");
-    }
-
-    #[test]
-    fn extract_filename_from_path() {
-        assert_eq!(extract_filename("scripts/main.py"), "main.py");
-    }
-
-    #[test]
-    fn extract_filename_single_name() {
-        assert_eq!(extract_filename("just_name"), "just_name");
-    }
-
-    #[test]
-    fn extract_filename_empty_last_segment() {
-        // "dir/" rsplit('/') → ["", "dir"], next() = ""
-        assert_eq!(extract_filename("dir/"), "");
     }
 
     // ==================== to_jsdelivr_url ====================

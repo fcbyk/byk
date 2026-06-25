@@ -49,6 +49,14 @@
             "description": "包名、版本约束或 URL"
           }
         },
+        "scripts": {
+          "description": "脚本下载映射：key 为保存的文件名，value 为远程 URL 或相对路径。下载到 plugins/scripts/<key>。\n示例：{ \"main.py\": \"./src/main.py\", \"util.py\": \"https://example.com/util.py\" }",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "description": "远程 URL（自动下载）或相对路径 ./xxx（自动拷贝）"
+          }
+        },
         "command": {
           "description": "注册单个命令（命令名 = 插件 key）。推荐单命令插件使用，与 commands 可共存",
           "$ref": "#/$defs/CommandEntry"
@@ -78,7 +86,7 @@
           ]
         },
         "entry": {
-          "description": "入口点：py-module 为模块路径，py-script 为脚本文件名/URL/相对路径，py-bin 为可执行文件名\npy-script 支持：远程 URL（自动下载）、相对路径 ./xxx（自动拷贝）、纯文件名（直接使用）",
+          "description": "入口点：py-module 为模块路径，py-script 为脚本文件名（需通过 script 字段预先下载），py-bin 为可执行文件名",
           "type": "string"
         },
         "desc": {

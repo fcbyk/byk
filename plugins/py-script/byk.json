@@ -1,5 +1,8 @@
 {
   "pys": {
+    "scripts": {
+      "hello_world.py": "hello_world.py"
+    },
     "command": {
       "type": "py-script",
       "entry": "hello_world.py",

@@ -21,8 +21,9 @@ https://raw.githubusercontent.com/{owner}/{repo}/{branch}/byk.json
 
 ```
 1. pip / pip-keep → 安装 Python 依赖到虚拟环境
-2. command        → 注册单个命令（命令名 = 插件 key）
-3. commands       → 注册多个命令到路由表
+2. script          → 下载/拷贝脚本文件到 plugins/scripts/
+3. command         → 注册单个命令（命令名 = 插件 key）
+4. commands        → 注册多个命令到路由表
 ```
 
 > **推荐**：单命令插件用 `command`，多命令插件用 `commands`。两者可以共存，但不要在同名 key 上重复定义。
@@ -45,7 +46,7 @@ JSON key 的声明顺序即执行顺序，阅读即执行。
 
 一个 `byk.json` 可以包含多个插件 key，用户通过 `byk add <key>` 指定要安装哪个。
 
-### $default — 默认插件
+### $default
 
 `$default` 字段指定当用户不指定 key 时（`byk add user/repo`）默认安装哪个插件。
 
@@ -63,13 +64,15 @@ JSON key 的声明顺序即执行顺序，阅读即执行。
 | 无 `$default`，只有一个有效 key | 自动使用该 key（无需显式声明） |
 | 无 `$default`，多个有效 key | 报错，提示可用 key 列表 |
 
-::::note
+:::note
+
 - `$default` 的值必须是 `byk.json` 中存在的有效 key，否则安装时报错
 - 只有一个 key 时无需声明 `$default`，byk 会自动推断
 - 有效 key 指不以 `$` 开头的顶级字段
-::::
 
-### $var — 变量替换
+:::
+
+### $var
 
 `$var` 字段用于定义可复用的变量，减少路径或 URL 中的重复字符串。定义后可在任意位置的字符串值中使用 `{变量名}` 语法引用。
 
@@ -129,15 +132,17 @@ byk.json 文件
   → 4. Ref 引用的文件回到步骤 1（独立的 $var 作用域）
 ```
 
-::::note
+:::note
+
 - `$var` 的 value 同样参与替换，交叉引用（如 `"a": "{b}/foo"`）会逐变量传递替换
 - `$var` 不会传递到 Ref 引用的子文件，每个 `byk.json` 拥有独立的变量作用域
 - 变量替换发生在 Ref 解析之前，因此 `"{p}/py-module/byk.json"` 会先变成 `"./plugins/py-module/byk.json"`，再作为相对路径被解析
-::::
+
+:::
 
 ## 操作块
 
-### pip — 安装 Python 包（卸载时自动清理）
+### pip
 
 通过 pip 安装 Python 包到 byk 的隔离虚拟环境，**卸载插件时自动执行 `pip uninstall`**。
 
@@ -185,7 +190,62 @@ byk add user/repo/hello
 - `my-hello` 是插件专属包，卸载时自动 `pip uninstall my-hello`
 - `rich`、`click` 是共享依赖，卸载时保留
 
-### command — 注册单个命令
+### script
+
+将远程或本地的脚本文件下载/拷贝到 `plugins/scripts/` 目录。使用 `map` 对象，**key 为保存的文件名**（可自定义任意名称），value 为远程 URL 或相对路径。
+
+```json
+{
+  "hello": {
+    "scripts": {
+      "runner.py": "./scripts/runner.py",
+      "util.py": "https://example.com/util.py"
+    },
+    "commands": { ... }
+  }
+}
+```
+
+#### 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `scripts` | object | 否 | 脚本下载映射：`{ "<文件名>": "<远程URL或相对路径>" }` |
+
+`scripts` 中的每个键值对：
+- **key**：保存到 `plugins/scripts/<key>` 的文件名（可含后缀或无后缀）
+- **value**：远程 URL（自动下载）或相对路径 `./xxx`（自动拷贝），解析规则同 Ref 引用
+
+#### 与 commands 的关系
+
+```json
+{
+  "jiahao": {
+    "scripts": {
+      "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+    },
+    "command": {
+      "type": "py-script",
+      "entry": "jiahao.py",
+      "desc": "装 x 命令"
+    }
+  }
+}
+```
+
+- `scripts` 负责**下载**：将远程脚本保存到 `scripts/jiahao.py`
+- `command` 负责**注册**：声明命令类型和入口文件名
+- 职责完全分离，多个命令可共享 `scripts` 中下载的同一文件
+
+:::note
+
+- `scripts` 字段按声明顺序逐一处理，下载失败立即终止并报错
+- 相对路径仅支持 `./xxx` 和 `xxx` 两种写法，`../`、`/xxx`、`~` 不被允许
+- 使用 `--cdn` 时，`raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
+
+:::
+
+### command
 
 为单命令插件注册命令，**命令名自动取插件 key**。推荐只有一个命令的插件使用此字段。
 
@@ -209,10 +269,10 @@ byk add user/repo/hello
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）或 `py-bin`（可执行文件） |
-| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名/URL/相对路径，`py-bin` 为可执行文件名 |
+| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `scripts` 预先下载），`py-bin` 为可执行文件名 |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 
-### commands — 注册多个命令
+### commands
 
 声明插件提供的多个命令。`commands` 中的内容会被**零解析**直接合并到 `plugins.cmd.json`，无需中间转换。
 
@@ -238,7 +298,7 @@ byk add user/repo/hello
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）或 `py-bin`（可执行文件） |
-| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名/URL/相对路径，`py-bin` 为可执行文件名 |
+| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `scripts` 预先下载），`py-bin` 为可执行文件名 |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 
 #### 命令类型
@@ -255,31 +315,38 @@ byk add user/repo/hello
 
 #### py-script 入口点
 
-对于 `py-script` 类型的命令，`entry` 支持三种写法：
-
-| 写法 | 说明 | 示例 |
-|------|------|------|
-| 远程 URL | 自动下载到 `scripts/`，entry 简化为文件名 | `"https://.../jiahao.py"` |
-| 相对路径 | 相对于 byk.json 所在目录，拷贝到 `scripts/` | `"./scripts/hello.py"` |
-| 纯文件名 | 直接使用（已存在于 `scripts/` 目录） | `"jiahao.py"` |
+对于 `py-script` 类型的命令，`entry` 是一个纯文件名（不含路径），指代 `plugins/scripts/` 目录下的脚本文件。脚本文件需通过 `scripts` 字段预先下载/拷贝：
 
 ```json
 {
   "jiahao": {
+    "scripts": {
+      "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+    },
     "command": {
       "type": "py-script",
-      "entry": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py",
+      "entry": "jiahao.py",
       "desc": "装 x 命令"
     }
   }
 }
 ```
 
-::::note
-- `plugins.cmd.json` 中始终存储的是纯文件名，URL 和相对路径在安装时自动解析
-- 相对路径仅支持 `./xxx` 和 `xxx` 两种写法，`../`、`/xxx`、`~` 不被允许
-- 使用 `--cdn` 时，`raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
-::::
+| 字段 | 职责 |
+|------|------|
+| `scripts` | 下载/拷贝脚本到 `plugins/scripts/<filename>` |
+| `commands`/`command` | 注册命令，`entry` 为 `scripts` 中定义的文件名 |
+
+
+:::note
+
+- `plugins.cmd.json` 中始终存储的是纯文件名，脚本下载由 `scripts` 字段独立处理
+- 多个命令可以共享 `scripts` 中下载的同一脚本文件
+- 命令注册不再包含任何下载逻辑，职责单一
+
+:::
+
+
 
 ## Ref 引用
 
@@ -334,13 +401,15 @@ byk add user/repo/hello
 | `https://...` | 远程 URL ✅ |
 | `../`、`/xxx`、`~` | 不允许 ❌ |
 
-::::note
+:::note
+
 - `./` 前缀可选，`plugins/python/byk.json` 与 `./plugins/python/byk.json` 等效
 - URL 引用**不受安装模式影响**，始终直接拉取
 - `../` 等路径逃逸写法不被允许，如需引用外部资源请使用完整 URL
 - 相对路径引用适用于将插件定义拆分到子目录的场景
 - 每个 byk.json 自治：嵌套 byk.json 中的相对路径始终相对于自身所在目录
-::::
+
+:::
 
 > 配合 `$var` 使用：`$var` 可以进一步减少 Ref 路径中的重复前缀，详见 [$var — 变量替换](#var--变量替换)。
 
@@ -397,10 +466,13 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中的默认 key
   },
 
   "jiahao": {
+    "scripts": {
+      "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+    },
     "pip": ["rich", "click"],
     "command": {
       "type": "py-script",
-      "entry": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py",
+      "entry": "jiahao.py",
       "desc": "装 x 命令"
     }
   }
@@ -413,6 +485,6 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中的默认 key
 - Ref 引用支持 URL（`http(s)://`）和相对路径两种写法，相对路径遵循 `./xxx` 规则
 - 一个插件的 `command` 和 `commands` 可以共存，但 `commands` 中不能定义与插件 key 同名的子命令
 - 单命令插件推荐使用 `command`，多命令插件使用 `commands`
-- 操作块按固定顺序执行：`pip` / `pip-keep` → `commands`，与声明顺序无关
+- 操作块按固定顺序执行：`pip` / `pip-keep` → `scripts` → `commands` / `command`，与声明顺序无关
 - 使用 `--cdn` 时，所有 `raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
 - 顶层 `$var`/`$default` 为系统字段，不会被视为有效 plugin key
