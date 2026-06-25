@@ -183,3 +183,46 @@ pub fn execute_plugin_command(
 
     exit(status.code().unwrap_or(1));
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== cmd_type ====================
+
+    #[test]
+    fn py_module_executor_type() {
+        assert_eq!(PyModuleExecutor.cmd_type(), "py-module");
+    }
+
+    #[test]
+    fn py_script_executor_type() {
+        assert_eq!(PyScriptExecutor.cmd_type(), "py-script");
+    }
+
+    #[test]
+    fn py_bin_executor_type() {
+        assert_eq!(PyBinExecutor.cmd_type(), "py-bin");
+    }
+
+    // ==================== executors ====================
+
+    #[test]
+    fn executors_has_three_builtin() {
+        let exes = executors();
+        assert_eq!(exes.len(), 3);
+    }
+
+    #[test]
+    fn executors_contains_all_types() {
+        let exes = executors();
+        let types: Vec<&str> = exes.iter().map(|e| e.cmd_type()).collect();
+        assert!(types.contains(&"py-module"));
+        assert!(types.contains(&"py-script"));
+        assert!(types.contains(&"py-bin"));
+    }
+}

@@ -104,3 +104,87 @@ pub fn write_rc(path: &PathBuf, content: &str) {
         std::process::exit(1);
     });
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== completion_line ====================
+
+    #[test]
+    fn completion_line_zsh() {
+        let line = completion_line("zsh");
+        assert!(line.contains("byk completion zsh"));
+        assert!(line.starts_with("if command -v byk"));
+    }
+
+    #[test]
+    fn completion_line_bash() {
+        let line = completion_line("bash");
+        assert!(line.contains("byk completion bash"));
+        assert!(line.starts_with("if command -v byk"));
+    }
+
+    // ==================== strip_completion_lines ====================
+
+    #[test]
+    fn strip_removes_completion_line() {
+        let input = "export PATH=/usr/bin:$PATH\nif command -v byk >/dev/null 2>&1; then source <(byk completion zsh); fi\n";
+        let result = strip_completion_lines(input);
+        assert!(!result.contains("byk completion"));
+        assert!(result.contains("export PATH"));
+    }
+
+    #[test]
+    fn strip_removes_comment_preceding_completion() {
+        let input = "# byk shell completion\nif command -v byk >/dev/null 2>&1; then source <(byk completion zsh); fi\nother line\n";
+        let result = strip_completion_lines(input);
+        assert!(!result.contains("byk shell completion"));
+        assert!(!result.contains("byk completion"));
+        assert!(result.contains("other line"));
+    }
+
+    #[test]
+    fn strip_removes_blank_line_before_completion() {
+        let input = "some line\n\nif command -v byk >/dev/null 2>&1; then source <(byk completion zsh); fi\nlast\n";
+        let result = strip_completion_lines(input);
+        assert!(!result.contains("byk completion"));
+        assert!(result.contains("some line"));
+        assert!(result.contains("last"));
+    }
+
+    #[test]
+    fn strip_no_completion_unchanged() {
+        let input = "export PATH=/usr/bin:$PATH\n";
+        let result = strip_completion_lines(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn strip_empty_content() {
+        let result = strip_completion_lines("");
+        assert_eq!(result, "\n");
+    }
+
+    // ==================== detect_shell (env-based, best-effort) ====================
+
+    #[test]
+    fn detect_shell_returns_expected_for_zsh() {
+        let shell = std::env::var("SHELL").unwrap_or_default();
+        if shell.ends_with("/zsh") {
+            assert_eq!(detect_shell(), Some((".zshrc", "zsh")));
+        }
+    }
+
+    #[test]
+    fn detect_shell_returns_expected_for_bash() {
+        let shell = std::env::var("SHELL").unwrap_or_default();
+        if shell.ends_with("/bash") {
+            assert_eq!(detect_shell(), Some((".bashrc", "bash")));
+        }
+    }
+}

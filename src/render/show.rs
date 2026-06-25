@@ -208,6 +208,60 @@ fn extract_display_name(raw: &str) -> Option<&str> {
 }
 
 // ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== extract_display_name ====================
+
+    #[test]
+    fn display_name_simple() {
+        assert_eq!(extract_display_name("requests"), Some("requests"));
+    }
+
+    #[test]
+    fn display_name_with_at_url() {
+        assert_eq!(
+            extract_display_name("mypkg @ https://example.com/whl"),
+            Some("mypkg")
+        );
+    }
+
+    #[test]
+    fn display_name_pure_url_none() {
+        assert_eq!(extract_display_name("https://example.com/pkg"), None);
+    }
+
+    #[test]
+    fn display_name_http_url_none() {
+        assert_eq!(extract_display_name("http://example.com/pkg"), None);
+    }
+
+    #[test]
+    fn display_name_trim_whitespace() {
+        assert_eq!(extract_display_name("  requests  "), Some("requests"));
+    }
+
+    // ==================== render_paths ====================
+
+    #[test]
+    fn render_paths_does_not_panic() {
+        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_show_paths");
+        render_paths(&layout);
+    }
+
+    // ==================== render_help ====================
+
+    #[test]
+    fn render_help_does_not_panic() {
+        render_help();
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 路径显示（byk show paths）
 // ---------------------------------------------------------------------------
 

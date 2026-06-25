@@ -540,3 +540,119 @@ fn remove_if_exists(path: &std::path::Path, label: &str) {
         println!("  {} {} {}", "-".red(), label.dimmed(), "(removed)".dimmed());
     }
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== extract_pkg_name ====================
+
+    #[test]
+    fn extract_pkg_name_simple() {
+        assert_eq!(extract_pkg_name("requests"), "requests");
+    }
+
+    #[test]
+    fn extract_pkg_name_with_version() {
+        assert_eq!(extract_pkg_name("requests>=2.0"), "requests>=2.0");
+    }
+
+    #[test]
+    fn extract_pkg_name_with_at_url() {
+        // "name @ url" format → extract name
+        assert_eq!(extract_pkg_name("mypkg @ https://example.com/whl"), "mypkg");
+    }
+
+    #[test]
+    fn extract_pkg_name_pure_url_returns_empty() {
+        assert_eq!(extract_pkg_name("https://example.com/pkg.whl"), "");
+    }
+
+    #[test]
+    fn extract_pkg_name_pure_http_url_returns_empty() {
+        assert_eq!(extract_pkg_name("http://example.com/pkg.whl"), "");
+    }
+
+    #[test]
+    fn extract_pkg_name_trim_whitespace() {
+        assert_eq!(extract_pkg_name("  requests  "), "requests");
+    }
+
+    #[test]
+    fn extract_pkg_name_at_url_with_extra_spaces() {
+        // "name @ url" split on " @ " works even with extra spaces
+        assert_eq!(extract_pkg_name("mypkg @ https://x.com/pkg"), "mypkg");
+    }
+
+    #[test]
+    fn extract_pkg_name_empty_string() {
+        assert_eq!(extract_pkg_name(""), "");
+    }
+
+    // ==================== remove_if_exists ====================
+
+    use std::fs;
+
+    #[test]
+    fn remove_if_exists_deletes_file() {
+        let tmp = std::env::temp_dir().join("fcbyk_test_rm_exists");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let file = tmp.join("test_file.txt");
+        fs::write(&file, "data").unwrap();
+
+        remove_if_exists(&file, "test_file.txt");
+        assert!(!file.exists());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn remove_if_exists_deletes_dir() {
+        let tmp = std::env::temp_dir().join("fcbyk_test_rm_dir");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let subdir = tmp.join("subdir");
+        fs::create_dir_all(&subdir).unwrap();
+
+        remove_if_exists(&subdir, "subdir");
+        assert!(!subdir.exists());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn remove_if_exists_noop_for_missing() {
+        let tmp = std::env::temp_dir().join("fcbyk_test_rm_noop");
+        let nonexistent = tmp.join("nothing_here");
+
+        remove_if_exists(&nonexistent, "nothing_here");
+        // should not panic
+    }
+
+    // ==================== print_if_exists ====================
+
+    #[test]
+    fn print_if_exists_when_file_exists() {
+        let tmp = std::env::temp_dir().join("fcbyk_test_print_exists");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let file = tmp.join("existing.txt");
+        fs::write(&file, "data").unwrap();
+
+        print_if_exists(&file);
+        // should not panic; output is to stdout
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn print_if_exists_when_file_missing() {
+        let tmp = std::env::temp_dir().join("fcbyk_test_print_missing");
+        let nonexistent = tmp.join("missing.txt");
+
+        print_if_exists(&nonexistent);
+        // should not panic
+    }
+}

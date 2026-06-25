@@ -267,4 +267,88 @@ mod tests {
         let long_prefix_len = long_line.1.find("cmd-long").unwrap();
         assert_eq!(a_prefix_len, long_prefix_len);
     }
+
+    #[test]
+    fn alias_format_with_description() {
+        let mut merged: MergedConfig = HashMap::new();
+        let mut node = MergedNode::default();
+        node.alias = Some(ResolvedAlias {
+            value: aliases::AliasValue::Meta {
+                cmd: "echo hello".into(),
+                cwd: None,
+                interactive: None,
+                description: Some("Say hello".into()),
+            },
+            source: "@test".into(),
+            source_path: None,
+            priority: 0,
+            paths: Vec::new(),
+        });
+        merged.insert("greet".into(), node);
+        let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
+        assert_eq!(result.len(), 1);
+        assert!(result[0].1.contains("Say hello"));
+    }
+
+    // ==================== resolve_cwd_display ====================
+
+    #[test]
+    fn resolve_cwd_absolute_path() {
+        let result = resolve_cwd_display("/usr/local/bin", None);
+        assert_eq!(result, "/usr/local/bin");
+    }
+
+    #[test]
+    fn resolve_cwd_relative_with_base() {
+        let base = Path::new("/home/user/project");
+        let result = resolve_cwd_display("./src", Some(base));
+        assert_eq!(result, "/home/user/project/src");
+    }
+
+    #[test]
+    fn resolve_cwd_relative_without_base() {
+        let result = resolve_cwd_display("./foo", None);
+        assert_eq!(result, "foo");
+    }
+
+    #[test]
+    fn resolve_cwd_with_parent_dir() {
+        let base = Path::new("/home/user/project/src");
+        let result = resolve_cwd_display("../lib", Some(base));
+        assert_eq!(result, "/home/user/project/lib");
+    }
+
+    // ==================== normalize ====================
+
+    #[test]
+    fn normalize_simple_path() {
+        let result = normalize(Path::new("foo/bar"));
+        assert_eq!(result, PathBuf::from("foo/bar"));
+    }
+
+    #[test]
+    fn normalize_removes_current_dir() {
+        let result = normalize(Path::new("./foo/./bar"));
+        assert_eq!(result, PathBuf::from("foo/bar"));
+    }
+
+    #[test]
+    fn normalize_resolves_parent_dir() {
+        let result = normalize(Path::new("foo/bar/../baz"));
+        assert_eq!(result, PathBuf::from("foo/baz"));
+    }
+
+    #[test]
+    fn normalize_multiple_parent_dirs() {
+        let result = normalize(Path::new("a/b/c/../../d"));
+        assert_eq!(result, PathBuf::from("a/d"));
+    }
+
+    #[test]
+    fn normalize_parent_beyond_root() {
+        // ".." beyond root keeps popping until empty
+        let result = normalize(Path::new("foo/../../.."));
+        // On Unix: "foo" → ".." pops → empty → ".." no-op → empty → ".." no-op → empty
+        assert_eq!(result.as_os_str(), "");
+    }
 }

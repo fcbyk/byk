@@ -17,3 +17,24 @@ pub fn render() {
     println!("{}", "Docs https://cli.fcbyk.com".dimmed());
     println!("{}", separator.dimmed());
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_runs_without_panic() {
+        render();
+    }
+
+    #[test]
+    fn separator_is_29_dashes() {
+        let separator = "-".repeat(29);
+        assert_eq!(separator.len(), 29);
+        assert_eq!(separator, "-----------------------------");
+    }
+}

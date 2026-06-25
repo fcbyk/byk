@@ -176,4 +176,31 @@ mod tests {
         assert!(first.starts_with("  -v, --version"));
         assert!(second.starts_with("  -h, --help"));
     }
+
+    #[test]
+    fn format_options_long_label_alignment() {
+        let options = vec![
+            ("x".into(), "Short".into()),
+            ("very-long-option".into(), "Long option description".into()),
+        ];
+        let result = format_options_lines(&options);
+        assert_eq!(result.len(), 2);
+        let first = strip_ansi(&result[0]);
+        let second = strip_ansi(&result[1]);
+        // Short key "x" should be padded to match "very-long-option"
+        let x_pad = first.find("Short").unwrap();
+        let long_pad = second.find("Long").unwrap();
+        assert_eq!(x_pad, long_pad);
+    }
+
+    #[test]
+    fn format_options_single_option_no_extra_lines() {
+        let options = vec![
+            ("--cdn".into(), "Use CDN".into()),
+        ];
+        let result = format_options_lines(&options);
+        assert_eq!(result.len(), 1);
+        let plain = strip_ansi(&result[0]);
+        assert_eq!(plain, "  --cdn  Use CDN");
+    }
 }

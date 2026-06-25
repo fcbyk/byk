@@ -416,3 +416,56 @@ fn init_node_pm(layout: &PathLayout, pm: &str) {
     println!("  Install packages:  {} <pkg>", "byk ni".dimmed());
     println!("  Remove packages:   {} <pkg>", "byk nu".dimmed());
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    // ==================== VENV_BIN 常量 ====================
+
+    #[test]
+    fn venv_bin_is_valid_directory_name() {
+        assert!(!VENV_BIN.is_empty());
+        #[cfg(not(windows))]
+        assert_eq!(VENV_BIN, "bin");
+        #[cfg(windows)]
+        assert_eq!(VENV_BIN, "Scripts");
+    }
+
+    // ==================== ensure_dir / ensure_common_dirs ====================
+
+    #[test]
+    fn ensure_dir_creates_new_directory() {
+        let tmp = std::env::temp_dir().join("fcbyk_test_add_dir");
+        let _ = fs::remove_dir_all(&tmp);
+        ensure_dir(&tmp, "test");
+        assert!(tmp.is_dir());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn ensure_dir_handles_existing() {
+        let tmp = std::env::temp_dir().join("fcbyk_test_add_dir2");
+        fs::create_dir_all(&tmp).unwrap();
+        ensure_dir(&tmp, "test"); // should not panic
+        assert!(tmp.is_dir());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn ensure_common_dirs_creates_structure() {
+        let layout = PathLayout::with_name("fcbyk_test_add_common");
+        let _ = fs::remove_dir_all(&layout.root_dir);
+        ensure_common_dirs(&layout);
+        assert!(layout.root_dir.is_dir());
+        assert!(layout.alias_dir.is_dir());
+        assert!(layout.cache_dir.is_dir());
+        assert!(layout.plugins_dir.is_dir());
+        let _ = fs::remove_dir_all(&layout.root_dir);
+    }
+}

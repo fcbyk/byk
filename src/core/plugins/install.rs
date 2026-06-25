@@ -1082,3 +1082,295 @@ fn ensure_dir(path: &Path, label: &str) {
         println!("  {} {}", "+".green(), label.dimmed());
     }
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== parse_spec ====================
+
+    #[test]
+    fn parse_spec_user_repo() {
+        let s = parse_spec("user/repo").unwrap();
+        assert_eq!(s.owner, "user");
+        assert_eq!(s.repo, "repo");
+        assert_eq!(s.branch, "main");
+        assert_eq!(s.key, "");
+    }
+
+    #[test]
+    fn parse_spec_user_repo_at_branch() {
+        let s = parse_spec("user/repo@dev").unwrap();
+        assert_eq!(s.owner, "user");
+        assert_eq!(s.repo, "repo");
+        assert_eq!(s.branch, "dev");
+        assert_eq!(s.key, "");
+    }
+
+    #[test]
+    fn parse_spec_user_repo_key() {
+        let s = parse_spec("user/repo/my-key").unwrap();
+        assert_eq!(s.owner, "user");
+        assert_eq!(s.repo, "repo");
+        assert_eq!(s.branch, "main");
+        assert_eq!(s.key, "my-key");
+    }
+
+    #[test]
+    fn parse_spec_user_repo_at_branch_key() {
+        let s = parse_spec("user/repo@v2/my-key").unwrap();
+        assert_eq!(s.owner, "user");
+        assert_eq!(s.repo, "repo");
+        assert_eq!(s.branch, "v2");
+        assert_eq!(s.key, "my-key");
+    }
+
+    #[test]
+    fn parse_spec_invalid_single_part() {
+        assert!(parse_spec("onlyone").is_none());
+    }
+
+    #[test]
+    fn parse_spec_invalid_empty() {
+        assert!(parse_spec("").is_none());
+    }
+
+    #[test]
+    fn parse_spec_with_hash_branch() {
+        let s = parse_spec("a/b@abc123/plugin").unwrap();
+        assert_eq!(s.branch, "abc123");
+        assert_eq!(s.key, "plugin");
+    }
+
+    // ==================== split_branch ====================
+
+    #[test]
+    fn split_branch_with_at() {
+        let (repo, branch) = split_branch("repo@dev");
+        assert_eq!(repo, "repo");
+        assert_eq!(branch, "dev");
+    }
+
+    #[test]
+    fn split_branch_without_at() {
+        let (repo, branch) = split_branch("repo");
+        assert_eq!(repo, "repo");
+        assert_eq!(branch, "main");
+    }
+
+    #[test]
+    fn split_branch_empty_before_at() {
+        let (repo, branch) = split_branch("@dev");
+        assert_eq!(repo, "");
+        assert_eq!(branch, "dev");
+    }
+
+    // ==================== validate_relative_path ====================
+
+    #[test]
+    fn validate_relative_clean() {
+        assert_eq!(validate_relative_path("foo.py").unwrap(), "foo.py");
+    }
+
+    #[test]
+    fn validate_relative_dot_slash() {
+        assert_eq!(validate_relative_path("./foo.py").unwrap(), "./foo.py");
+    }
+
+    #[test]
+    fn validate_relative_subdir() {
+        assert_eq!(validate_relative_path("./scripts/main.py").unwrap(), "./scripts/main.py");
+    }
+
+    #[test]
+    fn validate_rejects_absolute() {
+        assert!(validate_relative_path("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_home() {
+        assert!(validate_relative_path("~/foo").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_parent_dir() {
+        assert!(validate_relative_path("../escape").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_double_dot() {
+        assert!(validate_relative_path("..").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_nested_parent() {
+        assert!(validate_relative_path("a/../../b").is_err());
+    }
+
+    // ==================== extract_filename ====================
+
+    #[test]
+    fn extract_filename_from_url() {
+        assert_eq!(extract_filename("https://example.com/path/to/script.py"), "script.py");
+    }
+
+    #[test]
+    fn extract_filename_from_path() {
+        assert_eq!(extract_filename("scripts/main.py"), "main.py");
+    }
+
+    #[test]
+    fn extract_filename_single_name() {
+        assert_eq!(extract_filename("just_name"), "just_name");
+    }
+
+    #[test]
+    fn extract_filename_empty_last_segment() {
+        // "dir/" rsplit('/') → ["", "dir"], next() = ""
+        assert_eq!(extract_filename("dir/"), "");
+    }
+
+    // ==================== to_jsdelivr_url ====================
+
+    #[test]
+    fn jsdelivr_conversion() {
+        let url = to_jsdelivr_url(
+            "https://raw.githubusercontent.com/user/repo/main/foo/bar.py"
+        );
+        assert_eq!(url, "https://cdn.jsdelivr.net/gh/user/repo@main/foo/bar.py");
+    }
+
+    #[test]
+    fn jsdelivr_root_file() {
+        let url = to_jsdelivr_url(
+            "https://raw.githubusercontent.com/user/repo/branch/byk.json"
+        );
+        assert_eq!(url, "https://cdn.jsdelivr.net/gh/user/repo@branch/byk.json");
+    }
+
+    #[test]
+    fn jsdelivr_non_github_url_unchanged() {
+        let url = to_jsdelivr_url("https://example.com/file.json");
+        assert_eq!(url, "https://example.com/file.json");
+    }
+
+    #[test]
+    fn jsdelivr_too_short_url_unchanged() {
+        let url = to_jsdelivr_url("https://raw.githubusercontent.com/user");
+        assert_eq!(url, "https://raw.githubusercontent.com/user");
+    }
+
+    // ==================== build_registry_url ====================
+
+    #[test]
+    fn registry_url_default() {
+        let url = build_registry_url("main", "user", "repo");
+        assert_eq!(
+            url,
+            "https://raw.githubusercontent.com/user/repo/main/byk.json"
+        );
+    }
+
+    #[test]
+    fn registry_url_custom_branch() {
+        let url = build_registry_url("dev", "org", "tool");
+        assert_eq!(
+            url,
+            "https://raw.githubusercontent.com/org/tool/dev/byk.json"
+        );
+    }
+
+    // ==================== resolve_relative_url ====================
+
+    #[test]
+    fn resolve_relative_subfile() {
+        let result = resolve_relative_url(
+            "https://example.com/foo/byk.json",
+            "./bar/other.json"
+        );
+        assert_eq!(result, "https://example.com/foo/bar/other.json");
+    }
+
+    #[test]
+    fn resolve_relative_without_dot_slash() {
+        let result = resolve_relative_url(
+            "https://example.com/foo/byk.json",
+            "bar/other.json"
+        );
+        assert_eq!(result, "https://example.com/foo/bar/other.json");
+    }
+
+    #[test]
+    fn resolve_relative_from_root_like() {
+        // base_url like "https://example.com/byk.json" → parent split fails,
+        // rsplit_once('/') = Some(("https://example.com", "byk.json"))
+        let result = resolve_relative_url(
+            "https://example.com/byk.json",
+            "./other.json"
+        );
+        assert_eq!(result, "https://example.com/other.json");
+    }
+
+    // ==================== preprocess_registry ====================
+
+    #[test]
+    fn preprocess_no_var() {
+        let body = r#"{"key1": {"pip": ["requests"]}}"#;
+        let result = preprocess_registry(body).unwrap();
+        assert!(result.contains_key("key1"));
+        assert!(!result.contains_key("$var"));
+    }
+
+    #[test]
+    fn preprocess_with_var_replacement() {
+        let body = r#"{"$var": {"PKG": "requests"}, "plugin": {"pip": ["{PKG}"]}}"#;
+        let result = preprocess_registry(body).unwrap();
+        let plugin = result.get("plugin").unwrap();
+        let pip_list = plugin.get("pip").unwrap().as_array().unwrap();
+        assert_eq!(pip_list[0].as_str().unwrap(), "requests");
+    }
+
+    #[test]
+    fn preprocess_multiple_vars() {
+        let body = r#"{"$var": {"A": "a_val", "B": "b_val"}, "x": {"entry": "{A}-{B}"}}"#;
+        let result = preprocess_registry(body).unwrap();
+        let x = result.get("x").unwrap();
+        assert_eq!(x.get("entry").unwrap().as_str().unwrap(), "a_val-b_val");
+    }
+
+    #[test]
+    fn preprocess_var_not_string_skipped() {
+        let body = r#"{"$var": {"N": 42}, "x": {"entry": "{N}"}}"#;
+        let result = preprocess_registry(body).unwrap();
+        let x = result.get("x").unwrap();
+        // {N} not replaced because 42 is not a string
+        assert_eq!(x.get("entry").unwrap().as_str().unwrap(), "{N}");
+    }
+
+    #[test]
+    fn preprocess_invalid_json() {
+        let body = "not json";
+        assert!(preprocess_registry(body).is_err());
+    }
+
+    #[test]
+    fn preprocess_var_not_map() {
+        let body = r#"{"$var": "not_a_map"}"#;
+        assert!(preprocess_registry(body).is_err());
+    }
+
+    // ==================== build_cdn_registry_url ====================
+
+    #[test]
+    fn cdn_registry_url() {
+        let url = build_cdn_registry_url("main", "user", "repo");
+        assert_eq!(
+            url,
+            "https://cdn.jsdelivr.net/gh/user/repo@main/byk.json"
+        );
+    }
+}

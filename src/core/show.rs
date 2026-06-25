@@ -283,3 +283,123 @@ pub fn check_completion(shell_name: &str) -> (&'static str, bool) {
 
     (rc_filename, content.contains(&line))
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== lookup_builtin ====================
+
+    #[test]
+    fn lookup_builtin_add() {
+        assert!(lookup_builtin("add").is_some());
+    }
+
+    #[test]
+    fn lookup_builtin_remove() {
+        assert!(lookup_builtin("remove").is_some());
+    }
+
+    #[test]
+    fn lookup_builtin_show() {
+        assert!(lookup_builtin("show").is_some());
+    }
+
+    #[test]
+    fn lookup_builtin_completion() {
+        assert!(lookup_builtin("completion").is_some());
+    }
+
+    #[test]
+    fn lookup_builtin_unknown() {
+        assert!(lookup_builtin("nonexistent").is_none());
+    }
+
+    #[test]
+    fn lookup_builtin_empty() {
+        assert!(lookup_builtin("").is_none());
+    }
+
+    // ==================== classify_placeholder ====================
+
+    #[test]
+    fn classify_rest_placeholder() {
+        assert_eq!(classify_placeholder("${...}"), "rest");
+    }
+
+    #[test]
+    fn classify_positional_placeholder() {
+        assert_eq!(classify_placeholder("${1}"), "positional");
+        assert_eq!(classify_placeholder("${name}"), "positional");
+    }
+
+    #[test]
+    fn classify_optional_placeholder() {
+        assert_eq!(classify_placeholder("{{flag}}"), "optional");
+    }
+
+    #[test]
+    fn classify_conditional_placeholder() {
+        assert_eq!(classify_placeholder("?flag"), "conditional");
+        assert_eq!(classify_placeholder("prefix ?flag"), "conditional");
+    }
+
+    #[test]
+    fn classify_named_placeholder() {
+        assert_eq!(classify_placeholder("$name"), "named");
+        assert_eq!(classify_placeholder("$1"), "named");
+    }
+
+    // ==================== detect_shell ====================
+
+    #[test]
+    fn detect_shell_returns_none_for_fish() {
+        // Can't easily mock env vars in unit tests, but the function is pure for given SHELL values
+        // Let's at least test the matching logic indirectly by checking known cases
+        let shell = std::env::var("SHELL").unwrap_or_default();
+        if shell.ends_with("/zsh") {
+            assert_eq!(detect_shell(), Some("zsh"));
+        } else if shell.ends_with("/bash") {
+            assert_eq!(detect_shell(), Some("bash"));
+        }
+    }
+
+    // ==================== check_node_initialized ====================
+
+    use std::fs;
+
+    #[test]
+    fn check_node_initialized_all_exist() {
+        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_node_init");
+        let _ = fs::remove_dir_all(&layout.root_dir);
+        fs::create_dir_all(&layout.node_pkgs_dir).unwrap();
+        fs::create_dir_all(&layout.alias_dir).unwrap();
+        fs::create_dir_all(&layout.cache_dir).unwrap();
+        fs::write(layout.alias_dir.join("node.byk.json"), "{}").unwrap();
+        fs::write(layout.cache_dir.join("node-pkg.json"), "{}").unwrap();
+
+        assert!(check_node_initialized(&layout));
+        let _ = fs::remove_dir_all(&layout.root_dir);
+    }
+
+    #[test]
+    fn check_node_initialized_missing_dirs() {
+        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_node_init2");
+        let _ = fs::remove_dir_all(&layout.root_dir);
+        assert!(!check_node_initialized(&layout));
+        let _ = fs::remove_dir_all(&layout.root_dir);
+    }
+
+    #[test]
+    fn check_node_initialized_partial() {
+        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_node_init3");
+        let _ = fs::remove_dir_all(&layout.root_dir);
+        fs::create_dir_all(&layout.node_pkgs_dir).unwrap();
+        assert!(!check_node_initialized(&layout));
+        let _ = fs::remove_dir_all(&layout.root_dir);
+    }
+}

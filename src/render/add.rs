@@ -62,3 +62,18 @@ pub fn render() {
     }
     println!();
 }
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_runs_without_panic() {
+        // render() only prints to stdout; verify it doesn't panic
+        render();
+    }
+}
