@@ -408,13 +408,24 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         }
     };
 
+    println!(
+        "{} Uninstalling plugin: {}",
+        "==>".cyan().bold(),
+        key.bold(),
+    );
+
     // 3. 卸载 Python 包（pip 字段，非 pip-keep）
     if let Some(ref pip_list) = pkg.pip {
+        println!("{} pip", "==>".cyan().bold());
         for item in pip_list {
             let name = extract_pkg_name(item);
             if name.is_empty() {
                 continue;
             }
+            println!(
+                "{}",
+                format!("Uninstalling pip package: {}", name).dimmed()
+            );
             if is_uv {
                 let status = std::process::Command::new("uv")
                     .args(["remove", name])
@@ -463,14 +474,22 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
                     }
                 }
             }
+            println!("{} {}", "-".red(), name.bold());
         }
     }
 
     // 4. 删除脚本文件
+    if !pkg.scripts.is_empty() {
+        println!("{} scripts", "==>".cyan().bold());
+    }
     for script in &pkg.scripts {
         let script_path = scripts_dir.join(script);
-        if script_path.exists()
-            && let Err(e) = fs::remove_file(&script_path) {
+        if script_path.exists() {
+            println!(
+                "{}",
+                format!("Deleting {}", script_path.display()).dimmed()
+            );
+            if let Err(e) = fs::remove_file(&script_path) {
                 eprintln!(
                     "{} Warning: failed to delete script {}: {}",
                     "Warning:".yellow(),
@@ -478,14 +497,23 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
                     e,
                 );
             }
+            println!("{} {}", "-".red(), script.bold());
+        }
     }
 
     // 4b. 删除二进制文件
     let bin_dir = layout.plugins_dir.join("bin");
+    if !pkg.bins.is_empty() {
+        println!("{} bin", "==>".cyan().bold());
+    }
     for bin in &pkg.bins {
         let bin_path = bin_dir.join(bin);
-        if bin_path.exists()
-            && let Err(e) = fs::remove_file(&bin_path) {
+        if bin_path.exists() {
+            println!(
+                "{}",
+                format!("Deleting {}", bin_path.display()).dimmed()
+            );
+            if let Err(e) = fs::remove_file(&bin_path) {
                 eprintln!(
                     "{} Warning: failed to delete binary {}: {}",
                     "Warning:".yellow(),
@@ -493,19 +521,41 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
                     e,
                 );
             }
+            println!("{} {}", "-".red(), bin.bold());
+        }
     }
 
     // 4c. 删除 bin-tar 解压出的目录
+    if !pkg.bins_tar.is_empty() {
+        println!("{} bin-tar", "==>".cyan().bold());
+    }
     for key in &pkg.bins_tar {
         let extract_dir = bin_dir.join(key);
         if extract_dir.exists() {
+            println!(
+                "{}",
+                format!("Deleting {}", extract_dir.display()).dimmed()
+            );
             let _ = fs::remove_dir_all(&extract_dir);
+            println!("{} {}", "-".red(), key.bold());
         }
     }
 
     // 5. 删除 commands
+    if !pkg.commands.is_empty() {
+        println!("{} commands", "==>".cyan().bold());
+    }
     for cmd_name in &pkg.commands {
+        println!(
+            "{}",
+            format!("Removing command: {}", cmd_name).dimmed()
+        );
+        println!(
+            "  {}",
+            format!("from {}", cmd_file.display()).dimmed()
+        );
         cmd_state.commands.remove(cmd_name);
+        println!("{} {}", "-".red(), cmd_name.bold());
     }
 
     // 6. 删除 packages 条目
@@ -516,8 +566,8 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     json_io::write_json(&pkg_file, &pkg_state);
 
     println!(
-        "{} plugin: {}",
-        "Uninstalled".green(),
+        "{} uninstalled {}",
+        "Successfully".green().bold(),
         key.bold(),
     );
 }

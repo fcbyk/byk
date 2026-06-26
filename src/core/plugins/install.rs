@@ -186,6 +186,22 @@ fn download_script(url: &str, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// 递归统计目录中的文件数量
+fn count_files(dir: &Path) -> usize {
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                count += count_files(&path);
+            } else {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 // ---------------------------------------------------------------------------
 // 资源路径解析
 // ---------------------------------------------------------------------------
@@ -277,7 +293,7 @@ fn resolve_asset(raw: &str, ref_base: &RefBase, cdn: bool) -> Result<ResolvedAss
 }
 
 /// 根据 RefBase 解析 ref 引用，返回 (新 byk.json 内容, 更新后的 ref_base)。
-fn resolve_ref(ref_str: &str, ref_base: &RefBase, cdn: bool) -> Result<(String, RefBase), String> {
+fn resolve_ref(ref_str: &str, ref_base: &RefBase, cdn: bool) -> Result<(String, RefBase, String), String> {
     if ref_str.starts_with("http://") || ref_str.starts_with("https://") {
         let url = if cdn && ref_str.starts_with("https://raw.githubusercontent.com/") {
             to_jsdelivr_url(ref_str)
@@ -286,9 +302,9 @@ fn resolve_ref(ref_str: &str, ref_base: &RefBase, cdn: bool) -> Result<(String, 
         };
         let body = fetch_registry(&url)?;
         let new_base = RefBase::UrlBase {
-            base_url: url,
+            base_url: url.clone(),
         };
-        return Ok((body, new_base));
+        return Ok((body, new_base, url));
     }
 
     validate_relative_path(ref_str)?;
@@ -322,7 +338,7 @@ fn resolve_ref(ref_str: &str, ref_base: &RefBase, cdn: bool) -> Result<(String, 
                 repo: repo.clone(),
                 branch: branch.clone(),
                 subpath: parent_subpath.to_string(),
-            }))
+            }, url))
         }
         RefBase::Local(dir) => {
             let full = dir.join(clean);
@@ -330,13 +346,13 @@ fn resolve_ref(ref_str: &str, ref_base: &RefBase, cdn: bool) -> Result<(String, 
                 .map_err(|e| format!("failed to read ref: {}", e))?;
             let parent = full.parent().map(|p| p.to_path_buf())
                 .unwrap_or_else(|| dir.clone());
-            Ok((body, RefBase::Local(parent)))
+            Ok((body, RefBase::Local(parent), full.display().to_string()))
         }
         RefBase::UrlBase { base_url } => {
             let url = resolve_relative_url(base_url, ref_str);
             let body = fetch_registry(&url)?;
-            let new_base = RefBase::UrlBase { base_url: url };
-            Ok((body, new_base))
+            let new_base = RefBase::UrlBase { base_url: url.clone() };
+            Ok((body, new_base, url))
         }
     }
 }
@@ -369,6 +385,13 @@ fn preprocess_registry(body: &str) -> Result<HashMap<String, serde_json::Value>,
 
     if pairs.is_empty() {
         return Ok(temp);
+    }
+
+    for (key, val) in &pairs {
+        println!(
+            "{}",
+            format!("Substituting placeholder: {{{}}} → {}", key, val).dimmed()
+        );
     }
 
     // 直接在原始字符串上逐变量 replace
@@ -429,6 +452,14 @@ pub fn install_plugin(
     // 2. 获取 byk.json（--file 本地文件/URL 或 远程仓库）
     let (body, source_label, lookup_key, mut ref_base) = if let Some(f) = file {
         if f.starts_with("http://") || f.starts_with("https://") {
+            println!(
+                "{}",
+                "Fetching byk.json".dimmed()
+            );
+            println!(
+                "  {}",
+                format!("from {}", f).dimmed()
+            );
             let body = match fetch_registry(f) {
                 Ok(b) => b,
                 Err(e) => {
@@ -440,6 +471,10 @@ pub fn install_plugin(
                 base_url: f.to_string(),
             })
         } else {
+            println!(
+                "{}",
+                format!("Reading byk.json from {}", f).dimmed()
+            );
             let content = match std::fs::read_to_string(f) {
                 Ok(c) => c,
                 Err(e) => {
@@ -469,6 +504,15 @@ pub fn install_plugin(
         } else {
             build_registry_url(spec.branch, owner, repo)
         };
+
+        println!(
+            "{}",
+            "Fetching byk.json".dimmed()
+        );
+        println!(
+            "  {}",
+            format!("from {}", url).dimmed()
+        );
 
         let body = match fetch_registry(&url) {
             Ok(b) => b,
@@ -550,12 +594,17 @@ pub fn install_plugin(
         key_str
     };
 
+    println!(
+        "{}",
+        format!("Resolved key: {}", key).dimmed()
+    );
+
     let entry = &registry[&key];
 
     // 5. Ref 引用解析：entry 为字符串时拉取完整注册表（URL 或相对路径），取同名 key
     let entry_owned: serde_json::Value;
     let entry = if let Some(ref_str) = entry.as_str() {
-        let (body, new_ref_base) = match resolve_ref(ref_str, &ref_base, cdn) {
+        let (body, new_ref_base, resolved_url) = match resolve_ref(ref_str, &ref_base, cdn) {
             Ok(result) => result,
             Err(e) => {
                 eprintln!(
@@ -568,6 +617,14 @@ pub fn install_plugin(
             }
         };
         ref_base = new_ref_base;
+        println!(
+            "{}",
+            format!("Resolving ref: {}", ref_str).dimmed()
+        );
+        println!(
+            "  {}",
+            format!("→ {}", resolved_url).dimmed()
+        );
         let registry: HashMap<String, serde_json::Value> = match preprocess_registry(&body) {
             Ok(r) => r,
             Err(e) => {
@@ -591,6 +648,17 @@ pub fn install_plugin(
     };
 
     // 6. 按操作块执行：pip → pip-keep → scripts → commands
+    let source_display = source_label
+        .as_ref()
+        .map(|s| format!(" ({})", s.dimmed()))
+        .unwrap_or_default();
+    println!(
+        "{} Installing plugin: {}{}",
+        "==>".cyan().bold(),
+        key.bold(),
+        source_display,
+    );
+
     let mut any_operation_processed = false;
 
     // 准备状态文件
@@ -611,6 +679,7 @@ pub fn install_plugin(
     if let Some(pip_list) = entry.get("pip").and_then(|v| v.as_array()) {
         any_operation_processed = true;
 
+        println!("{} pip", "==>".cyan().bold());
         let mut packages: Vec<String> = Vec::new();
 
         for pkg_val in pip_list {
@@ -618,7 +687,12 @@ pub fn install_plugin(
                 Some(p) => p,
                 None => continue,
             };
+            println!(
+                "{}",
+                format!("Installing pip package: {}", pkg).dimmed()
+            );
             install_python_package(pkg, layout);
+            println!("{} {}", "+".green(), pkg.bold());
             packages.push(pkg.to_string());
         }
 
@@ -631,6 +705,7 @@ pub fn install_plugin(
     if let Some(pip_keep_list) = entry.get("pip-keep").and_then(|v| v.as_array()) {
         any_operation_processed = true;
 
+        println!("{} pip-keep {}", "==>".cyan().bold(), "(shared)".dimmed());
         let mut packages: Vec<String> = Vec::new();
 
         for pkg_val in pip_keep_list {
@@ -638,7 +713,12 @@ pub fn install_plugin(
                 Some(p) => p,
                 None => continue,
             };
+            println!(
+                "{}",
+                format!("Installing pip-keep package: {} (shared)", pkg).dimmed()
+            );
             install_python_package(pkg, layout);
+            println!("{} {}", "+".green(), pkg.bold());
             packages.push(pkg.to_string());
         }
 
@@ -650,6 +730,8 @@ pub fn install_plugin(
     // ---- 6c. scripts：下载/拷贝脚本文件到 plugins/scripts/ ----
     if let Some(script_map) = entry.get("scripts").and_then(|v| v.as_object()) {
         any_operation_processed = true;
+
+        println!("{} scripts", "==>".cyan().bold());
 
         for (filename, src_value) in script_map {
             let src = match src_value.as_str() {
@@ -671,12 +753,28 @@ pub fn install_plugin(
 
             match resolve_asset(src, &ref_base, cdn) {
                 Ok(ResolvedAsset::Url(url)) => {
+                    println!(
+                        "{}",
+                        format!("Downloading {}", filename).dimmed()
+                    );
+                    println!(
+                        "  {}",
+                        format!("from {}", url).dimmed()
+                    );
                     if let Err(e) = download_script(&url, &dest_path) {
                         eprintln!("{} {}", "Error:".red(), e);
                         exit(1);
                     }
+                    println!(
+                        "{}",
+                        format!("Saving to {}", dest_path.display()).dimmed()
+                    );
                 }
                 Ok(ResolvedAsset::LocalPath(path)) => {
+                    println!(
+                        "{}",
+                        format!("Copying {} from {}", filename, path.display()).dimmed()
+                    );
                     if let Err(e) = std::fs::copy(&path, &dest_path) {
                         eprintln!(
                             "{} failed to copy script from {}: {}",
@@ -694,12 +792,15 @@ pub fn install_plugin(
             }
 
             scripts.push(filename.clone());
+            println!("{} {}", "+".green(), filename.bold());
         }
     }
 
     // ---- 6c.5. bin：下载裸露二进制，chmod +x ----
     if let Some(bin_map) = entry.get("bin").and_then(|v| v.as_object()) {
         any_operation_processed = true;
+
+        println!("{} bin", "==>".cyan().bold());
 
         let bin_dir = layout.plugins_dir.join("bin");
         let platform = env!("PLATFORM");
@@ -736,12 +837,28 @@ pub fn install_plugin(
 
             match resolve_asset(url, &ref_base, cdn) {
                 Ok(ResolvedAsset::Url(url)) => {
+                    println!(
+                        "{}",
+                        format!("Downloading {} ({})", filename, platform).dimmed()
+                    );
+                    println!(
+                        "  {}",
+                        format!("from {}", url).dimmed()
+                    );
                     if let Err(e) = download_script(&url, &dest_path) {
                         eprintln!("{} {}", "Error:".red(), e);
                         exit(1);
                     }
+                    println!(
+                        "{}",
+                        format!("Saving to {}", dest_path.display()).dimmed()
+                    );
                 }
                 Ok(ResolvedAsset::LocalPath(path)) => {
+                    println!(
+                        "{}",
+                        format!("Copying {} from {}", filename, path.display()).dimmed()
+                    );
                     if let Err(e) = std::fs::copy(&path, &dest_path) {
                         eprintln!(
                             "{} failed to copy binary from {}: {}",
@@ -775,14 +892,18 @@ pub fn install_plugin(
                     }
                 }
             }
+            println!("{}", "chmod +x".dimmed());
 
             bins.push(filename.clone());
+            println!("{} {}", "+".green(), filename.bold());
         }
     }
 
     // ---- 6c.6. bin-tar：下载压缩包，tar -xf 解压，扫描记录 ----
     if let Some(bin_tar_map) = entry.get("bin-tar").and_then(|v| v.as_object()) {
         any_operation_processed = true;
+
+        println!("{} bin-tar", "==>".cyan().bold());
 
         let bin_dir = layout.plugins_dir.join("bin");
         let platform = env!("PLATFORM");
@@ -825,12 +946,24 @@ pub fn install_plugin(
 
             match resolve_asset(url, &ref_base, cdn) {
                 Ok(ResolvedAsset::Url(url)) => {
+                    println!(
+                        "{}",
+                        format!("Downloading {} ({})", filename, platform).dimmed()
+                    );
+                    println!(
+                        "  {}",
+                        format!("from {}", url).dimmed()
+                    );
                     if let Err(e) = download_script(&url, &temp_file) {
                         eprintln!("{} {}", "Error:".red(), e);
                         exit(1);
                     }
                 }
                 Ok(ResolvedAsset::LocalPath(path)) => {
+                    println!(
+                        "{}",
+                        format!("Copying {} from {}", filename, path.display()).dimmed()
+                    );
                     if let Err(e) = std::fs::copy(&path, &temp_file) {
                         eprintln!(
                             "{} failed to copy archive from {}: {}",
@@ -846,6 +979,11 @@ pub fn install_plugin(
                     exit(1);
                 }
             }
+
+            println!(
+                "{}",
+                format!("Extracting to {}", extract_dir.display()).dimmed()
+            );
 
             // tar -xf 解压到 plugins/bin/<key>/
             let status = std::process::Command::new("tar")
@@ -872,17 +1010,27 @@ pub fn install_plugin(
                 }
             }
 
+            // 统计解压文件数
+            let file_count = count_files(&extract_dir);
+            println!(
+                "{}",
+                format!("{} files extracted", file_count).dimmed()
+            );
+
             // 清理临时文件
             let _ = std::fs::remove_file(&temp_file);
             let _ = std::fs::remove_dir(&temp_dir);
 
             bins_tar.push(filename.clone());
+            println!("{} {}", "+".green(), filename.bold());
         }
     }
 
     // ---- 6d. commands：命令注册（不包含下载逻辑） ----
     if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object()) {
         any_operation_processed = true;
+
+        println!("{} commands", "==>".cyan().bold());
 
         for (cmd_name, cmd_value) in commands_obj {
             let cmd_type = cmd_value
@@ -909,6 +1057,15 @@ pub fn install_plugin(
                 .unwrap_or("");
 
             registered_commands.push(cmd_name.clone());
+            println!(
+                "{}",
+                format!("Registering command: {} ({})", cmd_name, cmd_type).dimmed()
+            );
+            println!(
+                "  {}",
+                format!("in {}", cmd_file.display()).dimmed()
+            );
+            println!("{} {} ({})", "+".green(), cmd_name.bold(), cmd_type.dimmed());
             cmd_state.commands.insert(
                 cmd_name.clone(),
                 PluginCommand {
@@ -923,6 +1080,8 @@ pub fn install_plugin(
     // ---- 6e. command：注册单个命令（命令名 = 插件 key，不包含下载逻辑） ----
     if let Some(cmd_value) = entry.get("command") {
         any_operation_processed = true;
+
+        println!("{} command", "==>".cyan().bold());
 
         // 冲突检测：commands 中不能有与插件 key 同名的子命令
         if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object())
@@ -963,6 +1122,15 @@ pub fn install_plugin(
             .unwrap_or("");
 
         registered_commands.push(key.clone());
+        println!(
+            "{}",
+            format!("Registering command: {} ({})", key, cmd_type).dimmed()
+        );
+        println!(
+            "  {}",
+            format!("in {}", cmd_file.display()).dimmed()
+        );
+        println!("{} {} ({})", "+".green(), key.bold(), cmd_type.dimmed());
         cmd_state.commands.insert(
             key.clone(),
             PluginCommand {
@@ -1004,8 +1172,8 @@ pub fn install_plugin(
     json_io::write_json(&pkg_file, &pkg_state);
 
     println!(
-        "{} plugin: {}",
-        "Installed".green(),
+        "{} installed {}",
+        "Successfully".green().bold(),
         key.bold(),
     );
 }
