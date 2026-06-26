@@ -88,10 +88,11 @@ fn main() {
     }
     if cli.version {
         println!(
-            "byk {} ({} {})",
+            "byk {} ({} {}) [{}]",
             env!("CARGO_PKG_VERSION"),
             env!("GIT_HASH"),
             env!("BUILD_DATE"),
+            env!("PLATFORM"),
         );
         if let Ok(exe_path) = std::env::current_exe() { println!(
             "{} {}",
