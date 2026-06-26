@@ -367,7 +367,7 @@ pub fn rm_all(layout: &PathLayout) {
 /// 流程：
 /// 1. 读取 plugins.pkg.json，在 packages 中查找 key
 /// 2. 卸载 pip 包（pip 字段中的包，解析 name @ url 提取包名）
-/// 3. 删除下载的脚本文件
+/// 3. 删除下载的脚本文件和二进制文件
 /// 4. 从 plugins.cmd.json 删除该插件的所有命令
 /// 5. 从 plugins.pkg.json 删除该 key
 /// 6. 写回
@@ -478,6 +478,29 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
                     e,
                 );
             }
+    }
+
+    // 4b. 删除二进制文件
+    let bin_dir = layout.plugins_dir.join("bin");
+    for bin in &pkg.bins {
+        let bin_path = bin_dir.join(bin);
+        if bin_path.exists()
+            && let Err(e) = fs::remove_file(&bin_path) {
+                eprintln!(
+                    "{} Warning: failed to delete binary {}: {}",
+                    "Warning:".yellow(),
+                    bin_path.display(),
+                    e,
+                );
+            }
+    }
+
+    // 4c. 删除 bin-tar 解压出的目录
+    for key in &pkg.bins_tar {
+        let extract_dir = bin_dir.join(key);
+        if extract_dir.exists() {
+            let _ = fs::remove_dir_all(&extract_dir);
+        }
     }
 
     // 5. 删除 commands

@@ -1,6 +1,18 @@
 {
-  "$default":"pym",
+  "$default": "pym",
   "pym": "./plugins/py-module/byk.json",
   "pys": "./plugins/py-script/byk.json",
-  "pyb": "./plugins/py-bin/byk.json"
+  "pyb": "./plugins/py-bin/byk.json",
+  "lansend": {
+    "bin-tar": {
+      "lansend": {
+        "darwin-arm64": "https://github.com/fcbyk/lansend/releases/download/v2026.06.26/lansend-darwin-arm64.tar.gz"
+      }
+    },
+    "command": {
+      "type": "bin",
+      "entry": "lansend/lansend",
+      "desc": "局域网文件共享"
+    }
+  }
 }

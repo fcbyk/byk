@@ -57,6 +57,16 @@
             "description": "远程 URL（自动下载）或相对路径 ./xxx（自动拷贝）"
           }
         },
+        "bin": {
+          "description": "裸露二进制下载映射：key 为保存的文件名，value 为 平台→URL 对象。下载到 plugins/bin/<key> 并自动 chmod +x。\n示例：{ \"my-tool\": { \"linux-x86_64\": \"https://...\", \"darwin-arm64\": \"https://...\" } }",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/PlatformMap" }
+        },
+        "bin-tar": {
+          "description": "压缩包下载映射：key 为标识名，value 为 平台→URL 对象。下载压缩包后 tar -xf 解压到 plugins/bin/。\n示例：{ \"my-tool\": { \"linux-x86_64\": \"https://.../my-tool.tar.gz\", \"darwin-arm64\": \"https://.../my-tool.tar.gz\" } }",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/PlatformMap" }
+        },
         "command": {
           "description": "注册单个命令（命令名 = 插件 key）。推荐单命令插件使用，与 commands 可共存",
           "$ref": "#/$defs/CommandEntry"
@@ -78,15 +88,16 @@
         "type": {
           "description": "命令类型",
           "type": "string",
-          "enum": ["py-module", "py-script", "py-bin"],
+          "enum": ["py-module", "py-script", "py-bin", "bin"],
           "enumDescriptions": [
             "python -m <entry>",
             "python <scripts_dir>/<entry>",
-            "直接执行 venv/bin/<entry>"
+            "直接执行 venv/bin/<entry>",
+            "直接执行 plugins/bin/<entry>"
           ]
         },
         "entry": {
-          "description": "入口点：py-module 为模块路径，py-script 为脚本文件名（需通过 script 字段预先下载），py-bin 为可执行文件名",
+          "description": "入口点：py-module 为模块路径，py-script 为脚本文件名（需通过 scripts 字段预先下载），py-bin 为 pip 安装的可执行文件名，bin 为二进制文件名（需通过 bin 字段预先下载）",
           "type": "string"
         },
         "desc": {
@@ -95,6 +106,35 @@
         }
       },
       "required": ["type", "entry"],
+      "additionalProperties": false
+    },
+    "PlatformMap": {
+      "title": "平台→URL 映射",
+      "description": "五个平台到下载 URL 的映射，按需填写当前平台需要的 key",
+      "type": "object",
+      "properties": {
+        "linux-x86_64": {
+          "type": "string",
+          "description": "Linux x86_64 平台的下载 URL 或相对路径"
+        },
+        "linux-arm64": {
+          "type": "string",
+          "description": "Linux ARM64 平台的下载 URL 或相对路径"
+        },
+        "darwin-x86_64": {
+          "type": "string",
+          "description": "macOS Intel 平台的下载 URL 或相对路径"
+        },
+        "darwin-arm64": {
+          "type": "string",
+          "description": "macOS Apple Silicon 平台的下载 URL 或相对路径"
+        },
+        "windows-x64": {
+          "type": "string",
+          "description": "Windows x64 平台的下载 URL 或相对路径"
+        }
+      },
+      "minProperties": 1,
       "additionalProperties": false
     }
   }

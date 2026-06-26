@@ -12,14 +12,15 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
 1. 从远程仓库（或本地文件）拉取插件协议 `byk.json`
-2. 查找匹配的插件 key，按固定顺序执行操作块：`pip` / `pip-keep` → `scripts` → `command` / `commands`
-3. 在隔离的 venv 中执行 `pip install`（`pip` / `pip-keep` 块）、下载/拷贝脚本文件（`scripts` 块）
+2. 查找匹配的插件 key，按固定顺序执行操作块：`pip` / `pip-keep` → `scripts` → `bin` → `bin-tar` → `command` / `commands`
+3. 在隔离的 venv 中执行 `pip install`（`pip` / `pip-keep` 块）、下载/拷贝脚本文件（`scripts` 块）、下载裸露二进制（`bin` 块）、解压压缩包（`bin-tar` 块）
 4. 将命令路由直接合并到 `~/.byk/plugins/plugins.cmd.json`，包追踪信息持久化到 `~/.byk/plugins/plugins.pkg.json`
 
 之后运行 `byk <command>` 时，byk 根据 `type` 字段区分执行方式：
 - `py-module`：执行 `python -m <entry>`
 - `py-script`：执行 `python <scripts_dir>/<entry>`
 - `py-bin`：直接执行 `venv/bin/<entry>`
+- `bin`：直接执行 `plugins/bin/<entry>`（支持相对路径如 `my-tool/bin/my-tool`）
 
 ## 初始化
 
@@ -109,7 +110,8 @@ byk remove <plugin-key>   # 卸载指定插件
 └── plugins/
     ├── plugins.cmd.json   # 命令路由（热路径：命令解析、帮助渲染）
     ├── plugins.pkg.json   # 包追踪（冷路径：卸载、信息查询）
-    └── scripts/           # py-script 脚本文件存放目录
+    ├── scripts/           # py-script 脚本文件存放目录
+    └── bin/               # 普通二进制文件存放目录
 ```
 
 ## 状态文件
@@ -140,8 +142,8 @@ byk remove <plugin-key>   # 卸载指定插件
 | 字段 | 说明 |
 |------|------|
 | `commands` | 命令名 → 类型、入口点、描述的映射 |
-| `type` | 命令类型：`py-module`（模块）、`py-script`（脚本）或 `py-bin`（可执行文件） |
-| `entry` | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名，`py-bin` 为可执行文件名 |
+| `type` | 命令类型：`py-module`（模块）、`py-script`（脚本）、`py-bin`（Python 可执行文件）或 `bin`（普通二进制） |
+| `entry` | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名，`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为 plugins/bin 下的二进制文件路径（支持相对路径如 `my-tool/bin/my-tool`） |
 | `desc` | 命令描述，显示在帮助信息中 |
 
 ### plugins.pkg.json（包追踪）

@@ -76,6 +76,12 @@ pub struct PkgEntry {
     /// 脚本文件名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scripts: Vec<String>,
+    /// 二进制文件名列表
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bins: Vec<String>,
+    /// bin-tar 解压出的所有文件/目录列表
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bins_tar: Vec<String>,
     /// 该插件注册的命令名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<String>,

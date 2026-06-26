@@ -603,6 +603,8 @@ pub fn install_plugin(
     let mut pip_packages: Option<Vec<String>> = None;
     let mut pip_keep_packages: Option<Vec<String>> = None;
     let mut scripts: Vec<String> = Vec::new();
+    let mut bins: Vec<String> = Vec::new();
+    let mut bins_tar: Vec<String> = Vec::new();
     let mut registered_commands: Vec<String> = Vec::new();
 
     // ---- 6a. pip：安装 Python 包到 venv（卸载时自动清理） ----
@@ -695,6 +697,189 @@ pub fn install_plugin(
         }
     }
 
+    // ---- 6c.5. bin：下载裸露二进制，chmod +x ----
+    if let Some(bin_map) = entry.get("bin").and_then(|v| v.as_object()) {
+        any_operation_processed = true;
+
+        let bin_dir = layout.plugins_dir.join("bin");
+        let platform = env!("PLATFORM");
+
+        for (filename, platform_map) in bin_map {
+            let urls = match platform_map.as_object() {
+                Some(o) => o,
+                None => {
+                    eprintln!(
+                        "{} bin entry \"{}\" must be a platform→URL object",
+                        "Error:".red(),
+                        filename,
+                    );
+                    exit(1);
+                }
+            };
+
+            let url = match urls.get(platform).and_then(|v| v.as_str()) {
+                Some(u) => u,
+                None => continue,
+            };
+
+            if !bin_dir.exists()
+                && let Err(e) = std::fs::create_dir_all(&bin_dir) {
+                    eprintln!(
+                        "{} failed to create bin directory: {}",
+                        "Error:".red(),
+                        e,
+                    );
+                    exit(1);
+                }
+
+            let dest_path = bin_dir.join(filename);
+
+            match resolve_asset(url, &ref_base, cdn) {
+                Ok(ResolvedAsset::Url(url)) => {
+                    if let Err(e) = download_script(&url, &dest_path) {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+                Ok(ResolvedAsset::LocalPath(path)) => {
+                    if let Err(e) = std::fs::copy(&path, &dest_path) {
+                        eprintln!(
+                            "{} failed to copy binary from {}: {}",
+                            "Error:".red(),
+                            path.display(),
+                            e,
+                        );
+                        exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red(), e);
+                    exit(1);
+                }
+            }
+
+            #[cfg(not(windows))]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(metadata) = std::fs::metadata(&dest_path) {
+                    let mut perms = metadata.permissions();
+                    perms.set_mode(0o755);
+                    if let Err(e) = std::fs::set_permissions(&dest_path, perms) {
+                        eprintln!(
+                            "{} failed to set executable permission on {}: {}",
+                            "Error:".red(),
+                            dest_path.display(),
+                            e,
+                        );
+                        exit(1);
+                    }
+                }
+            }
+
+            bins.push(filename.clone());
+        }
+    }
+
+    // ---- 6c.6. bin-tar：下载压缩包，tar -xf 解压，扫描记录 ----
+    if let Some(bin_tar_map) = entry.get("bin-tar").and_then(|v| v.as_object()) {
+        any_operation_processed = true;
+
+        let bin_dir = layout.plugins_dir.join("bin");
+        let platform = env!("PLATFORM");
+
+        for (filename, platform_map) in bin_tar_map {
+            let urls = match platform_map.as_object() {
+                Some(o) => o,
+                None => {
+                    eprintln!(
+                        "{} bin-tar entry \"{}\" must be a platform→URL object",
+                        "Error:".red(),
+                        filename,
+                    );
+                    exit(1);
+                }
+            };
+
+            let url = match urls.get(platform).and_then(|v| v.as_str()) {
+                Some(u) => u,
+                None => continue,
+            };
+
+            if !bin_dir.exists()
+                && let Err(e) = std::fs::create_dir_all(&bin_dir) {
+                    eprintln!(
+                        "{} failed to create bin directory: {}",
+                        "Error:".red(),
+                        e,
+                    );
+                    exit(1);
+                }
+
+            let extract_dir = bin_dir.join(filename);
+            let _ = std::fs::create_dir_all(&extract_dir);
+
+            // 下载到临时文件
+            let temp_dir = layout.cache_dir.join("tmp-bin");
+            let _ = std::fs::create_dir_all(&temp_dir);
+            let temp_file = temp_dir.join("archive");
+
+            match resolve_asset(url, &ref_base, cdn) {
+                Ok(ResolvedAsset::Url(url)) => {
+                    if let Err(e) = download_script(&url, &temp_file) {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+                Ok(ResolvedAsset::LocalPath(path)) => {
+                    if let Err(e) = std::fs::copy(&path, &temp_file) {
+                        eprintln!(
+                            "{} failed to copy archive from {}: {}",
+                            "Error:".red(),
+                            path.display(),
+                            e,
+                        );
+                        exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red(), e);
+                    exit(1);
+                }
+            }
+
+            // tar -xf 解压到 plugins/bin/<key>/
+            let status = std::process::Command::new("tar")
+                .args(["-xf", temp_file.to_str().unwrap(), "-C", extract_dir.to_str().unwrap()])
+                .status();
+
+            match status {
+                Ok(s) if s.success() => {}
+                Ok(s) => {
+                    eprintln!(
+                        "{} tar extract failed with exit code {}",
+                        "Error:".red(),
+                        s.code().unwrap_or(1),
+                    );
+                    exit(1);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "{} failed to run tar: {}\n   On Windows 10+, tar is built-in.",
+                        "Error:".red(),
+                        e,
+                    );
+                    exit(1);
+                }
+            }
+
+            // 清理临时文件
+            let _ = std::fs::remove_file(&temp_file);
+            let _ = std::fs::remove_dir(&temp_dir);
+
+            bins_tar.push(filename.clone());
+        }
+    }
+
     // ---- 6d. commands：命令注册（不包含下载逻辑） ----
     if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object()) {
         any_operation_processed = true;
@@ -709,6 +894,14 @@ pub fn install_plugin(
                 Some(t) => t.to_string(),
                 None => continue,
             };
+
+            // 对 bin 类型入口点校验相对路径（拒绝 ../、绝对路径）
+            if cmd_type == "bin"
+                && let Err(e) = validate_relative_path(&entry_val)
+            {
+                eprintln!("{} invalid entry for bin command: {}", "Error:".red(), e);
+                exit(1);
+            }
 
             let desc = cmd_value
                 .get("desc")
@@ -756,6 +949,14 @@ pub fn install_plugin(
             }
         };
 
+        // 对 bin 类型入口点校验相对路径（拒绝 ../、绝对路径）
+        if cmd_type == "bin"
+            && let Err(e) = validate_relative_path(&entry_val)
+        {
+            eprintln!("{} invalid entry for bin command: {}", "Error:".red(), e);
+            exit(1);
+        }
+
         let desc = cmd_value
             .get("desc")
             .and_then(|v| v.as_str())
@@ -774,7 +975,7 @@ pub fn install_plugin(
 
     if !any_operation_processed {
         eprintln!(
-            "{} plugin \"{}\" has no supported operations (pip/pip-keep/scripts/command/commands)",
+            "{} plugin \"{}\" has no supported operations (pip/pip-keep/scripts/bin/command/commands)",
             "Error:".red(),
             key,
         );
@@ -793,6 +994,8 @@ pub fn install_plugin(
         pip: pip_packages,
         pip_keep: pip_keep_packages,
         scripts,
+        bins,
+        bins_tar,
         commands: registered_commands,
     };
     pkg_state.insert(key.clone(), pkg_entry);

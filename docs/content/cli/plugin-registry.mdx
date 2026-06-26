@@ -22,8 +22,10 @@ https://raw.githubusercontent.com/{owner}/{repo}/{branch}/byk.json
 ```
 1. pip / pip-keep → 安装 Python 依赖到虚拟环境
 2. script          → 下载/拷贝脚本文件到 plugins/scripts/
-3. command         → 注册单个命令（命令名 = 插件 key）
-4. commands        → 注册多个命令到路由表
+3. bin             → 下载裸露二进制文件到 plugins/bin/（chmod +x）
+4. bin-tar         → 下载压缩包，tar -xf 解压到 plugins/bin/
+5. command         → 注册单个命令（命令名 = 插件 key）
+6. commands        → 注册多个命令到路由表
 ```
 
 > **推荐**：单命令插件用 `command`，多命令插件用 `commands`。两者可以共存，但不要在同名 key 上重复定义。
@@ -245,6 +247,94 @@ byk add user/repo/hello
 
 :::
 
+### bin
+
+下载**裸露二进制文件**到 `plugins/bin/` 目录。使用嵌套 `map` 对象，**外层 key 为保存的文件名**，**内层 key 为平台标识**，value 为远程 URL 或相对路径。下载后自动 `chmod +x`。
+
+### bin-tar
+
+下载**压缩包**（`.tar.gz` / `.tgz` / `.zip`）到临时文件，然后 `tar -xf` 解压到 `plugins/bin/<key>/` 目录。一个 key 对应一个独立子目录，**不同插件互不干扰**，卸载时直接删除整个目录。
+
+格式结构与 `bin` 完全一致：外层 key 为标识名（也是解压子目录名），内层 key 为平台标识，value 为压缩包 URL 或相对路径。
+
+#### 示例：裸露二进制（bin）
+
+```json
+{
+  "my-tool": {
+    "bin": {
+      "my-tool": {
+        "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-amd64",
+        "linux-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-arm64",
+        "darwin-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-amd64",
+        "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64",
+        "windows-x64": "https://github.com/xxx/releases/download/v1.0/my-tool-windows-amd64.exe"
+      }
+    },
+    "command": {
+      "type": "bin",
+      "entry": "my-tool",
+      "desc": "My platform-specific binary tool"
+    }
+  }
+}
+```
+
+#### 示例：带目录结构的压缩包（bin-tar）
+
+```json
+{
+  "my-tool": {
+    "bin-tar": {
+      "my-tool": {
+        "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-x86_64.tar.gz",
+        "linux-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-arm64.tar.gz",
+        "darwin-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-x86_64.tar.gz",
+        "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64.tar.gz",
+        "windows-x64": "https://github.com/xxx/releases/download/v1.0/my-tool-windows-x64.zip"
+      }
+    },
+    "command": {
+      "type": "bin",
+      "entry": "my-tool/my-tool",
+      "desc": "My platform-specific binary tool from archive"
+    }
+  }
+}
+```
+
+解压后目录结构：`plugins/bin/my-tool/my-tool`，`entry` 对应 `my-tool/my-tool`。
+
+#### 字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `bin` | `Record<string, Record<string, string>>` | 否 | 裸露二进制下载映射：`{ "<文件名>": { "<平台>": "<URL>" } }` |
+| `bin-tar` | `Record<string, Record<string, string>>` | 否 | 压缩包下载映射：`{ "<标识>": { "<平台>": "<URL>" } }` |
+
+#### 支持的平台
+
+| 平台 key | 对应系统 |
+|----------|---------|
+| `linux-x86_64` | Linux x86_64 |
+| `linux-arm64` | Linux ARM64 |
+| `darwin-x86_64` | macOS Intel |
+| `darwin-arm64` | macOS Apple Silicon |
+| `windows-x64` | Windows x64 |
+
+安装时 byk 根据当前平台自动匹配对应的 URL，仅下载匹配的文件。如果当前平台没有对应的 key，直接跳过不安装。
+
+:::note
+
+- `bin` / `bin-tar` 的 value 都可以是远程 URL 或相对路径 `./xxx`，解析规则同 Ref 引用
+- 使用 `--cdn` 时，`raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
+- `bin-tar` 使用系统 `tar` 命令解压，支持 `.tar.gz` / `.tgz` / `.zip` 格式，要求 Windows 10 1803+（内置 `tar`）
+- `bin`（裸露二进制）在非 Windows 系统自动设置执行权限（`chmod 755`）
+- `bin-tar` 不修改压缩包内文件权限，解压后自动记录所有文件/目录，卸载时完整清理
+- `bin` 命令入口 `entry` 可以带相对路径（如 `my-tool/bin/my-tool`），不允许 `../` 或绝对路径
+
+:::
+
 ### command
 
 为单命令插件注册命令，**命令名自动取插件 key**。推荐只有一个命令的插件使用此字段。
@@ -268,8 +358,8 @@ byk add user/repo/hello
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）或 `py-bin`（可执行文件） |
-| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `scripts` 预先下载），`py-bin` 为可执行文件名 |
+| `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）、`py-bin`（Python 可执行文件）或 `bin`（普通二进制） |
+| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `bin` 字段预先下载） |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 
 ### commands
@@ -297,8 +387,8 @@ byk add user/repo/hello
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）或 `py-bin`（可执行文件） |
-| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `scripts` 预先下载），`py-bin` 为可执行文件名 |
+| `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）、`py-bin`（Python 可执行文件）或 `bin`（普通二进制） |
+| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `bin` 字段预先下载） |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 
 #### 命令类型
@@ -308,6 +398,7 @@ byk add user/repo/hello
 | `py-module` | `python -m <entry>` | `"entry": "hello.one"` |
 | `py-script` | `python <scripts_dir>/<entry>` | `"entry": "jiahao.py"` |
 | `py-bin` | 直接执行 `venv/bin/<entry>` | `"entry": "my-tool"` |
+| `bin` | 直接执行 `plugins/bin/<entry>` | `"entry": "my-tool"` 或 `"entry": "my-tool/bin/my-tool"` |
 
 一个插件可以注册多个命令，每个命令对应一个独立的入口点。
 
@@ -345,6 +436,33 @@ byk add user/repo/hello
 - 命令注册不再包含任何下载逻辑，职责单一
 
 :::
+
+#### bin 入口点
+
+对于 `bin` 类型的命令，`entry` 指代 `plugins/bin/` 目录下的二进制文件路径。可以是一个纯文件名（如 `"my-tool"`），也可以带相对路径（如 `"my-tool/bin/my-tool"`）。二进制文件通过 `bin` 或 `bin-tar` 字段预先下载/解压：
+
+```json
+{
+  "my-tool": {
+    "bin": {
+      "my-tool": {
+        "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-amd64",
+        "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64"
+      }
+    },
+    "command": {
+      "type": "bin",
+      "entry": "my-tool",
+      "desc": "My platform-specific binary tool"
+    }
+  }
+}
+```
+
+| 字段 | 职责 |
+|------|------|
+| `bin` / `bin-tar` | 根据当前平台下载/解压二进制到 `plugins/bin/` |
+| `commands`/`command` | 注册命令，`entry` 为 `plugins/bin/` 下的相对路径（不允许 `../` 或绝对路径） |
 
 
 

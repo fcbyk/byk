@@ -1,7 +1,7 @@
 //! 插件命令执行引擎。
 //!
 //! 支持多种执行类型，通过 `PluginExecutor` trait 实现可扩展架构。
-//! 当前内置：py-module、py-script、py-bin。
+//! 当前内置：py-module、py-script、py-bin、bin。
 
 use std::path::Path;
 use std::process::{Command, exit};
@@ -125,6 +125,35 @@ impl PluginExecutor for PyBinExecutor {
     }
 }
 
+/// 普通二进制执行器（直接执行 plugins/bin/ 下的文件）。
+///
+/// 适用于通过 `bin` 字段下载的平台特定二进制文件，与 Python 生态无关。
+pub struct BinExecutor;
+
+impl PluginExecutor for BinExecutor {
+    fn cmd_type(&self) -> &'static str {
+        "bin"
+    }
+
+    fn execute(
+        &self,
+        entry: &str,
+        args: &[String],
+        plugins_dir: &Path,
+        _venv_dir: &Path,
+        _python_exe: &str,
+    ) -> std::process::ExitStatus {
+        let bin_path = plugins_dir.join("bin").join(entry);
+        Command::new(bin_path)
+            .args(args)
+            .status()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to start binary: {}", e);
+                exit(1);
+            })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 执行器注册表
 // ---------------------------------------------------------------------------
@@ -137,6 +166,7 @@ fn executors() -> Vec<Box<dyn PluginExecutor>> {
         Box::new(PyModuleExecutor),
         Box::new(PyScriptExecutor),
         Box::new(PyBinExecutor),
+        Box::new(BinExecutor),
     ]
 }
 
@@ -209,12 +239,17 @@ mod tests {
         assert_eq!(PyBinExecutor.cmd_type(), "py-bin");
     }
 
+    #[test]
+    fn bin_executor_type() {
+        assert_eq!(BinExecutor.cmd_type(), "bin");
+    }
+
     // ==================== executors ====================
 
     #[test]
-    fn executors_has_three_builtin() {
+    fn executors_has_four_builtin() {
         let exes = executors();
-        assert_eq!(exes.len(), 3);
+        assert_eq!(exes.len(), 4);
     }
 
     #[test]
@@ -224,5 +259,6 @@ mod tests {
         assert!(types.contains(&"py-module"));
         assert!(types.contains(&"py-script"));
         assert!(types.contains(&"py-bin"));
+        assert!(types.contains(&"bin"));
     }
 }
