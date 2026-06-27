@@ -1,3 +1,36 @@
+## v0.4.0 (2026-06-27)
+
+## Breaking Changes
+
+- **plugins**: remove `pip-e` field from plugin protocol and `-e` flag from add command
+- **plugins**: extract `scripts` field from `commands`/`command`
+- **add**: replace -b/--branch flag with @ syntax for branch selection
+- **plugins**: flatten install.pip to pip, add pip-keep for shared deps
+- **add**: resolve plugin key deterministically via $default
+
+### Bug Fixes
+
+- ensure py-script entries download regardless of path prefix
+- uninstall_plugin fails when venv has no pip (uv mode)
+
+### Features
+
+- **plugins**: add verbose process logging for install and uninstall
+- **plugins**: add bin and bin-tar support for platform-specific binary downloads
+- **cli**: add compile-time platform detection for `-v` output
+- **plugins**: add $var variable substitution to byk.json plugin protocol
+- **plugins**: add `command` field for single-command plugins
+- **plugins**: add relative path resolution and remove download field
+- **add**: add --cdn flag to fetch GitHub plugins via jsDelivr
+- **add**: extend --file to support remote URLs
+- **show**: add paths subcommand and simplify overview
+- **add**: add uv support alongside py-v for Python environment management
+- **add**: add py-v feature for Python venv & pip aliases
+
+### Refactor
+
+- **plugins**: flatten plugins.pkg.json structure and improve plugin list display
+
 ## v0.3.0 (2026-06-23)
 
 ## Breaking Changes
