@@ -1,6 +1,46 @@
 {
+  "$var": {
+    "url": "https://github.com/fcbyk/byk/releases/download/assets"
+  },
   "$default": "pym",
-  "pym": "./plugins/py-module/byk.json",
-  "pys": "./plugins/py-script/byk.json",
-  "pyb": "./plugins/py-bin/byk.json"
+
+  "pym": {
+    "pip": [
+      "byk_pym @ {url}/byk_pym-2026.6.21-py3-none-any.whl"
+    ],
+    
+    "commands": {
+      "pym1": {
+        "type": "py-module",
+        "entry": "bykpym.one",
+        "desc": "example plugin for py-module one"
+      },
+      "pym2": {
+        "type": "py-module",
+        "entry": "bykpym.two",
+        "desc": "example plugin for py-module two"
+      }
+    }
+  },
+
+  "pys": {
+    "scripts": {
+      "hello_world.py": "plugins/py-script/hello_world.py"
+    },
+    "command": {
+      "type": "py-script",
+      "entry": "hello_world.py",
+      "desc": "example plugin for py-script"
+    }
+  },
+
+  "pyb": {
+    "pip": ["byk_pyb @ {url}/byk_pyb-2026.6.22-py3-none-any.whl"],
+
+    "command": {
+      "type": "py-bin",
+      "entry": "hello4",
+      "desc": "example plugin for py-bin"
+    }
+  }
 }

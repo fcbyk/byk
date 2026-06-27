@@ -1,0 +1,9 @@
+{
+  "$cwd": "..",
+  "curl": {
+    "安装": "bash scripts/install.sh",
+    "显示": "ls -a ~/.byk/bin",
+    "卸载-保留数据": "rm ~/.byk/bin/byk",
+    "卸载": "bash scripts/uninstall.sh"
+  }
+}

@@ -1,0 +1,12 @@
+{
+    "$cwd": "..",
+    "dev":{
+        "test": "cargo test && cargo clippy ",
+        "运行": "cargo run",
+        "构建": "cargo build --release",
+        "安装": "ln -sf $(pwd)/target/debug/byk /opt/homebrew/bin/byk",
+        "清空缓存": "hash -r",
+        "显示": "ls -la /opt/homebrew/bin/byk && echo '---' && echo \"$PATH\" | tr ':' '\n' | nl",
+        "卸载": "rm /opt/homebrew/bin/byk"
+    }
+}

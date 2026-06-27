@@ -1,0 +1,11 @@
+{
+  "test-all": "byk 测试.test && byk 测试.lint && byk 测试.cov && byk 测试.run && byk 测试.build",
+  "测试": {
+    "$cwd": "..",
+    "test": "cargo test",
+    "lint": "cargo clippy",
+    "cov": "cargo llvm-cov",
+    "run": "cargo run",
+    "build": "cargo build --release"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "打包-all": "byk 发布.maturin.打包arm && byk 发布.maturin.打包x86 && byk 发布.maturin.源码包",
+  "发布": {
+    "$cwd": "..",
+    "生成变更日志": "cz changelog --incremental",
+    "更新版本号": {
+      "$interactive": true,
+      "$cmd": "cz bump {version}"
+    },
+    "maturin": {
+      "打包arm": "maturin build --release --out dist",
+      "打包x86": "maturin build --release --out dist --target x86_64-apple-darwin",
+      "源码包": "maturin sdist --out dist"
+    },
+    "检查上传的文件": "twine check dist/*",
+    "上传到PyPI": "twine upload dist/*",
+    "推送标签到远程库": "git push origin --tags"
+  }
+}

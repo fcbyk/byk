@@ -1,0 +1,8 @@
+{
+  "git": {
+    "查看本地标签": "git tag",
+    "查看远程库标签": "git ls-remote --tags origin",
+    "推送标签到远程库": "git push origin --tags",
+    "撤销上一次提交": "git reset --soft HEAD~1"
+  }
+}
