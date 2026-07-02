@@ -49,23 +49,25 @@
             "description": "包名、版本约束或 URL"
           }
         },
-        "scripts": {
-          "description": "脚本下载映射：key 为保存的文件名，value 为远程 URL 或相对路径。下载到 plugins/scripts/<key>。\n示例：{ \"main.py\": \"./src/main.py\", \"util.py\": \"https://example.com/util.py\" }",
+        "downloads": {
+          "description": "下载区块：统一下载到 plugins/ 目录的文件。包含 scripts 和 bin 两个子区块",
           "type": "object",
-          "additionalProperties": {
-            "type": "string",
-            "description": "远程 URL（自动下载）或相对路径 ./xxx（自动拷贝）"
-          }
-        },
-        "bin": {
-          "description": "裸露二进制下载映射：key 为保存的文件名，value 为 平台→URL 对象。下载到 plugins/bin/<key> 并自动 chmod +x。\n示例：{ \"my-tool\": { \"linux-x86_64\": \"https://...\", \"darwin-arm64\": \"https://...\" } }",
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/PlatformMap" }
-        },
-        "bin-tar": {
-          "description": "压缩包下载映射：key 为标识名，value 为 平台→URL 对象。下载压缩包后 tar -xf 解压到 plugins/bin/。\n示例：{ \"my-tool\": { \"linux-x86_64\": \"https://.../my-tool.tar.gz\", \"darwin-arm64\": \"https://.../my-tool.tar.gz\" } }",
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/PlatformMap" }
+          "properties": {
+            "scripts": {
+              "description": "脚本下载映射：key 为保存的文件名，value 为远程 URL 或相对路径。下载到 plugins/scripts/<key>。\n示例：{ \"main.py\": \"./src/main.py\", \"util.py\": \"https://example.com/util.py\" }",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "description": "远程 URL（自动下载）或相对路径 ./xxx（自动拷贝）"
+              }
+            },
+            "bin": {
+              "description": "二进制下载映射：key 为保存的文件名/目录名，value 为平台映射对象。使用 $tar 标记区分直接下载和压缩包解压。\n$tar: false → 直接下载单文件 + chmod +x\n$tar: true → 下载 tar.gz/zip 并解压到 plugins/bin/<key>/",
+              "type": "object",
+              "additionalProperties": { "$ref": "#/$defs/PlatformMap" }
+            }
+          },
+          "additionalProperties": false
         },
         "command": {
           "description": "注册单个命令（命令名 = 插件 key）。推荐单命令插件使用，与 commands 可共存",
@@ -110,9 +112,14 @@
     },
     "PlatformMap": {
       "title": "平台→URL 映射",
-      "description": "五个平台到下载 URL 的映射，按需填写当前平台需要的 key",
+      "description": "五个平台到下载 URL 的映射，按需填写当前平台需要的 key。$tar 标记控制下载后行为",
       "type": "object",
       "properties": {
+        "$tar": {
+          "type": "boolean",
+          "description": "标记为 tar.gz/zip，解压而非直接下载。默认 false = 直接下载单文件 + chmod +x",
+          "default": false
+        },
         "linux-x86_64": {
           "type": "string",
           "description": "Linux x86_64 平台的下载 URL 或相对路径"

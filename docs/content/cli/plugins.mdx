@@ -12,8 +12,8 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
 1. 从远程仓库（或本地文件）拉取插件协议 `byk.json`
-2. 查找匹配的插件 key，按固定顺序执行操作块：`pip` / `pip-keep` → `scripts` → `bin` → `bin-tar` → `command` / `commands`
-3. 在隔离的 venv 中执行 `pip install`（`pip` / `pip-keep` 块）、下载/拷贝脚本文件（`scripts` 块）、下载裸露二进制（`bin` 块）、解压压缩包（`bin-tar` 块）
+2. 查找匹配的插件 key，按固定顺序执行操作块：`pip` / `pip-keep` → `downloads` → `command` / `commands`
+3. 在隔离的 venv 中执行 `pip install`（`pip` / `pip-keep` 块）、下载/拷贝脚本文件（`downloads.scripts` 块）、下载二进制文件（`downloads.bin` 块）
 4. 将命令路由直接合并到 `~/.byk/plugins/plugins.cmd.json`，包追踪信息持久化到 `~/.byk/plugins/plugins.pkg.json`
 
 之后运行 `byk <command>` 时，byk 根据 `type` 字段区分执行方式：
@@ -175,7 +175,7 @@ byk remove <plugin-key>   # 卸载指定插件
 | `source` | 插件来源（`user/repo` 格式），本地安装时为 `null` |
 | `pip` | pip 安装的包名/URL 列表，卸载时自动清理 |
 | `pip-keep` | pip 安装的包名/URL 列表，卸载时保留（共享依赖） |
-| `scripts` | 通过 `scripts` 字段下载的脚本文件名列表 |
+| `scripts` | 通过 `downloads.scripts` 字段下载的脚本文件名列表 |
 | `commands` | 该插件注册的所有命令名列表 |
 
 ## 编写自己的插件

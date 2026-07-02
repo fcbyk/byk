@@ -1,10 +1,16 @@
 //! 插件系统数据结构。
 //!
-//! 插件通过 `byk add` 安装，持久化到 plugins/ 目录。
+//! 三层架构：
+//! - protocol 层：映射 byk.json 的 JSON 形状（见 protocol.rs）
+//! - execution 层：InstallPlan / FileOp / BinOp 等，扁平无歧义
+//! - state 层：CmdState / PkgState，持久化到 plugins/ 目录
+//!
+//! 持久化文件：
 //! - plugins.cmd.json：命令路由（热路径，每次执行读）
 //! - plugins.pkg.json：包追踪（冷路径，install/uninstall 时读写）
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +31,7 @@ pub const PYTHON_BIN: &str = "python.exe";
 pub const PYTHON_BIN: &str = "python";
 
 // ---------------------------------------------------------------------------
-// 数据结构 — plugins.cmd.json
+// 第三层：State — plugins.cmd.json
 // ---------------------------------------------------------------------------
 
 /// 单个插件命令的缓存条目。
@@ -53,7 +59,7 @@ pub struct CmdState {
 }
 
 // ---------------------------------------------------------------------------
-// 数据结构 — plugins.pkg.json
+// 第三层：State — plugins.pkg.json
 // ---------------------------------------------------------------------------
 
 /// 包状态（持久化到 plugins/plugins.pkg.json）。
@@ -70,9 +76,6 @@ pub struct PkgEntry {
     /// URL 包需使用 "name @ url" 格式才能卸载，纯 URL 静默跳过
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pip: Option<Vec<String>>,
-    /// pip 保留列表，安装后不随插件卸载（共享依赖）
-    #[serde(default, rename = "pip-keep", skip_serializing_if = "Option::is_none")]
-    pub pip_keep: Option<Vec<String>>,
     /// 脚本文件名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scripts: Vec<String>,
@@ -85,4 +88,77 @@ pub struct PkgEntry {
     /// 该插件注册的命令名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// 第二层：Execution — 安装计划（扁平、无歧义）
+// ---------------------------------------------------------------------------
+
+/// 安装计划：从协议层转换而来，供执行器消费。
+pub struct InstallPlan {
+    /// 全局共享 pip 包（先安装，永不随插件卸载）
+    pub global_pip: Vec<String>,
+    /// 当前插件的执行计划
+    pub plugin: ResolvedPlugin,
+}
+
+/// 已解析的单插件执行计划。
+#[allow(dead_code)]
+pub struct ResolvedPlugin {
+    /// 插件 key
+    pub key: String,
+    /// 来源标签（如 "user/repo"），None = 本地
+    pub source: Option<String>,
+    /// pip 安装列表（属于本插件，卸载时删除）
+    pub pip_packages: Vec<String>,
+    /// 脚本文件操作列表
+    pub scripts: Vec<FileOp>,
+    /// 二进制操作列表（已按 tar 字段分流）
+    pub bins: Vec<BinOp>,
+    /// 命令注册列表（command 和 commands 已合并）
+    pub commands: Vec<CommandReg>,
+}
+
+// ---------------------------------------------------------------------------
+// 文件 / 二进制操作
+// ---------------------------------------------------------------------------
+
+/// 文件操作：脚本或直下二进制共用。
+pub struct FileOp {
+    /// 目标文件名
+    pub filename: String,
+    /// 已解析的来源（变量替换 + URL/路径判断已完成）
+    pub src: ResolvedSrc,
+}
+
+/// 二进制操作：在转换时已按 $tar 标记区分为两类。
+pub enum BinOp {
+    /// 直接下载二进制文件，chmod +x
+    Download {
+        filename: String,
+        src: ResolvedSrc,
+    },
+    /// 下载 tar.gz/zip，解压到 plugins/bin/<dir_name>/
+    Extract {
+        dir_name: String,
+        src: ResolvedSrc,
+    },
+}
+
+/// 已解析的资源来源（变量替换 / ref 路径解析已完成）。
+pub enum ResolvedSrc {
+    Url(String),
+    LocalPath(PathBuf),
+}
+
+// ---------------------------------------------------------------------------
+// 命令注册
+// ---------------------------------------------------------------------------
+
+/// 待注册的命令（command 和 commands 合并后的统一形式）。
+pub struct CommandReg {
+    pub name: String,
+    pub cmd_type: String,
+    pub entry: String,
+    pub desc: String,
 }

@@ -1,7 +1,9 @@
 //! 插件安装流水线。
 //!
-//! 协议：插件名 → 操作块(pip/pip-keep/scripts/commands) → 具体配置。
-//! 按 pip → pip-keep → scripts → commands/command 顺序执行，持久化到 plugins/plugins.cmd.json 和 plugins/plugins.pkg.json。
+//! 三阶段架构：
+//! 1. 获取 + 预处理 byk.json → HashMap
+//! 2. 解析为 protocol::Registry → 构建 execution::InstallPlan（变量 / ref 全部解析完毕）
+//! 3. 执行 InstallPlan → 持久化到 plugins.cmd.json / plugins.pkg.json
 
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -10,6 +12,7 @@ use std::process::{Command, exit};
 
 use colored::Colorize;
 
+use super::protocol::{self, Registry};
 use super::state::{empty_cmd_state, load_pkg_state};
 use super::types::*;
 use crate::utils::json_io;
@@ -206,13 +209,7 @@ fn count_files(dir: &Path) -> usize {
 // 资源路径解析
 // ---------------------------------------------------------------------------
 
-/// 资源定位结果。
-enum ResolvedAsset {
-    /// 远程 URL
-    Url(String),
-    /// 本地文件路径
-    LocalPath(std::path::PathBuf),
-}
+// ResolvedSrc 已迁移到 types.rs，直接复用。
 
 /// 校验相对路径：拒绝 ../、/xxx、~ 前缀。
 fn validate_relative_path(raw: &str) -> Result<&str, String> {
@@ -249,14 +246,14 @@ fn validate_relative_path(raw: &str) -> Result<&str, String> {
 /// - `https://...` → 远程 URL
 /// - `./xxx` 或 `xxx` → 相对于 byk.json 所在目录
 /// - `../`、`/xxx`、`~` → 报错
-fn resolve_asset(raw: &str, ref_base: &RefBase, cdn: bool) -> Result<ResolvedAsset, String> {
+fn resolve_asset(raw: &str, ref_base: &RefBase, cdn: bool) -> Result<ResolvedSrc, String> {
     if raw.starts_with("http://") || raw.starts_with("https://") {
         let url = if cdn && raw.starts_with("https://raw.githubusercontent.com/") {
             to_jsdelivr_url(raw)
         } else {
             raw.to_string()
         };
-        return Ok(ResolvedAsset::Url(url));
+        return Ok(ResolvedSrc::Url(url));
     }
 
     validate_relative_path(raw)?;
@@ -280,14 +277,14 @@ fn resolve_asset(raw: &str, ref_base: &RefBase, cdn: bool) -> Result<ResolvedAss
                     owner, repo, branch, path,
                 )
             };
-            Ok(ResolvedAsset::Url(url))
+            Ok(ResolvedSrc::Url(url))
         }
         RefBase::Local(dir) => {
-            Ok(ResolvedAsset::LocalPath(dir.join(clean)))
+            Ok(ResolvedSrc::LocalPath(dir.join(clean)))
         }
         RefBase::UrlBase { base_url } => {
             let url = resolve_relative_url(base_url, raw);
-            Ok(ResolvedAsset::Url(url))
+            Ok(ResolvedSrc::Url(url))
         }
     }
 }
@@ -601,9 +598,8 @@ pub fn install_plugin(
 
     let entry = &registry[&key];
 
-    // 5. Ref 引用解析：entry 为字符串时拉取完整注册表（URL 或相对路径），取同名 key
-    let entry_owned: serde_json::Value;
-    let entry = if let Some(ref_str) = entry.as_str() {
+    // 5. Ref 引用解析：entry 为字符串时拉取完整注册表，取同名 key
+    let registry = if let Some(ref_str) = entry.as_str() {
         let (body, new_ref_base, resolved_url) = match resolve_ref(ref_str, &ref_base, cdn) {
             Ok(result) => result,
             Err(e) => {
@@ -625,7 +621,7 @@ pub fn install_plugin(
             "  {}",
             format!("→ {}", resolved_url).dimmed()
         );
-        let registry: HashMap<String, serde_json::Value> = match preprocess_registry(&body) {
+        match preprocess_registry(&body) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!(
@@ -636,18 +632,14 @@ pub fn install_plugin(
                 );
                 exit(1);
             }
-        };
-        entry_owned = registry
-            .get(&key)
-            .filter(|v| v.is_object())
-            .cloned()
-            .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
-        &entry_owned
+        }
     } else {
-        entry
+        registry
     };
 
-    // 6. 按操作块执行：pip → pip-keep → scripts → commands
+    // 6. 解析协议 → 构建执行计划
+    let registry = protocol::parse_registry(&registry);
+
     let source_display = source_label
         .as_ref()
         .map(|s| format!(" ({})", s.dimmed()))
@@ -659,513 +651,24 @@ pub fn install_plugin(
         source_display,
     );
 
-    let mut any_operation_processed = false;
+    let plan = build_install_plan(&registry, &key, source_label, &ref_base, cdn);
 
-    // 准备状态文件
+    // 7. 加载状态
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
     let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
-    let scripts_dir = layout.plugins_dir.join("scripts");
     let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
     let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
 
-    let mut pip_packages: Option<Vec<String>> = None;
-    let mut pip_keep_packages: Option<Vec<String>> = None;
-    let mut scripts: Vec<String> = Vec::new();
-    let mut bins: Vec<String> = Vec::new();
-    let mut bins_tar: Vec<String> = Vec::new();
-    let mut registered_commands: Vec<String> = Vec::new();
+    // 8. 执行计划
+    execute_install_plan(&plan, layout, &mut cmd_state);
 
-    // ---- 6a. pip：安装 Python 包到 venv（卸载时自动清理） ----
-    if let Some(pip_list) = entry.get("pip").and_then(|v| v.as_array()) {
-        any_operation_processed = true;
-
-        println!("{} pip", "==>".cyan().bold());
-        let mut packages: Vec<String> = Vec::new();
-
-        for pkg_val in pip_list {
-            let pkg = match pkg_val.as_str() {
-                Some(p) => p,
-                None => continue,
-            };
-            println!(
-                "{}",
-                format!("Installing pip package: {}", pkg).dimmed()
-            );
-            install_python_package(pkg, layout);
-            println!("{} {}", "+".green(), pkg.bold());
-            packages.push(pkg.to_string());
-        }
-
-        if !packages.is_empty() {
-            pip_packages = Some(packages);
-        }
-    }
-
-    // ---- 6b. pip-keep：安装 Python 包到 venv（卸载时保留） ----
-    if let Some(pip_keep_list) = entry.get("pip-keep").and_then(|v| v.as_array()) {
-        any_operation_processed = true;
-
-        println!("{} pip-keep {}", "==>".cyan().bold(), "(shared)".dimmed());
-        let mut packages: Vec<String> = Vec::new();
-
-        for pkg_val in pip_keep_list {
-            let pkg = match pkg_val.as_str() {
-                Some(p) => p,
-                None => continue,
-            };
-            println!(
-                "{}",
-                format!("Installing pip-keep package: {} (shared)", pkg).dimmed()
-            );
-            install_python_package(pkg, layout);
-            println!("{} {}", "+".green(), pkg.bold());
-            packages.push(pkg.to_string());
-        }
-
-        if !packages.is_empty() {
-            pip_keep_packages = Some(packages);
-        }
-    }
-
-    // ---- 6c. scripts：下载/拷贝脚本文件到 plugins/scripts/ ----
-    if let Some(script_map) = entry.get("scripts").and_then(|v| v.as_object()) {
-        any_operation_processed = true;
-
-        println!("{} scripts", "==>".cyan().bold());
-
-        for (filename, src_value) in script_map {
-            let src = match src_value.as_str() {
-                Some(s) => s,
-                None => continue,
-            };
-
-            if !scripts_dir.exists()
-                && let Err(e) = std::fs::create_dir_all(&scripts_dir) {
-                    eprintln!(
-                        "{} failed to create scripts directory: {}",
-                        "Error:".red(),
-                        e,
-                    );
-                    exit(1);
-                }
-
-            let dest_path = scripts_dir.join(filename);
-
-            match resolve_asset(src, &ref_base, cdn) {
-                Ok(ResolvedAsset::Url(url)) => {
-                    println!(
-                        "{}",
-                        format!("Downloading {}", filename).dimmed()
-                    );
-                    println!(
-                        "  {}",
-                        format!("from {}", url).dimmed()
-                    );
-                    if let Err(e) = download_script(&url, &dest_path) {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                    println!(
-                        "{}",
-                        format!("Saving to {}", dest_path.display()).dimmed()
-                    );
-                }
-                Ok(ResolvedAsset::LocalPath(path)) => {
-                    println!(
-                        "{}",
-                        format!("Copying {} from {}", filename, path.display()).dimmed()
-                    );
-                    if let Err(e) = std::fs::copy(&path, &dest_path) {
-                        eprintln!(
-                            "{} failed to copy script from {}: {}",
-                            "Error:".red(),
-                            path.display(),
-                            e,
-                        );
-                        exit(1);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("{} {}", "Error:".red(), e);
-                    exit(1);
-                }
-            }
-
-            scripts.push(filename.clone());
-            println!("{} {}", "+".green(), filename.bold());
-        }
-    }
-
-    // ---- 6c.5. bin：下载裸露二进制，chmod +x ----
-    if let Some(bin_map) = entry.get("bin").and_then(|v| v.as_object()) {
-        any_operation_processed = true;
-
-        println!("{} bin", "==>".cyan().bold());
-
-        let bin_dir = layout.plugins_dir.join("bin");
-        let platform = env!("PLATFORM");
-
-        for (filename, platform_map) in bin_map {
-            let urls = match platform_map.as_object() {
-                Some(o) => o,
-                None => {
-                    eprintln!(
-                        "{} bin entry \"{}\" must be a platform→URL object",
-                        "Error:".red(),
-                        filename,
-                    );
-                    exit(1);
-                }
-            };
-
-            let url = match urls.get(platform).and_then(|v| v.as_str()) {
-                Some(u) => u,
-                None => continue,
-            };
-
-            if !bin_dir.exists()
-                && let Err(e) = std::fs::create_dir_all(&bin_dir) {
-                    eprintln!(
-                        "{} failed to create bin directory: {}",
-                        "Error:".red(),
-                        e,
-                    );
-                    exit(1);
-                }
-
-            let dest_path = bin_dir.join(filename);
-
-            match resolve_asset(url, &ref_base, cdn) {
-                Ok(ResolvedAsset::Url(url)) => {
-                    println!(
-                        "{}",
-                        format!("Downloading {} ({})", filename, platform).dimmed()
-                    );
-                    println!(
-                        "  {}",
-                        format!("from {}", url).dimmed()
-                    );
-                    if let Err(e) = download_script(&url, &dest_path) {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                    println!(
-                        "{}",
-                        format!("Saving to {}", dest_path.display()).dimmed()
-                    );
-                }
-                Ok(ResolvedAsset::LocalPath(path)) => {
-                    println!(
-                        "{}",
-                        format!("Copying {} from {}", filename, path.display()).dimmed()
-                    );
-                    if let Err(e) = std::fs::copy(&path, &dest_path) {
-                        eprintln!(
-                            "{} failed to copy binary from {}: {}",
-                            "Error:".red(),
-                            path.display(),
-                            e,
-                        );
-                        exit(1);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("{} {}", "Error:".red(), e);
-                    exit(1);
-                }
-            }
-
-            #[cfg(not(windows))]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(metadata) = std::fs::metadata(&dest_path) {
-                    let mut perms = metadata.permissions();
-                    perms.set_mode(0o755);
-                    if let Err(e) = std::fs::set_permissions(&dest_path, perms) {
-                        eprintln!(
-                            "{} failed to set executable permission on {}: {}",
-                            "Error:".red(),
-                            dest_path.display(),
-                            e,
-                        );
-                        exit(1);
-                    }
-                }
-            }
-            println!("{}", "chmod +x".dimmed());
-
-            bins.push(filename.clone());
-            println!("{} {}", "+".green(), filename.bold());
-        }
-    }
-
-    // ---- 6c.6. bin-tar：下载压缩包，tar -xf 解压，扫描记录 ----
-    if let Some(bin_tar_map) = entry.get("bin-tar").and_then(|v| v.as_object()) {
-        any_operation_processed = true;
-
-        println!("{} bin-tar", "==>".cyan().bold());
-
-        let bin_dir = layout.plugins_dir.join("bin");
-        let platform = env!("PLATFORM");
-
-        for (filename, platform_map) in bin_tar_map {
-            let urls = match platform_map.as_object() {
-                Some(o) => o,
-                None => {
-                    eprintln!(
-                        "{} bin-tar entry \"{}\" must be a platform→URL object",
-                        "Error:".red(),
-                        filename,
-                    );
-                    exit(1);
-                }
-            };
-
-            let url = match urls.get(platform).and_then(|v| v.as_str()) {
-                Some(u) => u,
-                None => continue,
-            };
-
-            if !bin_dir.exists()
-                && let Err(e) = std::fs::create_dir_all(&bin_dir) {
-                    eprintln!(
-                        "{} failed to create bin directory: {}",
-                        "Error:".red(),
-                        e,
-                    );
-                    exit(1);
-                }
-
-            let extract_dir = bin_dir.join(filename);
-            let _ = std::fs::create_dir_all(&extract_dir);
-
-            // 下载到临时文件
-            let temp_dir = layout.cache_dir.join("tmp-bin");
-            let _ = std::fs::create_dir_all(&temp_dir);
-            let temp_file = temp_dir.join("archive");
-
-            match resolve_asset(url, &ref_base, cdn) {
-                Ok(ResolvedAsset::Url(url)) => {
-                    println!(
-                        "{}",
-                        format!("Downloading {} ({})", filename, platform).dimmed()
-                    );
-                    println!(
-                        "  {}",
-                        format!("from {}", url).dimmed()
-                    );
-                    if let Err(e) = download_script(&url, &temp_file) {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                }
-                Ok(ResolvedAsset::LocalPath(path)) => {
-                    println!(
-                        "{}",
-                        format!("Copying {} from {}", filename, path.display()).dimmed()
-                    );
-                    if let Err(e) = std::fs::copy(&path, &temp_file) {
-                        eprintln!(
-                            "{} failed to copy archive from {}: {}",
-                            "Error:".red(),
-                            path.display(),
-                            e,
-                        );
-                        exit(1);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("{} {}", "Error:".red(), e);
-                    exit(1);
-                }
-            }
-
-            println!(
-                "{}",
-                format!("Extracting to {}", extract_dir.display()).dimmed()
-            );
-
-            // tar -xf 解压到 plugins/bin/<key>/
-            let status = std::process::Command::new("tar")
-                .args(["-xf", temp_file.to_str().unwrap(), "-C", extract_dir.to_str().unwrap()])
-                .status();
-
-            match status {
-                Ok(s) if s.success() => {}
-                Ok(s) => {
-                    eprintln!(
-                        "{} tar extract failed with exit code {}",
-                        "Error:".red(),
-                        s.code().unwrap_or(1),
-                    );
-                    exit(1);
-                }
-                Err(e) => {
-                    eprintln!(
-                        "{} failed to run tar: {}\n   On Windows 10+, tar is built-in.",
-                        "Error:".red(),
-                        e,
-                    );
-                    exit(1);
-                }
-            }
-
-            // 统计解压文件数
-            let file_count = count_files(&extract_dir);
-            println!(
-                "{}",
-                format!("{} files extracted", file_count).dimmed()
-            );
-
-            // 清理临时文件
-            let _ = std::fs::remove_file(&temp_file);
-            let _ = std::fs::remove_dir(&temp_dir);
-
-            bins_tar.push(filename.clone());
-            println!("{} {}", "+".green(), filename.bold());
-        }
-    }
-
-    // ---- 6d. commands：命令注册（不包含下载逻辑） ----
-    if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object()) {
-        any_operation_processed = true;
-
-        println!("{} commands", "==>".cyan().bold());
-
-        for (cmd_name, cmd_value) in commands_obj {
-            let cmd_type = cmd_value
-                .get("type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("py-module");
-
-            let entry_val = match cmd_value.get("entry").and_then(|v| v.as_str()) {
-                Some(t) => t.to_string(),
-                None => continue,
-            };
-
-            // 对 bin 类型入口点校验相对路径（拒绝 ../、绝对路径）
-            if cmd_type == "bin"
-                && let Err(e) = validate_relative_path(&entry_val)
-            {
-                eprintln!("{} invalid entry for bin command: {}", "Error:".red(), e);
-                exit(1);
-            }
-
-            let desc = cmd_value
-                .get("desc")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-
-            registered_commands.push(cmd_name.clone());
-            println!(
-                "{}",
-                format!("Registering command: {} ({})", cmd_name, cmd_type).dimmed()
-            );
-            println!(
-                "  {}",
-                format!("in {}", cmd_file.display()).dimmed()
-            );
-            println!("{} {} ({})", "+".green(), cmd_name.bold(), cmd_type.dimmed());
-            cmd_state.commands.insert(
-                cmd_name.clone(),
-                PluginCommand {
-                    cmd_type: cmd_type.to_string(),
-                    entry: entry_val,
-                    desc: desc.to_string(),
-                },
-            );
-        }
-    }
-
-    // ---- 6e. command：注册单个命令（命令名 = 插件 key，不包含下载逻辑） ----
-    if let Some(cmd_value) = entry.get("command") {
-        any_operation_processed = true;
-
-        println!("{} command", "==>".cyan().bold());
-
-        // 冲突检测：commands 中不能有与插件 key 同名的子命令
-        if let Some(commands_obj) = entry.get("commands").and_then(|v| v.as_object())
-            && commands_obj.contains_key(&key)
-        {
-            eprintln!(
-                "{} command name conflict: \"{}\" is defined in both 'command' and 'commands'",
-                "Error:".red(),
-                key,
-            );
-            exit(1);
-        }
-
-        let cmd_type = cmd_value
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("py-module");
-
-        let entry_val = match cmd_value.get("entry").and_then(|v| v.as_str()) {
-            Some(t) => t.to_string(),
-            None => {
-                eprintln!("{} 'command' field requires 'entry'", "Error:".red());
-                exit(1);
-            }
-        };
-
-        // 对 bin 类型入口点校验相对路径（拒绝 ../、绝对路径）
-        if cmd_type == "bin"
-            && let Err(e) = validate_relative_path(&entry_val)
-        {
-            eprintln!("{} invalid entry for bin command: {}", "Error:".red(), e);
-            exit(1);
-        }
-
-        let desc = cmd_value
-            .get("desc")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        registered_commands.push(key.clone());
-        println!(
-            "{}",
-            format!("Registering command: {} ({})", key, cmd_type).dimmed()
-        );
-        println!(
-            "  {}",
-            format!("in {}", cmd_file.display()).dimmed()
-        );
-        println!("{} {} ({})", "+".green(), key.bold(), cmd_type.dimmed());
-        cmd_state.commands.insert(
-            key.clone(),
-            PluginCommand {
-                cmd_type: cmd_type.to_string(),
-                entry: entry_val,
-                desc: desc.to_string(),
-            },
-        );
-    }
-
-    if !any_operation_processed {
-        eprintln!(
-            "{} plugin \"{}\" has no supported operations (pip/pip-keep/scripts/bin/command/commands)",
-            "Error:".red(),
-            key,
-        );
-        exit(1);
-    }
-
-    // 确保 python_executable 已设置
+    // 9. 持久化
     if cmd_state.python_executable.is_none() {
         let py = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
         cmd_state.python_executable = Some(py.to_string_lossy().to_string());
     }
 
-    // 写入 pkg 状态
-    let pkg_entry = PkgEntry {
-        source: source_label,
-        pip: pip_packages,
-        pip_keep: pip_keep_packages,
-        scripts,
-        bins,
-        bins_tar,
-        commands: registered_commands,
-    };
+    let pkg_entry = build_pkg_entry(&plan);
     pkg_state.insert(key.clone(), pkg_entry);
 
     json_io::write_json(&cmd_file, &cmd_state);
@@ -1176,6 +679,409 @@ pub fn install_plugin(
         "Successfully".green().bold(),
         key.bold(),
     );
+}
+
+// ---------------------------------------------------------------------------
+// 阶段 2：构建 InstallPlan（协议 → 执行，所有变量/ref 在此完成解析）
+// ---------------------------------------------------------------------------
+
+/// 从 Registry 构建单个插件的 InstallPlan。
+///
+/// 此阶段完成：
+/// - 提取 $pip 全局依赖
+/// - 解析 download.scripts → FileOp（URL/路径判断 + 变量替换）
+/// - 解析 download.bin → BinOp（按 $tar 分流 Download/Extract）
+/// - 合并 command + commands → Vec<CommandReg>
+/// - 校验命令冲突（command 名不能出现在 commands 中）
+fn build_install_plan(
+    registry: &Registry,
+    key: &str,
+    source_label: Option<String>,
+    ref_base: &RefBase,
+    cdn: bool,
+) -> InstallPlan {
+    let def = match registry.plugins.get(key) {
+        Some(d) => d,
+        None => {
+            eprintln!(
+                "{} plugin \"{}\" not found in registry after parsing",
+                "Error:".red(),
+                key,
+            );
+            exit(1);
+        }
+    };
+
+    let mut scripts: Vec<FileOp> = Vec::new();
+    let mut bins: Vec<BinOp> = Vec::new();
+    let mut commands: Vec<CommandReg> = Vec::new();
+    let platform = env!("PLATFORM");
+
+    // download.scripts → FileOp
+    if let Some(dl) = &def.downloads {
+        if let Some(sm) = &dl.scripts {
+            for (filename, src) in sm {
+                match resolve_asset(src, ref_base, cdn) {
+                    Ok(resolved) => {
+                        scripts.push(FileOp {
+                            filename: filename.clone(),
+                            src: resolved,
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+            }
+        }
+
+        // download.bin → BinOp (按 $tar 分流)
+        if let Some(bm) = &dl.bin {
+            for (name, bs) in bm {
+                let url = match bs.urls.get(platform) {
+                    Some(u) => u,
+                    None => continue, // 当前平台无对应 URL，跳过
+                };
+
+                match resolve_asset(url, ref_base, cdn) {
+                    Ok(resolved) => {
+                        if bs.tar {
+                            bins.push(BinOp::Extract {
+                                dir_name: name.clone(),
+                                src: resolved,
+                            });
+                        } else {
+                            bins.push(BinOp::Download {
+                                filename: name.clone(),
+                                src: resolved,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+            }
+        }
+    }
+
+    // command + commands → 合并为 Vec<CommandReg>
+    let mut has_command = false;
+
+    if let Some(cmd) = &def.command {
+        commands.push(CommandReg {
+            name: key.to_string(),
+            cmd_type: cmd.cmd_type.clone(),
+            entry: cmd.entry.clone(),
+            desc: cmd.desc.clone(),
+        });
+        has_command = true;
+    }
+
+    if let Some(cs) = &def.commands {
+        for (name, cd) in cs {
+            // 冲突检测
+            if has_command && name == key {
+                eprintln!(
+                    "{} command name conflict: \"{}\" is defined in both 'command' and 'commands'",
+                    "Error:".red(),
+                    key,
+                );
+                exit(1);
+            }
+            commands.push(CommandReg {
+                name: name.clone(),
+                cmd_type: cd.cmd_type.clone(),
+                entry: cd.entry.clone(),
+                desc: cd.desc.clone(),
+            });
+        }
+    }
+
+    // 校验：至少有一个操作
+    if scripts.is_empty()
+        && bins.is_empty()
+        && commands.is_empty()
+        && def.pip.as_ref().is_none_or(|p| p.is_empty())
+        && registry.global_pip.is_empty()
+    {
+        eprintln!(
+            "{} plugin \"{}\" has no supported operations (pip/download/command/commands)",
+            "Error:".red(),
+            key,
+        );
+        exit(1);
+    }
+
+    InstallPlan {
+        global_pip: registry.global_pip.clone(),
+        plugin: ResolvedPlugin {
+            key: key.to_string(),
+            source: source_label,
+            pip_packages: def.pip.clone().unwrap_or_default(),
+            scripts,
+            bins,
+            commands,
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 阶段 3：执行 InstallPlan（所有判断已在阶段 2 完成，此处纯流水线）
+// ---------------------------------------------------------------------------
+
+/// 执行安装计划：pip → 下载文件 → 解压 tar → 注册命令。
+fn execute_install_plan(
+    plan: &InstallPlan,
+    layout: &crate::core::paths::PathLayout,
+    cmd_state: &mut CmdState,
+) {
+    let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
+    let scripts_dir = layout.plugins_dir.join("scripts");
+    let bin_dir = layout.plugins_dir.join("bin");
+
+    // 全局 pip（共享依赖，不随插件卸载）
+    if !plan.global_pip.is_empty() {
+        println!("{} $pip {}", "==>".cyan().bold(), "(shared)".dimmed());
+        for pkg in &plan.global_pip {
+            println!(
+                "{}",
+                format!("Installing pip package: {} (shared)", pkg).dimmed()
+            );
+            install_python_package(pkg, layout);
+            println!("{} {}", "+".green(), pkg.bold());
+        }
+    }
+
+    // 插件 pip（卸载时自动清理）
+    if !plan.plugin.pip_packages.is_empty() {
+        println!("{} pip", "==>".cyan().bold());
+        for pkg in &plan.plugin.pip_packages {
+            println!(
+                "{}",
+                format!("Installing pip package: {}", pkg).dimmed()
+            );
+            install_python_package(pkg, layout);
+            println!("{} {}", "+".green(), pkg.bold());
+        }
+    }
+
+    // 脚本文件
+    if !plan.plugin.scripts.is_empty() {
+        println!("{} scripts", "==>".cyan().bold());
+        for op in &plan.plugin.scripts {
+            let dest = scripts_dir.join(&op.filename);
+            if !scripts_dir.exists()
+                && let Err(e) = std::fs::create_dir_all(&scripts_dir)
+            {
+                eprintln!("{} failed to create scripts directory: {}", "Error:".red(), e);
+                exit(1);
+            }
+            match &op.src {
+                ResolvedSrc::Url(url) => {
+                    println!("{}", format!("Downloading {}", op.filename).dimmed());
+                    println!("  {}", format!("from {}", url).dimmed());
+                    if let Err(e) = download_script(url, &dest) {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                    println!("{}", format!("Saving to {}", dest.display()).dimmed());
+                }
+                ResolvedSrc::LocalPath(path) => {
+                    println!(
+                        "{}",
+                        format!("Copying {} from {}", op.filename, path.display()).dimmed()
+                    );
+                    if let Err(e) = std::fs::copy(path, &dest) {
+                        eprintln!("{} failed to copy script from {}: {}", "Error:".red(), path.display(), e);
+                        exit(1);
+                    }
+                }
+            }
+            println!("{} {}", "+".green(), op.filename.bold());
+        }
+    }
+
+    // 二进制：一个 match 处理 Download 和 Extract 两种操作
+    if !plan.plugin.bins.is_empty() {
+        let platform = env!("PLATFORM");
+        let mut header_printed = false;
+
+        for op in &plan.plugin.bins {
+            match op {
+                BinOp::Download { filename, src } => {
+                    if !header_printed {
+                        println!("{} bin", "==>".cyan().bold());
+                        header_printed = true;
+                    }
+                    let dest = bin_dir.join(filename);
+                    if !bin_dir.exists()
+                        && let Err(e) = std::fs::create_dir_all(&bin_dir)
+                    {
+                        eprintln!("{} failed to create bin directory: {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                    match src {
+                        ResolvedSrc::Url(url) => {
+                            println!("{}", format!("Downloading {} ({})", filename, platform).dimmed());
+                            println!("  {}", format!("from {}", url).dimmed());
+                            if let Err(e) = download_script(url, &dest) {
+                                eprintln!("{} {}", "Error:".red(), e);
+                                exit(1);
+                            }
+                            println!("{}", format!("Saving to {}", dest.display()).dimmed());
+                        }
+                        ResolvedSrc::LocalPath(path) => {
+                            println!("{}", format!("Copying {} from {}", filename, path.display()).dimmed());
+                            if let Err(e) = std::fs::copy(path, &dest) {
+                                eprintln!("{} failed to copy binary from {}: {}", "Error:".red(), path.display(), e);
+                                exit(1);
+                            }
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(metadata) = std::fs::metadata(&dest) {
+                            let mut perms = metadata.permissions();
+                            perms.set_mode(0o755);
+                            if let Err(e) = std::fs::set_permissions(&dest, perms) {
+                                eprintln!("{} failed to set executable permission on {}: {}", "Error:".red(), dest.display(), e);
+                                exit(1);
+                            }
+                        }
+                    }
+                    println!("{}", "chmod +x".dimmed());
+                    println!("{} {}", "+".green(), filename.bold());
+                }
+                BinOp::Extract { dir_name, src } => {
+                    if !header_printed {
+                        println!("{} bin", "==>".cyan().bold());
+                        header_printed = true;
+                    }
+                    let extract_dir = bin_dir.join(dir_name);
+                    let _ = std::fs::create_dir_all(&extract_dir);
+
+                    let temp_dir = layout.cache_dir.join("tmp-bin");
+                    let _ = std::fs::create_dir_all(&temp_dir);
+                    let temp_file = temp_dir.join("archive");
+
+                    match src {
+                        ResolvedSrc::Url(url) => {
+                            println!("{}", format!("Downloading {} ({})", dir_name, platform).dimmed());
+                            println!("  {}", format!("from {}", url).dimmed());
+                            if let Err(e) = download_script(url, &temp_file) {
+                                eprintln!("{} {}", "Error:".red(), e);
+                                exit(1);
+                            }
+                        }
+                        ResolvedSrc::LocalPath(path) => {
+                            println!("{}", format!("Copying {} from {}", dir_name, path.display()).dimmed());
+                            if let Err(e) = std::fs::copy(path, &temp_file) {
+                                eprintln!("{} failed to copy archive from {}: {}", "Error:".red(), path.display(), e);
+                                exit(1);
+                            }
+                        }
+                    }
+
+                    println!("{}", format!("Extracting to {}", extract_dir.display()).dimmed());
+
+                    let status = std::process::Command::new("tar")
+                        .args(["-xf", temp_file.to_str().unwrap(), "-C", extract_dir.to_str().unwrap()])
+                        .status();
+
+                    match status {
+                        Ok(s) if s.success() => {}
+                        Ok(s) => {
+                            eprintln!("{} tar extract failed with exit code {}", "Error:".red(), s.code().unwrap_or(1));
+                            exit(1);
+                        }
+                        Err(e) => {
+                            eprintln!("{} failed to run tar: {}\n   On Windows 10+, tar is built-in.", "Error:".red(), e);
+                            exit(1);
+                        }
+                    }
+
+                    let file_count = count_files(&extract_dir);
+                    println!("{}", format!("{} files extracted", file_count).dimmed());
+
+                    let _ = std::fs::remove_file(&temp_file);
+                    let _ = std::fs::remove_dir(&temp_dir);
+
+                    println!("{} {}", "+".green(), dir_name.bold());
+                }
+            }
+        }
+    }
+
+    // 命令注册
+    if !plan.plugin.commands.is_empty() {
+        println!("{} commands", "==>".cyan().bold());
+        for cmd in &plan.plugin.commands {
+            // validate bin entry path
+            if cmd.cmd_type == "bin"
+                && let Err(e) = validate_relative_path(&cmd.entry)
+            {
+                eprintln!("{} invalid entry for bin command: {}", "Error:".red(), e);
+                exit(1);
+            }
+            println!(
+                "{}",
+                format!("Registering command: {} ({})", cmd.name, cmd.cmd_type).dimmed()
+            );
+            println!("  {}", format!("in {}", cmd_file.display()).dimmed());
+            println!(
+                "{} {} ({})",
+                "+".green(),
+                cmd.name.bold(),
+                cmd.cmd_type.dimmed()
+            );
+            cmd_state.commands.insert(
+                cmd.name.clone(),
+                PluginCommand {
+                    cmd_type: cmd.cmd_type.clone(),
+                    entry: cmd.entry.clone(),
+                    desc: cmd.desc.clone(),
+                },
+            );
+        }
+    }
+}
+
+/// 从 InstallPlan 构建 PkgEntry（用于持久化到 plugins.pkg.json）。
+fn build_pkg_entry(plan: &InstallPlan) -> PkgEntry {
+    let mut scripts = Vec::new();
+    let mut bins = Vec::new();
+    let mut bins_tar = Vec::new();
+
+    for op in &plan.plugin.scripts {
+        scripts.push(op.filename.clone());
+    }
+
+    for op in &plan.plugin.bins {
+        match op {
+            BinOp::Download { filename, .. } => bins.push(filename.clone()),
+            BinOp::Extract { dir_name, .. } => bins_tar.push(dir_name.clone()),
+        }
+    }
+
+    let commands: Vec<String> = plan.plugin.commands.iter().map(|c| c.name.clone()).collect();
+    let pip = if plan.plugin.pip_packages.is_empty() {
+        None
+    } else {
+        Some(plan.plugin.pip_packages.clone())
+    };
+
+    PkgEntry {
+        source: plan.plugin.source.clone(),
+        pip,
+        scripts,
+        bins,
+        bins_tar,
+        commands,
+    }
 }
 
 // ---------------------------------------------------------------------------

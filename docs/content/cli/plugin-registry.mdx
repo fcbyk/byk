@@ -20,12 +20,11 @@ https://raw.githubusercontent.com/{owner}/{repo}/{branch}/byk.json
 `byk.json` 是一个**过程式操作脚本**，按顺序声明操作块：
 
 ```
-1. pip / pip-keep → 安装 Python 依赖到虚拟环境
-2. script          → 下载/拷贝脚本文件到 plugins/scripts/
-3. bin             → 下载裸露二进制文件到 plugins/bin/（chmod +x）
-4. bin-tar         → 下载压缩包，tar -xf 解压到 plugins/bin/
-5. command         → 注册单个命令（命令名 = 插件 key）
-6. commands        → 注册多个命令到路由表
+1. pip / pip-keep    → 安装 Python 依赖到虚拟环境
+2. downloads.scripts  → 下载/拷贝脚本文件到 plugins/scripts/
+3. downloads.bin      → 下载二进制文件到 plugins/bin/（$tar 标记区分直下/解压）
+4. command            → 注册单个命令（命令名 = 插件 key）
+5. commands           → 注册多个命令到路由表
 ```
 
 > **推荐**：单命令插件用 `command`，多命令插件用 `commands`。两者可以共存，但不要在同名 key 上重复定义。
@@ -192,16 +191,25 @@ byk add user/repo/hello
 - `my-hello` 是插件专属包，卸载时自动 `pip uninstall my-hello`
 - `rich`、`click` 是共享依赖，卸载时保留
 
-### script
+### downloads
+
+`downloads` 是下载区块，统一管理要下载到 `plugins/` 目录的文件。包含两个子区块：
+
+- **`scripts`**：下载/拷贝脚本文件到 `plugins/scripts/`
+- **`bin`**：下载二进制文件到 `plugins/bin/`，通过 `$tar` 标记区分直接下载和压缩包解压
+
+#### downloads.scripts
 
 将远程或本地的脚本文件下载/拷贝到 `plugins/scripts/` 目录。使用 `map` 对象，**key 为保存的文件名**（可自定义任意名称），value 为远程 URL 或相对路径。
 
 ```json
 {
   "hello": {
-    "scripts": {
-      "runner.py": "./scripts/runner.py",
-      "util.py": "https://example.com/util.py"
+    "downloads": {
+      "scripts": {
+        "runner.py": "./scripts/runner.py",
+        "util.py": "https://example.com/util.py"
+      }
     },
     "commands": { ... }
   }
@@ -212,7 +220,7 @@ byk add user/repo/hello
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `scripts` | object | 否 | 脚本下载映射：`{ "<文件名>": "<远程URL或相对路径>" }` |
+| `downloads.scripts` | object | 否 | 脚本下载映射：`{ "<文件名>": "<远程URL或相对路径>" }` |
 
 `scripts` 中的每个键值对：
 - **key**：保存到 `plugins/scripts/<key>` 的文件名（可含后缀或无后缀）
@@ -223,8 +231,10 @@ byk add user/repo/hello
 ```json
 {
   "jiahao": {
-    "scripts": {
-      "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+    "downloads": {
+      "scripts": {
+        "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+      }
     },
     "command": {
       "type": "py-script",
@@ -235,40 +245,39 @@ byk add user/repo/hello
 }
 ```
 
-- `scripts` 负责**下载**：将远程脚本保存到 `scripts/jiahao.py`
+- `downloads.scripts` 负责**下载**：将远程脚本保存到 `scripts/jiahao.py`
 - `command` 负责**注册**：声明命令类型和入口文件名
-- 职责完全分离，多个命令可共享 `scripts` 中下载的同一文件
+- 职责完全分离，多个命令可共享 `downloads.scripts` 中下载的同一文件
 
 :::note
 
-- `scripts` 字段按声明顺序逐一处理，下载失败立即终止并报错
+- `downloads.scripts` 字段按声明顺序逐一处理，下载失败立即终止并报错
 - 相对路径仅支持 `./xxx` 和 `xxx` 两种写法，`../`、`/xxx`、`~` 不被允许
 - 使用 `--cdn` 时，`raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
 
 :::
 
-### bin
+#### downloads.bin
 
-下载**裸露二进制文件**到 `plugins/bin/` 目录。使用嵌套 `map` 对象，**外层 key 为保存的文件名**，**内层 key 为平台标识**，value 为远程 URL 或相对路径。下载后自动 `chmod +x`。
+下载二进制文件到 `plugins/bin/` 目录。使用嵌套 `map` 对象，**外层 key 为保存的文件名/目录名**，内层通过 `$tar` 标记区分两种模式：
 
-### bin-tar
+- **直接下载**（`$tar: false`，默认）：下载单文件到 `plugins/bin/<key>`，自动 `chmod +x`
+- **压缩包解压**（`$tar: true`）：下载 `.tar.gz`/`.tgz`/`.zip` 到临时文件，`tar -xf` 解压到 `plugins/bin/<key>/` 目录
 
-下载**压缩包**（`.tar.gz` / `.tgz` / `.zip`）到临时文件，然后 `tar -xf` 解压到 `plugins/bin/<key>/` 目录。一个 key 对应一个独立子目录，**不同插件互不干扰**，卸载时直接删除整个目录。
-
-格式结构与 `bin` 完全一致：外层 key 为标识名（也是解压子目录名），内层 key 为平台标识，value 为压缩包 URL 或相对路径。
-
-#### 示例：裸露二进制（bin）
+#### 示例：直接下载二进制（$tar: false）
 
 ```json
 {
   "my-tool": {
-    "bin": {
-      "my-tool": {
-        "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-amd64",
-        "linux-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-arm64",
-        "darwin-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-amd64",
-        "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64",
-        "windows-x64": "https://github.com/xxx/releases/download/v1.0/my-tool-windows-amd64.exe"
+    "downloads": {
+      "bin": {
+        "my-tool": {
+          "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-amd64",
+          "linux-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-arm64",
+          "darwin-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-amd64",
+          "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64",
+          "windows-x64": "https://github.com/xxx/releases/download/v1.0/my-tool-windows-amd64.exe"
+        }
       }
     },
     "command": {
@@ -280,18 +289,21 @@ byk add user/repo/hello
 }
 ```
 
-#### 示例：带目录结构的压缩包（bin-tar）
+#### 示例：压缩包解压（$tar: true）
 
 ```json
 {
   "my-tool": {
-    "bin-tar": {
-      "my-tool": {
-        "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-x86_64.tar.gz",
-        "linux-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-arm64.tar.gz",
-        "darwin-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-x86_64.tar.gz",
-        "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64.tar.gz",
-        "windows-x64": "https://github.com/xxx/releases/download/v1.0/my-tool-windows-x64.zip"
+    "downloads": {
+      "bin": {
+        "my-tool": {
+          "$tar": true,
+          "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-x86_64.tar.gz",
+          "linux-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-arm64.tar.gz",
+          "darwin-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-x86_64.tar.gz",
+          "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64.tar.gz",
+          "windows-x64": "https://github.com/xxx/releases/download/v1.0/my-tool-windows-x64.zip"
+        }
       }
     },
     "command": {
@@ -309,8 +321,8 @@ byk add user/repo/hello
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `bin` | `Record<string, Record<string, string>>` | 否 | 裸露二进制下载映射：`{ "<文件名>": { "<平台>": "<URL>" } }` |
-| `bin-tar` | `Record<string, Record<string, string>>` | 否 | 压缩包下载映射：`{ "<标识>": { "<平台>": "<URL>" } }` |
+| `downloads.bin` | `Record<string, PlatformMap>` | 否 | 二进制下载映射：`{ "<文件名/目录名>": { "$tar": bool, "<平台>": "<URL>" } }` |
+| `$tar` | boolean | 否 | 标记为压缩包，`true` 时解压而非直接下载。默认 `false` |
 
 #### 支持的平台
 
@@ -326,11 +338,12 @@ byk add user/repo/hello
 
 :::note
 
-- `bin` / `bin-tar` 的 value 都可以是远程 URL 或相对路径 `./xxx`，解析规则同 Ref 引用
+- `downloads.bin` 的 value 都可以是远程 URL 或相对路径 `./xxx`，解析规则同 Ref 引用
 - 使用 `--cdn` 时，`raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
-- `bin-tar` 使用系统 `tar` 命令解压，支持 `.tar.gz` / `.tgz` / `.zip` 格式，要求 Windows 10 1803+（内置 `tar`）
-- `bin`（裸露二进制）在非 Windows 系统自动设置执行权限（`chmod 755`）
-- `bin-tar` 不修改压缩包内文件权限，解压后自动记录所有文件/目录，卸载时完整清理
+- `$tar: true` 使用系统 `tar` 命令解压，支持 `.tar.gz` / `.tgz` / `.zip` 格式，要求 Windows 10 1803+（内置 `tar`）
+- `$tar: false`（直接下载）在非 Windows 系统自动设置执行权限（`chmod 755`）
+- `$tar: true` 不修改压缩包内文件权限，解压后自动记录所有文件/目录，卸载时完整清理
+- 解压时一个 key 对应一个独立子目录，**不同插件互不干扰**，卸载时直接删除整个目录
 - `bin` 命令入口 `entry` 可以带相对路径（如 `my-tool/bin/my-tool`），不允许 `../` 或绝对路径
 
 :::
@@ -359,7 +372,7 @@ byk add user/repo/hello
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）、`py-bin`（Python 可执行文件）或 `bin`（普通二进制） |
-| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `bin` 字段预先下载） |
+| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `downloads.scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `downloads.bin` 字段预先下载） |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 
 ### commands
@@ -388,7 +401,7 @@ byk add user/repo/hello
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）、`py-bin`（Python 可执行文件）或 `bin`（普通二进制） |
-| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `bin` 字段预先下载） |
+| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `downloads.scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `downloads.bin` 字段预先下载） |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 
 #### 命令类型
@@ -406,13 +419,15 @@ byk add user/repo/hello
 
 #### py-script 入口点
 
-对于 `py-script` 类型的命令，`entry` 是一个纯文件名（不含路径），指代 `plugins/scripts/` 目录下的脚本文件。脚本文件需通过 `scripts` 字段预先下载/拷贝：
+对于 `py-script` 类型的命令，`entry` 是一个纯文件名（不含路径），指代 `plugins/scripts/` 目录下的脚本文件。脚本文件需通过 `downloads.scripts` 字段预先下载/拷贝：
 
 ```json
 {
   "jiahao": {
-    "scripts": {
-      "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+    "downloads": {
+      "scripts": {
+        "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+      }
     },
     "command": {
       "type": "py-script",
@@ -425,29 +440,31 @@ byk add user/repo/hello
 
 | 字段 | 职责 |
 |------|------|
-| `scripts` | 下载/拷贝脚本到 `plugins/scripts/<filename>` |
-| `commands`/`command` | 注册命令，`entry` 为 `scripts` 中定义的文件名 |
+| `downloads.scripts` | 下载/拷贝脚本到 `plugins/scripts/<filename>` |
+| `commands`/`command` | 注册命令，`entry` 为 `downloads.scripts` 中定义的文件名 |
 
 
 :::note
 
-- `plugins.cmd.json` 中始终存储的是纯文件名，脚本下载由 `scripts` 字段独立处理
-- 多个命令可以共享 `scripts` 中下载的同一脚本文件
+- `plugins.cmd.json` 中始终存储的是纯文件名，脚本下载由 `downloads.scripts` 字段独立处理
+- 多个命令可以共享 `downloads.scripts` 中下载的同一脚本文件
 - 命令注册不再包含任何下载逻辑，职责单一
 
 :::
 
 #### bin 入口点
 
-对于 `bin` 类型的命令，`entry` 指代 `plugins/bin/` 目录下的二进制文件路径。可以是一个纯文件名（如 `"my-tool"`），也可以带相对路径（如 `"my-tool/bin/my-tool"`）。二进制文件通过 `bin` 或 `bin-tar` 字段预先下载/解压：
+对于 `bin` 类型的命令，`entry` 指代 `plugins/bin/` 目录下的二进制文件路径。可以是一个纯文件名（如 `"my-tool"`），也可以带相对路径（如 `"my-tool/bin/my-tool"`）。二进制文件通过 `downloads.bin` 字段预先下载/解压：
 
 ```json
 {
   "my-tool": {
-    "bin": {
-      "my-tool": {
-        "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-amd64",
-        "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64"
+    "downloads": {
+      "bin": {
+        "my-tool": {
+          "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-amd64",
+          "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64"
+        }
       }
     },
     "command": {
@@ -461,7 +478,7 @@ byk add user/repo/hello
 
 | 字段 | 职责 |
 |------|------|
-| `bin` / `bin-tar` | 根据当前平台下载/解压二进制到 `plugins/bin/` |
+| `downloads.bin` | 根据当前平台下载/解压二进制到 `plugins/bin/` |
 | `commands`/`command` | 注册命令，`entry` 为 `plugins/bin/` 下的相对路径（不允许 `../` 或绝对路径） |
 
 
@@ -584,8 +601,10 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中的默认 key
   },
 
   "jiahao": {
-    "scripts": {
-      "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+    "downloads": {
+      "scripts": {
+        "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+      }
     },
     "pip": ["rich", "click"],
     "command": {
@@ -603,6 +622,6 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中的默认 key
 - Ref 引用支持 URL（`http(s)://`）和相对路径两种写法，相对路径遵循 `./xxx` 规则
 - 一个插件的 `command` 和 `commands` 可以共存，但 `commands` 中不能定义与插件 key 同名的子命令
 - 单命令插件推荐使用 `command`，多命令插件使用 `commands`
-- 操作块按固定顺序执行：`pip` / `pip-keep` → `scripts` → `commands` / `command`，与声明顺序无关
+- 操作块按固定顺序执行：`pip` / `pip-keep` → `downloads` → `commands` / `command`，与声明顺序无关
 - 使用 `--cdn` 时，所有 `raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
 - 顶层 `$var`/`$default` 为系统字段，不会被视为有效 plugin key

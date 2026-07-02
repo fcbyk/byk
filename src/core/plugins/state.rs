@@ -208,7 +208,6 @@ mod tests {
             PkgEntry {
                 source: Some("user/repo".to_string()),
                 pip: Some(vec!["requests".to_string()]),
-                pip_keep: None,
                 scripts: vec![],
                 bins: vec![],
                 bins_tar: vec![],

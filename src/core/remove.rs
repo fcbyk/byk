@@ -3,6 +3,7 @@
 //! 删除 `byk add` 创建的持久化数据（venv、缓存、别名等），
 //! 并提供插件卸载功能。
 
+use std::collections::HashSet;
 use colored::Colorize;
 use std::fs;
 use std::process::exit;
@@ -366,13 +367,14 @@ pub fn rm_all(layout: &PathLayout) {
 ///
 /// 流程：
 /// 1. 读取 plugins.pkg.json，在 packages 中查找 key
-/// 2. 卸载 pip 包（pip 字段中的包，解析 name @ url 提取包名）
-/// 3. 删除下载的脚本文件和二进制文件
-/// 4. 从 plugins.cmd.json 删除该插件的所有命令
-/// 5. 从 plugins.pkg.json 删除该 key
-/// 6. 写回
+/// 2. 收集其他插件共享的 pip 包名（跨插件安全检查）
+/// 3. 卸载 pip 包（跳过其他插件也依赖的包）
+/// 4. 删除下载的脚本文件和二进制文件
+/// 5. 从 plugins.cmd.json 删除该插件的所有命令
+/// 6. 从 plugins.pkg.json 删除该 key
+/// 7. 写回
 ///
-/// 注意：pip-keep 中的包不卸载（共享依赖）。
+/// 注意：$pip 全局共享依赖不在任何插件的 PkgEntry 中，永远不会被卸载。
 pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     // 1. 检查 venv（与 install_plugin 一致：pip 或 python 可执行文件存在即可）
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
@@ -414,12 +416,32 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         key.bold(),
     );
 
-    // 3. 卸载 Python 包（pip 字段，非 pip-keep）
+    // 收集其他插件也依赖的 pip 包名（跨插件共享检查）
+    let shared_pkgs: HashSet<&str> = pkg_state
+        .iter()
+        .filter(|(k, _)| k.as_str() != key)
+        .flat_map(|(_, entry)| {
+            entry.pip.iter().flatten()
+        })
+        .map(|p| extract_pkg_name(p))
+        .filter(|n| !n.is_empty())
+        .collect();
+
+    // 3. 卸载 Python 包（跳过其他插件也依赖的包）
     if let Some(ref pip_list) = pkg.pip {
         println!("{} pip", "==>".cyan().bold());
         for item in pip_list {
             let name = extract_pkg_name(item);
             if name.is_empty() {
+                continue;
+            }
+            // 跨插件共享检查
+            if shared_pkgs.contains(name) {
+                println!(
+                    "{}",
+                    format!("Skipping {} (also used by other plugins)", name).dimmed()
+                );
+                println!("{} {} {}", "*".dimmed(), name.bold(), "(shared)".dimmed());
                 continue;
             }
             println!(
