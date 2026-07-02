@@ -701,7 +701,7 @@ fn build_install_plan(
     cdn: bool,
 ) -> InstallPlan {
     let def = match registry.plugins.get(key) {
-        Some(d) => d,
+        Some(d) => d.clone(),
         None => {
             eprintln!(
                 "{} plugin \"{}\" not found in registry after parsing",
@@ -711,6 +711,9 @@ fn build_install_plan(
             exit(1);
         }
     };
+
+    let mut def = def;
+    def.normalize();
 
     let mut scripts: Vec<FileOp> = Vec::new();
     let mut bins: Vec<BinOp> = Vec::new();

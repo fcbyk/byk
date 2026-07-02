@@ -23,8 +23,10 @@ https://raw.githubusercontent.com/{owner}/{repo}/{branch}/byk.json
 1. pip / pip-keep    → 安装 Python 依赖到虚拟环境
 2. downloads.scripts  → 下载/拷贝脚本文件到 plugins/scripts/
 3. downloads.bin      → 下载二进制文件到 plugins/bin/（$tar 标记区分直下/解压）
-4. command            → 注册单个命令（命令名 = 插件 key）
-5. commands           → 注册多个命令到路由表
+4. download-scripts   → 语法糖，等价于 downloads.scripts（扁平写法）
+5. download-bin       → 语法糖，等价于 downloads.bin（扁平写法）
+6. command            → 注册单个命令（命令名 = 插件 key）
+7. commands           → 注册多个命令到路由表
 ```
 
 > **推荐**：单命令插件用 `command`，多命令插件用 `commands`。两者可以共存，但不要在同名 key 上重复定义。
@@ -348,6 +350,99 @@ byk add user/repo/hello
 
 :::
 
+### download-scripts（语法糖）
+
+`download-scripts` 是 `downloads.scripts` 的扁平写法，避免多层嵌套。当插件只需要下载脚本时，可以省略 `downloads` 这一层：
+
+```json
+{
+  "jiahao": {
+    "download-scripts": {
+      "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+    },
+    "command": {
+      "type": "py-script",
+      "entry": "jiahao.py",
+      "desc": "装 x 命令"
+    }
+  }
+}
+```
+
+等价于：
+
+```json
+{
+  "jiahao": {
+    "downloads": {
+      "scripts": {
+        "jiahao.py": "https://raw.githubusercontent.com/fcbyk/pyodd/refs/heads/main/scripts/jiahao.py"
+      }
+    },
+    "command": {
+      "type": "py-script",
+      "entry": "jiahao.py",
+      "desc": "装 x 命令"
+    }
+  }
+}
+```
+
+### download-bin（语法糖）
+
+`download-bin` 是 `downloads.bin` 的扁平写法，与 `download-scripts` 同理：
+
+```json
+{
+  "my-tool": {
+    "download-bin": {
+      "my-tool": {
+        "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64",
+        "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-amd64"
+      }
+    },
+    "command": {
+      "type": "bin",
+      "entry": "my-tool",
+      "desc": "My platform-specific binary tool"
+    }
+  }
+}
+```
+
+等价于：
+
+```json
+{
+  "my-tool": {
+    "downloads": {
+      "bin": {
+        "my-tool": {
+          "darwin-arm64": "https://github.com/xxx/releases/download/v1.0/my-tool-darwin-arm64",
+          "linux-x86_64": "https://github.com/xxx/releases/download/v1.0/my-tool-linux-amd64"
+        }
+      }
+    },
+    "command": {
+      "type": "bin",
+      "entry": "my-tool",
+      "desc": "My platform-specific binary tool"
+    }
+  }
+}
+```
+
+#### 混用与冲突
+
+`download-scripts` / `download-bin` 可与 `downloads` 混用，但**不能同时定义同名字段**：
+
+| 写法 | 结果 |
+|------|------|
+| `download-scripts` + `downloads.bin` | ✅ 无冲突，合并执行 |
+| `download-bin` + `downloads.scripts` | ✅ 无冲突，合并执行 |
+| `download-scripts` + `downloads.scripts` | ❌ 冲突，安装时报错 |
+| `download-bin` + `downloads.bin` | ❌ 冲突，安装时报错 |
+
 ### command
 
 为单命令插件注册命令，**命令名自动取插件 key**。推荐只有一个命令的插件使用此字段。
@@ -372,7 +467,7 @@ byk add user/repo/hello
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）、`py-bin`（Python 可执行文件）或 `bin`（普通二进制） |
-| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `downloads.scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `downloads.bin` 字段预先下载） |
+| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `download-scripts` 或 `downloads.scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `download-bin` 或 `downloads.bin` 预先下载） |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 
 ### commands
@@ -401,7 +496,7 @@ byk add user/repo/hello
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `type` | string | 是 | 命令类型：`py-module`（模块）、`py-script`（脚本）、`py-bin`（Python 可执行文件）或 `bin`（普通二进制） |
-| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `downloads.scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `downloads.bin` 字段预先下载） |
+| `entry` | string | 是 | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名（需通过 `download-scripts` 或 `downloads.scripts` 预先下载），`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（需通过 `download-bin` 或 `downloads.bin` 预先下载） |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 
 #### 命令类型
@@ -419,7 +514,7 @@ byk add user/repo/hello
 
 #### py-script 入口点
 
-对于 `py-script` 类型的命令，`entry` 是一个纯文件名（不含路径），指代 `plugins/scripts/` 目录下的脚本文件。脚本文件需通过 `downloads.scripts` 字段预先下载/拷贝：
+对于 `py-script` 类型的命令，`entry` 是一个纯文件名（不含路径），指代 `plugins/scripts/` 目录下的脚本文件。脚本文件需通过 `download-scripts`（或 `downloads.scripts`）字段预先下载/拷贝：
 
 ```json
 {
@@ -440,8 +535,8 @@ byk add user/repo/hello
 
 | 字段 | 职责 |
 |------|------|
-| `downloads.scripts` | 下载/拷贝脚本到 `plugins/scripts/<filename>` |
-| `commands`/`command` | 注册命令，`entry` 为 `downloads.scripts` 中定义的文件名 |
+| `downloads.scripts` / `download-scripts` | 下载/拷贝脚本到 `plugins/scripts/<filename>` |
+| `commands`/`command` | 注册命令，`entry` 为 `downloads.scripts` 或 `download-scripts` 中定义的文件名 |
 
 
 :::note
@@ -454,7 +549,7 @@ byk add user/repo/hello
 
 #### bin 入口点
 
-对于 `bin` 类型的命令，`entry` 指代 `plugins/bin/` 目录下的二进制文件路径。可以是一个纯文件名（如 `"my-tool"`），也可以带相对路径（如 `"my-tool/bin/my-tool"`）。二进制文件通过 `downloads.bin` 字段预先下载/解压：
+对于 `bin` 类型的命令，`entry` 指代 `plugins/bin/` 目录下的二进制文件路径。可以是一个纯文件名（如 `"my-tool"`），也可以带相对路径（如 `"my-tool/bin/my-tool"`）。二进制文件通过 `download-bin`（或 `downloads.bin`）字段预先下载/解压：
 
 ```json
 {
@@ -478,7 +573,7 @@ byk add user/repo/hello
 
 | 字段 | 职责 |
 |------|------|
-| `downloads.bin` | 根据当前平台下载/解压二进制到 `plugins/bin/` |
+| `downloads.bin` / `download-bin` | 根据当前平台下载/解压二进制到 `plugins/bin/` |
 | `commands`/`command` | 注册命令，`entry` 为 `plugins/bin/` 下的相对路径（不允许 `../` 或绝对路径） |
 
 

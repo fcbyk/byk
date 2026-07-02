@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use colored::Colorize;
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,14 @@ pub struct PluginDef {
     #[serde(default)]
     pub downloads: Option<DownloadSection>,
 
+    /// 语法糖：扁平写法，等价于 downloads.scripts
+    #[serde(rename = "download-scripts", default)]
+    pub download_scripts: Option<HashMap<String, String>>,
+
+    /// 语法糖：扁平写法，等价于 downloads.bin
+    #[serde(rename = "download-bin", default)]
+    pub download_bin: Option<HashMap<String, BinSource>>,
+
     /// 单个命令注册（命令名 = 插件 key）
     #[serde(default)]
     pub command: Option<CommandDef>,
@@ -47,6 +56,50 @@ pub struct PluginDef {
     /// 多个命令注册
     #[serde(default)]
     pub commands: Option<HashMap<String, CommandDef>>,
+}
+
+impl PluginDef {
+    /// 将 `download-scripts` / `download-bin` 语法糖合并到 `downloads`。
+    ///
+    /// 冲突规则：同时定义 `download-scripts` 和 `downloads.scripts` 时报错退出，
+    /// `download-bin` 和 `downloads.bin` 同理。无冲突则合并，互不干扰。
+    pub fn normalize(&mut self) {
+        if let Some(ds) = self.download_scripts.take() {
+            if let Some(ref dl) = self.downloads
+                && dl.scripts.is_some()
+            {
+                eprintln!(
+                    "{} 'download-scripts' and 'downloads.scripts' cannot both be defined",
+                    "Error:".red(),
+                );
+                std::process::exit(1);
+            }
+            self.downloads
+                .get_or_insert(DownloadSection {
+                    scripts: None,
+                    bin: None,
+                })
+                .scripts = Some(ds);
+        }
+
+        if let Some(db) = self.download_bin.take() {
+            if let Some(ref dl) = self.downloads
+                && dl.bin.is_some()
+            {
+                eprintln!(
+                    "{} 'download-bin' and 'downloads.bin' cannot both be defined",
+                    "Error:".red(),
+                );
+                std::process::exit(1);
+            }
+            self.downloads
+                .get_or_insert(DownloadSection {
+                    scripts: None,
+                    bin: None,
+                })
+                .bin = Some(db);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -293,5 +346,121 @@ mod tests {
         let dl = def.downloads.as_ref().unwrap();
         let scripts = dl.scripts.as_ref().unwrap();
         assert_eq!(scripts.get("hello.py").unwrap(), "plugins/hello.py");
+    }
+
+    #[test]
+    fn parse_download_scripts_sugar() {
+        let raw = to_map(r#"{
+            "pys": {
+                "download-scripts": {
+                    "hello.py": "plugins/hello.py"
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("pys").unwrap();
+        assert!(def.download_scripts.is_some());
+        assert!(def.downloads.is_none());
+        let scripts = def.download_scripts.as_ref().unwrap();
+        assert_eq!(scripts.get("hello.py").unwrap(), "plugins/hello.py");
+    }
+
+    #[test]
+    fn parse_download_bin_sugar() {
+        let raw = to_map(r#"{
+            "tool": {
+                "download-bin": {
+                    "tool": {
+                        "$tar": true,
+                        "darwin-arm64": "https://example.com/tool.tar.gz"
+                    }
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("tool").unwrap();
+        assert!(def.download_bin.is_some());
+        assert!(def.downloads.is_none());
+        let bin = def.download_bin.as_ref().unwrap().get("tool").unwrap();
+        assert!(bin.tar);
+        assert_eq!(
+            bin.urls.get("darwin-arm64").unwrap(),
+            "https://example.com/tool.tar.gz"
+        );
+    }
+
+    #[test]
+    fn normalize_download_scripts_sugar() {
+        let raw = to_map(r#"{
+            "pys": {
+                "download-scripts": {
+                    "hello.py": "plugins/hello.py"
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let mut def = registry.plugins.get("pys").unwrap().clone();
+        def.normalize();
+        assert!(def.download_scripts.is_none());
+        let dl = def.downloads.as_ref().unwrap();
+        let scripts = dl.scripts.as_ref().unwrap();
+        assert_eq!(scripts.get("hello.py").unwrap(), "plugins/hello.py");
+    }
+
+    #[test]
+    fn normalize_download_bin_sugar() {
+        let raw = to_map(r#"{
+            "tool": {
+                "download-bin": {
+                    "tool": {
+                        "darwin-arm64": "https://example.com/tool"
+                    }
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let mut def = registry.plugins.get("tool").unwrap().clone();
+        def.normalize();
+        assert!(def.download_bin.is_none());
+        let dl = def.downloads.as_ref().unwrap();
+        let bin = dl.bin.as_ref().unwrap().get("tool").unwrap();
+        assert!(!bin.tar);
+        assert_eq!(
+            bin.urls.get("darwin-arm64").unwrap(),
+            "https://example.com/tool"
+        );
+    }
+
+    #[test]
+    fn normalize_mix_sugar_and_downloads() {
+        let raw = to_map(r#"{
+            "pys": {
+                "download-scripts": {
+                    "hello.py": "plugins/hello.py"
+                },
+                "downloads": {
+                    "bin": {
+                        "tool": {
+                            "darwin-arm64": "https://example.com/tool"
+                        }
+                    }
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let mut def = registry.plugins.get("pys").unwrap().clone();
+        def.normalize();
+        assert!(def.download_scripts.is_none());
+        let dl = def.downloads.as_ref().unwrap();
+        assert!(dl.scripts.is_some());
+        assert!(dl.bin.is_some());
+        assert_eq!(
+            dl.scripts.as_ref().unwrap().get("hello.py").unwrap(),
+            "plugins/hello.py"
+        );
+        assert_eq!(
+            dl.bin.as_ref().unwrap().get("tool").unwrap().urls.get("darwin-arm64").unwrap(),
+            "https://example.com/tool"
+        );
     }
 }

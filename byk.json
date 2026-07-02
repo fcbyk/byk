@@ -21,10 +21,8 @@
     }
   },
   "pys": {
-    "downloads": {
-      "scripts": {
-        "hello_world.py": "plugins/py-script/hello_world.py"
-      }
+    "download-scripts": {
+      "hello_world.py": "plugins/py-script/hello_world.py"
     },
     "command": {
       "type": "py-script",
