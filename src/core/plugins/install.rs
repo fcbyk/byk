@@ -219,11 +219,101 @@ fn extract_filename_from_url(url: &str) -> String {
     }
 }
 
-/// 递归展平工作目录树，将嵌套结构展开为 (相对路径, 来源) 列表。
+/// 从 URL 中提取文件名并去掉扩展名（用于 workdir 单文件无 key 场景）。
+fn name_from_url(url: &str) -> String {
+    let filename = extract_filename_from_url(url);
+    for ext in &[".tar.gz", ".tar.xz", ".tar.bz2", ".tgz", ".tbz2", ".zip", ".tar", ".gz", ".xz", ".bz2"] {
+        if let Some(name) = filename.strip_suffix(ext) {
+            return name.to_string();
+        }
+    }
+    if let Some(pos) = filename.rfind('.') {
+        filename[..pos].to_string()
+    } else {
+        filename
+    }
+}
+
+/// 检测 URL 是否有 `[tar]` 前缀。
+fn is_tar_url(url: &str) -> bool {
+    url.starts_with("[tar] ")
+}
+
+/// 剥离 `[tar] ` 前缀，返回真实 URL。
+fn strip_tar_prefix(url: &str) -> &str {
+    url.strip_prefix("[tar] ").unwrap_or(url)
+}
+
+/// Peek 压缩包内容：返回顶层条目数。
+/// 不实际解压，只列出内容。
+fn peek_archive(path: &Path) -> Result<usize, String> {
+    let output = Command::new("tar")
+        .args(["-tf", path.to_str().unwrap()])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let entries: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+            return Ok(entries.len());
+        }
+        _ => {}
+    }
+
+    let output = Command::new("unzip")
+        .args(["-l", path.to_str().unwrap()])
+        .output()
+        .map_err(|e| format!("failed to peek archive: {}", e))?;
+
+    if !output.status.success() {
+        return Err("failed to peek archive with both tar and unzip".to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let count = stdout
+        .lines()
+        .filter(|l| {
+            let trimmed = l.trim();
+            !trimmed.is_empty()
+                && !trimmed.starts_with("Archive:")
+                && !trimmed.starts_with("Length")
+                && !trimmed.starts_with("---")
+                && !trimmed.contains("file")
+                && !trimmed.contains("files")
+        })
+        .count();
+    Ok(count)
+}
+
+/// 解压压缩包到目标目录。
+fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
+    if !dest.exists()
+        && let Err(e) = std::fs::create_dir_all(dest)
+    {
+        return Err(format!("failed to create directory {}: {}", dest.display(), e));
+    }
+
+    let status = Command::new("tar")
+        .args(["-xf", archive.to_str().unwrap(), "-C", dest.to_str().unwrap()])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(format!(
+            "tar extract failed with exit code {}",
+            s.code().unwrap_or(1)
+        )),
+        Err(e) => Err(format!("failed to run tar: {}", e)),
+    }
+}
+
+/// 递归展平工作目录树，将嵌套结构展开为 Asset 列表。
+/// 每个叶子节点生成一个 Asset，支持 `[tar]` 前缀。
 fn flatten_workdir_tree(
     entries: &HashMap<String, protocol::WorkdirEntry>,
+    dir_name: &str,
     prefix: &str,
-    files: &mut Vec<WorkdirFile>,
+    assets: &mut Vec<Asset>,
     ref_base: &RefBase,
     cdn: bool,
 ) {
@@ -238,11 +328,23 @@ fn flatten_workdir_tree(
         };
         match entry {
             protocol::WorkdirEntry::File(url) => {
-                match resolve_asset(url, ref_base, cdn) {
+                let is_archive = is_tar_url(url);
+                let clean = strip_tar_prefix(url);
+                match resolve_asset(clean, ref_base, cdn) {
                     Ok(resolved) => {
-                        files.push(WorkdirFile {
-                            rel_path,
+                        let asset_name = if is_archive {
+                            let derived = name_from_url(clean);
+                            format!("{}/{}", dir_name, derived)
+                        } else {
+                            format!("{}/{}", dir_name, rel_path)
+                        };
+                        assets.push(Asset {
+                            name: asset_name,
+                            target: AssetTarget::Workdir,
                             src: resolved,
+                            is_archive,
+                            tracked: false,
+                            chmod_x: false,
                         });
                     }
                     Err(e) => {
@@ -252,7 +354,7 @@ fn flatten_workdir_tree(
                 }
             }
             protocol::WorkdirEntry::Dir(sub_entries) => {
-                flatten_workdir_tree(sub_entries, &rel_path, files, ref_base, cdn);
+                flatten_workdir_tree(sub_entries, dir_name, &rel_path, assets, ref_base, cdn);
             }
         }
     }
@@ -740,12 +842,12 @@ pub fn install_plugin(
 
 /// 从 Registry 构建单个插件的 InstallPlan。
 ///
-/// 此阶段完成：
+/// 此阶段完成所有判断：
 /// - 提取 $pip 全局依赖
-/// - 解析 download.scripts → FileOp（URL/路径判断 + 变量替换）
-/// - 解析 download.bin → BinOp（按 $tar 分流 Download/Extract）
+/// - `[tar]` 前缀检测 → is_archive
+/// - key 推导 → name
 /// - 合并 command + commands → Vec<CommandReg>
-/// - 校验命令冲突（command 名不能出现在 commands 中）
+/// - 产出统一的 Vec<Asset>
 fn build_install_plan(
     registry: &Registry,
     key: &str,
@@ -768,21 +870,25 @@ fn build_install_plan(
     let mut def = def;
     def.normalize();
 
-    let mut scripts: Vec<FileOp> = Vec::new();
-    let mut bins: Vec<BinOp> = Vec::new();
-    let mut workdir_ops: Vec<WorkdirOp> = Vec::new();
+    let mut assets: Vec<Asset> = Vec::new();
     let mut commands: Vec<CommandReg> = Vec::new();
     let platform = env!("PLATFORM");
 
-    // download.scripts → FileOp
     if let Some(dl) = &def.downloads {
+        // download.scripts → Asset
         if let Some(sm) = &dl.scripts {
             for (filename, src) in sm {
-                match resolve_asset(src, ref_base, cdn) {
+                let is_archive = is_tar_url(src);
+                let clean = strip_tar_prefix(src);
+                match resolve_asset(clean, ref_base, cdn) {
                     Ok(resolved) => {
-                        scripts.push(FileOp {
-                            filename: filename.clone(),
+                        assets.push(Asset {
+                            name: filename.clone(),
+                            target: AssetTarget::Scripts,
                             src: resolved,
+                            is_archive,
+                            tracked: true,
+                            chmod_x: false,
                         });
                     }
                     Err(e) => {
@@ -793,27 +899,26 @@ fn build_install_plan(
             }
         }
 
-        // download.bin → BinOp (按 $tar 分流)
+        // download.bin → Asset
         if let Some(bm) = &dl.bin {
             for (name, bs) in bm {
                 let url = match bs.urls.get(platform) {
                     Some(u) => u,
-                    None => continue, // 当前平台无对应 URL，跳过
+                    None => continue,
                 };
 
-                match resolve_asset(url, ref_base, cdn) {
+                let is_archive = is_tar_url(url);
+                let clean = strip_tar_prefix(url);
+                match resolve_asset(clean, ref_base, cdn) {
                     Ok(resolved) => {
-                        if bs.tar {
-                            bins.push(BinOp::Extract {
-                                dir_name: name.clone(),
-                                src: resolved,
-                            });
-                        } else {
-                            bins.push(BinOp::Download {
-                                filename: name.clone(),
-                                src: resolved,
-                            });
-                        }
+                        assets.push(Asset {
+                            name: name.clone(),
+                            target: AssetTarget::Bin,
+                            src: resolved,
+                            is_archive,
+                            tracked: true,
+                            chmod_x: true,
+                        });
                     }
                     Err(e) => {
                         eprintln!("{} {}", "Error:".red(), e);
@@ -823,13 +928,27 @@ fn build_install_plan(
             }
         }
 
-        // download.workdir → WorkdirOp
+        // download.workdir → Asset
         if let Some(wv) = &dl.workdir {
             match wv {
                 protocol::WorkdirValue::Single(url) => {
-                    match resolve_asset(url, ref_base, cdn) {
+                    let is_archive = is_tar_url(url);
+                    let clean = strip_tar_prefix(url);
+                    match resolve_asset(clean, ref_base, cdn) {
                         Ok(resolved) => {
-                            workdir_ops.push(WorkdirOp::SingleFile { src: resolved });
+                            let name = if is_archive {
+                                name_from_url(clean)
+                            } else {
+                                extract_filename_from_url(clean)
+                            };
+                            assets.push(Asset {
+                                name,
+                                target: AssetTarget::Workdir,
+                                src: resolved,
+                                is_archive,
+                                tracked: false,
+                                chmod_x: false,
+                            });
                         }
                         Err(e) => {
                             eprintln!("{} {}", "Error:".red(), e);
@@ -839,9 +958,7 @@ fn build_install_plan(
                 }
                 protocol::WorkdirValue::Tree(tree) => {
                     let dir_name = tree.name.clone().unwrap_or_else(|| "downloads".to_string());
-                    let mut files = Vec::new();
-                    flatten_workdir_tree(&tree.entries, "", &mut files, ref_base, cdn);
-                    workdir_ops.push(WorkdirOp::Tree { dir_name, files });
+                    flatten_workdir_tree(&tree.entries, &dir_name, "", &mut assets, ref_base, cdn);
                 }
             }
         }
@@ -862,7 +979,6 @@ fn build_install_plan(
 
     if let Some(cs) = &def.commands {
         for (name, cd) in cs {
-            // 冲突检测
             if has_command && name == key {
                 eprintln!(
                     "{} command name conflict: \"{}\" is defined in both 'command' and 'commands'",
@@ -881,9 +997,7 @@ fn build_install_plan(
     }
 
     // 校验：至少有一个操作
-    if scripts.is_empty()
-        && bins.is_empty()
-        && workdir_ops.is_empty()
+    if assets.is_empty()
         && commands.is_empty()
         && def.pip.as_ref().is_none_or(|p| p.is_empty())
         && registry.global_pip.is_empty()
@@ -902,9 +1016,7 @@ fn build_install_plan(
             key: key.to_string(),
             source: source_label,
             pip_packages: def.pip.clone().unwrap_or_default(),
-            scripts,
-            bins,
-            workdir: workdir_ops,
+            assets,
             commands,
         },
     }
@@ -914,7 +1026,7 @@ fn build_install_plan(
 // 阶段 3：执行 InstallPlan（所有判断已在阶段 2 完成，此处纯流水线）
 // ---------------------------------------------------------------------------
 
-/// 执行安装计划：pip → 下载文件 → 解压 tar → 注册命令。
+/// 执行安装计划：pip → 下载/解压 → 注册命令。
 fn execute_install_plan(
     plan: &InstallPlan,
     layout: &crate::core::paths::PathLayout,
@@ -950,226 +1062,122 @@ fn execute_install_plan(
         }
     }
 
-    // 脚本文件
-    if !plan.plugin.scripts.is_empty() {
-        println!("{} scripts", "==>".cyan().bold());
-        for op in &plan.plugin.scripts {
-            let dest = scripts_dir.join(&op.filename);
-            if !scripts_dir.exists()
-                && let Err(e) = std::fs::create_dir_all(&scripts_dir)
-            {
-                eprintln!("{} failed to create scripts directory: {}", "Error:".red(), e);
-                exit(1);
+    // 统一下载/解压
+    if !plan.plugin.assets.is_empty() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let mut section_printed: HashMap<&str, bool> = HashMap::new();
+
+        for asset in &plan.plugin.assets {
+            let parent_dir = match asset.target {
+                AssetTarget::Scripts => scripts_dir.clone(),
+                AssetTarget::Bin => bin_dir.clone(),
+                AssetTarget::Workdir => cwd.clone(),
+            };
+
+            let section_label = match asset.target {
+                AssetTarget::Scripts => "scripts",
+                AssetTarget::Bin => "bin",
+                AssetTarget::Workdir => "workdir",
+            };
+
+            if !section_printed.contains_key(section_label) {
+                println!("{} {}", "==>".cyan().bold(), section_label);
+                if matches!(asset.target, AssetTarget::Workdir) {
+                    println!("  {}", format!("→ {}", cwd.display()).dimmed());
+                }
+                section_printed.insert(section_label, true);
             }
-            match &op.src {
+
+            let temp_dir = layout.cache_dir.join("tmp-dl");
+            let _ = std::fs::create_dir_all(&temp_dir);
+            let temp_file = temp_dir.join("dl");
+
+            match &asset.src {
                 ResolvedSrc::Url(url) => {
-                    println!("{}", format!("Downloading {}", op.filename).dimmed());
+                    println!("{}", format!("Downloading {}", asset.name).dimmed());
                     println!("  {}", format!("from {}", url).dimmed());
-                    if let Err(e) = download_script(url, &dest) {
+                    if let Err(e) = download_script(url, &temp_file) {
                         eprintln!("{} {}", "Error:".red(), e);
                         exit(1);
                     }
-                    println!("{}", format!("Saving to {}", dest.display()).dimmed());
                 }
                 ResolvedSrc::LocalPath(path) => {
-                    println!(
-                        "{}",
-                        format!("Copying {} from {}", op.filename, path.display()).dimmed()
-                    );
-                    if let Err(e) = std::fs::copy(path, &dest) {
-                        eprintln!("{} failed to copy script from {}: {}", "Error:".red(), path.display(), e);
+                    println!("{}", format!("Copying {} from {}", asset.name, path.display()).dimmed());
+                    if let Err(e) = std::fs::copy(path, &temp_file) {
+                        eprintln!("{} failed to copy from {}: {}", "Error:".red(), path.display(), e);
                         exit(1);
                     }
                 }
             }
-            println!("{} {}", "+".green(), op.filename.bold());
-        }
-    }
 
-    // 二进制：一个 match 处理 Download 和 Extract 两种操作
-    if !plan.plugin.bins.is_empty() {
-        let platform = env!("PLATFORM");
-        let mut header_printed = false;
-
-        for op in &plan.plugin.bins {
-            match op {
-                BinOp::Download { filename, src } => {
-                    if !header_printed {
-                        println!("{} bin", "==>".cyan().bold());
-                        header_printed = true;
-                    }
-                    let dest = bin_dir.join(filename);
-                    if !bin_dir.exists()
-                        && let Err(e) = std::fs::create_dir_all(&bin_dir)
-                    {
-                        eprintln!("{} failed to create bin directory: {}", "Error:".red(), e);
+            if asset.is_archive {
+                let peek_count = match peek_archive(&temp_file) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        eprintln!("{} {}", "Error:".red(), e);
                         exit(1);
                     }
-                    match src {
-                        ResolvedSrc::Url(url) => {
-                            println!("{}", format!("Downloading {} ({})", filename, platform).dimmed());
-                            println!("  {}", format!("from {}", url).dimmed());
-                            if let Err(e) = download_script(url, &dest) {
-                                eprintln!("{} {}", "Error:".red(), e);
-                                exit(1);
-                            }
-                            println!("{}", format!("Saving to {}", dest.display()).dimmed());
-                        }
-                        ResolvedSrc::LocalPath(path) => {
-                            println!("{}", format!("Copying {} from {}", filename, path.display()).dimmed());
-                            if let Err(e) = std::fs::copy(path, &dest) {
-                                eprintln!("{} failed to copy binary from {}: {}", "Error:".red(), path.display(), e);
-                                exit(1);
-                            }
-                        }
-                    }
-                    #[cfg(not(windows))]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        if let Ok(metadata) = std::fs::metadata(&dest) {
-                            let mut perms = metadata.permissions();
-                            perms.set_mode(0o755);
-                            if let Err(e) = std::fs::set_permissions(&dest, perms) {
-                                eprintln!("{} failed to set executable permission on {}: {}", "Error:".red(), dest.display(), e);
-                                exit(1);
-                            }
+                };
+
+                let dest = if peek_count == 1 {
+                    parent_dir.clone()
+                } else {
+                    let d = parent_dir.join(&asset.name);
+                    let _ = std::fs::create_dir_all(&d);
+                    d
+                };
+
+                println!("{}", format!("Extracting to {}", dest.display()).dimmed());
+                if let Err(e) = extract_archive(&temp_file, &dest) {
+                    eprintln!("{} {}", "Error:".red(), e);
+                    exit(1);
+                }
+
+                if peek_count > 1 {
+                    let file_count = count_files(&dest);
+                    println!("{}", format!("{} files extracted", file_count).dimmed());
+                }
+            } else {
+                // 直接下载：复制到 parent_dir/name
+                let dest = parent_dir.join(&asset.name);
+                println!("{}", format!("Saving to {}", dest.display()).dimmed());
+                if let Err(e) = std::fs::copy(&temp_file, &dest) {
+                    eprintln!("{} failed to save {}: {}", "Error:".red(), dest.display(), e);
+                    exit(1);
+                }
+            }
+
+            let _ = std::fs::remove_file(&temp_file);
+            let _ = std::fs::remove_dir(&temp_dir);
+
+            // chmod +x for bin
+            if asset.chmod_x {
+                #[cfg(not(windows))]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+
+                    let target_path = if asset.is_archive {
+                        // For archive, the executable is inside the extracted dir
+                        // We don't know the exact name, so we skip chmod for now
+                        // The plugin author should handle permissions inside the archive
+                        continue;
+                    } else {
+                        parent_dir.join(&asset.name)
+                    };
+
+                    if let Ok(metadata) = std::fs::metadata(&target_path) {
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o755);
+                        if let Err(e) = std::fs::set_permissions(&target_path, perms) {
+                            eprintln!("{} failed to set executable permission on {}: {}", "Error:".red(), target_path.display(), e);
+                            exit(1);
                         }
                     }
                     println!("{}", "chmod +x".dimmed());
-                    println!("{} {}", "+".green(), filename.bold());
-                }
-                BinOp::Extract { dir_name, src } => {
-                    if !header_printed {
-                        println!("{} bin", "==>".cyan().bold());
-                        header_printed = true;
-                    }
-                    let extract_dir = bin_dir.join(dir_name);
-                    let _ = std::fs::create_dir_all(&extract_dir);
-
-                    let temp_dir = layout.cache_dir.join("tmp-bin");
-                    let _ = std::fs::create_dir_all(&temp_dir);
-                    let temp_file = temp_dir.join("archive");
-
-                    match src {
-                        ResolvedSrc::Url(url) => {
-                            println!("{}", format!("Downloading {} ({})", dir_name, platform).dimmed());
-                            println!("  {}", format!("from {}", url).dimmed());
-                            if let Err(e) = download_script(url, &temp_file) {
-                                eprintln!("{} {}", "Error:".red(), e);
-                                exit(1);
-                            }
-                        }
-                        ResolvedSrc::LocalPath(path) => {
-                            println!("{}", format!("Copying {} from {}", dir_name, path.display()).dimmed());
-                            if let Err(e) = std::fs::copy(path, &temp_file) {
-                                eprintln!("{} failed to copy archive from {}: {}", "Error:".red(), path.display(), e);
-                                exit(1);
-                            }
-                        }
-                    }
-
-                    println!("{}", format!("Extracting to {}", extract_dir.display()).dimmed());
-
-                    let status = std::process::Command::new("tar")
-                        .args(["-xf", temp_file.to_str().unwrap(), "-C", extract_dir.to_str().unwrap()])
-                        .status();
-
-                    match status {
-                        Ok(s) if s.success() => {}
-                        Ok(s) => {
-                            eprintln!("{} tar extract failed with exit code {}", "Error:".red(), s.code().unwrap_or(1));
-                            exit(1);
-                        }
-                        Err(e) => {
-                            eprintln!("{} failed to run tar: {}\n   On Windows 10+, tar is built-in.", "Error:".red(), e);
-                            exit(1);
-                        }
-                    }
-
-                    let file_count = count_files(&extract_dir);
-                    println!("{}", format!("{} files extracted", file_count).dimmed());
-
-                    let _ = std::fs::remove_file(&temp_file);
-                    let _ = std::fs::remove_dir(&temp_dir);
-
-                    println!("{} {}", "+".green(), dir_name.bold());
                 }
             }
-        }
-    }
 
-    // 工作目录下载
-    if !plan.plugin.workdir.is_empty() {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        println!("{} workdir", "==>".cyan().bold());
-        println!("  {}", format!("→ {}", cwd.display()).dimmed());
-
-        for op in &plan.plugin.workdir {
-            match op {
-                WorkdirOp::SingleFile { src } => {
-                    let filename = match src {
-                        ResolvedSrc::Url(url) => extract_filename_from_url(url),
-                        ResolvedSrc::LocalPath(path) => {
-                            path.file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_else(|| "unknown".to_string())
-                        }
-                    };
-                    let dest = cwd.join(&filename);
-                    match src {
-                        ResolvedSrc::Url(url) => {
-                            println!("{}", format!("Downloading {} to workdir", filename).dimmed());
-                            println!("  {}", format!("from {}", url).dimmed());
-                            if let Err(e) = download_script(url, &dest) {
-                                eprintln!("{} {}", "Error:".red(), e);
-                                exit(1);
-                            }
-                        }
-                        ResolvedSrc::LocalPath(path) => {
-                            println!("{}", format!("Copying {} from {}", filename, path.display()).dimmed());
-                            if let Err(e) = std::fs::copy(path, &dest) {
-                                eprintln!("{} failed to copy file from {}: {}", "Error:".red(), path.display(), e);
-                                exit(1);
-                            }
-                        }
-                    }
-                    println!("{} {}", "+".green(), filename.bold());
-                }
-                WorkdirOp::Tree { dir_name, files } => {
-                    let base_dir = cwd.join(dir_name);
-                    if let Err(e) = std::fs::create_dir_all(&base_dir) {
-                        eprintln!("{} failed to create workdir directory {}: {}", "Error:".red(), base_dir.display(), e);
-                        exit(1);
-                    }
-                    println!("{}", format!("Downloading tree to {}/", dir_name).dimmed());
-                    for file in files {
-                        let dest = base_dir.join(&file.rel_path);
-                        if let Some(parent) = dest.parent()
-                            && let Err(e) = std::fs::create_dir_all(parent)
-                        {
-                            eprintln!("{} failed to create directory {}: {}", "Error:".red(), parent.display(), e);
-                            exit(1);
-                        }
-                        match &file.src {
-                            ResolvedSrc::Url(url) => {
-                                println!("  {}", format!("↓ {}", file.rel_path).dimmed());
-                                if let Err(e) = download_script(url, &dest) {
-                                    eprintln!("{} {}", "Error:".red(), e);
-                                    exit(1);
-                                }
-                            }
-                            ResolvedSrc::LocalPath(path) => {
-                                println!("  {}", format!("← {}", file.rel_path).dimmed());
-                                if let Err(e) = std::fs::copy(path, &dest) {
-                                    eprintln!("{} failed to copy file from {}: {}", "Error:".red(), path.display(), e);
-                                    exit(1);
-                                }
-                            }
-                        }
-                    }
-                    println!("{} {}", "+".green(), dir_name.bold());
-                }
-            }
+            println!("{} {}", "+".green(), asset.name.bold());
         }
     }
 
@@ -1177,7 +1185,6 @@ fn execute_install_plan(
     if !plan.plugin.commands.is_empty() {
         println!("{} commands", "==>".cyan().bold());
         for cmd in &plan.plugin.commands {
-            // validate bin entry path
             if cmd.cmd_type == "bin"
                 && let Err(e) = validate_relative_path(&cmd.entry)
             {
@@ -1209,40 +1216,13 @@ fn execute_install_plan(
 
 /// 从 InstallPlan 构建 PkgEntry（用于持久化到 plugins.pkg.json）。
 fn build_pkg_entry(plan: &InstallPlan) -> PkgEntry {
-    let mut scripts = Vec::new();
-    let mut bins = Vec::new();
-    let mut bins_tar = Vec::new();
-
-    for op in &plan.plugin.scripts {
-        scripts.push(op.filename.clone());
-    }
-
-    for op in &plan.plugin.bins {
-        match op {
-            BinOp::Download { filename, .. } => bins.push(filename.clone()),
-            BinOp::Extract { dir_name, .. } => bins_tar.push(dir_name.clone()),
-        }
-    }
-
-    let mut workdir_files = Vec::new();
-    for op in &plan.plugin.workdir {
-        match op {
-            WorkdirOp::SingleFile { src } => {
-                let name = match src {
-                    ResolvedSrc::Url(url) => extract_filename_from_url(url),
-                    ResolvedSrc::LocalPath(path) => {
-                        path.file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "unknown".to_string())
-                    }
-                };
-                workdir_files.push(name);
-            }
-            WorkdirOp::Tree { dir_name, .. } => {
-                workdir_files.push(dir_name.clone());
-            }
-        }
-    }
+    let assets: Vec<String> = plan
+        .plugin
+        .assets
+        .iter()
+        .filter(|a| a.tracked)
+        .map(|a| a.name.clone())
+        .collect();
 
     let commands: Vec<String> = plan.plugin.commands.iter().map(|c| c.name.clone()).collect();
     let pip = if plan.plugin.pip_packages.is_empty() {
@@ -1254,10 +1234,7 @@ fn build_pkg_entry(plan: &InstallPlan) -> PkgEntry {
     PkgEntry {
         source: plan.plugin.source.clone(),
         pip,
-        scripts,
-        bins,
-        bins_tar,
-        workdir: workdir_files,
+        assets,
         commands,
     }
 }

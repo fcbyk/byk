@@ -2,7 +2,7 @@
 //!
 //! 三层架构：
 //! - protocol 层：映射 byk.json 的 JSON 形状（见 protocol.rs）
-//! - execution 层：InstallPlan / FileOp / BinOp 等，扁平无歧义
+//! - execution 层：InstallPlan / Asset / AssetTarget 等，扁平无歧义
 //! - state 层：CmdState / PkgState，持久化到 plugins/ 目录
 //!
 //! 持久化文件：
@@ -76,18 +76,9 @@ pub struct PkgEntry {
     /// URL 包需使用 "name @ url" 格式才能卸载，纯 URL 静默跳过
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pip: Option<Vec<String>>,
-    /// 脚本文件名列表
+    /// 脚本和二进制产物列表（文件名或目录名），卸载时 is_dir() 判断清理方式
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub scripts: Vec<String>,
-    /// 二进制文件名列表
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bins: Vec<String>,
-    /// bin-tar 解压出的所有文件/目录列表
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub bins_tar: Vec<String>,
-    /// 工作目录下载的文件/目录名列表
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub workdir: Vec<String>,
+    pub assets: Vec<String>,
     /// 该插件注册的命令名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<String>,
@@ -114,71 +105,46 @@ pub struct ResolvedPlugin {
     pub source: Option<String>,
     /// pip 安装列表（属于本插件，卸载时删除）
     pub pip_packages: Vec<String>,
-    /// 脚本文件操作列表
-    pub scripts: Vec<FileOp>,
-    /// 二进制操作列表（已按 tar 字段分流）
-    pub bins: Vec<BinOp>,
-    /// 工作目录下载操作列表
-    pub workdir: Vec<WorkdirOp>,
+    /// 统一下载/解压清单（scripts + bin + workdir），按顺序执行
+    pub assets: Vec<Asset>,
     /// 命令注册列表（command 和 commands 已合并）
     pub commands: Vec<CommandReg>,
 }
 
 // ---------------------------------------------------------------------------
-// 文件 / 二进制操作
+// 统一下载项：在协议解析阶段完成所有判断，执行阶段纯消费
 // ---------------------------------------------------------------------------
 
-/// 文件操作：脚本或直下二进制共用。
-pub struct FileOp {
-    /// 目标文件名
-    pub filename: String,
-    /// 已解析的来源（变量替换 + URL/路径判断已完成）
-    pub src: ResolvedSrc,
+/// 资产目标位置。
+pub enum AssetTarget {
+    /// plugins/scripts/
+    Scripts,
+    /// plugins/bin/
+    Bin,
+    /// 当前工作目录
+    Workdir,
 }
 
-/// 二进制操作：在转换时已按 $tar 标记区分为两类。
-pub enum BinOp {
-    /// 直接下载二进制文件，chmod +x
-    Download {
-        filename: String,
-        src: ResolvedSrc,
-    },
-    /// 下载 tar.gz/zip，解压到 plugins/bin/<dir_name>/
-    Extract {
-        dir_name: String,
-        src: ResolvedSrc,
-    },
+/// 统一下载项，由 build_install_plan 完全构建，execute 按顺序消费。
+pub struct Asset {
+    /// 产物名（目标文件名或子目录名，多文件时用作子目录名）
+    pub name: String,
+    /// 目标位置分类
+    pub target: AssetTarget,
+    /// 已解析的来源（[tar] 前缀已剥离）
+    pub src: ResolvedSrc,
+    /// 是否为压缩包（需 peek + extract）
+    pub is_archive: bool,
+    /// 是否记录到 PkgEntry（scripts/bin = true，workdir = false）
+    pub tracked: bool,
+    /// 下载后是否需要 chmod +x（bin = true）
+    pub chmod_x: bool,
 }
 
 /// 已解析的资源来源（变量替换 / ref 路径解析已完成）。
 pub enum ResolvedSrc {
     Url(String),
     LocalPath(PathBuf),
-}
-
-// ---------------------------------------------------------------------------
-// 工作目录下载操作
-// ---------------------------------------------------------------------------
-
-/// 工作目录下载操作：下载到当前 CLI 运行目录。
-pub enum WorkdirOp {
-    /// 单文件：下载到当前工作目录，文件名从 URL 提取
-    SingleFile {
-        src: ResolvedSrc,
-    },
-    /// 目录树：下载到当前工作目录 / <dir_name>/
-    Tree {
-        dir_name: String,
-        files: Vec<WorkdirFile>,
-    },
-}
-
-/// 目录树中的单个文件。
-pub struct WorkdirFile {
-    /// 相对于 dir_name 的路径
-    pub rel_path: String,
-    /// 下载来源
-    pub src: ResolvedSrc,
 }
 
 // ---------------------------------------------------------------------------

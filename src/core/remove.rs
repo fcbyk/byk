@@ -393,7 +393,6 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     // 2. 读取状态
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
     let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
-    let scripts_dir = layout.plugins_dir.join("scripts");
 
     let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
     let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
@@ -501,85 +500,52 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     }
 
     // 4. 删除脚本文件
-    if !pkg.scripts.is_empty() {
-        println!("{} scripts", "==>".cyan().bold());
-    }
-    for script in &pkg.scripts {
-        let script_path = scripts_dir.join(script);
-        if script_path.exists() {
-            println!(
-                "{}",
-                format!("Deleting {}", script_path.display()).dimmed()
-            );
-            if let Err(e) = fs::remove_file(&script_path) {
-                eprintln!(
-                    "{} Warning: failed to delete script {}: {}",
-                    "Warning:".yellow(),
-                    script_path.display(),
-                    e,
-                );
-            }
-            println!("{} {}", "-".red(), script.bold());
-        }
-    }
-
-    // 4b. 删除二进制文件
+    let scripts_dir = layout.plugins_dir.join("scripts");
     let bin_dir = layout.plugins_dir.join("bin");
-    if !pkg.bins.is_empty() {
-        println!("{} bin", "==>".cyan().bold());
-    }
-    for bin in &pkg.bins {
-        let bin_path = bin_dir.join(bin);
-        if bin_path.exists() {
-            println!(
-                "{}",
-                format!("Deleting {}", bin_path.display()).dimmed()
-            );
-            if let Err(e) = fs::remove_file(&bin_path) {
-                eprintln!(
-                    "{} Warning: failed to delete binary {}: {}",
-                    "Warning:".yellow(),
-                    bin_path.display(),
-                    e,
-                );
-            }
-            println!("{} {}", "-".red(), bin.bold());
-        }
-    }
 
-    // 4c. 删除 bin-tar 解压出的目录
-    if !pkg.bins_tar.is_empty() {
-        println!("{} bin-tar", "==>".cyan().bold());
-    }
-    for key in &pkg.bins_tar {
-        let extract_dir = bin_dir.join(key);
-        if extract_dir.exists() {
-            println!(
-                "{}",
-                format!("Deleting {}", extract_dir.display()).dimmed()
-            );
-            let _ = fs::remove_dir_all(&extract_dir);
-            println!("{} {}", "-".red(), key.bold());
-        }
-    }
+    if !pkg.assets.is_empty() {
+        let mut printed_header = false;
 
-    // 4d. 删除工作目录下载的文件/目录
-    if !pkg.workdir.is_empty() {
-        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        println!("{} workdir", "==>".cyan().bold());
-        println!("  {}", format!("→ {}", cwd.display()).dimmed());
-        for name in &pkg.workdir {
-            let path = cwd.join(name);
-            if path.exists() {
-                let is_dir = path.is_dir();
+        for name in &pkg.assets {
+            // 尝试 scripts/ 目录
+            let script_path = scripts_dir.join(name);
+            if script_path.exists() {
+                if !printed_header {
+                    println!("{} assets", "==>".cyan().bold());
+                    printed_header = true;
+                }
                 println!(
                     "{}",
-                    format!("Deleting {}", path.display()).dimmed()
+                    format!("Deleting {}", script_path.display()).dimmed()
+                );
+                if let Err(e) = fs::remove_file(&script_path) {
+                    eprintln!(
+                        "{} Warning: failed to delete {}: {}",
+                        "Warning:".yellow(),
+                        script_path.display(),
+                        e,
+                    );
+                }
+                println!("{} {}", "-".red(), name.bold());
+                continue;
+            }
+
+            // 尝试 bin/ 目录
+            let bin_path = bin_dir.join(name);
+            if bin_path.exists() {
+                if !printed_header {
+                    println!("{} assets", "==>".cyan().bold());
+                    printed_header = true;
+                }
+                let is_dir = bin_path.is_dir();
+                println!(
+                    "{}",
+                    format!("Deleting {}", bin_path.display()).dimmed()
                 );
                 if is_dir {
-                    let _ = fs::remove_dir_all(&path);
+                    let _ = fs::remove_dir_all(&bin_path);
                 } else {
-                    let _ = fs::remove_file(&path);
+                    let _ = fs::remove_file(&bin_path);
                 }
                 println!("{} {}", "-".red(), name.bold());
             }

@@ -131,20 +131,21 @@ impl PluginDef {
 // ---------------------------------------------------------------------------
 
 /// 下载区块：统一下载到 plugins/ 目录的文件。
+/// URL 字符串支持 `[tar] ` 前缀标记解压行为。
 #[derive(Debug, Clone, Deserialize)]
 pub struct DownloadSection {
     /// 下载到 plugins/scripts/
-    /// key = 文件名，value = 来源（URL 或相对路径）
+    /// key = 文件名，value = 来源（URL 或相对路径，支持 `[tar]` 前缀）
     #[serde(default)]
     pub scripts: Option<HashMap<String, String>>,
 
     /// 下载到 plugins/bin/
-    /// key = 文件名/目录名，value = 平台映射
+    /// key = 文件名/目录名，value = 平台映射（URL 支持 `[tar]` 前缀）
     #[serde(default)]
     pub bin: Option<HashMap<String, BinSource>>,
 
     /// 下载到当前工作目录
-    /// 字符串 = 单文件，对象 = 目录树
+    /// 字符串 = 单文件，对象 = 目录树（URL 支持 `[tar]` 前缀）
     #[serde(default)]
     pub workdir: Option<WorkdirValue>,
 }
@@ -189,14 +190,9 @@ pub enum WorkdirEntry {
 // 二进制来源
 // ---------------------------------------------------------------------------
 
-/// 二进制来源：按平台区分，$tar 标记控制下载后行为。
+/// 二进制来源：按平台区分，URL 字符串内 `[tar]` 前缀标记解压。
 #[derive(Debug, Clone, Deserialize)]
 pub struct BinSource {
-    /// "$tar": 标记为 tar.gz/zip，解压而非直接下载。
-    /// 默认 false = 直接下载单文件 + chmod +x。
-    #[serde(rename = "$tar", default)]
-    pub tar: bool,
-
     /// 平台 → URL 映射，如 "darwin-arm64" → "https://..."
     #[serde(flatten)]
     pub urls: HashMap<String, String>,
@@ -334,8 +330,7 @@ mod tests {
                 "downloads": {
                     "bin": {
                         "app": {
-                            "$tar": true,
-                            "darwin-arm64": "https://example.com/app.tar.gz"
+                            "darwin-arm64": "[tar] https://example.com/app.tar.gz"
                         }
                     }
                 }
@@ -345,10 +340,9 @@ mod tests {
         let def = registry.plugins.get("app").unwrap();
         let dl = def.downloads.as_ref().unwrap();
         let bin_src = dl.bin.as_ref().unwrap().get("app").unwrap();
-        assert!(bin_src.tar);
         assert_eq!(
             bin_src.urls.get("darwin-arm64").unwrap(),
-            "https://example.com/app.tar.gz"
+            "[tar] https://example.com/app.tar.gz"
         );
     }
 
@@ -369,7 +363,10 @@ mod tests {
         let def = registry.plugins.get("tool").unwrap();
         let dl = def.downloads.as_ref().unwrap();
         let bin_src = dl.bin.as_ref().unwrap().get("tool").unwrap();
-        assert!(!bin_src.tar);
+        assert_eq!(
+            bin_src.urls.get("darwin-arm64").unwrap(),
+            "https://example.com/tool"
+        );
     }
 
     #[test]
@@ -436,8 +433,7 @@ mod tests {
             "tool": {
                 "download-bin": {
                     "tool": {
-                        "$tar": true,
-                        "darwin-arm64": "https://example.com/tool.tar.gz"
+                        "darwin-arm64": "[tar] https://example.com/tool.tar.gz"
                     }
                 }
             }
@@ -447,10 +443,9 @@ mod tests {
         assert!(def.download_bin.is_some());
         assert!(def.downloads.is_none());
         let bin = def.download_bin.as_ref().unwrap().get("tool").unwrap();
-        assert!(bin.tar);
         assert_eq!(
             bin.urls.get("darwin-arm64").unwrap(),
-            "https://example.com/tool.tar.gz"
+            "[tar] https://example.com/tool.tar.gz"
         );
     }
 
@@ -489,7 +484,6 @@ mod tests {
         assert!(def.download_bin.is_none());
         let dl = def.downloads.as_ref().unwrap();
         let bin = dl.bin.as_ref().unwrap().get("tool").unwrap();
-        assert!(!bin.tar);
         assert_eq!(
             bin.urls.get("darwin-arm64").unwrap(),
             "https://example.com/tool"

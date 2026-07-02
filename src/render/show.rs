@@ -176,8 +176,8 @@ pub fn render_plugins(layout: &PathLayout) {
             println!("{}: {}", "cmd".yellow(), pkg.commands.join(", "));
         }
 
-        if !pkg.scripts.is_empty() {
-            println!("{}: {}", "scripts".yellow(), pkg.scripts.join(", "));
+        if !pkg.assets.is_empty() {
+            println!("{}: {}", "assets".yellow(), pkg.assets.join(", "));
         }
 
         if let Some(ref pip_list) = pkg.pip {
