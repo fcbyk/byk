@@ -205,6 +205,59 @@ fn count_files(dir: &Path) -> usize {
     count
 }
 
+/// 从 URL 中提取文件名（最后一个路径段）。
+/// 提取不到时返回 "unknown"。
+fn extract_filename_from_url(url: &str) -> String {
+    let path = url.split('?').next().unwrap_or(url);
+    let path = path.split('#').next().unwrap_or(path);
+    let segments: Vec<&str> = path.split('/').collect();
+    let last = segments.last().unwrap_or(&"");
+    if last.is_empty() {
+        "unknown".to_string()
+    } else {
+        last.to_string()
+    }
+}
+
+/// 递归展平工作目录树，将嵌套结构展开为 (相对路径, 来源) 列表。
+fn flatten_workdir_tree(
+    entries: &HashMap<String, protocol::WorkdirEntry>,
+    prefix: &str,
+    files: &mut Vec<WorkdirFile>,
+    ref_base: &RefBase,
+    cdn: bool,
+) {
+    for (name, entry) in entries {
+        if name.starts_with('$') {
+            continue;
+        }
+        let rel_path = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", prefix, name)
+        };
+        match entry {
+            protocol::WorkdirEntry::File(url) => {
+                match resolve_asset(url, ref_base, cdn) {
+                    Ok(resolved) => {
+                        files.push(WorkdirFile {
+                            rel_path,
+                            src: resolved,
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+            }
+            protocol::WorkdirEntry::Dir(sub_entries) => {
+                flatten_workdir_tree(sub_entries, &rel_path, files, ref_base, cdn);
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 资源路径解析
 // ---------------------------------------------------------------------------
@@ -717,6 +770,7 @@ fn build_install_plan(
 
     let mut scripts: Vec<FileOp> = Vec::new();
     let mut bins: Vec<BinOp> = Vec::new();
+    let mut workdir_ops: Vec<WorkdirOp> = Vec::new();
     let mut commands: Vec<CommandReg> = Vec::new();
     let platform = env!("PLATFORM");
 
@@ -768,6 +822,29 @@ fn build_install_plan(
                 }
             }
         }
+
+        // download.workdir → WorkdirOp
+        if let Some(wv) = &dl.workdir {
+            match wv {
+                protocol::WorkdirValue::Single(url) => {
+                    match resolve_asset(url, ref_base, cdn) {
+                        Ok(resolved) => {
+                            workdir_ops.push(WorkdirOp::SingleFile { src: resolved });
+                        }
+                        Err(e) => {
+                            eprintln!("{} {}", "Error:".red(), e);
+                            exit(1);
+                        }
+                    }
+                }
+                protocol::WorkdirValue::Tree(tree) => {
+                    let dir_name = tree.name.clone().unwrap_or_else(|| "downloads".to_string());
+                    let mut files = Vec::new();
+                    flatten_workdir_tree(&tree.entries, "", &mut files, ref_base, cdn);
+                    workdir_ops.push(WorkdirOp::Tree { dir_name, files });
+                }
+            }
+        }
     }
 
     // command + commands → 合并为 Vec<CommandReg>
@@ -806,6 +883,7 @@ fn build_install_plan(
     // 校验：至少有一个操作
     if scripts.is_empty()
         && bins.is_empty()
+        && workdir_ops.is_empty()
         && commands.is_empty()
         && def.pip.as_ref().is_none_or(|p| p.is_empty())
         && registry.global_pip.is_empty()
@@ -826,6 +904,7 @@ fn build_install_plan(
             pip_packages: def.pip.clone().unwrap_or_default(),
             scripts,
             bins,
+            workdir: workdir_ops,
             commands,
         },
     }
@@ -1019,6 +1098,81 @@ fn execute_install_plan(
         }
     }
 
+    // 工作目录下载
+    if !plan.plugin.workdir.is_empty() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        println!("{} workdir", "==>".cyan().bold());
+        println!("  {}", format!("→ {}", cwd.display()).dimmed());
+
+        for op in &plan.plugin.workdir {
+            match op {
+                WorkdirOp::SingleFile { src } => {
+                    let filename = match src {
+                        ResolvedSrc::Url(url) => extract_filename_from_url(url),
+                        ResolvedSrc::LocalPath(path) => {
+                            path.file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "unknown".to_string())
+                        }
+                    };
+                    let dest = cwd.join(&filename);
+                    match src {
+                        ResolvedSrc::Url(url) => {
+                            println!("{}", format!("Downloading {} to workdir", filename).dimmed());
+                            println!("  {}", format!("from {}", url).dimmed());
+                            if let Err(e) = download_script(url, &dest) {
+                                eprintln!("{} {}", "Error:".red(), e);
+                                exit(1);
+                            }
+                        }
+                        ResolvedSrc::LocalPath(path) => {
+                            println!("{}", format!("Copying {} from {}", filename, path.display()).dimmed());
+                            if let Err(e) = std::fs::copy(path, &dest) {
+                                eprintln!("{} failed to copy file from {}: {}", "Error:".red(), path.display(), e);
+                                exit(1);
+                            }
+                        }
+                    }
+                    println!("{} {}", "+".green(), filename.bold());
+                }
+                WorkdirOp::Tree { dir_name, files } => {
+                    let base_dir = cwd.join(dir_name);
+                    if let Err(e) = std::fs::create_dir_all(&base_dir) {
+                        eprintln!("{} failed to create workdir directory {}: {}", "Error:".red(), base_dir.display(), e);
+                        exit(1);
+                    }
+                    println!("{}", format!("Downloading tree to {}/", dir_name).dimmed());
+                    for file in files {
+                        let dest = base_dir.join(&file.rel_path);
+                        if let Some(parent) = dest.parent()
+                            && let Err(e) = std::fs::create_dir_all(parent)
+                        {
+                            eprintln!("{} failed to create directory {}: {}", "Error:".red(), parent.display(), e);
+                            exit(1);
+                        }
+                        match &file.src {
+                            ResolvedSrc::Url(url) => {
+                                println!("  {}", format!("↓ {}", file.rel_path).dimmed());
+                                if let Err(e) = download_script(url, &dest) {
+                                    eprintln!("{} {}", "Error:".red(), e);
+                                    exit(1);
+                                }
+                            }
+                            ResolvedSrc::LocalPath(path) => {
+                                println!("  {}", format!("← {}", file.rel_path).dimmed());
+                                if let Err(e) = std::fs::copy(path, &dest) {
+                                    eprintln!("{} failed to copy file from {}: {}", "Error:".red(), path.display(), e);
+                                    exit(1);
+                                }
+                            }
+                        }
+                    }
+                    println!("{} {}", "+".green(), dir_name.bold());
+                }
+            }
+        }
+    }
+
     // 命令注册
     if !plan.plugin.commands.is_empty() {
         println!("{} commands", "==>".cyan().bold());
@@ -1070,6 +1224,26 @@ fn build_pkg_entry(plan: &InstallPlan) -> PkgEntry {
         }
     }
 
+    let mut workdir_files = Vec::new();
+    for op in &plan.plugin.workdir {
+        match op {
+            WorkdirOp::SingleFile { src } => {
+                let name = match src {
+                    ResolvedSrc::Url(url) => extract_filename_from_url(url),
+                    ResolvedSrc::LocalPath(path) => {
+                        path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "unknown".to_string())
+                    }
+                };
+                workdir_files.push(name);
+            }
+            WorkdirOp::Tree { dir_name, .. } => {
+                workdir_files.push(dir_name.clone());
+            }
+        }
+    }
+
     let commands: Vec<String> = plan.plugin.commands.iter().map(|c| c.name.clone()).collect();
     let pip = if plan.plugin.pip_packages.is_empty() {
         None
@@ -1083,6 +1257,7 @@ fn build_pkg_entry(plan: &InstallPlan) -> PkgEntry {
         scripts,
         bins,
         bins_tar,
+        workdir: workdir_files,
         commands,
     }
 }

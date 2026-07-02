@@ -49,6 +49,10 @@ pub struct PluginDef {
     #[serde(rename = "download-bin", default)]
     pub download_bin: Option<HashMap<String, BinSource>>,
 
+    /// 语法糖：扁平写法，等价于 downloads.workdir
+    #[serde(rename = "download-workdir", default)]
+    pub download_workdir: Option<WorkdirValue>,
+
     /// 单个命令注册（命令名 = 插件 key）
     #[serde(default)]
     pub command: Option<CommandDef>,
@@ -59,10 +63,9 @@ pub struct PluginDef {
 }
 
 impl PluginDef {
-    /// 将 `download-scripts` / `download-bin` 语法糖合并到 `downloads`。
+    /// 将 `download-scripts` / `download-bin` / `download-workdir` 语法糖合并到 `downloads`。
     ///
-    /// 冲突规则：同时定义 `download-scripts` 和 `downloads.scripts` 时报错退出，
-    /// `download-bin` 和 `downloads.bin` 同理。无冲突则合并，互不干扰。
+    /// 冲突规则：同时定义语法糖和 `downloads.*` 时报错退出。无冲突则合并，互不干扰。
     pub fn normalize(&mut self) {
         if let Some(ds) = self.download_scripts.take() {
             if let Some(ref dl) = self.downloads
@@ -78,6 +81,7 @@ impl PluginDef {
                 .get_or_insert(DownloadSection {
                     scripts: None,
                     bin: None,
+                    workdir: None,
                 })
                 .scripts = Some(ds);
         }
@@ -96,8 +100,28 @@ impl PluginDef {
                 .get_or_insert(DownloadSection {
                     scripts: None,
                     bin: None,
+                    workdir: None,
                 })
                 .bin = Some(db);
+        }
+
+        if let Some(dw) = self.download_workdir.take() {
+            if let Some(ref dl) = self.downloads
+                && dl.workdir.is_some()
+            {
+                eprintln!(
+                    "{} 'download-workdir' and 'downloads.workdir' cannot both be defined",
+                    "Error:".red(),
+                );
+                std::process::exit(1);
+            }
+            self.downloads
+                .get_or_insert(DownloadSection {
+                    scripts: None,
+                    bin: None,
+                    workdir: None,
+                })
+                .workdir = Some(dw);
         }
     }
 }
@@ -118,6 +142,47 @@ pub struct DownloadSection {
     /// key = 文件名/目录名，value = 平台映射
     #[serde(default)]
     pub bin: Option<HashMap<String, BinSource>>,
+
+    /// 下载到当前工作目录
+    /// 字符串 = 单文件，对象 = 目录树
+    #[serde(default)]
+    pub workdir: Option<WorkdirValue>,
+}
+
+// ---------------------------------------------------------------------------
+// 工作目录下载
+// ---------------------------------------------------------------------------
+
+/// 工作目录下载的取值：字符串（单文件）或对象（目录树）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum WorkdirValue {
+    /// 单文件 URL 字符串 → 下载到当前工作目录
+    Single(String),
+    /// 目录树对象 → 下载到当前工作目录 / <$name>/
+    Tree(WorkdirTree),
+}
+
+/// 工作目录下载的目录树结构。
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkdirTree {
+    /// 目录名，默认 "downloads"
+    #[serde(rename = "$name", default)]
+    pub name: Option<String>,
+
+    /// 目录内容（$ 前缀的 key 自动跳过）
+    #[serde(flatten)]
+    pub entries: HashMap<String, WorkdirEntry>,
+}
+
+/// 目录树中的条目：叶子（URL 字符串）或子目录（嵌套对象）。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum WorkdirEntry {
+    /// 叶子节点：URL 字符串
+    File(String),
+    /// 子目录：嵌套的 key-value 映射
+    Dir(HashMap<String, WorkdirEntry>),
 }
 
 // ---------------------------------------------------------------------------
@@ -462,5 +527,126 @@ mod tests {
             dl.bin.as_ref().unwrap().get("tool").unwrap().urls.get("darwin-arm64").unwrap(),
             "https://example.com/tool"
         );
+    }
+
+    // ==================== workdir ====================
+
+    #[test]
+    fn parse_workdir_single_url() {
+        let raw = to_map(r#"{
+            "app": {
+                "downloads": {
+                    "workdir": "https://example.com/config.json"
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("app").unwrap();
+        let dl = def.downloads.as_ref().unwrap();
+        let wv = dl.workdir.as_ref().unwrap();
+        match wv {
+            WorkdirValue::Single(url) => assert_eq!(url, "https://example.com/config.json"),
+            _ => panic!("expected Single"),
+        }
+    }
+
+    #[test]
+    fn parse_workdir_tree_with_name() {
+        let raw = to_map(r#"{
+            "app": {
+                "downloads": {
+                    "workdir": {
+                        "$name": "myconfig",
+                        "README.md": "https://example.com/readme",
+                        "db": {
+                            "seed.sql": "https://example.com/seed.sql"
+                        }
+                    }
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("app").unwrap();
+        let dl = def.downloads.as_ref().unwrap();
+        let wv = dl.workdir.as_ref().unwrap();
+        match wv {
+            WorkdirValue::Tree(tree) => {
+                assert_eq!(tree.name.as_deref(), Some("myconfig"));
+                assert_eq!(tree.entries.len(), 2);
+                match tree.entries.get("README.md").unwrap() {
+                    WorkdirEntry::File(url) => assert_eq!(url, "https://example.com/readme"),
+                    _ => panic!("expected File"),
+                }
+                match tree.entries.get("db").unwrap() {
+                    WorkdirEntry::Dir(sub) => {
+                        match sub.get("seed.sql").unwrap() {
+                            WorkdirEntry::File(url) => assert_eq!(url, "https://example.com/seed.sql"),
+                            _ => panic!("expected File"),
+                        }
+                    }
+                    _ => panic!("expected Dir"),
+                }
+            }
+            _ => panic!("expected Tree"),
+        }
+    }
+
+    #[test]
+    fn parse_workdir_tree_default_name() {
+        let raw = to_map(r#"{
+            "app": {
+                "downloads": {
+                    "workdir": {
+                        "hello.txt": "https://example.com/hello.txt"
+                    }
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("app").unwrap();
+        let dl = def.downloads.as_ref().unwrap();
+        let wv = dl.workdir.as_ref().unwrap();
+        match wv {
+            WorkdirValue::Tree(tree) => {
+                assert_eq!(tree.name, None);
+            }
+            _ => panic!("expected Tree"),
+        }
+    }
+
+    #[test]
+    fn parse_download_workdir_sugar() {
+        let raw = to_map(r#"{
+            "app": {
+                "download-workdir": "https://example.com/file.txt"
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("app").unwrap();
+        assert!(def.download_workdir.is_some());
+        assert!(def.downloads.is_none());
+        match def.download_workdir.as_ref().unwrap() {
+            WorkdirValue::Single(url) => assert_eq!(url, "https://example.com/file.txt"),
+            _ => panic!("expected Single"),
+        }
+    }
+
+    #[test]
+    fn normalize_download_workdir_sugar() {
+        let raw = to_map(r#"{
+            "app": {
+                "download-workdir": "https://example.com/file.txt"
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let mut def = registry.plugins.get("app").unwrap().clone();
+        def.normalize();
+        assert!(def.download_workdir.is_none());
+        let dl = def.downloads.as_ref().unwrap();
+        let wv = dl.workdir.as_ref().unwrap();
+        match wv {
+            WorkdirValue::Single(url) => assert_eq!(url, "https://example.com/file.txt"),
+            _ => panic!("expected Single"),
+        }
     }
 }

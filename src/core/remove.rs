@@ -563,6 +563,29 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         }
     }
 
+    // 4d. 删除工作目录下载的文件/目录
+    if !pkg.workdir.is_empty() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        println!("{} workdir", "==>".cyan().bold());
+        println!("  {}", format!("→ {}", cwd.display()).dimmed());
+        for name in &pkg.workdir {
+            let path = cwd.join(name);
+            if path.exists() {
+                let is_dir = path.is_dir();
+                println!(
+                    "{}",
+                    format!("Deleting {}", path.display()).dimmed()
+                );
+                if is_dir {
+                    let _ = fs::remove_dir_all(&path);
+                } else {
+                    let _ = fs::remove_file(&path);
+                }
+                println!("{} {}", "-".red(), name.bold());
+            }
+        }
+    }
+
     // 5. 删除 commands
     if !pkg.commands.is_empty() {
         println!("{} commands", "==>".cyan().bold());

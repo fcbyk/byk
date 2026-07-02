@@ -85,6 +85,9 @@ pub struct PkgEntry {
     /// bin-tar 解压出的所有文件/目录列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bins_tar: Vec<String>,
+    /// 工作目录下载的文件/目录名列表
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workdir: Vec<String>,
     /// 该插件注册的命令名列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<String>,
@@ -115,6 +118,8 @@ pub struct ResolvedPlugin {
     pub scripts: Vec<FileOp>,
     /// 二进制操作列表（已按 tar 字段分流）
     pub bins: Vec<BinOp>,
+    /// 工作目录下载操作列表
+    pub workdir: Vec<WorkdirOp>,
     /// 命令注册列表（command 和 commands 已合并）
     pub commands: Vec<CommandReg>,
 }
@@ -149,6 +154,31 @@ pub enum BinOp {
 pub enum ResolvedSrc {
     Url(String),
     LocalPath(PathBuf),
+}
+
+// ---------------------------------------------------------------------------
+// 工作目录下载操作
+// ---------------------------------------------------------------------------
+
+/// 工作目录下载操作：下载到当前 CLI 运行目录。
+pub enum WorkdirOp {
+    /// 单文件：下载到当前工作目录，文件名从 URL 提取
+    SingleFile {
+        src: ResolvedSrc,
+    },
+    /// 目录树：下载到当前工作目录 / <dir_name>/
+    Tree {
+        dir_name: String,
+        files: Vec<WorkdirFile>,
+    },
+}
+
+/// 目录树中的单个文件。
+pub struct WorkdirFile {
+    /// 相对于 dir_name 的路径
+    pub rel_path: String,
+    /// 下载来源
+    pub src: ResolvedSrc,
 }
 
 // ---------------------------------------------------------------------------

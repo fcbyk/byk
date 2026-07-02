@@ -211,6 +211,7 @@ mod tests {
                 scripts: vec![],
                 bins: vec![],
                 bins_tar: vec![],
+                workdir: vec![],
                 commands: vec!["run".to_string()],
             },
         );
