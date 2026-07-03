@@ -43,7 +43,8 @@ pub enum DownloadsSection {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PluginDef {
     /// pip 依赖（属于本插件，卸载时会一起删除）
-    #[serde(default)]
+    /// 支持单字符串或字符串数组，单值自动包装为 `Some(vec![...])`
+    #[serde(default, deserialize_with = "deserialize_pip_one_or_many")]
     pub pip: Option<Vec<String>>,
 
     /// 下载到 plugins/{plugin_key}/ 的文件
@@ -117,6 +118,41 @@ pub struct CommandDef {
 }
 
 // ---------------------------------------------------------------------------
+// 自定义反序列化器
+// ---------------------------------------------------------------------------
+
+/// 反序列化 `pip` 字段：接受单字符串或字符串数组，统一返回 `Option<Vec<String>>`。
+/// - 字段不存在 → `None`
+/// - 单字符串 `"pkg"` → `Some(vec!["pkg"])`
+/// - 数组 `["a", "b"]` → `Some(vec!["a", "b"])`
+/// - 空数组 `[]` → `None`
+fn deserialize_pip_one_or_many<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) => Ok(Some(vec![s])),
+        serde_json::Value::Array(arr) => {
+            let strings: Result<Vec<String>, _> = arr
+                .into_iter()
+                .map(|v| match v {
+                    serde_json::Value::String(s) => Ok(s),
+                    _ => Err(serde::de::Error::custom(
+                        "expected string in pip array",
+                    )),
+                })
+                .collect();
+            strings.map(|v| if v.is_empty() { None } else { Some(v) })
+        }
+        _ => Err(serde::de::Error::custom(
+            "expected a string or array of strings for pip field",
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 解析入口
 // ---------------------------------------------------------------------------
 
@@ -141,11 +177,13 @@ pub fn parse_registry(raw: &HashMap<String, serde_json::Value>) -> Registry {
 
     let global_pip = raw
         .get("$pip")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
+        .map(|v| match v {
+            serde_json::Value::String(s) => vec![s.clone()],
+            serde_json::Value::Array(arr) => arr
+                .iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
+                .collect(),
+            _ => vec![],
         })
         .unwrap_or_default();
 
@@ -201,6 +239,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_pip_single_string() {
+        let raw = to_map(r#"{"plugin": {"pip": "requests"}}"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("plugin").unwrap();
+        assert_eq!(def.pip.as_ref().unwrap(), &vec!["requests".to_string()]);
+    }
+
+    #[test]
+    fn parse_pip_empty_array_is_none() {
+        let raw = to_map(r#"{"plugin": {"pip": []}}"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("plugin").unwrap();
+        assert!(def.pip.is_none());
+    }
+
+    #[test]
     fn parse_with_default_and_var() {
         let raw = to_map(r#"{
             "$default": "main",
@@ -220,6 +274,18 @@ mod tests {
         }"#);
         let registry = parse_registry(&raw);
         assert_eq!(registry.global_pip, vec!["shared-lib".to_string()]);
+    }
+
+    #[test]
+    fn parse_global_pip_single_string() {
+        let raw = to_map(r#"{
+            "$pip": "shared-lib",
+            "p1": {"pip": "p1-lib"}
+        }"#);
+        let registry = parse_registry(&raw);
+        assert_eq!(registry.global_pip, vec!["shared-lib".to_string()]);
+        let def = registry.plugins.get("p1").unwrap();
+        assert_eq!(def.pip.as_ref().unwrap(), &vec!["p1-lib".to_string()]);
     }
 
     #[test]

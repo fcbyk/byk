@@ -4,9 +4,7 @@
   },
   "$default": "test1",
   "test1": {
-    "pip": [
-      "byk_pym @ {url}/byk_pym-2026.6.21-py3-none-any.whl"
-    ],
+    "pip": "byk_pym @ {url}/byk_pym-2026.6.21-py3-none-any.whl",
     "commands": {
       "hello1": {
         "type": "python-m",
@@ -29,9 +27,7 @@
     }
   },
   "test3": {
-    "pip": [
-      "byk_pyb @ {url}/byk_pyb-2026.6.22-py3-none-any.whl"
-    ],
+    "pip": "byk_pyb @ {url}/byk_pyb-2026.6.22-py3-none-any.whl",
     "command": {
       "type": "pip-bin",
       "entry": "hello4",
