@@ -517,7 +517,23 @@ fn resolve_ref(ref_str: &str, ref_base: &RefBase, cdn: bool) -> Result<(String, 
 ///
 /// 每个变量替换一次（k 个变量 = k 遍），未定义变量静默保留原文。
 /// 变量作用域仅限当前 JSON 文件，不穿透到 ref 引用的文件。
-fn preprocess_registry(body: &str) -> Result<HashMap<String, serde_json::Value>, String> {
+/// 将变量值解析为字符串：
+/// - 字符串 → 直接使用
+/// - 平台对象 `{"darwin-arm64": "...", ...}` → 取当前平台对应的值
+fn resolve_var_to_string(val: &serde_json::Value, platform: &str) -> Option<String> {
+    if let Some(s) = val.as_str() {
+        Some(s.to_string())
+    } else if let Some(obj) = val.as_object() {
+        obj.get(platform).and_then(|v| v.as_str()).map(|s| s.to_string())
+    } else {
+        None
+    }
+}
+
+fn preprocess_registry(
+    body: &str,
+    platform: &str,
+) -> Result<HashMap<String, serde_json::Value>, String> {
     // 先解析一次提取 $var
     let temp: HashMap<String, serde_json::Value> =
         serde_json::from_str(body).map_err(|e| format!("Failed to parse registry: {}", e))?;
@@ -529,10 +545,12 @@ fn preprocess_registry(body: &str) -> Result<HashMap<String, serde_json::Value>,
             .ok_or_else(|| "\"$var\" must be a map".to_string())?,
     };
 
-    // 收集所有字符串类型的变量
-    let pairs: Vec<(&str, &str)> = vars
+    // 收集所有变量（字符串直接使用，平台对象取当前平台）
+    let pairs: Vec<(String, String)> = vars
         .iter()
-        .filter_map(|(k, val)| val.as_str().map(|s| (k.as_str(), s)))
+        .filter_map(|(k, val)| {
+            resolve_var_to_string(val, platform).map(|s| (k.clone(), s))
+        })
         .collect();
 
     if pairs.is_empty() {
@@ -552,7 +570,17 @@ fn preprocess_registry(body: &str) -> Result<HashMap<String, serde_json::Value>,
         body = body.replace(&format!("{{{key}}}"), val);
     }
 
-    serde_json::from_str(&body).map_err(|e| format!("Failed to parse registry: {}", e))
+    let mut result: HashMap<String, serde_json::Value> =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse registry: {}", e))?;
+
+    // 将 $var 中的平台对象也替换为解析后的字符串，方便下游 parse_registry
+    if let Some(var_map) = result.get_mut("$var").and_then(|v| v.as_object_mut()) {
+        for (key, val) in &pairs {
+            var_map.insert(key.clone(), serde_json::Value::String(val.clone()));
+        }
+    }
+
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -682,7 +710,8 @@ pub fn install_plugin(
         })
     };
 
-    let registry: HashMap<String, serde_json::Value> = match preprocess_registry(&body) {
+    let platform = env!("PLATFORM");
+    let registry: HashMap<String, serde_json::Value> = match preprocess_registry(&body, platform) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("{} {}", "Error:".red(), e);
@@ -776,7 +805,7 @@ pub fn install_plugin(
             "  {}",
             format!("→ {}", resolved_url).dimmed()
         );
-        match preprocess_registry(&body) {
+        match preprocess_registry(&body, platform) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!(
@@ -1813,7 +1842,7 @@ mod tests {
     #[test]
     fn preprocess_no_var() {
         let body = r#"{"key1": {"pip": ["requests"]}}"#;
-        let result = preprocess_registry(body).unwrap();
+        let result = preprocess_registry(body, "linux-x86_64").unwrap();
         assert!(result.contains_key("key1"));
         assert!(!result.contains_key("$var"));
     }
@@ -1821,7 +1850,7 @@ mod tests {
     #[test]
     fn preprocess_with_var_replacement() {
         let body = r#"{"$var": {"PKG": "requests"}, "plugin": {"pip": ["{PKG}"]}}"#;
-        let result = preprocess_registry(body).unwrap();
+        let result = preprocess_registry(body, "linux-x86_64").unwrap();
         let plugin = result.get("plugin").unwrap();
         let pip_list = plugin.get("pip").unwrap().as_array().unwrap();
         assert_eq!(pip_list[0].as_str().unwrap(), "requests");
@@ -1830,7 +1859,7 @@ mod tests {
     #[test]
     fn preprocess_multiple_vars() {
         let body = r#"{"$var": {"A": "a_val", "B": "b_val"}, "x": {"entry": "{A}-{B}"}}"#;
-        let result = preprocess_registry(body).unwrap();
+        let result = preprocess_registry(body, "linux-x86_64").unwrap();
         let x = result.get("x").unwrap();
         assert_eq!(x.get("entry").unwrap().as_str().unwrap(), "a_val-b_val");
     }
@@ -1838,22 +1867,62 @@ mod tests {
     #[test]
     fn preprocess_var_not_string_skipped() {
         let body = r#"{"$var": {"N": 42}, "x": {"entry": "{N}"}}"#;
-        let result = preprocess_registry(body).unwrap();
+        let result = preprocess_registry(body, "linux-x86_64").unwrap();
         let x = result.get("x").unwrap();
         // {N} not replaced because 42 is not a string
         assert_eq!(x.get("entry").unwrap().as_str().unwrap(), "{N}");
     }
 
     #[test]
+    fn preprocess_platform_var_resolved() {
+        let body = r#"{"$var": {"URL": {"linux-x86_64": "https://linux.example.com", "darwin-arm64": "https://darwin.example.com"}}, "plugin": {"downloads": {"scripts": {"tool": "{URL}"}}}}"#;
+        let result = preprocess_registry(body, "linux-x86_64").unwrap();
+        let plugin = result.get("plugin").unwrap();
+        let downloads = plugin.get("downloads").unwrap();
+        let scripts = downloads.get("scripts").unwrap();
+        let tool = scripts.get("tool").unwrap().as_str().unwrap();
+        assert_eq!(tool, "https://linux.example.com");
+    }
+
+    #[test]
+    fn preprocess_platform_var_missing_platform() {
+        let body = r#"{"$var": {"URL": {"darwin-arm64": "https://darwin.example.com"}}, "plugin": {"entry": "{URL}"}}"#;
+        let result = preprocess_registry(body, "linux-x86_64").unwrap();
+        let plugin = result.get("plugin").unwrap();
+        // {URL} not replaced because linux-x86_64 is not in the platform map
+        assert_eq!(plugin.get("entry").unwrap().as_str().unwrap(), "{URL}");
+    }
+
+    #[test]
+    fn preprocess_platform_var_in_string_interpolation() {
+        let body = r#"{"$var": {"BASE": {"linux-x86_64": "https://cdn.linux.example.com", "darwin-arm64": "https://cdn.darwin.example.com"}}, "plugin": {"downloads": {"scripts": {"tool": "{BASE}/tool", "config": "{BASE}/config.json"}}}}"#;
+        let result = preprocess_registry(body, "linux-x86_64").unwrap();
+        let plugin = result.get("plugin").unwrap();
+        let downloads = plugin.get("downloads").unwrap();
+        let scripts = downloads.get("scripts").unwrap();
+        assert_eq!(scripts.get("tool").unwrap().as_str().unwrap(), "https://cdn.linux.example.com/tool");
+        assert_eq!(scripts.get("config").unwrap().as_str().unwrap(), "https://cdn.linux.example.com/config.json");
+    }
+
+    #[test]
+    fn preprocess_platform_var_to_string_in_result() {
+        let body = r#"{"$var": {"URL": {"linux-x86_64": "https://linux.example.com", "darwin-arm64": "https://darwin.example.com"}}, "plugin": {"entry": "{URL}"}}"#;
+        let result = preprocess_registry(body, "linux-x86_64").unwrap();
+        // $var 中的平台对象被替换为解析后的字符串
+        let var_map = result.get("$var").unwrap().as_object().unwrap();
+        assert_eq!(var_map.get("URL").unwrap().as_str().unwrap(), "https://linux.example.com");
+    }
+
+    #[test]
     fn preprocess_invalid_json() {
         let body = "not json";
-        assert!(preprocess_registry(body).is_err());
+        assert!(preprocess_registry(body, "linux-x86_64").is_err());
     }
 
     #[test]
     fn preprocess_var_not_map() {
         let body = r#"{"$var": "not_a_map"}"#;
-        assert!(preprocess_registry(body).is_err());
+        assert!(preprocess_registry(body, "linux-x86_64").is_err());
     }
 
     // ==================== build_cdn_registry_url ====================
