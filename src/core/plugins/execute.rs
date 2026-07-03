@@ -1,7 +1,7 @@
 //! 插件命令执行引擎。
 //!
 //! 支持多种执行类型，通过 `PluginExecutor` trait 实现可扩展架构。
-//! 当前内置：py-module、py-script、py-bin、bin。
+//! 当前内置：python-m、python、pip-bin、bin。
 
 use std::path::Path;
 use std::process::{Command, exit};
@@ -13,7 +13,7 @@ use super::types::{CmdState, VENV_BIN};
 // 执行器 trait
 // ---------------------------------------------------------------------------
 
-/// 插件执行器：每种命令类型（py-module / py-script / ...）对应一个实现。
+/// 插件执行器：每种命令类型（python-m / python / ...）对应一个实现。
 pub trait PluginExecutor {
     /// 返回此执行器支持的命令类型字符串。
     fn cmd_type(&self) -> &'static str;
@@ -40,11 +40,11 @@ pub trait PluginExecutor {
 // ---------------------------------------------------------------------------
 
 /// Python 模块执行器（`python -m <module> <args>`）。
-pub struct PyModuleExecutor;
+pub struct PythonMExecutor;
 
-impl PluginExecutor for PyModuleExecutor {
+impl PluginExecutor for PythonMExecutor {
     fn cmd_type(&self) -> &'static str {
-        "py-module"
+        "python-m"
     }
 
     fn execute(
@@ -67,12 +67,12 @@ impl PluginExecutor for PyModuleExecutor {
     }
 }
 
-/// Python 脚本执行器（`python <script> <args>`）。
-pub struct PyScriptExecutor;
+/// Python 文件执行器（`python <entry> <args>`）。
+pub struct PythonExecutor;
 
-impl PluginExecutor for PyScriptExecutor {
+impl PluginExecutor for PythonExecutor {
     fn cmd_type(&self) -> &'static str {
-        "py-script"
+        "python"
     }
 
     fn execute(
@@ -95,15 +95,15 @@ impl PluginExecutor for PyScriptExecutor {
     }
 }
 
-/// Python bin 执行器（直接执行 venv/bin/ 下的控制台脚本）。
+/// pip bin 执行器（直接执行 venv/bin/ 下的控制台脚本）。
 ///
 /// 适用于通过 pip 安装的 whl 包，其 `[project.scripts]` 声明的
 /// 入口点会被 pip 自动生成到 venv/bin/ 目录下。
-pub struct PyBinExecutor;
+pub struct PipBinExecutor;
 
-impl PluginExecutor for PyBinExecutor {
+impl PluginExecutor for PipBinExecutor {
     fn cmd_type(&self) -> &'static str {
-        "py-bin"
+        "pip-bin"
     }
 
     fn execute(
@@ -163,9 +163,9 @@ impl PluginExecutor for BinExecutor {
 /// 新增执行类型时在此函数中追加即可。
 fn executors() -> Vec<Box<dyn PluginExecutor>> {
     vec![
-        Box::new(PyModuleExecutor),
-        Box::new(PyScriptExecutor),
-        Box::new(PyBinExecutor),
+        Box::new(PythonMExecutor),
+        Box::new(PythonExecutor),
+        Box::new(PipBinExecutor),
         Box::new(BinExecutor),
     ]
 }
@@ -177,7 +177,7 @@ fn executors() -> Vec<Box<dyn PluginExecutor>> {
 /// 将插件命令转发给对应的执行器。
 ///
 /// 根据 `cmd_type` 查找匹配的执行器并执行。
-/// 若找不到匹配的执行器，fallback 到 py-module。
+/// 若找不到匹配的执行器，fallback 到 python-m。
 pub fn execute_plugin_command(
     cmd_name: &str,
     cmd_args: &[String],
@@ -206,8 +206,8 @@ pub fn execute_plugin_command(
     let status = match executor {
         Some(e) => e.execute(&cmd.entry, cmd_args, plugins_dir, venv_dir, &python_exe),
         None => {
-            // fallback: 默认使用 py-module
-            PyModuleExecutor.execute(&cmd.entry, cmd_args, plugins_dir, venv_dir, &python_exe)
+            // fallback: 默认使用 python-m
+            PythonMExecutor.execute(&cmd.entry, cmd_args, plugins_dir, venv_dir, &python_exe)
         }
     };
 
@@ -225,18 +225,18 @@ mod tests {
     // ==================== cmd_type ====================
 
     #[test]
-    fn py_module_executor_type() {
-        assert_eq!(PyModuleExecutor.cmd_type(), "py-module");
+    fn python_m_executor_type() {
+        assert_eq!(PythonMExecutor.cmd_type(), "python-m");
     }
 
     #[test]
-    fn py_script_executor_type() {
-        assert_eq!(PyScriptExecutor.cmd_type(), "py-script");
+    fn python_executor_type() {
+        assert_eq!(PythonExecutor.cmd_type(), "python");
     }
 
     #[test]
-    fn py_bin_executor_type() {
-        assert_eq!(PyBinExecutor.cmd_type(), "py-bin");
+    fn pip_bin_executor_type() {
+        assert_eq!(PipBinExecutor.cmd_type(), "pip-bin");
     }
 
     #[test]
@@ -256,9 +256,9 @@ mod tests {
     fn executors_contains_all_types() {
         let exes = executors();
         let types: Vec<&str> = exes.iter().map(|e| e.cmd_type()).collect();
-        assert!(types.contains(&"py-module"));
-        assert!(types.contains(&"py-script"));
-        assert!(types.contains(&"py-bin"));
+        assert!(types.contains(&"python-m"));
+        assert!(types.contains(&"python"));
+        assert!(types.contains(&"pip-bin"));
         assert!(types.contains(&"bin"));
     }
 }

@@ -165,7 +165,7 @@ mod tests {
         commands.insert(
             "test-cmd".to_string(),
             PluginCommand {
-                cmd_type: "py-module".to_string(),
+                cmd_type: "python-m".to_string(),
                 entry: "mymod".to_string(),
                 desc: "test desc".to_string(),
             },
@@ -180,7 +180,7 @@ mod tests {
         assert!(loaded.commands.contains_key("test-cmd"));
         assert_eq!(
             loaded.commands.get("test-cmd").unwrap().cmd_type,
-            "py-module"
+            "python-m"
         );
     }
 

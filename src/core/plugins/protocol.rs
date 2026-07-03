@@ -243,7 +243,7 @@ pub struct BinSource {
 /// 命令注册定义。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CommandDef {
-    /// 命令类型："py-module" | "py-script" | "py-bin" | "bin"
+    /// 命令类型："python-m" | "python" | "pip-bin" | "bin"
     #[serde(rename = "type")]
     pub cmd_type: String,
 
@@ -413,7 +413,7 @@ mod tests {
             "app": {
                 "command": {"type": "bin", "entry": "app/app", "desc": "main"},
                 "commands": {
-                    "sub": {"type": "py-script", "entry": "sub.py", "desc": "sub"}
+                    "sub": {"type": "python", "entry": "sub.py", "desc": "sub"}
                 }
             }
         }"#);
@@ -427,7 +427,7 @@ mod tests {
 
         let cmds = def.commands.as_ref().unwrap();
         let sub = cmds.get("sub").unwrap();
-        assert_eq!(sub.cmd_type, "py-script");
+        assert_eq!(sub.cmd_type, "python");
     }
 
     #[test]

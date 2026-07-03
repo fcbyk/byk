@@ -320,7 +320,7 @@ pub fn render_command(name: &str, layout: &PathLayout) {
             } => {
                 println!("{}: {}", "Plugin".green().bold(), name.cyan().bold());
                 let label = match cmd_type.as_str() {
-                    "py-script" => "Script",
+                    "python" => "Script",
                     _ => "Module",
                 };
                 println!("  {}: {}", label.yellow(), entry);

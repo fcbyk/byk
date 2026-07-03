@@ -410,7 +410,7 @@ mod tests {
 
             // 写入插件状态
             let plugin_state = json!({
-                "commands": {"test-plugin": {"type": "py-module", "entry": "test.module:Plugin", "desc": "A test plugin"}}
+                "commands": {"test-plugin": {"type": "python-m", "entry": "test.module:Plugin", "desc": "A test plugin"}}
             });
             fs::write(
                 plugins_dir.join("plugins.cmd.json"),
