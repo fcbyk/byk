@@ -53,6 +53,10 @@ pub struct PluginDef {
     #[serde(rename = "download-workdir", default)]
     pub download_workdir: Option<WorkdirValue>,
 
+    /// 语法糖：扁平写法，等价于 downloads.alias
+    #[serde(rename = "download-alias", default)]
+    pub download_alias: Option<HashMap<String, String>>,
+
     /// 单个命令注册（命令名 = 插件 key）
     #[serde(default)]
     pub command: Option<CommandDef>,
@@ -60,10 +64,16 @@ pub struct PluginDef {
     /// 多个命令注册
     #[serde(default)]
     pub commands: Option<HashMap<String, CommandDef>>,
+
+    /// 别名部署：安装时写入 *.byk.json 文件
+    /// key = "@filename"（当前目录）或 "@@filename"（~/.byk/alias/）
+    /// value = 别名 key-value 定义
+    #[serde(default)]
+    pub alias: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl PluginDef {
-    /// 将 `download-scripts` / `download-bin` / `download-workdir` 语法糖合并到 `downloads`。
+    /// 将 `download-scripts` / `download-bin` / `download-workdir` / `download-alias` 语法糖合并到 `downloads`。
     ///
     /// 冲突规则：同时定义语法糖和 `downloads.*` 时报错退出。无冲突则合并，互不干扰。
     pub fn normalize(&mut self) {
@@ -82,6 +92,7 @@ impl PluginDef {
                     scripts: None,
                     bin: None,
                     workdir: None,
+                    alias: None,
                 })
                 .scripts = Some(ds);
         }
@@ -101,6 +112,7 @@ impl PluginDef {
                     scripts: None,
                     bin: None,
                     workdir: None,
+                    alias: None,
                 })
                 .bin = Some(db);
         }
@@ -120,8 +132,29 @@ impl PluginDef {
                     scripts: None,
                     bin: None,
                     workdir: None,
+                    alias: None,
                 })
                 .workdir = Some(dw);
+        }
+
+        if let Some(da) = self.download_alias.take() {
+            if let Some(ref dl) = self.downloads
+                && dl.alias.is_some()
+            {
+                eprintln!(
+                    "{} 'download-alias' and 'downloads.alias' cannot both be defined",
+                    "Error:".red(),
+                );
+                std::process::exit(1);
+            }
+            self.downloads
+                .get_or_insert(DownloadSection {
+                    scripts: None,
+                    bin: None,
+                    workdir: None,
+                    alias: None,
+                })
+                .alias = Some(da);
         }
     }
 }
@@ -148,6 +181,11 @@ pub struct DownloadSection {
     /// 字符串 = 单文件，对象 = 目录树（URL 支持 `[tar]` 前缀）
     #[serde(default)]
     pub workdir: Option<WorkdirValue>,
+
+    /// 下载到 ~/.byk/alias/
+    /// key = 文件名，value = 来源（URL 或相对路径，支持 `[tar]` 前缀）
+    #[serde(default)]
+    pub alias: Option<HashMap<String, String>>,
 }
 
 // ---------------------------------------------------------------------------

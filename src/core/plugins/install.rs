@@ -834,6 +834,109 @@ pub fn install_plugin(
         "Successfully".green().bold(),
         key.bold(),
     );
+
+    // 10. 部署别名
+    if let Some(def) = registry.plugins.get(&key)
+        && let Some(alias_map) = &def.alias
+    {
+        deploy_aliases(alias_map, layout);
+    }
+}
+
+/// 部署插件定义的别名到 *.byk.json 文件。
+///
+/// 规则：
+/// - `@filename`  → 当前工作目录 → `filename.byk.json`
+/// - `@@filename` → ~/.byk/alias/ → `filename.byk.json`
+/// - 文件不存在 → 创建，直接写入
+/// - 文件存在 → 读取，顶层 key 直接覆盖，写回
+fn deploy_aliases(
+    alias_map: &HashMap<String, serde_json::Value>,
+    layout: &crate::core::paths::PathLayout,
+) {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    for (file_key, content) in alias_map {
+        let (stem, is_global) = if let Some(s) = file_key.strip_prefix("@@") {
+            (s, true)
+        } else if let Some(s) = file_key.strip_prefix('@') {
+            (s, false)
+        } else {
+            eprintln!(
+                "{} invalid alias key '{}': must start with @ or @@",
+                "Error:".red(),
+                file_key,
+            );
+            exit(1);
+        };
+
+        if !crate::core::aliases::validate_filename(stem) {
+            eprintln!(
+                "{} invalid alias key '{}': filename cannot contain '.' or '@'",
+                "Error:".red(),
+                file_key,
+            );
+            exit(1);
+        }
+
+        let target_dir: std::path::PathBuf = if is_global {
+            layout.alias_dir.clone()
+        } else {
+            cwd.clone()
+        };
+        let target_path = target_dir.join(format!("{}.byk.json", stem));
+
+        let content = content.as_object().map(|obj| {
+            crate::core::aliases::filter_invalid_keys(obj)
+        });
+
+        match content {
+            Some(filtered) if !filtered.is_empty() => {
+                let mut target_obj = if target_path.exists() {
+                    let existing = std::fs::read_to_string(&target_path)
+                        .unwrap_or_else(|_| "{}".to_string());
+                    serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&existing)
+                        .unwrap_or_default()
+                } else {
+                    serde_json::Map::new()
+                };
+
+                for (k, v) in &filtered {
+                    target_obj.insert(k.clone(), v.clone());
+                }
+
+                if let Some(parent) = target_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+
+                let output = serde_json::to_string_pretty(&target_obj).unwrap_or_default();
+                if let Err(e) = std::fs::write(&target_path, &output) {
+                    eprintln!(
+                        "{} failed to write alias file {}: {}",
+                        "Error:".red(),
+                        target_path.display(),
+                        e,
+                    );
+                    exit(1);
+                }
+
+                println!(
+                    "{} {} {}",
+                    "+".green(),
+                    file_key.bold(),
+                    format!("→ {}", target_path.display()).dimmed()
+                );
+            }
+            _ => {
+                println!(
+                    "{} {} {}",
+                    "*".dimmed(),
+                    file_key.dimmed(),
+                    "(empty)".dimmed()
+                );
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -962,6 +1065,30 @@ fn build_install_plan(
                 }
             }
         }
+
+        // download.alias → Asset
+        if let Some(am) = &dl.alias {
+            for (filename, src) in am {
+                let is_archive = is_tar_url(src);
+                let clean = strip_tar_prefix(src);
+                match resolve_asset(clean, ref_base, cdn) {
+                    Ok(resolved) => {
+                        assets.push(Asset {
+                            name: filename.clone(),
+                            target: AssetTarget::Alias,
+                            src: resolved,
+                            is_archive,
+                            tracked: true,
+                            chmod_x: false,
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+            }
+        }
     }
 
     // command + commands → 合并为 Vec<CommandReg>
@@ -1000,10 +1127,11 @@ fn build_install_plan(
     if assets.is_empty()
         && commands.is_empty()
         && def.pip.as_ref().is_none_or(|p| p.is_empty())
+        && def.alias.as_ref().is_none_or(|a| a.is_empty())
         && registry.global_pip.is_empty()
     {
         eprintln!(
-            "{} plugin \"{}\" has no supported operations (pip/download/command/commands)",
+            "{} plugin \"{}\" has no supported operations (pip/download/command/commands/alias)",
             "Error:".red(),
             key,
         );
@@ -1035,6 +1163,7 @@ fn execute_install_plan(
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
     let scripts_dir = layout.plugins_dir.join("scripts");
     let bin_dir = layout.plugins_dir.join("bin");
+    let alias_dir = layout.alias_dir.clone();
 
     // 全局 pip（共享依赖，不随插件卸载）
     if !plan.global_pip.is_empty() {
@@ -1072,12 +1201,14 @@ fn execute_install_plan(
                 AssetTarget::Scripts => scripts_dir.clone(),
                 AssetTarget::Bin => bin_dir.clone(),
                 AssetTarget::Workdir => cwd.clone(),
+                AssetTarget::Alias => alias_dir.clone(),
             };
 
             let section_label = match asset.target {
                 AssetTarget::Scripts => "scripts",
                 AssetTarget::Bin => "bin",
                 AssetTarget::Workdir => "workdir",
+                AssetTarget::Alias => "alias",
             };
 
             if !section_printed.contains_key(section_label) {

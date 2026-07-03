@@ -502,6 +502,7 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     // 4. 删除脚本文件
     let scripts_dir = layout.plugins_dir.join("scripts");
     let bin_dir = layout.plugins_dir.join("bin");
+    let alias_dir = layout.alias_dir.clone();
 
     if !pkg.assets.is_empty() {
         let mut printed_header = false;
@@ -546,6 +547,29 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
                     let _ = fs::remove_dir_all(&bin_path);
                 } else {
                     let _ = fs::remove_file(&bin_path);
+                }
+                println!("{} {}", "-".red(), name.bold());
+                continue;
+            }
+
+            // 尝试 alias/ 目录
+            let alias_path = alias_dir.join(name);
+            if alias_path.exists() {
+                if !printed_header {
+                    println!("{} assets", "==>".cyan().bold());
+                    printed_header = true;
+                }
+                println!(
+                    "{}",
+                    format!("Deleting {}", alias_path.display()).dimmed()
+                );
+                if let Err(e) = fs::remove_file(&alias_path) {
+                    eprintln!(
+                        "{} Warning: failed to delete {}: {}",
+                        "Warning:".yellow(),
+                        alias_path.display(),
+                        e,
+                    );
                 }
                 println!("{} {}", "-".red(), name.bold());
             }
