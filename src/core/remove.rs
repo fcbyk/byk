@@ -499,77 +499,67 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         }
     }
 
-    // 4. 删除脚本文件
-    let scripts_dir = layout.plugins_dir.join("scripts");
-    let bin_dir = layout.plugins_dir.join("bin");
-    let alias_dir = layout.alias_dir.clone();
+    // 4. 删除插件目录（整个 plugins/{key}/）
+    let plugin_dir = layout.plugins_dir.join(key);
+    if plugin_dir.exists() {
+        println!("{} assets", "==>".cyan().bold());
+        println!(
+            "{}",
+            format!("Deleting {}", plugin_dir.display()).dimmed()
+        );
+        if let Err(e) = fs::remove_dir_all(&plugin_dir) {
+            eprintln!(
+                "{} Warning: failed to delete {}: {}",
+                "Warning:".yellow(),
+                plugin_dir.display(),
+                e,
+            );
+        }
+        println!("{} {}", "-".red(), format!("{}/", key).bold());
+    }
 
+    // 清理 workdir / alias 资源（如果有）
     if !pkg.assets.is_empty() {
+        let alias_dir = layout.alias_dir.clone();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let mut printed_header = false;
 
         for name in &pkg.assets {
-            // 尝试 scripts/ 目录
-            let script_path = scripts_dir.join(name);
-            if script_path.exists() {
+            // 尝试 workdir
+            let workdir_path = cwd.join(name);
+            if workdir_path.exists() {
                 if !printed_header {
-                    println!("{} assets", "==>".cyan().bold());
+                    println!("{} workdir/alias files", "==>".cyan().bold());
                     printed_header = true;
                 }
                 println!(
                     "{}",
-                    format!("Deleting {}", script_path.display()).dimmed()
+                    format!("Deleting {}", workdir_path.display()).dimmed()
                 );
-                if let Err(e) = fs::remove_file(&script_path) {
-                    eprintln!(
-                        "{} Warning: failed to delete {}: {}",
-                        "Warning:".yellow(),
-                        script_path.display(),
-                        e,
-                    );
-                }
-                println!("{} {}", "-".red(), name.bold());
-                continue;
-            }
-
-            // 尝试 bin/ 目录
-            let bin_path = bin_dir.join(name);
-            if bin_path.exists() {
-                if !printed_header {
-                    println!("{} assets", "==>".cyan().bold());
-                    printed_header = true;
-                }
-                let is_dir = bin_path.is_dir();
-                println!(
-                    "{}",
-                    format!("Deleting {}", bin_path.display()).dimmed()
-                );
-                if is_dir {
-                    let _ = fs::remove_dir_all(&bin_path);
+                if workdir_path.is_dir() {
+                    let _ = fs::remove_dir_all(&workdir_path);
                 } else {
-                    let _ = fs::remove_file(&bin_path);
+                    let _ = fs::remove_file(&workdir_path);
                 }
                 println!("{} {}", "-".red(), name.bold());
                 continue;
             }
 
-            // 尝试 alias/ 目录
+            // 尝试 alias dir
             let alias_path = alias_dir.join(name);
             if alias_path.exists() {
                 if !printed_header {
-                    println!("{} assets", "==>".cyan().bold());
+                    println!("{} workdir/alias files", "==>".cyan().bold());
                     printed_header = true;
                 }
                 println!(
                     "{}",
                     format!("Deleting {}", alias_path.display()).dimmed()
                 );
-                if let Err(e) = fs::remove_file(&alias_path) {
-                    eprintln!(
-                        "{} Warning: failed to delete {}: {}",
-                        "Warning:".yellow(),
-                        alias_path.display(),
-                        e,
-                    );
+                if alias_path.is_dir() {
+                    let _ = fs::remove_dir_all(&alias_path);
+                } else {
+                    let _ = fs::remove_file(&alias_path);
                 }
                 println!("{} {}", "-".red(), name.bold());
             }

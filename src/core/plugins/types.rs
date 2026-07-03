@@ -116,11 +116,10 @@ pub struct ResolvedPlugin {
 // ---------------------------------------------------------------------------
 
 /// 资产目标位置。
+#[derive(Clone, Copy)]
 pub enum AssetTarget {
-    /// plugins/scripts/
-    Scripts,
-    /// plugins/bin/
-    Bin,
+    /// plugins/{plugin_key}/
+    PluginDir,
     /// 当前工作目录
     Workdir,
     /// ~/.byk/alias/
@@ -133,13 +132,11 @@ pub struct Asset {
     pub name: String,
     /// 目标位置分类
     pub target: AssetTarget,
-    /// 已解析的来源（[tar] 前缀已剥离）
+    /// 已解析的来源（[tar]/[exe] 前缀已剥离）
     pub src: ResolvedSrc,
     /// 是否为压缩包（需 peek + extract）
     pub is_archive: bool,
-    /// 是否记录到 PkgEntry（scripts/bin = true，workdir = false）
-    pub tracked: bool,
-    /// 下载后是否需要 chmod +x（bin = true）
+    /// 下载后是否需要 chmod +x（[exe] 前缀 = true）
     pub chmod_x: bool,
 }
 

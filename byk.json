@@ -21,9 +21,7 @@
     }
   },
   "test2": {
-    "download-scripts": {
-      "hello_world.py": "plugins/py-script/hello_world.py"
-    },
+    "downloads": "plugins/py-script/hello_world.py",
     "command": {
       "type": "python",
       "entry": "hello_world.py",

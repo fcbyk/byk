@@ -67,7 +67,7 @@ impl PluginExecutor for PythonMExecutor {
     }
 }
 
-/// Python 文件执行器（`python <entry> <args>`）。
+/// Python 文件执行器（`python plugins/<entry> <args>`）。
 pub struct PythonExecutor;
 
 impl PluginExecutor for PythonExecutor {
@@ -83,7 +83,7 @@ impl PluginExecutor for PythonExecutor {
         _venv_dir: &Path,
         python_exe: &str,
     ) -> std::process::ExitStatus {
-        let script_path = plugins_dir.join("scripts").join(entry);
+        let script_path = plugins_dir.join(entry);
         Command::new(python_exe)
             .arg(script_path)
             .args(args)
@@ -125,9 +125,9 @@ impl PluginExecutor for PipBinExecutor {
     }
 }
 
-/// 普通二进制执行器（直接执行 plugins/bin/ 下的文件）。
+/// 普通二进制执行器（直接执行 plugins/<entry> 下的文件）。
 ///
-/// 适用于通过 `bin` 字段下载的平台特定二进制文件，与 Python 生态无关。
+/// 适用于下载的平台特定二进制文件，与 Python 生态无关。
 pub struct BinExecutor;
 
 impl PluginExecutor for BinExecutor {
@@ -143,7 +143,7 @@ impl PluginExecutor for BinExecutor {
         _venv_dir: &Path,
         _python_exe: &str,
     ) -> std::process::ExitStatus {
-        let bin_path = plugins_dir.join("bin").join(entry);
+        let bin_path = plugins_dir.join(entry);
         Command::new(bin_path)
             .args(args)
             .status()

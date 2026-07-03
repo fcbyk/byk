@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 
-use colored::Colorize;
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
@@ -30,6 +29,16 @@ pub struct Registry {
 // 单个插件定义
 // ---------------------------------------------------------------------------
 
+/// 下载区块：裸 URL 字符串 或 文件名→URL 映射。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum DownloadsSection {
+    /// 裸 URL 字符串 → 文件名从 URL 自动提取
+    BareUrl(String),
+    /// 文件名/目录名 → 下载条目
+    Map(HashMap<String, DownloadValue>),
+}
+
 /// 单个插件的协议定义。
 #[derive(Debug, Clone, Deserialize)]
 pub struct PluginDef {
@@ -37,25 +46,17 @@ pub struct PluginDef {
     #[serde(default)]
     pub pip: Option<Vec<String>>,
 
-    /// 下载区块（脚本 + 二进制）
+    /// 下载到 plugins/{plugin_key}/ 的文件
     #[serde(default)]
-    pub downloads: Option<DownloadSection>,
+    pub downloads: Option<DownloadsSection>,
 
-    /// 语法糖：扁平写法，等价于 downloads.scripts
-    #[serde(rename = "download-scripts", default)]
-    pub download_scripts: Option<HashMap<String, String>>,
+    /// 下载到当前工作目录
+    #[serde(rename = "download-to-workdir", default)]
+    pub download_to_workdir: Option<DownloadsSection>,
 
-    /// 语法糖：扁平写法，等价于 downloads.bin
-    #[serde(rename = "download-bin", default)]
-    pub download_bin: Option<HashMap<String, BinSource>>,
-
-    /// 语法糖：扁平写法，等价于 downloads.workdir
-    #[serde(rename = "download-workdir", default)]
-    pub download_workdir: Option<WorkdirValue>,
-
-    /// 语法糖：扁平写法，等价于 downloads.alias
-    #[serde(rename = "download-alias", default)]
-    pub download_alias: Option<HashMap<String, String>>,
+    /// 下载到 ~/.byk/alias/
+    #[serde(rename = "download-to-alias", default)]
+    pub download_to_alias: Option<DownloadsSection>,
 
     /// 单个命令注册（命令名 = 插件 key）
     #[serde(default)]
@@ -72,168 +73,28 @@ pub struct PluginDef {
     pub alias: Option<HashMap<String, serde_json::Value>>,
 }
 
-impl PluginDef {
-    /// 将 `download-scripts` / `download-bin` / `download-workdir` / `download-alias` 语法糖合并到 `downloads`。
-    ///
-    /// 冲突规则：同时定义语法糖和 `downloads.*` 时报错退出。无冲突则合并，互不干扰。
-    pub fn normalize(&mut self) {
-        if let Some(ds) = self.download_scripts.take() {
-            if let Some(ref dl) = self.downloads
-                && dl.scripts.is_some()
-            {
-                eprintln!(
-                    "{} 'download-scripts' and 'downloads.scripts' cannot both be defined",
-                    "Error:".red(),
-                );
-                std::process::exit(1);
-            }
-            self.downloads
-                .get_or_insert(DownloadSection {
-                    scripts: None,
-                    bin: None,
-                    workdir: None,
-                    alias: None,
-                })
-                .scripts = Some(ds);
-        }
-
-        if let Some(db) = self.download_bin.take() {
-            if let Some(ref dl) = self.downloads
-                && dl.bin.is_some()
-            {
-                eprintln!(
-                    "{} 'download-bin' and 'downloads.bin' cannot both be defined",
-                    "Error:".red(),
-                );
-                std::process::exit(1);
-            }
-            self.downloads
-                .get_or_insert(DownloadSection {
-                    scripts: None,
-                    bin: None,
-                    workdir: None,
-                    alias: None,
-                })
-                .bin = Some(db);
-        }
-
-        if let Some(dw) = self.download_workdir.take() {
-            if let Some(ref dl) = self.downloads
-                && dl.workdir.is_some()
-            {
-                eprintln!(
-                    "{} 'download-workdir' and 'downloads.workdir' cannot both be defined",
-                    "Error:".red(),
-                );
-                std::process::exit(1);
-            }
-            self.downloads
-                .get_or_insert(DownloadSection {
-                    scripts: None,
-                    bin: None,
-                    workdir: None,
-                    alias: None,
-                })
-                .workdir = Some(dw);
-        }
-
-        if let Some(da) = self.download_alias.take() {
-            if let Some(ref dl) = self.downloads
-                && dl.alias.is_some()
-            {
-                eprintln!(
-                    "{} 'download-alias' and 'downloads.alias' cannot both be defined",
-                    "Error:".red(),
-                );
-                std::process::exit(1);
-            }
-            self.downloads
-                .get_or_insert(DownloadSection {
-                    scripts: None,
-                    bin: None,
-                    workdir: None,
-                    alias: None,
-                })
-                .alias = Some(da);
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
-// 下载区块
+// 下载条目（统一支持单文件 URL 和目录树）
 // ---------------------------------------------------------------------------
 
-/// 下载区块：统一下载到 plugins/ 目录的文件。
-/// URL 字符串支持 `[tar] ` 前缀标记解压行为。
-#[derive(Debug, Clone, Deserialize)]
-pub struct DownloadSection {
-    /// 下载到 plugins/scripts/
-    /// key = 文件名，value = 来源（URL 或相对路径，支持 `[tar]` 前缀）
-    #[serde(default)]
-    pub scripts: Option<HashMap<String, String>>,
-
-    /// 下载到 plugins/bin/
-    /// key = 文件名/目录名，value = 平台映射（URL 支持 `[tar]` 前缀）
-    #[serde(default)]
-    pub bin: Option<HashMap<String, BinSource>>,
-
-    /// 下载到当前工作目录
-    /// 字符串 = 单文件，对象 = 目录树（URL 支持 `[tar]` 前缀）
-    #[serde(default)]
-    pub workdir: Option<WorkdirValue>,
-
-    /// 下载到 ~/.byk/alias/
-    /// key = 文件名，value = 来源（URL 或相对路径，支持 `[tar]` 前缀）
-    #[serde(default)]
-    pub alias: Option<HashMap<String, String>>,
-}
-
-// ---------------------------------------------------------------------------
-// 工作目录下载
-// ---------------------------------------------------------------------------
-
-/// 工作目录下载的取值：字符串（单文件）或对象（目录树）。
+/// 下载条目的值：URL 字符串或目录树。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub enum WorkdirValue {
-    /// 单文件 URL 字符串 → 下载到当前工作目录
-    Single(String),
-    /// 目录树对象 → 下载到当前工作目录 / <$name>/
-    Tree(WorkdirTree),
+pub enum DownloadValue {
+    /// 单文件 URL（支持 `[tar]` / `[exe]` 前缀）
+    Url(String),
+    /// 目录树
+    Tree(HashMap<String, DownloadEntry>),
 }
 
-/// 工作目录下载的目录树结构。
-#[derive(Debug, Clone, Deserialize)]
-pub struct WorkdirTree {
-    /// 目录名，默认 "downloads"
-    #[serde(rename = "$name", default)]
-    pub name: Option<String>,
-
-    /// 目录内容（$ 前缀的 key 自动跳过）
-    #[serde(flatten)]
-    pub entries: HashMap<String, WorkdirEntry>,
-}
-
-/// 目录树中的条目：叶子（URL 字符串）或子目录（嵌套对象）。
+/// 目录树中的条目：叶子（URL）或子目录。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub enum WorkdirEntry {
+pub enum DownloadEntry {
     /// 叶子节点：URL 字符串
     File(String),
     /// 子目录：嵌套的 key-value 映射
-    Dir(HashMap<String, WorkdirEntry>),
-}
-
-// ---------------------------------------------------------------------------
-// 二进制来源
-// ---------------------------------------------------------------------------
-
-/// 二进制来源：按平台区分，URL 字符串内 `[tar]` 前缀标记解压。
-#[derive(Debug, Clone, Deserialize)]
-pub struct BinSource {
-    /// 平台 → URL 映射，如 "darwin-arm64" → "https://..."
-    #[serde(flatten)]
-    pub urls: HashMap<String, String>,
+    Dir(HashMap<String, DownloadEntry>),
 }
 
 // ---------------------------------------------------------------------------
@@ -362,236 +223,99 @@ mod tests {
     }
 
     #[test]
-    fn parse_bin_with_tar() {
+    fn parse_downloads_with_tar() {
         let raw = to_map(r#"{
             "app": {
                 "downloads": {
-                    "bin": {
-                        "app": {
-                            "darwin-arm64": "[tar] https://example.com/app.tar.gz"
-                        }
-                    }
+                    "app.tar.gz": "[tar] https://example.com/app.tar.gz"
                 }
             }
         }"#);
         let registry = parse_registry(&raw);
         let def = registry.plugins.get("app").unwrap();
         let dl = def.downloads.as_ref().unwrap();
-        let bin_src = dl.bin.as_ref().unwrap().get("app").unwrap();
-        assert_eq!(
-            bin_src.urls.get("darwin-arm64").unwrap(),
-            "[tar] https://example.com/app.tar.gz"
-        );
-    }
-
-    #[test]
-    fn parse_bin_direct_download() {
-        let raw = to_map(r#"{
-            "tool": {
-                "downloads": {
-                    "bin": {
-                        "tool": {
-                            "darwin-arm64": "https://example.com/tool"
-                        }
-                    }
+        match dl {
+            DownloadsSection::Map(m) => {
+                match m.get("app.tar.gz").unwrap() {
+                    DownloadValue::Url(s) => assert_eq!(s, "[tar] https://example.com/app.tar.gz"),
+                    _ => panic!("expected Url"),
                 }
             }
-        }"#);
-        let registry = parse_registry(&raw);
-        let def = registry.plugins.get("tool").unwrap();
-        let dl = def.downloads.as_ref().unwrap();
-        let bin_src = dl.bin.as_ref().unwrap().get("tool").unwrap();
-        assert_eq!(
-            bin_src.urls.get("darwin-arm64").unwrap(),
-            "https://example.com/tool"
-        );
-    }
-
-    #[test]
-    fn parse_with_command_and_commands() {
-        let raw = to_map(r#"{
-            "app": {
-                "command": {"type": "bin", "entry": "app/app", "desc": "main"},
-                "commands": {
-                    "sub": {"type": "python", "entry": "sub.py", "desc": "sub"}
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let def = registry.plugins.get("app").unwrap();
-        assert!(def.command.is_some());
-        assert!(def.commands.is_some());
-        let cmd = def.command.as_ref().unwrap();
-        assert_eq!(cmd.cmd_type, "bin");
-        assert_eq!(cmd.entry, "app/app");
-
-        let cmds = def.commands.as_ref().unwrap();
-        let sub = cmds.get("sub").unwrap();
-        assert_eq!(sub.cmd_type, "python");
-    }
-
-    #[test]
-    fn parse_download_scripts() {
-        let raw = to_map(r#"{
-            "pys": {
-                "downloads": {
-                    "scripts": {
-                        "hello.py": "plugins/hello.py"
-                    }
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let def = registry.plugins.get("pys").unwrap();
-        let dl = def.downloads.as_ref().unwrap();
-        let scripts = dl.scripts.as_ref().unwrap();
-        assert_eq!(scripts.get("hello.py").unwrap(), "plugins/hello.py");
-    }
-
-    #[test]
-    fn parse_download_scripts_sugar() {
-        let raw = to_map(r#"{
-            "pys": {
-                "download-scripts": {
-                    "hello.py": "plugins/hello.py"
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let def = registry.plugins.get("pys").unwrap();
-        assert!(def.download_scripts.is_some());
-        assert!(def.downloads.is_none());
-        let scripts = def.download_scripts.as_ref().unwrap();
-        assert_eq!(scripts.get("hello.py").unwrap(), "plugins/hello.py");
-    }
-
-    #[test]
-    fn parse_download_bin_sugar() {
-        let raw = to_map(r#"{
-            "tool": {
-                "download-bin": {
-                    "tool": {
-                        "darwin-arm64": "[tar] https://example.com/tool.tar.gz"
-                    }
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let def = registry.plugins.get("tool").unwrap();
-        assert!(def.download_bin.is_some());
-        assert!(def.downloads.is_none());
-        let bin = def.download_bin.as_ref().unwrap().get("tool").unwrap();
-        assert_eq!(
-            bin.urls.get("darwin-arm64").unwrap(),
-            "[tar] https://example.com/tool.tar.gz"
-        );
-    }
-
-    #[test]
-    fn normalize_download_scripts_sugar() {
-        let raw = to_map(r#"{
-            "pys": {
-                "download-scripts": {
-                    "hello.py": "plugins/hello.py"
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let mut def = registry.plugins.get("pys").unwrap().clone();
-        def.normalize();
-        assert!(def.download_scripts.is_none());
-        let dl = def.downloads.as_ref().unwrap();
-        let scripts = dl.scripts.as_ref().unwrap();
-        assert_eq!(scripts.get("hello.py").unwrap(), "plugins/hello.py");
-    }
-
-    #[test]
-    fn normalize_download_bin_sugar() {
-        let raw = to_map(r#"{
-            "tool": {
-                "download-bin": {
-                    "tool": {
-                        "darwin-arm64": "https://example.com/tool"
-                    }
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let mut def = registry.plugins.get("tool").unwrap().clone();
-        def.normalize();
-        assert!(def.download_bin.is_none());
-        let dl = def.downloads.as_ref().unwrap();
-        let bin = dl.bin.as_ref().unwrap().get("tool").unwrap();
-        assert_eq!(
-            bin.urls.get("darwin-arm64").unwrap(),
-            "https://example.com/tool"
-        );
-    }
-
-    #[test]
-    fn normalize_mix_sugar_and_downloads() {
-        let raw = to_map(r#"{
-            "pys": {
-                "download-scripts": {
-                    "hello.py": "plugins/hello.py"
-                },
-                "downloads": {
-                    "bin": {
-                        "tool": {
-                            "darwin-arm64": "https://example.com/tool"
-                        }
-                    }
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let mut def = registry.plugins.get("pys").unwrap().clone();
-        def.normalize();
-        assert!(def.download_scripts.is_none());
-        let dl = def.downloads.as_ref().unwrap();
-        assert!(dl.scripts.is_some());
-        assert!(dl.bin.is_some());
-        assert_eq!(
-            dl.scripts.as_ref().unwrap().get("hello.py").unwrap(),
-            "plugins/hello.py"
-        );
-        assert_eq!(
-            dl.bin.as_ref().unwrap().get("tool").unwrap().urls.get("darwin-arm64").unwrap(),
-            "https://example.com/tool"
-        );
-    }
-
-    // ==================== workdir ====================
-
-    #[test]
-    fn parse_workdir_single_url() {
-        let raw = to_map(r#"{
-            "app": {
-                "downloads": {
-                    "workdir": "https://example.com/config.json"
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let def = registry.plugins.get("app").unwrap();
-        let dl = def.downloads.as_ref().unwrap();
-        let wv = dl.workdir.as_ref().unwrap();
-        match wv {
-            WorkdirValue::Single(url) => assert_eq!(url, "https://example.com/config.json"),
-            _ => panic!("expected Single"),
+            _ => panic!("expected Map"),
         }
     }
 
     #[test]
-    fn parse_workdir_tree_with_name() {
+    fn parse_downloads_bare_url() {
+        let raw = to_map(r#"{
+            "tool": {
+                "downloads": "[exe] https://example.com/tool"
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("tool").unwrap();
+        let dl = def.downloads.as_ref().unwrap();
+        match dl {
+            DownloadsSection::BareUrl(s) => assert_eq!(s, "[exe] https://example.com/tool"),
+            _ => panic!("expected BareUrl"),
+        }
+    }
+
+    #[test]
+    fn parse_downloads_with_exe() {
+        let raw = to_map(r#"{
+            "tool": {
+                "downloads": {
+                    "mytool": "[exe] https://example.com/tool"
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("tool").unwrap();
+        let dl = def.downloads.as_ref().unwrap();
+        match dl {
+            DownloadsSection::Map(m) => {
+                match m.get("mytool").unwrap() {
+                    DownloadValue::Url(s) => assert_eq!(s, "[exe] https://example.com/tool"),
+                    _ => panic!("expected Url"),
+                }
+            }
+            _ => panic!("expected Map"),
+        }
+    }
+
+    #[test]
+    fn parse_downloads_plain_url() {
         let raw = to_map(r#"{
             "app": {
                 "downloads": {
-                    "workdir": {
-                        "$name": "myconfig",
-                        "README.md": "https://example.com/readme",
-                        "db": {
-                            "seed.sql": "https://example.com/seed.sql"
+                    "script.py": "https://example.com/script.py"
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("app").unwrap();
+        let dl = def.downloads.as_ref().unwrap();
+        match dl {
+            DownloadsSection::Map(m) => {
+                match m.get("script.py").unwrap() {
+                    DownloadValue::Url(s) => assert_eq!(s, "https://example.com/script.py"),
+                    _ => panic!("expected Url"),
+                }
+            }
+            _ => panic!("expected Map"),
+        }
+    }
+
+    #[test]
+    fn parse_downloads_with_directory_tree() {
+        let raw = to_map(r#"{
+            "app": {
+                "downloads": {
+                    "mylib": {
+                        "main.py": "https://example.com/main.py",
+                        "sub": {
+                            "util.py": "https://example.com/util.py"
                         }
                     }
                 }
@@ -600,19 +324,21 @@ mod tests {
         let registry = parse_registry(&raw);
         let def = registry.plugins.get("app").unwrap();
         let dl = def.downloads.as_ref().unwrap();
-        let wv = dl.workdir.as_ref().unwrap();
-        match wv {
-            WorkdirValue::Tree(tree) => {
-                assert_eq!(tree.name.as_deref(), Some("myconfig"));
-                assert_eq!(tree.entries.len(), 2);
-                match tree.entries.get("README.md").unwrap() {
-                    WorkdirEntry::File(url) => assert_eq!(url, "https://example.com/readme"),
+        let entries = match dl {
+            DownloadsSection::Map(m) => m,
+            _ => panic!("expected Map"),
+        };
+        match entries.get("mylib").unwrap() {
+            DownloadValue::Tree(entries) => {
+                assert_eq!(entries.len(), 2);
+                match entries.get("main.py").unwrap() {
+                    DownloadEntry::File(s) => assert_eq!(s, "https://example.com/main.py"),
                     _ => panic!("expected File"),
                 }
-                match tree.entries.get("db").unwrap() {
-                    WorkdirEntry::Dir(sub) => {
-                        match sub.get("seed.sql").unwrap() {
-                            WorkdirEntry::File(url) => assert_eq!(url, "https://example.com/seed.sql"),
+                match entries.get("sub").unwrap() {
+                    DownloadEntry::Dir(sub) => {
+                        match sub.get("util.py").unwrap() {
+                            DownloadEntry::File(s) => assert_eq!(s, "https://example.com/util.py"),
                             _ => panic!("expected File"),
                         }
                     }
@@ -624,61 +350,122 @@ mod tests {
     }
 
     #[test]
-    fn parse_workdir_tree_default_name() {
+    fn parse_download_to_workdir() {
         let raw = to_map(r#"{
             "app": {
-                "downloads": {
-                    "workdir": {
-                        "hello.txt": "https://example.com/hello.txt"
+                "download-to-workdir": {
+                    "config.json": "https://example.com/config.json"
+                }
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("app").unwrap();
+        let wd = def.download_to_workdir.as_ref().unwrap();
+        match wd {
+            DownloadsSection::Map(m) => {
+                match m.get("config.json").unwrap() {
+                    DownloadValue::Url(s) => assert_eq!(s, "https://example.com/config.json"),
+                    _ => panic!("expected Url"),
+                }
+            }
+            _ => panic!("expected Map"),
+        }
+    }
+
+    #[test]
+    fn parse_download_to_workdir_bare_url() {
+        let raw = to_map(r#"{
+            "app": {
+                "download-to-workdir": "https://example.com/file.json"
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("app").unwrap();
+        let wd = def.download_to_workdir.as_ref().unwrap();
+        match wd {
+            DownloadsSection::BareUrl(s) => assert_eq!(s, "https://example.com/file.json"),
+            _ => panic!("expected BareUrl"),
+        }
+    }
+
+    #[test]
+    fn parse_download_to_workdir_with_tree() {
+        let raw = to_map(r#"{
+            "app": {
+                "download-to-workdir": {
+                    "myconfig": {
+                        "$name": "configs",
+                        "settings.json": "https://example.com/settings.json",
+                        "db": {
+                            "seed.sql": "https://example.com/seed.sql"
+                        }
                     }
                 }
             }
         }"#);
         let registry = parse_registry(&raw);
         let def = registry.plugins.get("app").unwrap();
-        let dl = def.downloads.as_ref().unwrap();
-        let wv = dl.workdir.as_ref().unwrap();
-        match wv {
-            WorkdirValue::Tree(tree) => {
-                assert_eq!(tree.name, None);
+        let wd = def.download_to_workdir.as_ref().unwrap();
+        match wd {
+            DownloadsSection::Map(m) => {
+                match m.get("myconfig").unwrap() {
+                    DownloadValue::Tree(entries) => {
+                        assert_eq!(entries.len(), 3); // $name + settings.json + db
+                        match entries.get("$name").unwrap() {
+                            DownloadEntry::File(s) => assert_eq!(s, "configs"),
+                            _ => panic!("expected $name as File"),
+                        }
+                    }
+                    _ => panic!("expected Tree"),
+                }
             }
-            _ => panic!("expected Tree"),
+            _ => panic!("expected Map"),
         }
     }
 
     #[test]
-    fn parse_download_workdir_sugar() {
+    fn parse_download_to_alias() {
         let raw = to_map(r#"{
             "app": {
-                "download-workdir": "https://example.com/file.txt"
+                "download-to-alias": {
+                    "myalias": "https://example.com/alias.py"
+                }
             }
         }"#);
         let registry = parse_registry(&raw);
         let def = registry.plugins.get("app").unwrap();
-        assert!(def.download_workdir.is_some());
-        assert!(def.downloads.is_none());
-        match def.download_workdir.as_ref().unwrap() {
-            WorkdirValue::Single(url) => assert_eq!(url, "https://example.com/file.txt"),
-            _ => panic!("expected Single"),
+        let al = def.download_to_alias.as_ref().unwrap();
+        match al {
+            DownloadsSection::Map(m) => {
+                match m.get("myalias").unwrap() {
+                    DownloadValue::Url(s) => assert_eq!(s, "https://example.com/alias.py"),
+                    _ => panic!("expected Url"),
+                }
+            }
+            _ => panic!("expected Map"),
         }
     }
 
     #[test]
-    fn normalize_download_workdir_sugar() {
+    fn parse_with_command_and_commands() {
         let raw = to_map(r#"{
             "app": {
-                "download-workdir": "https://example.com/file.txt"
+                "command": {"type": "bin", "entry": "app", "desc": "main"},
+                "commands": {
+                    "sub": {"type": "python", "entry": "sub.py", "desc": "sub"}
+                }
             }
         }"#);
         let registry = parse_registry(&raw);
-        let mut def = registry.plugins.get("app").unwrap().clone();
-        def.normalize();
-        assert!(def.download_workdir.is_none());
-        let dl = def.downloads.as_ref().unwrap();
-        let wv = dl.workdir.as_ref().unwrap();
-        match wv {
-            WorkdirValue::Single(url) => assert_eq!(url, "https://example.com/file.txt"),
-            _ => panic!("expected Single"),
-        }
+        let def = registry.plugins.get("app").unwrap();
+        assert!(def.command.is_some());
+        assert!(def.commands.is_some());
+        let cmd = def.command.as_ref().unwrap();
+        assert_eq!(cmd.cmd_type, "bin");
+        assert_eq!(cmd.entry, "app");
+
+        let cmds = def.commands.as_ref().unwrap();
+        let sub = cmds.get("sub").unwrap();
+        assert_eq!(sub.cmd_type, "python");
     }
 }

@@ -205,33 +205,13 @@ fn count_files(dir: &Path) -> usize {
     count
 }
 
-/// 从 URL 中提取文件名（最后一个路径段）。
-/// 提取不到时返回 "unknown"。
+/// 从 URL 中提取文件名（最后一个路径段），提取不到返回 "unknown"。
 fn extract_filename_from_url(url: &str) -> String {
     let path = url.split('?').next().unwrap_or(url);
     let path = path.split('#').next().unwrap_or(path);
     let segments: Vec<&str> = path.split('/').collect();
     let last = segments.last().unwrap_or(&"");
-    if last.is_empty() {
-        "unknown".to_string()
-    } else {
-        last.to_string()
-    }
-}
-
-/// 从 URL 中提取文件名并去掉扩展名（用于 workdir 单文件无 key 场景）。
-fn name_from_url(url: &str) -> String {
-    let filename = extract_filename_from_url(url);
-    for ext in &[".tar.gz", ".tar.xz", ".tar.bz2", ".tgz", ".tbz2", ".zip", ".tar", ".gz", ".xz", ".bz2"] {
-        if let Some(name) = filename.strip_suffix(ext) {
-            return name.to_string();
-        }
-    }
-    if let Some(pos) = filename.rfind('.') {
-        filename[..pos].to_string()
-    } else {
-        filename
-    }
+    if last.is_empty() { "unknown".to_string() } else { last.to_string() }
 }
 
 /// 检测 URL 是否有 `[tar]` 前缀。
@@ -242,6 +222,21 @@ fn is_tar_url(url: &str) -> bool {
 /// 剥离 `[tar] ` 前缀，返回真实 URL。
 fn strip_tar_prefix(url: &str) -> &str {
     url.strip_prefix("[tar] ").unwrap_or(url)
+}
+
+/// 检测 URL 是否有 `[exe]` 前缀。
+fn is_exe_url(url: &str) -> bool {
+    url.starts_with("[exe] ")
+}
+
+/// 剥离 `[exe] ` 前缀，返回真实 URL。
+fn strip_exe_prefix(url: &str) -> &str {
+    url.strip_prefix("[exe] ").unwrap_or(url)
+}
+
+/// 剥离所有已知前缀（`[tar] ` 或 `[exe] `），返回真实 URL。
+fn strip_prefix(url: &str) -> &str {
+    strip_exe_prefix(strip_tar_prefix(url))
 }
 
 /// Peek 压缩包内容：返回顶层条目数。
@@ -304,59 +299,6 @@ fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
             s.code().unwrap_or(1)
         )),
         Err(e) => Err(format!("failed to run tar: {}", e)),
-    }
-}
-
-/// 递归展平工作目录树，将嵌套结构展开为 Asset 列表。
-/// 每个叶子节点生成一个 Asset，支持 `[tar]` 前缀。
-fn flatten_workdir_tree(
-    entries: &HashMap<String, protocol::WorkdirEntry>,
-    dir_name: &str,
-    prefix: &str,
-    assets: &mut Vec<Asset>,
-    ref_base: &RefBase,
-    cdn: bool,
-) {
-    for (name, entry) in entries {
-        if name.starts_with('$') {
-            continue;
-        }
-        let rel_path = if prefix.is_empty() {
-            name.clone()
-        } else {
-            format!("{}/{}", prefix, name)
-        };
-        match entry {
-            protocol::WorkdirEntry::File(url) => {
-                let is_archive = is_tar_url(url);
-                let clean = strip_tar_prefix(url);
-                match resolve_asset(clean, ref_base, cdn) {
-                    Ok(resolved) => {
-                        let asset_name = if is_archive {
-                            let derived = name_from_url(clean);
-                            format!("{}/{}", dir_name, derived)
-                        } else {
-                            format!("{}/{}", dir_name, rel_path)
-                        };
-                        assets.push(Asset {
-                            name: asset_name,
-                            target: AssetTarget::Workdir,
-                            src: resolved,
-                            is_archive,
-                            tracked: false,
-                            chmod_x: false,
-                        });
-                    }
-                    Err(e) => {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                }
-            }
-            protocol::WorkdirEntry::Dir(sub_entries) => {
-                flatten_workdir_tree(sub_entries, dir_name, &rel_path, assets, ref_base, cdn);
-            }
-        }
     }
 }
 
@@ -972,13 +914,157 @@ fn deploy_aliases(
 // 阶段 2：构建 InstallPlan（协议 → 执行，所有变量/ref 在此完成解析）
 // ---------------------------------------------------------------------------
 
+/// 递归展平下载映射为 Asset 列表。
+///
+/// - `DownloadsSection::BareUrl` → 单个 Asset，文件名从 URL 提取
+/// - `DownloadsSection::Map` → 遍历条目
+///   workdir 模式下：所有文件放入容器目录（默认 "downloads"，可用 `$name` 修改）
+fn flatten_downloads(
+    section: &super::protocol::DownloadsSection,
+    target: AssetTarget,
+    ref_base: &RefBase,
+    cdn: bool,
+    workdir_mode: bool,
+) -> Vec<Asset> {
+    let mut assets = Vec::new();
+
+    match section {
+        super::protocol::DownloadsSection::BareUrl(src) => {
+            let is_archive = is_tar_url(src);
+            let is_exe = is_exe_url(src);
+            let clean = strip_prefix(src);
+            match resolve_asset(clean, ref_base, cdn) {
+                Ok(resolved) => {
+                    let name = extract_filename_from_url(clean);
+                    assets.push(Asset {
+                        name,
+                        target,
+                        src: resolved,
+                        is_archive,
+                        chmod_x: is_exe,
+                    });
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red(), e);
+                    exit(1);
+                }
+            }
+        }
+        super::protocol::DownloadsSection::Map(map) => {
+            // workdir Map 模式：提取容器目录名
+            let container = if workdir_mode {
+                map.get("$name")
+                    .and_then(|v| match v {
+                        super::protocol::DownloadValue::Url(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+                    .unwrap_or("downloads")
+            } else {
+                ""
+            };
+
+            for (key, value) in map {
+                if key.starts_with('$') {
+                    continue;
+                }
+                match value {
+                    super::protocol::DownloadValue::Url(src) => {
+                        let is_archive = is_tar_url(src);
+                        let is_exe = is_exe_url(src);
+                        let clean = strip_prefix(src);
+                        match resolve_asset(clean, ref_base, cdn) {
+                            Ok(resolved) => {
+                                let name = if workdir_mode {
+                                    format!("{}/{}", container, key)
+                                } else {
+                                    key.clone()
+                                };
+                                assets.push(Asset {
+                                    name,
+                                    target,
+                                    src: resolved,
+                                    is_archive,
+                                    chmod_x: is_exe,
+                                });
+                            }
+                            Err(e) => {
+                                eprintln!("{} {}", "Error:".red(), e);
+                                exit(1);
+                            }
+                        }
+                    }
+                    super::protocol::DownloadValue::Tree(entries) => {
+                        let root_name = key.clone();
+                        let root_name = if workdir_mode {
+                            format!("{}/{}", container, root_name)
+                        } else {
+                            root_name
+                        };
+                        flatten_entries(entries, &root_name, target, "", ref_base, cdn, &mut assets);
+                    }
+                }
+            }
+        }
+    }
+
+    assets
+}
+
+/// 递归展平 DownloadEntry 树到 assets。
+fn flatten_entries(
+    entries: &HashMap<String, super::protocol::DownloadEntry>,
+    root_name: &str,
+    target: AssetTarget,
+    prefix: &str,
+    ref_base: &RefBase,
+    cdn: bool,
+    assets: &mut Vec<Asset>,
+) {
+    for (name, entry) in entries {
+        if name.starts_with('$') {
+            continue;
+        }
+        let rel_path = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", prefix, name)
+        };
+        match entry {
+            super::protocol::DownloadEntry::File(src) => {
+                let is_archive = is_tar_url(src);
+                let is_exe = is_exe_url(src);
+                let clean = strip_prefix(src);
+                match resolve_asset(clean, ref_base, cdn) {
+                    Ok(resolved) => {
+                        assets.push(Asset {
+                            name: format!("{}/{}", root_name, rel_path),
+                            target,
+                            src: resolved,
+                            is_archive,
+                            chmod_x: is_exe,
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("{} {}", "Error:".red(), e);
+                        exit(1);
+                    }
+                }
+            }
+            super::protocol::DownloadEntry::Dir(sub_entries) => {
+                flatten_entries(sub_entries, root_name, target, &rel_path, ref_base, cdn, assets);
+            }
+        }
+    }
+}
+
 /// 从 Registry 构建单个插件的 InstallPlan。
 ///
 /// 此阶段完成所有判断：
 /// - 提取 $pip 全局依赖
-/// - `[tar]` 前缀检测 → is_archive
+/// - `[tar]` / `[exe]` 前缀检测 → is_archive / chmod_x
 /// - key 推导 → name
 /// - 合并 command + commands → Vec<CommandReg>
+/// - 注入 plugin_key 前缀到 python / bin 类型的 entry
 /// - 产出统一的 Vec<Asset>
 fn build_install_plan(
     registry: &Registry,
@@ -999,135 +1085,34 @@ fn build_install_plan(
         }
     };
 
-    let mut def = def;
-    def.normalize();
-
     let mut assets: Vec<Asset> = Vec::new();
     let mut commands: Vec<CommandReg> = Vec::new();
-    let platform = env!("PLATFORM");
 
+    // downloads → PluginDir
     if let Some(dl) = &def.downloads {
-        // download.scripts → Asset
-        if let Some(sm) = &dl.scripts {
-            for (filename, src) in sm {
-                let is_archive = is_tar_url(src);
-                let clean = strip_tar_prefix(src);
-                match resolve_asset(clean, ref_base, cdn) {
-                    Ok(resolved) => {
-                        assets.push(Asset {
-                            name: filename.clone(),
-                            target: AssetTarget::Scripts,
-                            src: resolved,
-                            is_archive,
-                            tracked: true,
-                            chmod_x: false,
-                        });
-                    }
-                    Err(e) => {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                }
-            }
-        }
+        assets.extend(flatten_downloads(dl, AssetTarget::PluginDir, ref_base, cdn, false));
+    }
 
-        // download.bin → Asset
-        if let Some(bm) = &dl.bin {
-            for (name, bs) in bm {
-                let url = match bs.urls.get(platform) {
-                    Some(u) => u,
-                    None => continue,
-                };
+    // download-to-workdir → Workdir (workdir_mode=true 支持 $name)
+    if let Some(dw) = &def.download_to_workdir {
+        assets.extend(flatten_downloads(dw, AssetTarget::Workdir, ref_base, cdn, true));
+    }
 
-                let is_archive = is_tar_url(url);
-                let clean = strip_tar_prefix(url);
-                match resolve_asset(clean, ref_base, cdn) {
-                    Ok(resolved) => {
-                        assets.push(Asset {
-                            name: name.clone(),
-                            target: AssetTarget::Bin,
-                            src: resolved,
-                            is_archive,
-                            tracked: true,
-                            chmod_x: true,
-                        });
-                    }
-                    Err(e) => {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                }
-            }
-        }
-
-        // download.workdir → Asset
-        if let Some(wv) = &dl.workdir {
-            match wv {
-                protocol::WorkdirValue::Single(url) => {
-                    let is_archive = is_tar_url(url);
-                    let clean = strip_tar_prefix(url);
-                    match resolve_asset(clean, ref_base, cdn) {
-                        Ok(resolved) => {
-                            let name = if is_archive {
-                                name_from_url(clean)
-                            } else {
-                                extract_filename_from_url(clean)
-                            };
-                            assets.push(Asset {
-                                name,
-                                target: AssetTarget::Workdir,
-                                src: resolved,
-                                is_archive,
-                                tracked: false,
-                                chmod_x: false,
-                            });
-                        }
-                        Err(e) => {
-                            eprintln!("{} {}", "Error:".red(), e);
-                            exit(1);
-                        }
-                    }
-                }
-                protocol::WorkdirValue::Tree(tree) => {
-                    let dir_name = tree.name.clone().unwrap_or_else(|| "downloads".to_string());
-                    flatten_workdir_tree(&tree.entries, &dir_name, "", &mut assets, ref_base, cdn);
-                }
-            }
-        }
-
-        // download.alias → Asset
-        if let Some(am) = &dl.alias {
-            for (filename, src) in am {
-                let is_archive = is_tar_url(src);
-                let clean = strip_tar_prefix(src);
-                match resolve_asset(clean, ref_base, cdn) {
-                    Ok(resolved) => {
-                        assets.push(Asset {
-                            name: filename.clone(),
-                            target: AssetTarget::Alias,
-                            src: resolved,
-                            is_archive,
-                            tracked: true,
-                            chmod_x: false,
-                        });
-                    }
-                    Err(e) => {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                }
-            }
-        }
+    // download-to-alias → Alias
+    if let Some(da) = &def.download_to_alias {
+        assets.extend(flatten_downloads(da, AssetTarget::Alias, ref_base, cdn, false));
     }
 
     // command + commands → 合并为 Vec<CommandReg>
     let mut has_command = false;
 
     if let Some(cmd) = &def.command {
+        // 注入 plugin_key 前缀（仅 python / bin 类型需要）
+        let entry = inject_plugin_prefix(key, &cmd.entry, &cmd.cmd_type);
         commands.push(CommandReg {
             name: key.to_string(),
             cmd_type: cmd.cmd_type.clone(),
-            entry: cmd.entry.clone(),
+            entry,
             desc: cmd.desc.clone(),
         });
         has_command = true;
@@ -1143,10 +1128,11 @@ fn build_install_plan(
                 );
                 exit(1);
             }
+            let entry = inject_plugin_prefix(key, &cd.entry, &cd.cmd_type);
             commands.push(CommandReg {
                 name: name.clone(),
                 cmd_type: cd.cmd_type.clone(),
-                entry: cd.entry.clone(),
+                entry,
                 desc: cd.desc.clone(),
             });
         }
@@ -1179,6 +1165,15 @@ fn build_install_plan(
     }
 }
 
+/// 为 python / bin 类型命令的 entry 注入 `{plugin_key}/` 前缀。
+/// python-m / pip-bin 类型保持原样。
+fn inject_plugin_prefix(plugin_key: &str, entry: &str, cmd_type: &str) -> String {
+    match cmd_type {
+        "python" | "bin" => format!("{}/{}", plugin_key, entry),
+        _ => entry.to_string(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 阶段 3：执行 InstallPlan（所有判断已在阶段 2 完成，此处纯流水线）
 // ---------------------------------------------------------------------------
@@ -1190,8 +1185,7 @@ fn execute_install_plan(
     cmd_state: &mut CmdState,
 ) {
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
-    let scripts_dir = layout.plugins_dir.join("scripts");
-    let bin_dir = layout.plugins_dir.join("bin");
+    let plugin_dir = layout.plugins_dir.join(&plan.plugin.key);
     let alias_dir = layout.alias_dir.clone();
 
     // 全局 pip（共享依赖，不随插件卸载）
@@ -1227,24 +1221,21 @@ fn execute_install_plan(
 
         for asset in &plan.plugin.assets {
             let parent_dir = match asset.target {
-                AssetTarget::Scripts => scripts_dir.clone(),
-                AssetTarget::Bin => bin_dir.clone(),
+                AssetTarget::PluginDir => plugin_dir.clone(),
                 AssetTarget::Workdir => cwd.clone(),
                 AssetTarget::Alias => alias_dir.clone(),
             };
 
             let section_label = match asset.target {
-                AssetTarget::Scripts => "scripts",
-                AssetTarget::Bin => "bin",
+                AssetTarget::PluginDir => "plugins",
                 AssetTarget::Workdir => "workdir",
                 AssetTarget::Alias => "alias",
             };
 
             if !section_printed.contains_key(section_label) {
+                let _ = std::fs::create_dir_all(&parent_dir);
                 println!("{} {}", "==>".cyan().bold(), section_label);
-                if matches!(asset.target, AssetTarget::Workdir) {
-                    println!("  {}", format!("→ {}", cwd.display()).dimmed());
-                }
+                println!("  {}", format!("→ {}", parent_dir.display()).dimmed());
                 section_printed.insert(section_label, true);
             }
 
@@ -1271,20 +1262,25 @@ fn execute_install_plan(
             }
 
             if asset.is_archive {
-                let peek_count = match peek_archive(&temp_file) {
-                    Ok(n) => n,
-                    Err(e) => {
-                        eprintln!("{} {}", "Error:".red(), e);
-                        exit(1);
-                    }
-                };
+                let needs_peek = matches!(asset.target, AssetTarget::Workdir);
 
-                let dest = if peek_count == 1 {
-                    parent_dir.clone()
+                let (dest, peek_count) = if needs_peek {
+                    let n = match peek_archive(&temp_file) {
+                        Ok(n) => n,
+                        Err(e) => {
+                            eprintln!("{} {}", "Error:".red(), e);
+                            exit(1);
+                        }
+                    };
+                    if n == 1 {
+                        (parent_dir.clone(), 1)
+                    } else {
+                        let d = parent_dir.join(&asset.name);
+                        let _ = std::fs::create_dir_all(&d);
+                        (d, n)
+                    }
                 } else {
-                    let d = parent_dir.join(&asset.name);
-                    let _ = std::fs::create_dir_all(&d);
-                    d
+                    (parent_dir.clone(), 0)
                 };
 
                 println!("{}", format!("Extracting to {}", dest.display()).dimmed());
@@ -1293,12 +1289,12 @@ fn execute_install_plan(
                     exit(1);
                 }
 
-                if peek_count > 1 {
+                if needs_peek && peek_count > 1 {
                     let file_count = count_files(&dest);
                     println!("{}", format!("{} files extracted", file_count).dimmed());
                 }
             } else {
-                // 直接下载：复制到 parent_dir/name
+                let _ = std::fs::create_dir_all(&parent_dir);
                 let dest = parent_dir.join(&asset.name);
                 println!("{}", format!("Saving to {}", dest.display()).dimmed());
                 if let Err(e) = std::fs::copy(&temp_file, &dest) {
@@ -1310,30 +1306,28 @@ fn execute_install_plan(
             let _ = std::fs::remove_file(&temp_file);
             let _ = std::fs::remove_dir(&temp_dir);
 
-            // chmod +x for bin
+            // chmod +x
             if asset.chmod_x {
                 #[cfg(not(windows))]
                 {
                     use std::os::unix::fs::PermissionsExt;
 
-                    let target_path = if asset.is_archive {
-                        // For archive, the executable is inside the extracted dir
-                        // We don't know the exact name, so we skip chmod for now
-                        // The plugin author should handle permissions inside the archive
-                        continue;
-                    } else {
-                        parent_dir.join(&asset.name)
-                    };
-
-                    if let Ok(metadata) = std::fs::metadata(&target_path) {
-                        let mut perms = metadata.permissions();
-                        perms.set_mode(0o755);
-                        if let Err(e) = std::fs::set_permissions(&target_path, perms) {
-                            eprintln!("{} failed to set executable permission on {}: {}", "Error:".red(), target_path.display(), e);
-                            exit(1);
+                    if !asset.is_archive {
+                        let target_path = parent_dir.join(&asset.name);
+                        if let Ok(metadata) = std::fs::metadata(&target_path) {
+                            let mut perms = metadata.permissions();
+                            perms.set_mode(0o755);
+                            if let Err(e) = std::fs::set_permissions(&target_path, perms) {
+                                eprintln!("{} failed to set executable permission on {}: {}", "Error:".red(), target_path.display(), e);
+                                exit(1);
+                            }
                         }
+                        println!("{}", "chmod +x".dimmed());
                     }
-                    println!("{}", "chmod +x".dimmed());
+                }
+                #[cfg(windows)]
+                {
+                    // Windows 不需要 chmod
                 }
             }
 
@@ -1380,7 +1374,7 @@ fn build_pkg_entry(plan: &InstallPlan) -> PkgEntry {
         .plugin
         .assets
         .iter()
-        .filter(|a| a.tracked)
+        .filter(|a| !matches!(a.target, AssetTarget::PluginDir))
         .map(|a| a.name.clone())
         .collect();
 
@@ -1875,13 +1869,12 @@ mod tests {
 
     #[test]
     fn preprocess_platform_var_resolved() {
-        let body = r#"{"$var": {"URL": {"linux-x86_64": "https://linux.example.com", "darwin-arm64": "https://darwin.example.com"}}, "plugin": {"downloads": {"scripts": {"tool": "{URL}"}}}}"#;
+        let body = r#"{"$var": {"URL": {"linux-x86_64": "https://linux.example.com", "darwin-arm64": "https://darwin.example.com"}}, "plugin": {"downloads": {"tool": "{URL}"}}}"#;
         let result = preprocess_registry(body, "linux-x86_64").unwrap();
         let plugin = result.get("plugin").unwrap();
         let downloads = plugin.get("downloads").unwrap();
-        let scripts = downloads.get("scripts").unwrap();
-        let tool = scripts.get("tool").unwrap().as_str().unwrap();
-        assert_eq!(tool, "https://linux.example.com");
+        let url = downloads.get("tool").unwrap().as_str().unwrap();
+        assert_eq!(url, "https://linux.example.com");
     }
 
     #[test]
@@ -1895,13 +1888,12 @@ mod tests {
 
     #[test]
     fn preprocess_platform_var_in_string_interpolation() {
-        let body = r#"{"$var": {"BASE": {"linux-x86_64": "https://cdn.linux.example.com", "darwin-arm64": "https://cdn.darwin.example.com"}}, "plugin": {"downloads": {"scripts": {"tool": "{BASE}/tool", "config": "{BASE}/config.json"}}}}"#;
+        let body = r#"{"$var": {"BASE": {"linux-x86_64": "https://cdn.linux.example.com", "darwin-arm64": "https://cdn.darwin.example.com"}}, "plugin": {"downloads": {"tool": "{BASE}/tool", "config": "{BASE}/config.json"}}}"#;
         let result = preprocess_registry(body, "linux-x86_64").unwrap();
         let plugin = result.get("plugin").unwrap();
         let downloads = plugin.get("downloads").unwrap();
-        let scripts = downloads.get("scripts").unwrap();
-        assert_eq!(scripts.get("tool").unwrap().as_str().unwrap(), "https://cdn.linux.example.com/tool");
-        assert_eq!(scripts.get("config").unwrap().as_str().unwrap(), "https://cdn.linux.example.com/config.json");
+        assert_eq!(downloads.get("tool").unwrap().as_str().unwrap(), "https://cdn.linux.example.com/tool");
+        assert_eq!(downloads.get("config").unwrap().as_str().unwrap(), "https://cdn.linux.example.com/config.json");
     }
 
     #[test]
