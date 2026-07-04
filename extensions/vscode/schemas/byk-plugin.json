@@ -48,16 +48,6 @@
           }
         ]
       }
-    },
-    "$pip": {
-      "description": "全局共享 pip 依赖，不属于任何插件，卸载时保留。支持单字符串或字符串数组。\n示例：\"rich\" 或 [\"rich\", \"click\"]",
-      "oneOf": [
-        { "type": "string" },
-        {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      ]
     }
   },
   "additionalProperties": {
@@ -85,6 +75,16 @@
                 "type": "string",
                 "description": "包名、版本约束、URL，或 \"name @ url\" 格式"
               }
+            }
+          ]
+        },
+        "pip-keep": {
+          "description": "pip 包名或 URL 列表，结构与 pip 完全相同，但卸载插件时不会被 pip uninstall，始终保留。\n示例：\"requests\" 或 [\"requests\", \"click\"]",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "type": "string" }
             }
           ]
         },

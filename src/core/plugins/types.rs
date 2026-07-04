@@ -76,6 +76,9 @@ pub struct PkgEntry {
     /// URL 包需使用 "name @ url" 格式才能卸载，纯 URL 静默跳过
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pip: Option<Vec<String>>,
+    /// pip-keep 安装列表（包名 / URL / 版本约束），卸载插件时保留，不会被 pip uninstall
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pip_keep: Option<Vec<String>>,
     /// 脚本和二进制产物列表（文件名或目录名），卸载时 is_dir() 判断清理方式
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
@@ -90,8 +93,6 @@ pub struct PkgEntry {
 
 /// 安装计划：从协议层转换而来，供执行器消费。
 pub struct InstallPlan {
-    /// 全局共享 pip 包（先安装，永不随插件卸载）
-    pub global_pip: Vec<String>,
     /// 当前插件的执行计划
     pub plugin: ResolvedPlugin,
 }
@@ -105,6 +106,8 @@ pub struct ResolvedPlugin {
     pub source: Option<String>,
     /// pip 安装列表（属于本插件，卸载时删除）
     pub pip_packages: Vec<String>,
+    /// pip-keep 安装列表（属于本插件，但卸载时保留）
+    pub pip_keep_packages: Vec<String>,
     /// 统一下载/解压清单（scripts + bin + workdir），按顺序执行
     pub assets: Vec<Asset>,
     /// 命令注册列表（command 和 commands 已合并）

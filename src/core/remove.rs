@@ -368,13 +368,13 @@ pub fn rm_all(layout: &PathLayout) {
 /// 流程：
 /// 1. 读取 plugins.pkg.json，在 packages 中查找 key
 /// 2. 收集其他插件共享的 pip 包名（跨插件安全检查）
-/// 3. 卸载 pip 包（跳过其他插件也依赖的包）
+/// 3. 卸载 pip 包（跳过 pip-keep 包和其他插件也依赖的包）
 /// 4. 删除下载的脚本文件和二进制文件
 /// 5. 从 plugins.cmd.json 删除该插件的所有命令
 /// 6. 从 plugins.pkg.json 删除该 key
 /// 7. 写回
 ///
-/// 注意：$pip 全局共享依赖不在任何插件的 PkgEntry 中，永远不会被卸载。
+/// 注意：pip-keep 包永远不会被卸载。
 pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
     // 1. 检查 venv（与 install_plugin 一致：pip 或 python 可执行文件存在即可）
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
@@ -415,7 +415,16 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         key.bold(),
     );
 
-    // 收集其他插件也依赖的 pip 包名（跨插件共享检查）
+    // 收集需要跳过的 pip 包名：
+    // 1. 当前插件的 pip-keep 包（永不卸载）
+    // 2. 其他插件也依赖的 pip 包（跨插件共享检查）
+    let current_keep: HashSet<&str> = pkg.pip_keep
+        .iter()
+        .flatten()
+        .map(|p| extract_pkg_name(p))
+        .filter(|n| !n.is_empty())
+        .collect();
+
     let shared_pkgs: HashSet<&str> = pkg_state
         .iter()
         .filter(|(k, _)| k.as_str() != key)
@@ -426,12 +435,21 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
         .filter(|n| !n.is_empty())
         .collect();
 
-    // 3. 卸载 Python 包（跳过其他插件也依赖的包）
+    // 3. 卸载 Python 包（跳过 pip-keep 包和其他插件共享的包）
     if let Some(ref pip_list) = pkg.pip {
         println!("{} pip", "==>".cyan().bold());
         for item in pip_list {
             let name = extract_pkg_name(item);
             if name.is_empty() {
+                continue;
+            }
+            // 跳过 pip-keep 包（永不卸载）
+            if current_keep.contains(name) {
+                println!(
+                    "{}",
+                    format!("Skipping {} (pip-keep, preserved)", name).dimmed()
+                );
+                println!("{} {} {}", "*".dimmed(), name.bold(), "(keep)".dimmed());
                 continue;
             }
             // 跨插件共享检查

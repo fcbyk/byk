@@ -19,8 +19,6 @@ pub struct Registry {
     pub default: Option<String>,
     /// "$var": 全局变量模板
     pub variables: HashMap<String, String>,
-    /// "$pip": 全局共享 pip 依赖（不属于任何插件，卸载时保留）
-    pub global_pip: Vec<String>,
     /// 插件列表（过滤掉 $ 开头的 key）
     pub plugins: HashMap<String, PluginDef>,
 }
@@ -46,6 +44,11 @@ pub struct PluginDef {
     /// 支持单字符串或字符串数组，单值自动包装为 `Some(vec![...])`
     #[serde(default, deserialize_with = "deserialize_pip_one_or_many")]
     pub pip: Option<Vec<String>>,
+
+    /// pip-keep 依赖（属于本插件，但卸载时保留，不会被 pip uninstall）
+    /// 结构与 pip 完全相同，支持单字符串或字符串数组
+    #[serde(rename = "pip-keep", default, deserialize_with = "deserialize_pip_one_or_many")]
+    pub pip_keep: Option<Vec<String>>,
 
     /// 下载到 plugins/{plugin_key}/ 的文件
     #[serde(default)]
@@ -175,18 +178,6 @@ pub fn parse_registry(raw: &HashMap<String, serde_json::Value>) -> Registry {
         })
         .unwrap_or_default();
 
-    let global_pip = raw
-        .get("$pip")
-        .map(|v| match v {
-            serde_json::Value::String(s) => vec![s.clone()],
-            serde_json::Value::Array(arr) => arr
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect(),
-            _ => vec![],
-        })
-        .unwrap_or_default();
-
     let mut plugins = HashMap::new();
     for (key, value) in raw {
         if key.starts_with('$') {
@@ -209,7 +200,6 @@ pub fn parse_registry(raw: &HashMap<String, serde_json::Value>) -> Registry {
     Registry {
         default,
         variables,
-        global_pip,
         plugins,
     }
 }
@@ -232,7 +222,6 @@ mod tests {
         let registry = parse_registry(&raw);
         assert_eq!(registry.default, None);
         assert!(registry.variables.is_empty());
-        assert!(registry.global_pip.is_empty());
         assert_eq!(registry.plugins.len(), 1);
         let def = registry.plugins.get("plugin").unwrap();
         assert_eq!(def.pip.as_ref().unwrap(), &vec!["requests".to_string()]);
@@ -267,25 +256,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_global_pip() {
+    fn parse_pip_keep_single_string() {
         let raw = to_map(r#"{
-            "$pip": ["shared-lib"],
-            "p1": {"pip": ["p1-lib"]}
+            "p1": {"pip": "p1-lib", "pip-keep": "shared-lib"}
         }"#);
         let registry = parse_registry(&raw);
-        assert_eq!(registry.global_pip, vec!["shared-lib".to_string()]);
+        let def = registry.plugins.get("p1").unwrap();
+        assert_eq!(def.pip.as_ref().unwrap(), &vec!["p1-lib".to_string()]);
+        assert_eq!(def.pip_keep.as_ref().unwrap(), &vec!["shared-lib".to_string()]);
     }
 
     #[test]
-    fn parse_global_pip_single_string() {
+    fn parse_pip_keep_array() {
         let raw = to_map(r#"{
-            "$pip": "shared-lib",
-            "p1": {"pip": "p1-lib"}
+            "p1": {"pip": ["p1-lib"], "pip-keep": ["shared-lib"]}
         }"#);
         let registry = parse_registry(&raw);
-        assert_eq!(registry.global_pip, vec!["shared-lib".to_string()]);
         let def = registry.plugins.get("p1").unwrap();
         assert_eq!(def.pip.as_ref().unwrap(), &vec!["p1-lib".to_string()]);
+        assert_eq!(def.pip_keep.as_ref().unwrap(), &vec!["shared-lib".to_string()]);
     }
 
     #[test]

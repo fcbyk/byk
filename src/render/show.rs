@@ -189,6 +189,16 @@ pub fn render_plugins(layout: &PathLayout) {
                 println!("{}: {}", "pip".yellow(), names.join(", "));
             }
         }
+
+        if let Some(ref pip_keep_list) = pkg.pip_keep {
+            let names: Vec<&str> = pip_keep_list
+                .iter()
+                .filter_map(|item| extract_display_name(item))
+                .collect();
+            if !names.is_empty() {
+                println!("{}: {}", "pip-keep".yellow(), names.join(", "));
+            }
+        }
     }
     println!();
 }

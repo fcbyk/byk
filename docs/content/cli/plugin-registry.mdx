@@ -20,7 +20,7 @@ https://raw.githubusercontent.com/{owner}/{repo}/{branch}/byk.json
 `byk.json` 是一个**过程式操作脚本**，按顺序声明操作块：
 
 ```
-1. $pip                  → 全局共享 pip 依赖（不属于任何插件，卸载时保留）
+1. pip-keep              → 安装 Python 依赖到虚拟环境（卸载时保留）
 2. pip                   → 安装 Python 依赖到虚拟环境（卸载时自动清理）
 3. downloads             → 统一下载/拷贝文件到 plugins/<plugin_key>/
 4. download-to-workdir   → 下载到当前工作目录
@@ -167,19 +167,17 @@ byk.json 文件
 
 ::::
 
-### $pip
+## 操作块
 
-`$pip` 是根级别的共享 pip 依赖，不属于任何插件，**卸载时保留**。支持单字符串或字符串数组写法：
+### pip-keep
+
+`pip-keep` 是插件内部的保留 pip 依赖，**卸载时保留**。结构与 `pip` 完全相同，支持单字符串或字符串数组写法：
 
 ```json
 {
-  "$pip": ["rich", "click>=8.0"],
   "plugin-a": {
+    "pip-keep": ["rich", "click>=8.0"],
     "pip": ["my-plugin-a"],
-    "commands": { ... }
-  },
-  "plugin-b": {
-    "pip": ["my-plugin-b"],
     "commands": { ... }
   }
 }
@@ -189,18 +187,19 @@ byk.json 文件
 
 ```json
 {
-  "$pip": "rich",
-  "plugin-a": { ... }
+  "plugin-a": {
+    "pip-keep": "rich",
+    "pip": "my-plugin-a",
+    "commands": { ... }
+  }
 }
 ```
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `$pip` | string \| string[] | 否 | 全局共享 pip 依赖，安装任何插件时都会安装，卸载时保留 |
+| `pip-keep` | string \| string[] | 否 | 保留 pip 依赖，卸载插件时不会 pip uninstall |
 
-> `$pip` 适合声明多个插件共享的基础依赖，避免每个插件重复声明。与插件的 `pip` 字段不同，`$pip` 中的包不会随任何插件的卸载而删除。
-
-## 操作块
+> `pip-keep` 适合声明插件的基础共享依赖（如 `rich`、`click`），卸载插件时这些包会被保留。与 `pip` 不同，`pip-keep` 中的包不会随插件卸载而删除。
 
 ### pip
 
@@ -667,8 +666,6 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中的默认 key
 
 ```json
 {
-  "$pip": ["rich", "click"],
-
   "lansend": "https://raw.githubusercontent.com/fcbyk/byk-lansend/main/byk.json",
 
   "hello": {
@@ -728,6 +725,6 @@ byk add myuser/my-byk-plugins            # 安装 byk.json 中的默认 key
 - Ref 引用支持 URL（`http(s)://`）和相对路径两种写法，相对路径遵循 `./xxx` 规则
 - 一个插件的 `command` 和 `commands` 可以共存，但 `commands` 中不能定义与插件 key 同名的子命令
 - 单命令插件推荐使用 `command`，多命令插件使用 `commands`
-- 操作块按固定顺序执行：`$pip` → `pip` → `downloads` → `download-to-workdir` → `download-to-alias` → `commands` / `command` → `alias`
+- 操作块按固定顺序执行：`pip-keep` → `pip` → `downloads` → `download-to-workdir` → `download-to-alias` → `commands` / `command` → `alias`
 - 使用 `--cdn` 时，所有 `raw.githubusercontent.com` 的 URL 自动转换为 jsDelivr CDN 加速
-- 顶层 `$var`/`$default`/`$pip` 为系统字段，不会被视为有效 plugin key
+- 顶层 `$var`/`$default` 为系统字段，不会被视为有效 plugin key

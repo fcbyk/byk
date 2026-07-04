@@ -535,7 +535,7 @@ fn preprocess_registry(
 /// 1. 检查 venv 是否存在
 /// 2. --file 读本地文件，否则远程拉取
 /// 3. 查找 key → ref 引用解析 → 按顺序执行操作块
-/// 4. pip → pip-keep → script → commands/command
+/// 4. pip-keep → pip → downloads → commands/command
 /// 5. 持久化到 plugins.cmd.json 和 plugins.pkg.json
 pub fn install_plugin(
     spec_str: &str,
@@ -1060,7 +1060,7 @@ fn flatten_entries(
 /// 从 Registry 构建单个插件的 InstallPlan。
 ///
 /// 此阶段完成所有判断：
-/// - 提取 $pip 全局依赖
+/// - 提取 pip-keep 和 pip 依赖
 /// - `[tar]` / `[exe]` 前缀检测 → is_archive / chmod_x
 /// - key 推导 → name
 /// - 合并 command + commands → Vec<CommandReg>
@@ -1142,11 +1142,11 @@ fn build_install_plan(
     if assets.is_empty()
         && commands.is_empty()
         && def.pip.as_ref().is_none_or(|p| p.is_empty())
+        && def.pip_keep.as_ref().is_none_or(|p| p.is_empty())
         && def.alias.as_ref().is_none_or(|a| a.is_empty())
-        && registry.global_pip.is_empty()
     {
         eprintln!(
-            "{} plugin \"{}\" has no supported operations (pip/download/command/commands/alias)",
+            "{} plugin \"{}\" has no supported operations (pip/pip-keep/download/command/commands/alias)",
             "Error:".red(),
             key,
         );
@@ -1154,11 +1154,11 @@ fn build_install_plan(
     }
 
     InstallPlan {
-        global_pip: registry.global_pip.clone(),
         plugin: ResolvedPlugin {
             key: key.to_string(),
             source: source_label,
             pip_packages: def.pip.clone().unwrap_or_default(),
+            pip_keep_packages: def.pip_keep.clone().unwrap_or_default(),
             assets,
             commands,
         },
@@ -1188,13 +1188,13 @@ fn execute_install_plan(
     let plugin_dir = layout.plugins_dir.join(&plan.plugin.key);
     let alias_dir = layout.alias_dir.clone();
 
-    // 全局 pip（共享依赖，不随插件卸载）
-    if !plan.global_pip.is_empty() {
-        println!("{} $pip {}", "==>".cyan().bold(), "(shared)".dimmed());
-        for pkg in &plan.global_pip {
+    // pip-keep（属于本插件，但卸载时保留）
+    if !plan.plugin.pip_keep_packages.is_empty() {
+        println!("{} pip-keep {}", "==>".cyan().bold(), "(keep)".dimmed());
+        for pkg in &plan.plugin.pip_keep_packages {
             println!(
                 "{}",
-                format!("Installing pip package: {} (shared)", pkg).dimmed()
+                format!("Installing pip package: {} (keep)", pkg).dimmed()
             );
             install_python_package(pkg, layout);
             println!("{} {}", "+".green(), pkg.bold());
@@ -1384,10 +1384,16 @@ fn build_pkg_entry(plan: &InstallPlan) -> PkgEntry {
     } else {
         Some(plan.plugin.pip_packages.clone())
     };
+    let pip_keep = if plan.plugin.pip_keep_packages.is_empty() {
+        None
+    } else {
+        Some(plan.plugin.pip_keep_packages.clone())
+    };
 
     PkgEntry {
         source: plan.plugin.source.clone(),
         pip,
+        pip_keep,
         assets,
         commands,
     }
