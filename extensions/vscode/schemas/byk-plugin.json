@@ -11,11 +11,53 @@
     },
     "$var": {
       "type": "object",
-      "description": "变量定义映射。定义后可使用 {变量名} 语法在顶层字符串值中引用，作用域仅限当前 JSON 文件。\n示例：{ \"p\": \"./plugins\" } → \"{p}/py-module/byk.json\" → \"./plugins/py-module/byk.json\"",
+      "description": "变量定义映射。定义后可使用 {变量名} 语法在顶层字符串值中引用，作用域仅限当前 JSON 文件。\n示例：{ \"p\": \"./plugins\" } → \"{p}/py-module/byk.json\" → \"./plugins/py-module/byk.json\"\n支持平台特定值：{ \"URL\": { \"linux-x86_64\": \"...\", \"darwin-arm64\": \"...\" } }",
       "additionalProperties": {
-        "type": "string",
-        "description": "变量值，替换对应 {key} 占位符。仅支持字符串类型。"
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "变量值，替换对应 {key} 占位符。"
+          },
+          {
+            "type": "object",
+            "description": "平台→值映射，运行时根据当前平台自动选择。",
+            "properties": {
+              "linux-x86_64": {
+                "type": "string",
+                "description": "Linux x86_64 平台的值"
+              },
+              "linux-arm64": {
+                "type": "string",
+                "description": "Linux ARM64 平台的值"
+              },
+              "darwin-x86_64": {
+                "type": "string",
+                "description": "macOS Intel 平台的值"
+              },
+              "darwin-arm64": {
+                "type": "string",
+                "description": "macOS Apple Silicon 平台的值"
+              },
+              "windows-x64": {
+                "type": "string",
+                "description": "Windows x64 平台的值"
+              }
+            },
+            "additionalProperties": false,
+            "minProperties": 1
+          }
+        ]
       }
+    },
+    "$pip": {
+      "description": "全局共享 pip 依赖，不属于任何插件，卸载时保留。支持单字符串或字符串数组。\n示例：\"rich\" 或 [\"rich\", \"click\"]",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      ]
     }
   },
   "additionalProperties": {
@@ -34,66 +76,98 @@
       "type": "object",
       "properties": {
         "pip": {
-          "description": "pip 包名或 URL 列表，卸载插件时自动 pip uninstall。URL 包需使用 \"name @ url\" 格式才能卸载",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "description": "包名、版本约束、URL，或 \"name @ url\" 格式"
-          }
-        },
-        "pip-keep": {
-          "description": "pip 包名或 URL 列表，安装后不随插件卸载（共享依赖）。示例：[\"rich\", \"click\"]",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "description": "包名、版本约束或 URL"
-          }
+          "description": "pip 包名或 URL 列表，卸载插件时自动 pip uninstall。URL 包需使用 \"name @ url\" 格式才能卸载。支持单字符串或字符串数组。\n示例：\"requests\" 或 [\"requests\", \"click\"] 或 [\"mylib @ https://...\"]",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "包名、版本约束、URL，或 \"name @ url\" 格式"
+              }
+            }
+          ]
         },
         "downloads": {
-          "description": "下载区块：统一下载到 plugins/ 目录的文件。包含 scripts 和 bin 两个子区块",
-          "type": "object",
-          "properties": {
-            "scripts": {
-              "description": "脚本下载映射：key 为保存的文件名，value 为远程 URL 或相对路径。下载到 plugins/scripts/<key>。\n示例：{ \"main.py\": \"./src/main.py\", \"util.py\": \"https://example.com/util.py\" }",
-              "type": "object",
-              "additionalProperties": {
-                "type": "string",
-                "description": "远程 URL（自动下载）或相对路径 ./xxx（自动拷贝）"
-              }
-            },
-            "bin": {
-              "description": "二进制下载映射：key 为保存的文件名/目录名，value 为平台映射对象。使用 $tar 标记区分直接下载和压缩包解压。\n$tar: false → 直接下载单文件 + chmod +x\n$tar: true → 下载 tar.gz/zip 并解压到 plugins/bin/<key>/",
-              "type": "object",
-              "additionalProperties": { "$ref": "#/$defs/PlatformMap" }
-            }
-          },
-          "additionalProperties": false
+          "description": "统一下载区块：下载到 plugins/<plugin_key>/ 目录。\n- 裸 URL 字符串：文件名从 URL 自动提取\n- 对象映射：key 为文件名/目录名，value 为 URL（支持 [tar]/[exe] 前缀）或嵌套目录树\n\n[tar] 前缀 → 下载并解压\n[exe] 前缀 → 下载 + chmod +x\n示例：{ \"tool\": \"[exe] https://example.com/tool\", \"lib\": { \"main.py\": \"https://...\" } }",
+          "oneOf": [
+            { "type": "string", "description": "裸 URL：文件名从 URL 自动提取。支持 [tar]/[exe] 前缀。" },
+            { "$ref": "#/$defs/DownloadsMap" }
+          ]
         },
-        "download-scripts": {
-          "description": "语法糖：等价于 downloads.scripts 的扁平写法，省略 downloads 嵌套层。key 为保存的文件名，value 为远程 URL 或相对路径。下载到 plugins/scripts/<key>。\n示例：{ \"main.py\": \"./src/main.py\", \"util.py\": \"https://example.com/util.py\" }",
-          "type": "object",
-          "additionalProperties": {
-            "type": "string",
-            "description": "远程 URL（自动下载）或相对路径 ./xxx（自动拷贝）"
-          }
+        "download-to-workdir": {
+          "description": "下载到当前工作目录（与 downloads 结构相同）。\nMap 模式下支持 $name 键指定容器目录名（默认 \"downloads\"）。\n$name 不会创建实体文件，仅用作目录前缀。",
+          "oneOf": [
+            { "type": "string", "description": "裸 URL：文件名从 URL 自动提取。支持 [tar]/[exe] 前缀。" },
+            { "$ref": "#/$defs/DownloadsWorkdirMap" }
+          ]
         },
-        "download-bin": {
-          "description": "语法糖：等价于 downloads.bin 的扁平写法，省略 downloads 嵌套层。key 为保存的文件名/目录名，value 为平台映射对象。使用 $tar 标记区分直接下载和压缩包解压。",
-          "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/PlatformMap" }
+        "download-to-alias": {
+          "description": "下载到 ~/.byk/alias/ 目录（与 downloads 结构相同）。",
+          "oneOf": [
+            { "type": "string", "description": "裸 URL：文件名从 URL 自动提取。支持 [tar]/[exe] 前缀。" },
+            { "$ref": "#/$defs/DownloadsMap" }
+          ]
         },
         "command": {
           "description": "注册单个命令（命令名 = 插件 key）。推荐单命令插件使用，与 commands 可共存",
           "$ref": "#/$defs/CommandEntry"
         },
         "commands": {
-          "description": "注册多个命令到路由表。内容会被零解析直接合并到 plugins.cmd.json",
+          "description": "注册多个命令到路由表。内容会被直接合并到 plugins.cmd.json",
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/CommandEntry" },
+          "minProperties": 1
+        },
+        "alias": {
+          "description": "别名部署：安装时写入 *.byk.json 文件。\nkey = \"@filename\"（当前目录）或 \"@@filename\"（~/.byk/alias/）\nvalue = 别名 key-value 定义\n示例：{ \"@myapp\": { \"run\": \"python main.py\", \"test\": \"pytest\" } }",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          },
           "minProperties": 1
         }
       },
       "additionalProperties": false
+    },
+    "DownloadsMap": {
+      "type": "object",
+      "description": "下载映射：key 为文件名或目录名。value 为 URL 字符串（支持 [tar]/[exe] 前缀）或嵌套目录树。",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "description": "URL 字符串。前缀：\n- [tar] → 下载 tar.gz/zip 并解压\n- [exe] → 下载 + chmod +x\n- 无前缀 → 普通文件下载" },
+          { "$ref": "#/$defs/DownloadsTree" }
+        ]
+      },
+      "minProperties": 1
+    },
+    "DownloadsWorkdirMap": {
+      "type": "object",
+      "description": "工作目录下载映射：与 DownloadsMap 结构相同，额外支持 $name 键指定容器目录名。",
+      "properties": {
+        "$name": {
+          "type": "string",
+          "description": "容器目录名，不创建实体文件，仅用作目录前缀。默认 \"downloads\"。"
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "description": "URL 字符串。前缀：\n- [tar] → 下载 tar.gz/zip 并解压\n- [exe] → 下载 + chmod +x\n- 无前缀 → 普通文件下载" },
+          { "$ref": "#/$defs/DownloadsTree" }
+        ]
+      },
+      "minProperties": 1
+    },
+    "DownloadsTree": {
+      "type": "object",
+      "description": "目录树：叶子为 URL 字符串（支持 [tar]/[exe] 前缀），中间节点为子目录。",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "description": "叶子节点：URL 字符串。支持 [tar]/[exe] 前缀。" },
+          { "$ref": "#/$defs/DownloadsTree" }
+        ]
+      },
+      "minProperties": 1
     },
     "CommandEntry": {
       "title": "命令条目",
@@ -103,16 +177,16 @@
         "type": {
           "description": "命令类型",
           "type": "string",
-          "enum": ["py-module", "py-script", "py-bin", "bin"],
+          "enum": ["python-m", "python", "pip-bin", "bin"],
           "enumDescriptions": [
             "python -m <entry>",
-            "python <scripts_dir>/<entry>",
+            "python plugins/<entry>",
             "直接执行 venv/bin/<entry>",
-            "直接执行 plugins/bin/<entry>"
+            "直接执行 plugins/<entry>"
           ]
         },
         "entry": {
-          "description": "入口点：py-module 为模块路径，py-script 为脚本文件名（需通过 scripts 字段预先下载），py-bin 为 pip 安装的可执行文件名，bin 为二进制文件名（需通过 bin 字段预先下载）",
+          "description": "入口点：python-m 为模块路径，python 为脚本文件名（相对于插件目录），pip-bin 为 pip 安装的可执行文件名，bin 为二进制文件名（相对于插件目录）",
           "type": "string"
         },
         "desc": {
@@ -121,40 +195,6 @@
         }
       },
       "required": ["type", "entry"],
-      "additionalProperties": false
-    },
-    "PlatformMap": {
-      "title": "平台→URL 映射",
-      "description": "五个平台到下载 URL 的映射，按需填写当前平台需要的 key。$tar 标记控制下载后行为",
-      "type": "object",
-      "properties": {
-        "$tar": {
-          "type": "boolean",
-          "description": "标记为 tar.gz/zip，解压而非直接下载。默认 false = 直接下载单文件 + chmod +x",
-          "default": false
-        },
-        "linux-x86_64": {
-          "type": "string",
-          "description": "Linux x86_64 平台的下载 URL 或相对路径"
-        },
-        "linux-arm64": {
-          "type": "string",
-          "description": "Linux ARM64 平台的下载 URL 或相对路径"
-        },
-        "darwin-x86_64": {
-          "type": "string",
-          "description": "macOS Intel 平台的下载 URL 或相对路径"
-        },
-        "darwin-arm64": {
-          "type": "string",
-          "description": "macOS Apple Silicon 平台的下载 URL 或相对路径"
-        },
-        "windows-x64": {
-          "type": "string",
-          "description": "Windows x64 平台的下载 URL 或相对路径"
-        }
-      },
-      "minProperties": 1,
       "additionalProperties": false
     }
   }
