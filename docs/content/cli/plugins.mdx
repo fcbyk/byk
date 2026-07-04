@@ -12,15 +12,15 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 插件系统依赖 `~/.byk/venv/` 下的 Python 虚拟环境。当你运行 `byk add <user/repo[/key]>` 时：
 
 1. 从远程仓库（或本地文件）拉取插件协议 `byk.json`
-2. 查找匹配的插件 key，按固定顺序执行操作块：`pip` / `pip-keep` → `downloads`（或 `download-scripts` / `download-bin`）→ `command` / `commands`
-3. 在隔离的 venv 中执行 `pip install`（`pip` / `pip-keep` 块）、下载/拷贝脚本文件（`downloads.scripts` 或 `download-scripts` 块）、下载二进制文件（`downloads.bin` 或 `download-bin` 块）
+2. 查找匹配的插件 key，按固定顺序执行操作块：`$pip` → `pip` → `downloads` → `download-to-workdir` → `download-to-alias` → `command` / `commands` → `alias`
+3. 在隔离的 venv 中执行 `pip install`（`$pip` / `pip` 块）、统一下载/解压资源（`downloads` / `download-to-workdir` / `download-to-alias` 块）
 4. 将命令路由直接合并到 `~/.byk/plugins/plugins.cmd.json`，包追踪信息持久化到 `~/.byk/plugins/plugins.pkg.json`
 
 之后运行 `byk <command>` 时，byk 根据 `type` 字段区分执行方式：
-- `py-module`：执行 `python -m <entry>`
-- `py-script`：执行 `python <scripts_dir>/<entry>`
-- `py-bin`：直接执行 `venv/bin/<entry>`
-- `bin`：直接执行 `plugins/bin/<entry>`（支持相对路径如 `my-tool/bin/my-tool`）
+- `python-m`：执行 `python -m <entry>`
+- `python`：执行 `python plugins/<plugin_key>/<entry>`
+- `pip-bin`：直接执行 `venv/bin/<entry>`
+- `bin`：直接执行 `plugins/<plugin_key>/<entry>`（支持相对路径如 `my-tool/bin/my-tool`）
 
 ## 初始化
 
@@ -110,8 +110,8 @@ byk remove <plugin-key>   # 卸载指定插件
 └── plugins/
     ├── plugins.cmd.json   # 命令路由（热路径：命令解析、帮助渲染）
     ├── plugins.pkg.json   # 包追踪（冷路径：卸载、信息查询）
-    ├── scripts/           # py-script 脚本文件存放目录
-    └── bin/               # 普通二进制文件存放目录
+    ├── <plugin-key>/      # 每个插件的下载资源存放在独立子目录
+    └── <plugin-key>/      # 解压后的二进制/脚本文件按 plugin key 隔离
 ```
 
 ## 状态文件
@@ -126,13 +126,13 @@ byk remove <plugin-key>   # 卸载指定插件
 {
   "commands": {
     "lansend": {
-      "type": "py-module",
+      "type": "python-m",
       "entry": "byklansend.main",
       "desc": "Send messages via LAN"
     },
     "myscript": {
-      "type": "py-script",
-      "entry": "myscript.py",
+      "type": "python",
+      "entry": "myscript/myscript.py",
       "desc": "My custom script"
     }
   }
@@ -142,8 +142,8 @@ byk remove <plugin-key>   # 卸载指定插件
 | 字段 | 说明 |
 |------|------|
 | `commands` | 命令名 → 类型、入口点、描述的映射 |
-| `type` | 命令类型：`py-module`（模块）、`py-script`（脚本）、`py-bin`（Python 可执行文件）或 `bin`（普通二进制） |
-| `entry` | 入口点：`py-module` 为模块路径，`py-script` 为脚本文件名，`py-bin` 为 venv/bin 下的可执行文件名，`bin` 为 plugins/bin 下的二进制文件路径（支持相对路径如 `my-tool/bin/my-tool`） |
+| `type` | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）或 `bin`（普通二进制） |
+| `entry` | 入口点：`python-m` 为模块路径，`python` 为 `plugins/<plugin_key>/` 下的相对路径，`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为 `plugins/<plugin_key>/` 下的二进制文件路径（支持相对路径如 `my-tool/bin/my-tool`） |
 | `desc` | 命令描述，显示在帮助信息中 |
 
 ### plugins.pkg.json（包追踪）
@@ -152,30 +152,25 @@ byk remove <plugin-key>   # 卸载指定插件
 
 ```json
 {
-  "packages": {
-    "hello": {
-      "source": "user/repo",
-      "pip": ["byk-hello"],
-      "commands": ["hello", "world"]
-    },
-    "jiahao": {
-      "source": null,
-      "pip": ["rich", "click"],
-      "pip-keep": ["requests"],
-      "scripts": ["jiahao.py"],
-      "commands": ["jiahao"]
-    }
+  "hello": {
+    "source": "user/repo",
+    "pip": ["byk-hello"],
+    "commands": ["hello", "world"]
+  },
+  "my-tool": {
+    "source": "user/tools",
+    "pip": ["rich"],
+    "assets": ["configs", "my-tool"],
+    "commands": ["my-tool"]
   }
 }
 ```
 
 | 字段 | 说明 |
 |------|------|
-| `packages` | 插件 key → 包信息的映射 |
 | `source` | 插件来源（`user/repo` 格式），本地安装时为 `null` |
 | `pip` | pip 安装的包名/URL 列表，卸载时自动清理 |
-| `pip-keep` | pip 安装的包名/URL 列表，卸载时保留（共享依赖） |
-| `scripts` | 通过 `downloads.scripts` 或 `download-scripts` 字段下载的脚本文件名列表 |
+| `assets` | 下载到工作目录或 alias 目录的文件/目录名列表。卸载时 `is_dir()` 判断清理方式：目录则递归删除，文件则直接删除。`plugins/<key>/` 下的资源不在此记录（卸载时直接删除整个插件目录） |
 | `commands` | 该插件注册的所有命令名列表 |
 
 ## 编写自己的插件
