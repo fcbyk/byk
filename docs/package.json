@@ -9,6 +9,10 @@
   "devDependencies": {
     "@rspress/core": "^2.0.13",
     "@rspress/plugin-llms": "^2.0.13",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "rspress-plugin-file-tree": "^1.0.5"
   }
 }
