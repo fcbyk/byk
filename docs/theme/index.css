@@ -7,6 +7,20 @@
   --rp-outline-width: 200px !important;  /* 默认 268px */
 }
 
+/* 主页 nav + body 背景与 byk-home 的 paper 色一致，文档页保持默认白 */
+body:has(.byk-home) {
+  background: #fbfaf8;
+}
+body:has(.byk-home) header.rp-nav {
+  background: #fbfaf8;
+}
+html.dark:has(.byk-home) {
+  background: #16140f;
+}
+html.dark:has(.byk-home) header.rp-nav {
+  background: #16140f;
+}
+
 /* PC 端去掉侧边栏右边框线，移动端保留 */
 @media (min-width: 1280px) {
   .rp-doc-layout__sidebar {

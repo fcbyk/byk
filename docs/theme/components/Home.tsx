@@ -61,18 +61,20 @@ export function BykHome() {
               {copied ? 'copied ✓' : 'copy'}
             </button>
           </div>
-          <Link href="/cli/index" className="b-link">
-            查看文档
-            <Arrow />
-          </Link>
-          <a
-            href="https://github.com/fcbyk/byk"
-            target="_blank"
-            rel="noreferrer"
-            className="b-link b-link--dim"
-          >
-            GitHub
-          </a>
+          <div className="b-links">
+            <Link href="/cli/index" className="b-link">
+              查看文档
+              <Arrow />
+            </Link>
+            <a
+              href="https://github.com/fcbyk/byk"
+              target="_blank"
+              rel="noreferrer"
+              className="b-link b-link--dim"
+            >
+              GitHub
+            </a>
+          </div>
         </div>
 
         {/* Hero terminal — the signature */}

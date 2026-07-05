@@ -191,6 +191,14 @@
   margin-top: 36px;
 }
 
+/* 安装命令独占一行，链接组另起一行——移动端不再折行乱跳 */
+.b-links {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
 .b-copy {
   position: relative;
   display: inline-flex;
