@@ -125,9 +125,9 @@ pub(crate) fn resolve_cwd_display(cwd: &str, base_dir: Option<&Path>) -> String 
     };
     if let Some(home) = dirs::home_dir()
         && let Ok(rest) = resolved.strip_prefix(&home) {
-            return format!("~/{}", rest.display());
+            return format!("~/{}", rest.display().to_string().replace('\\', "/"));
         }
-    resolved.display().to_string()
+    resolved.display().to_string().replace('\\', "/")
 }
 
 /// 手动标准化路径，消除 `.` 和 `..` 组件。
