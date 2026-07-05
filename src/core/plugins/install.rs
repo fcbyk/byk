@@ -544,33 +544,6 @@ pub fn install_plugin(
     cdn: bool,
 ) {
 
-    // 1. 检查 venv（不存在时提示选择包管理器）
-    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-    let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-    let venv_ready = pip.is_file() || py_exe.is_file();
-    if !venv_ready {
-        println!("{}", "? Python venv not found.".yellow());
-        println!("Choose package manager:");
-        println!("[1] pip  [2] uv  [n] cancel");
-        print!("Enter your choice: ");
-        let _ = io::stdout().flush();
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input).is_err() {
-            exit(1);
-        }
-        let answer = input.trim().to_lowercase();
-        match answer.as_str() {
-            "1" | "y" => init_py(layout, false),
-            "2" => init_py(layout, true),
-            _ => exit(1),
-        }
-        let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-        let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-        if !pip.is_file() && !py_exe.is_file() {
-            exit(1);
-        }
-    }
-
     // 2. 获取 byk.json（--file 本地文件/URL 或 远程仓库）
     let (body, source_label, lookup_key, mut ref_base) = if let Some(f) = file {
         if f.starts_with("http://") || f.starts_with("https://") {
@@ -765,6 +738,42 @@ pub fn install_plugin(
 
     // 6. 解析协议 → 构建执行计划
     let registry = protocol::parse_registry(&registry);
+
+    // 仅当插件协议中包含 pip / pip-keep 依赖时，才检查/初始化 Python venv
+    let needs_venv = registry.plugins.get(&key)
+        .map(|def| {
+            def.pip.as_ref().map_or(false, |p| !p.is_empty())
+                || def.pip_keep.as_ref().map_or(false, |p| !p.is_empty())
+        })
+        .unwrap_or(false);
+
+    if needs_venv {
+        let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+        let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+        let venv_ready = pip.is_file() || py_exe.is_file();
+        if !venv_ready {
+            println!("{}", "? Python venv not found.".yellow());
+            println!("Choose package manager:");
+            println!("[1] pip  [2] uv  [n] cancel");
+            print!("Enter your choice: ");
+            let _ = io::stdout().flush();
+            let mut input = String::new();
+            if io::stdin().read_line(&mut input).is_err() {
+                exit(1);
+            }
+            let answer = input.trim().to_lowercase();
+            match answer.as_str() {
+                "1" | "y" => init_py(layout, false),
+                "2" => init_py(layout, true),
+                _ => exit(1),
+            }
+            let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+            let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+            if !pip.is_file() && !py_exe.is_file() {
+                exit(1);
+            }
+        }
+    }
 
     let source_display = source_label
         .as_ref()

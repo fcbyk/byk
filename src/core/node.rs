@@ -380,7 +380,11 @@ pub fn execute_npm_command(cmd_name: &str, cmd_args: &[String], layout: &PathLay
 
     let mut path_env = bin_dir.to_string_lossy().to_string();
     if let Ok(existing_path) = std::env::var("PATH") {
-        path_env = format!("{}:{}", path_env, existing_path);
+        #[cfg(windows)]
+        let sep = ";";
+        #[cfg(not(windows))]
+        let sep = ":";
+        path_env = format!("{}{}{}", path_env, sep, existing_path);
     }
 
     let status = Command::new(cmd_name)

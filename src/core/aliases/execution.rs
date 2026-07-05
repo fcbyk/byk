@@ -73,10 +73,14 @@ pub fn build_alias_env(working_dir: &Path, custom_paths: &[String]) -> HashMap<S
     if prefixes.is_empty() {
         env_map.insert("PATH".to_string(), existing_path);
     } else {
-        let prepended = prefixes.join(":");
+        #[cfg(windows)]
+        let sep = ";";
+        #[cfg(not(windows))]
+        let sep = ":";
+        let prepended = prefixes.join(sep);
         env_map.insert(
             "PATH".to_string(),
-            format!("{}:{}", prepended, existing_path),
+            format!("{}{}{}", prepended, sep, existing_path),
         );
     }
     env_map
@@ -228,12 +232,28 @@ fn display_interactive_template(command: &str, placeholders: &[String]) {
     println!("~ {}", display);
 }
 
-/// 执行最终命令（sh -c）。
+/// 执行最终命令（平台适配：Windows 用 cmd /C，Unix 用 sh -c）。
 fn run_command(final_command: &str, working_dir: &Path, custom_paths: &[String]) -> ! {
     let env_map = build_alias_env(working_dir, custom_paths);
+
+    #[cfg(windows)]
+    let final_command = convert_unix_path_for_cmd(final_command);
+
+    #[cfg(not(windows))]
+    let final_command = final_command.to_string();
+
+    #[cfg(windows)]
+    let status = Command::new("cmd")
+        .arg("/C")
+        .arg(&final_command)
+        .current_dir(working_dir)
+        .envs(&env_map)
+        .status();
+
+    #[cfg(not(windows))]
     let status = Command::new("sh")
         .arg("-c")
-        .arg(final_command)
+        .arg(&final_command)
         .current_dir(working_dir)
         .envs(&env_map)
         .status();
@@ -245,6 +265,17 @@ fn run_command(final_command: &str, working_dir: &Path, custom_paths: &[String])
             exit(1);
         }
     }
+}
+
+/// 将命令中的 Unix 风格 `./` 前缀转为 Windows `.\`，使 cmd 可识别。
+/// 仅转换非路径部分的前缀（如 `./pip` → `.\pip`）。
+#[cfg(windows)]
+fn convert_unix_path_for_cmd(command: &str) -> String {
+    // 只转换命令开头的 ./（如 ./pip install → .\pip install）
+    if command.starts_with("./") {
+        return format!(".\\{}", &command[2..]);
+    }
+    command.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -576,9 +607,22 @@ fn resolve_working_dir(cwd: Option<&str>, base_dir: Option<&Path>) -> PathBuf {
         let joined = base.join(&path);
         // 规范化路径（消除 .. 等），失败时回退到拼接结果
         if let Ok(canonical) = joined.canonicalize() {
-            return canonical;
+            return strip_extended_path_prefix(canonical);
         }
         return joined;
+    }
+    path
+}
+
+/// 在 Windows 上剥离 `\\?\` 扩展路径前缀，保持标准 DOS 路径。
+/// 其他平台原样返回。
+fn strip_extended_path_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = path.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
     }
     path
 }
