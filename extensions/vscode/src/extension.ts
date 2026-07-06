@@ -424,12 +424,20 @@ function runAliasTask(exactCommand: string, cwd: string) {
     env: { PATH: buildPath() },
   };
 
+  // PowerShell treats @ as the splat operator — escape with backtick.
+  // cmd.exe, bash, zsh don't need this, and backtick would be literal there.
+  const shellPath = vscode.env.shell || '';
+  const isPowerShell = /powershell|pwsh/i.test(shellPath);
+  const cmd = isPowerShell
+    ? 'byk `' + exactCommand
+    : 'byk ' + exactCommand;
+
   const task = new vscode.Task(
     { type: 'byk' },
     vscode.TaskScope.Workspace,
     exactCommand,
     'byk',
-    new vscode.ShellExecution(`byk ${exactCommand}`, options),
+    new vscode.ShellExecution(cmd, options),
   );
   task.presentationOptions = {
     echo: true,
