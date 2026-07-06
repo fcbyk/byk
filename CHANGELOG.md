@@ -1,3 +1,26 @@
+## v0.5.0 (2026-07-06)
+
+## Breaking Changes
+
+- **plugins**: py-module → python-m, py-script → python, py-bin → pip-bin
+- **plugins**: unify all downloads into downloads / download-to-workdir / download-to-alias
+- **plugins**: remove bin and bin-tar fields, use downloads with [tar] / [exe] prefix
+
+### Features
+
+- **plugins**: `pip` and `pip-keep`  accepts a single string, not just an array
+- **plugins**: `$var` supports per-platform values
+- **plugins**: add `alias` fields to plugin protocol
+
+### Bug Fixes
+
+- **Windows**: fix alias path display error
+- **Windows**: fix alias execution error
+
+### Tests
+
+- add e2e smoke tests for basic binary availability
+
 ## v0.4.0 (2026-06-27)
 
 ## Breaking Changes
