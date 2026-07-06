@@ -742,8 +742,8 @@ pub fn install_plugin(
     // 仅当插件协议中包含 pip / pip-keep 依赖时，才检查/初始化 Python venv
     let needs_venv = registry.plugins.get(&key)
         .map(|def| {
-            def.pip.as_ref().map_or(false, |p| !p.is_empty())
-                || def.pip_keep.as_ref().map_or(false, |p| !p.is_empty())
+            def.pip.as_ref().is_some_and(|p| !p.is_empty())
+                || def.pip_keep.as_ref().is_some_and(|p| !p.is_empty())
         })
         .unwrap_or(false);
 

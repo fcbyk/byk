@@ -272,8 +272,8 @@ fn run_command(final_command: &str, working_dir: &Path, custom_paths: &[String])
 #[cfg(windows)]
 fn convert_unix_path_for_cmd(command: &str) -> String {
     // 只转换命令开头的 ./（如 ./pip install → .\pip install）
-    if command.starts_with("./") {
-        return format!(".\\{}", &command[2..]);
+    if let Some(stripped) = command.strip_prefix("./") {
+        return format!(".\\{}", stripped);
     }
     command.to_string()
 }
