@@ -12,11 +12,29 @@ import './home.css';
  *
  * signature：Hero 的终端块，带真实 ANSI 风格语法着色与闪烁光标。
  */
+type InstallTab = 'pip' | 'curl' | 'ps';
+
+const INSTALLS: Record<InstallTab, { label: string; cmd: string }> = {
+  pip: {
+    label: 'pip',
+    cmd: 'pip install byk',
+  },
+  curl: {
+    label: 'macOS & Linux',
+    cmd: 'curl -fsSL https://cli.fcbyk.com/install.sh | bash',
+  },
+  ps: {
+    label: 'Windows',
+    cmd: 'powershell -c "irm https://cli.fcbyk.com/install.ps1 | iex"',
+  },
+};
+
 export function BykHome() {
+  const [activeTab, setActiveTab] = useState<InstallTab>('pip');
   const [copied, setCopied] = useState(false);
 
   const copyInstall = () => {
-    navigator.clipboard?.writeText('pip install byk').then(() => {
+    navigator.clipboard?.writeText(INSTALLS[activeTab].cmd).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     });
@@ -28,7 +46,7 @@ export function BykHome() {
       <header className="b-shell b-hero b-reveal">
         <div className="b-hero__eyebrow">
           <span className="b-dot" />
-          <span>v0.4.0</span>
+          <span>v0.5.0</span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span>MIT</span>
           <span style={{ opacity: 0.4 }}>·</span>
@@ -45,10 +63,26 @@ export function BykHome() {
         </p>
 
         <div className="b-install-row">
+          <div className="b-install-tabs">
+            {(Object.keys(INSTALLS) as InstallTab[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={
+                  'b-install-tab' +
+                  (k === activeTab ? ' b-install-tab--active' : '')
+                }
+                onClick={() => { setActiveTab(k); setCopied(false); }}
+                aria-pressed={k === activeTab}
+              >
+                {INSTALLS[k].label}
+              </button>
+            ))}
+          </div>
           <div className="b-copy">
             <span className="b-copy__cmd">
               <span className="b-prompt">$</span>
-              pip install byk
+              {INSTALLS[activeTab].cmd}
             </span>
             <button
               type="button"

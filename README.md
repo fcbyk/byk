@@ -4,6 +4,21 @@
 
 Features are opt-in. Nothing is created until you need it.
 
+## Plugins
+
+Install plugins from any GitHub repo, isolated in a shared Python venv.
+
+```bash
+byk add user/repo            # install default plugin
+byk add user/repo/key        # install a specific plugin
+byk run-plugin-command       # run it
+
+byk show plugins             # list installed plugins
+byk remove <key>             # uninstall
+```
+
+See [plugin registry](https://cli.fcbyk.com/cli/plugin-registry) for details.
+
 ## npm commands
 
 Manage npm CLIs under a byk-scoped environment — no global pollution.
@@ -40,7 +55,13 @@ pip install byk
 Or via shell script (no Python needed):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fcbyk/byk/main/scripts/install.sh | bash
+curl -fsSL https://cli.fcbyk.com/install.sh | bash
+```
+
+Windows:
+
+```powershell
+powershell -c "irm https://cli.fcbyk.com/install.ps1 | iex"
 ```
 
 ## License
