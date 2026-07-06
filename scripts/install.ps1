@@ -19,7 +19,8 @@ New-Item -ItemType Directory -Force $InstallDir | Out-Null
 Copy-Item -Path "$TempDir\byk.exe" -Destination "$InstallDir\byk.exe" -Force
 
 # Add to user PATH if not already present
-$UserPath = [Environment]::GetEnvironmentVariable("Path", "User") ?? ""
+$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($null -eq $UserPath) { $UserPath = "" }
 if ($UserPath -notlike "*\.byk\bin*") {
     [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
     Write-Host "Added $InstallDir to user PATH"
