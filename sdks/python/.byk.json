@@ -1,9 +1,0 @@
-{
-    "$priority": -1,
-    "dev":"pip install -e .",
-    "uninstall": "pip uninstall byksdk -y",
-    "test":"pytest -q",
-    "build":"python3 -m build",
-    "check":"twine check dist/*",
-    "upload": "twine upload dist/*"
-}
