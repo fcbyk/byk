@@ -1,63 +1,16 @@
 from __future__ import annotations
 
-import functools, socket, logging, time
-from importlib.util import find_spec
+import socket, logging, time
 from typing import List, Dict, Any
 from pathlib import Path
 import urllib.error, urllib.request
 import webbrowser as _webbrowser
 
-
-# --------------
-# 依赖检查工具函数
-# --------------
-def require_dependency(
-    package: str,
-    scope: str,
-    version: str | None = None,
-    hint: str | None = None,
-) -> None:
-    """校验第三方依赖是否可用，不可用时抛出带安装指引的 ImportError
-
-    Args:
-        package: pip 包名，如 "flask"、"click"
-        scope: 使用说明，如 "byksdk.web"
-        version: 最低版本号，如 "2.0"，会自动生成 >= 约束
-        hint: 完全自定义安装命令，传入时忽略 version
-    """
-    if find_spec(package) is None:
-        spec = f"{package}>={version}" if version else package
-        install = hint or f"pip install {spec}"
-        raise ImportError(
-            f"{package} is required for {scope}.\n"
-            f"Install it and add to your plugin dependencies:\n"
-            f"    {install}\n"
-            f"    # then add '{spec}' to pyproject.toml dependencies"
-        )
-
-
-def requires(package: str, version: str | None = None, hint: str | None = None):
-    """依赖检查装饰器，调用函数前自动校验第三方包是否可用
-
-    可叠加使用以声明多个依赖:
-
-        @requires("pyperclip", version="1.9.0")
-        @requires("click", version="8.0.0")
-        def copy_to_clipboard(text): ...
-
-    Args:
-        package: pip 包名
-        version: 最低版本号，自动生成 >= 约束
-        hint: 完全自定义安装命令
-    """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            scope = f"{func.__module__}.{func.__qualname__}"
-            require_dependency(package, scope, version=version, hint=hint)
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+# 第三方依赖
+import psutil
+import click
+import pyperclip
+from flask import Flask, make_response, send_from_directory, jsonify, request
 
 
 # -----------
@@ -85,11 +38,8 @@ def detect_iface_type(iface: str) -> tuple[str, bool, int]:
     return 'unknown', False, 50
 
 
-@requires("psutil", version="5.9.0")
 def get_private_networks() -> List[Dict[str, Any]]:
-    """获取所有局域网 IP 地址信息（需 psutil>=5.9.0）"""
-    import psutil
-
+    """获取所有局域网 IP 地址信息"""
     results = []
     interfaces = psutil.net_if_addrs()
 
@@ -172,14 +122,13 @@ log = logging.getLogger("werkzeug")
 log.setLevel(logging.ERROR)
 
 
-@requires("flask", version="2.0")
 def create_spa(
     static_dir: str | Path,
     entry_html: str = "index.html",
     page: list[str] | None = None,
     cli_data: Any = None,
 ):
-    """创建托管单页应用 (SPA) 的 Flask 实例（需 flask>=2.0）
+    """创建托管单页应用 (SPA) 的 Flask 实例
 
     自动映射 /assets/* 到静态资源目录，并将所有未知路由回退到
     entry_html（支持前端路由）。响应添加无缓存头
@@ -193,8 +142,6 @@ def create_spa(
     Returns:
         Flask 应用实例
     """
-    from flask import Flask, make_response, send_from_directory
-
     static_dir = Path(static_dir).resolve()
     assets_dir = static_dir / "assets"
 
@@ -246,15 +193,12 @@ class R:
     """Web API 统一响应格式"""
 
     @staticmethod
-    @requires("flask", version="2.0")
     def success(data: Any = None, message: str = "success"):
-        """构造成功响应（需 flask>=2.0）
+        """构造成功响应
 
         Returns:
             (Flask Response, 200)
         """
-        from flask import jsonify
-
         return jsonify({
             "code": 200,
             "message": message,
@@ -262,15 +206,12 @@ class R:
         }), 200
 
     @staticmethod
-    @requires("flask", version="2.0")
     def error(message: str = "error", code: int = 400, data: Any = None):
-        """构造错误响应（需 flask>=2.0）
+        """构造错误响应
 
         Returns:
             (Flask Response, <code>)
         """
-        from flask import jsonify
-
         return jsonify({
             "code": code,
             "message": message,
@@ -278,9 +219,8 @@ class R:
         }), code
 
 
-@requires("flask", version="2.0")
 def get_client_ip() -> str:
-    """提取客户端 IP（需 flask>=2.0）
+    """提取客户端 IP
 
     优先使用 X-Forwarded-For 头（取第一个），
     回退到 request.remote_addr
@@ -288,8 +228,6 @@ def get_client_ip() -> str:
     Returns:
         客户端 IP 字符串，无法获取时返回 "unknown"
     """
-    from flask import request
-
     xff = request.headers.get("X-Forwarded-For", "")
     if xff:
         return xff.split(",")[0].strip()
@@ -299,14 +237,13 @@ def get_client_ip() -> str:
 # ----------------
 # CLI 输出与辅助工具
 # ----------------
-@requires("click", version="8.0.0")
 def check_port(
     port: int,
     host: str = "0.0.0.0",
     output_prefix: str = " ",
     silent: bool = False,
 ) -> bool:
-    """检查端口是否可用（需 click>=8.0.0）
+    """检查端口是否可用
 
     Args:
         port: 要检查的端口号
@@ -317,8 +254,6 @@ def check_port(
     Returns:
         True 表示端口可用
     """
-    import click
-
     try:
         ensure_port_available(port=port, host=host)
     except OSError as e:
@@ -334,14 +269,13 @@ def check_port(
     return True
 
 
-@requires("click", version="8.0.0")
 def colored_key_value(
     key: str,
     value: Any,
     key_color: str | None = "cyan",
     value_color: str | None = "yellow",
 ) -> str:
-    """生成带颜色的键值字符串（需 click>=8.0.0）
+    """生成带颜色的键值字符串
 
     Args:
         key: 键文本
@@ -352,29 +286,24 @@ def colored_key_value(
     Returns:
         拼接好的 ANSI 颜色字符串
     """
-    import click
-
     return (
         f"{click.style(str(key), fg=key_color)}: "
         f"{click.style(str(value), fg=value_color)}"
     )
 
 
-@requires("click", version="8.0.0")
 def echo_network_urls(
     networks: list[dict[str, Any]],
     port: int,
     include_virtual: bool = False,
 ) -> None:
-    """打印可访问的本地和局域网 URL（需 click>=8.0.0）
+    """打印可访问的本地和局域网 URL
 
     Args:
         networks: get_private_networks() 的返回值
         port: 服务端口号
         include_virtual: 是否输出虚拟网卡（docker/vmware 等）的地址
     """
-    import click
-
     for host in ("localhost", "127.0.0.1"):
         click.echo(
             colored_key_value(
@@ -400,15 +329,13 @@ def echo_network_urls(
             )
 
 
-@requires("pyperclip", version="1.9.0")
-@requires("click", version="8.0.0")
 def copy_to_clipboard(
     text: str,
     label: str = "URL",
     output_prefix: str = " ",
     silent: bool = False,
 ) -> None:
-    """将文本复制到系统剪贴板（需 pyperclip>=1.9.0）
+    """将文本复制到系统剪贴板
 
     Args:
         text: 要复制的文本
@@ -416,9 +343,6 @@ def copy_to_clipboard(
         output_prefix: 输出行前缀，用于对齐
         silent: True 时静默执行，不输出任何提示
     """
-    import click
-    import pyperclip
-
     try:
         pyperclip.copy(text)
         if not silent:
@@ -436,8 +360,6 @@ def wait_for_server_ready(
     timeout: float = 10.0,
 ) -> bool:
     """轮询直到 Web 服务可正常响应
-
-    纯标准库实现，无额外依赖
 
     Args:
         port: 服务端口
@@ -461,8 +383,5 @@ def wait_for_server_ready(
 
 
 def open_browser(url: str) -> None:
-    """在系统默认浏览器中打开 URL
-
-    纯标准库实现，无额外依赖
-    """
-    _webbrowser.open(url)     
+    """在系统默认浏览器中打开 URL"""
+    _webbrowser.open(url)

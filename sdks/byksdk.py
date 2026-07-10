@@ -43,8 +43,7 @@ class StateStore:
 
     用法::
 
-        from byksdk.paths import STATE_DIR
-        from byksdk.state import StateStore
+        from byksdk import StateStore, STATE_DIR
 
         store = StateStore(STATE_DIR / "my_config.json")
         store.set("key", "value")
