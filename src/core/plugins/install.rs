@@ -1303,8 +1303,10 @@ fn execute_install_plan(
                     println!("{}", format!("{} files extracted", file_count).dimmed());
                 }
             } else {
-                let _ = std::fs::create_dir_all(&parent_dir);
                 let dest = parent_dir.join(&asset.name);
+                if let Some(d) = dest.parent() {
+                    let _ = std::fs::create_dir_all(d);
+                }
                 println!("{}", format!("Saving to {}", dest.display()).dimmed());
                 if let Err(e) = std::fs::copy(&temp_file, &dest) {
                     eprintln!("{} failed to save {}: {}", "Error:".red(), dest.display(), e);
