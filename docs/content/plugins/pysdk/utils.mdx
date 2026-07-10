@@ -1,0 +1,567 @@
+# 工具函数
+
+- [点此查看源码](https://github.com/fcbyk/byk/blob/main/sdks/utils.py)
+
+网络检测、CLI 输出、Web 辅助函数
+
+import { Tab, Tabs } from '@rspress/core/theme';
+
+
+## get_private_networks
+
+获取所有局域网 IP 地址信息，按优先级排序。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def get_private_networks() -> List[Dict]:
+    """获取所有局域网 IP 地址信息。
+    
+    Returns:
+        包含网络接口信息的字典列表，每个字典包含：
+        - iface: 网络接口名称
+        - ips: IP 地址列表
+        - type: 接口类型
+        - virtual: 是否为虚拟接口
+        - priority: 优先级（数字越小优先级越高）
+    """
+```
+</Tab>
+<Tab label="返回值示例">
+```py
+[
+    {
+        "iface": "eth0",           # 网络接口名称
+        "ips": ["192.168.1.100"],  # IP 地址列表
+        "type": "ethernet",        # 接口类型
+        "virtual": False,          # 是否虚拟接口
+        "priority": 10             # 优先级
+    },
+    {
+        "iface": "wlan0",
+        "ips": ["192.168.1.101"],
+        "type": "wifi",
+        "virtual": False,
+        "priority": 10
+    },
+    {
+        "iface": "docker0",
+        "ips": ["172.17.0.1"],
+        "type": "container",
+        "virtual": True,
+        "priority": 40
+    }
+]
+```
+</Tab>
+</Tabs>
+
+#### 接口类型说明
+
+系统支持以下接口类型分类：
+
+| 类型 | 关键词 | 虚拟接口 | 优先级 | 说明 |
+|------|--------|---------|--------|------|
+| ethernet | ethernet, 以太网 | False | 10 | 有线以太网 |
+| wifi | wlan, wi-fi, 无线 | False | 10 | 无线网络 |
+| vmware | vmware, vmnet | True | 30 | VMware 虚拟网卡 |
+| virtualbox | vbox, virtualbox | True | 30 | VirtualBox 虚拟网卡 |
+| container | docker, wsl | True | 40 | 容器网络 |
+| bluetooth | bluetooth | True | 60 | 蓝牙网络 |
+| loopback | loopback | True | 100 | 回环接口 |
+| unknown | - | False | 50 | 未知类型 |
+
+#### 使用示例
+
+<Tabs>
+<Tab label="基础使用">
+
+```py
+from utils import get_private_networks
+
+# 获取所有局域网接口
+networks = get_private_networks()
+
+for net in networks:
+    print(f"接口: {net['iface']}")
+    print(f"类型: {net['type']}")
+    print(f"IP: {', '.join(net['ips'])}")
+    print(f"虚拟: {'是' if net['virtual'] else '否'}")
+    print(f"优先级: {net['priority']}")
+    print()
+```
+
+</Tab>
+<Tab label="获取首选 IP">
+
+```py
+from utils import get_private_networks
+
+def get_preferred_ip() -> str:
+    """获取首选的局域网 IP。"""
+    networks = get_private_networks()
+    if networks:
+        # 返回优先级最高的接口的第一个 IP
+        return networks[0]['ips'][0]
+    return "127.0.0.1"
+
+# 使用
+host = get_preferred_ip()
+print(f"服务器将绑定到: {host}")
+```
+
+</Tab>
+<Tab label="过滤虚拟接口">
+
+```py
+from utils import get_private_networks
+
+def get_physical_networks():
+    """获取物理网络接口。"""
+    networks = get_private_networks()
+    return [net for net in networks if not net['virtual']]
+
+# 使用
+physical = get_physical_networks()
+for net in physical:
+    print(f"{net['iface']}: {net['ips']}")
+```
+
+</Tab>
+</Tabs>
+
+## ensure_port_available
+
+检查指定端口是否可用。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def ensure_port_available(port: int, host: str = "0.0.0.0") -> None:
+    """
+    Args:
+        port: 要检查的端口号
+        host: 绑定的主机地址，默认为 "0.0.0.0"
+        
+    Raises:
+        OSError: 如果端口已被占用或无法绑定
+    """
+```
+</Tab>
+<Tab label="使用示例">
+```py
+import click
+from byksdk import plugin
+from utils import ensure_port_available
+
+@click.command()
+@click.option("--port", default=8080, help="服务器端口")
+def server(port):
+    """启动 HTTP 服务器"""
+    ctx = plugin("server")
+    try:
+        ensure_port_available(port)
+        ctx.logger.info(f"端口 {port} 可用，正在启动服务器...")
+    except OSError:
+        ctx.logger.error(f"端口 {port} 已被占用，请选择其他端口")
+        raise click.Abort()
+```
+</Tab>
+</Tabs>
+
+
+## create_spa
+
+创建托管单页应用（SPA）的 Flask 实例。自动映射 `/assets/*` 到静态资源目录，并将所有未知路由回退到 `entry_html`（支持前端路由）。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def create_spa(
+    static_dir: str | Path,
+    entry_html: str = "index.html",
+    page: list[str] | None = None,
+    cli_data: Any = None,
+):
+    """
+    Args:
+        static_dir: 打包后的 SPA 根目录（含 index.html 和 assets/）。
+        entry_html: SPA 入口文件名，默认 index.html。
+        page: 多页面路由列表，如 ["/admin", "/login"]。
+              每个路由返回同一个 entry_html（前端自行解析路径）。
+        cli_data: 可选，挂载到 app.cli_data 供后续使用。
+
+    Returns:
+        Flask 应用实例，已配置：
+        - /assets/* → 静态资源
+        - / → entry_html（Cache-Control: no-cache）
+        - page 列表中的每个 URL → entry_html
+    """
+```
+</Tab>
+<Tab label="基础示例">
+```py
+from utils import create_spa
+
+# 单页应用
+app = create_spa("my_plugin/dist")
+
+@app.route("/api/hello")
+def hello():
+    return {"message": "Hello"}
+
+# 启动
+# app.run(host="0.0.0.0", port=8080)
+```
+</Tab>
+<Tab label="多页面 + cli_data">
+```py
+from utils import create_spa
+
+app = create_spa(
+    "my_plugin/dist",
+    page=["/admin", "/settings"],
+    cli_data={"port": 8080},
+)
+
+# 访问 cli_data
+print(app.cli_data["port"])  # 8080
+
+# /admin 和 /settings 均返回 index.html
+# 前端路由自行解析路径
+```
+</Tab>
+</Tabs>
+
+#### 响应头
+
+所有 SPA 路由的响应均包含无缓存头，确保前端资源更新后立即生效：
+
+```
+Cache-Control: no-cache, no-store, must-revalidate
+Pragma: no-cache
+Expires: 0
+```
+
+---
+
+## R
+
+API 统一响应格式辅助类。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+class R:
+    @staticmethod
+    def success(data: Any = None, message: str = "success"):
+        """构造成功响应 → (Flask Response, 200)"""
+
+    @staticmethod
+    def error(message: str = "error", code: int = 400, data: Any = None):
+        """构造错误响应 → (Flask Response, <code>)"""
+```
+</Tab>
+<Tab label="响应格式">
+```json
+// R.success({"id": 1})
+{
+    "code": 200,
+    "message": "success",
+    "data": {"id": 1}
+}
+
+// R.error("Not Found", 404)
+{
+    "code": 404,
+    "message": "Not Found",
+    "data": null
+}
+```
+</Tab>
+<Tab label="使用示例">
+```py
+from utils import R, create_spa
+
+app = create_spa("dist")
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    # ... 验证逻辑 ...
+    if success:
+        return R.success({"token": "xxx"}, message="Login successful")
+    else:
+        return R.error("Invalid password", 401)
+
+@app.route("/api/data")
+def data():
+    items = [{"id": 1, "name": "foo"}]
+    return R.success(items)
+```
+</Tab>
+</Tabs>
+
+---
+
+## get_client_ip
+
+从当前 Flask 请求上下文中提取客户端真实 IP。优先使用 `X-Forwarded-For` 头（取第一个），回退到 `request.remote_addr`。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def get_client_ip() -> str:
+    """
+    从当前 Flask 请求上下文中提取客户端 IP。
+
+    1. 检查 X-Forwarded-For 头 → 取第一个 IP
+    2. 回退到 request.remote_addr
+    3. 都不存在时返回 "unknown"
+
+    必须在 Flask 请求上下文中调用（即路由处理函数内）。
+    """
+```
+</Tab>
+<Tab label="使用示例">
+```py
+from utils import R, get_client_ip
+
+@app.route("/api/info")
+def info():
+    ip = get_client_ip()
+    return R.success({"client_ip": ip})
+
+# 反向代理后的请求：
+# X-Forwarded-For: 203.0.113.1, 10.0.0.1
+# → 返回 "203.0.113.1"
+
+# 直连请求：
+# remote_addr: 192.168.1.100
+# → 返回 "192.168.1.100"
+```
+</Tab>
+</Tabs>
+
+
+## check_port
+
+检查端口是否可用，不可用时打印友好的错误信息。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def check_port(
+    port: int,
+    host: str = "0.0.0.0",
+    output_prefix: str = " ",
+    silent: bool = False,
+) -> bool:
+    """
+    Args:
+        port: 要检查的端口号。
+        host: 绑定地址，默认 0.0.0.0。
+        output_prefix: 错误输出前缀，用于对齐。
+        silent: True 时仅返回布尔值，不打印任何内容。
+
+    Returns:
+        True 表示端口可用。
+    """
+```
+</Tab>
+<Tab label="使用示例">
+```py
+from utils import check_port
+
+# 基础用法 — 端口不可用时自动打印错误
+if not check_port(8080):
+    return
+
+# 静默检查 — 仅返回布尔值
+if check_port(3000, silent=True):
+    print("端口可用")
+```
+</Tab>
+</Tabs>
+
+---
+
+## colored_key_value
+
+生成带 ANSI 颜色的「键: 值」字符串。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def colored_key_value(
+    key: str,
+    value: Any,
+    key_color: str | None = "cyan",
+    value_color: str | None = "yellow",
+) -> str:
+    """
+    Args:
+        key: 键文本。
+        value: 值（自动转为字符串）。
+        key_color: 键的颜色名称，None 表示无颜色。
+        value_color: 值的颜色名称，None 表示无颜色。
+
+    Returns:
+        已着色（含 ANSI 转义序列）的字符串，可直接传给 click.echo()。
+    """
+```
+</Tab>
+<Tab label="使用示例">
+```py
+import click
+from utils import colored_key_value
+
+click.echo(colored_key_value("Status", "running", key_color="green"))
+click.echo(colored_key_value("Local", "http://localhost:8080", key_color=None, value_color="cyan"))
+```
+</Tab>
+</Tabs>
+
+---
+
+## echo_network_urls
+
+打印本地和局域网可访问的 URL。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def echo_network_urls(
+    networks: list[dict[str, Any]],
+    port: int,
+    include_virtual: bool = False,
+) -> None:
+    """
+    Args:
+        networks: get_private_networks() 的返回值。
+        port: 服务端口号。
+        include_virtual: 是否输出虚拟网卡（docker/vmware 等）的地址。
+    """
+```
+</Tab>
+<Tab label="使用示例">
+```py
+from utils import echo_network_urls, get_private_networks
+
+networks = get_private_networks()
+echo_network_urls(networks, port=8080)
+# 输出：
+#  Local: http://localhost:8080
+#  Local: http://127.0.0.1:8080
+#  [en0] Network URL:: http://192.168.1.100:8080
+
+# 包含虚拟网卡
+echo_network_urls(networks, port=8080, include_virtual=True)
+```
+</Tab>
+</Tabs>
+
+---
+
+## copy_to_clipboard
+
+将文本复制到系统剪贴板。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def copy_to_clipboard(
+    text: str,
+    label: str = "URL",
+    output_prefix: str = " ",
+    silent: bool = False,
+) -> None:
+    """
+    Args:
+        text: 要复制的文本。
+        label: 成功/失败提示中的标签名。
+        output_prefix: 输出行前缀，用于对齐。
+        silent: True 时静默执行，不输出任何提示。
+    """
+```
+</Tab>
+<Tab label="使用示例">
+```py
+from utils import copy_to_clipboard
+
+# 复制 URL 并打印确认
+copy_to_clipboard("http://192.168.1.100:8080")
+# 输出:  URL has been copied to clipboard
+
+# 静默复制
+copy_to_clipboard("some text", silent=True)
+
+# 自定义标签
+copy_to_clipboard("token=abc123", label="Token")
+# 输出:  Token has been copied to clipboard
+```
+</Tab>
+</Tabs>
+
+---
+
+## wait_for_server_ready
+
+轮询直到 HTTP 服务就绪（返回 200）。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def wait_for_server_ready(
+    port: int,
+    host: str = "127.0.0.1",
+    timeout: float = 10.0,
+) -> bool:
+    """
+    Args:
+        port: 服务端口。
+        host: 服务地址，默认 127.0.0.1。
+        timeout: 最长等待秒数。
+
+    Returns:
+        True 表示在超时前收到了 200 响应。
+    """
+```
+</Tab>
+<Tab label="使用示例">
+```py
+import threading
+import webbrowser
+from utils import wait_for_server_ready
+
+# 典型场景：后台启动服务器，就绪后打开浏览器
+def _auto_open(port):
+    if wait_for_server_ready(port):
+        webbrowser.open(f"http://localhost:{port}")
+
+threading.Thread(target=_auto_open, args=(8080,), daemon=True).start()
+# start_server(port=8080)  # 阻塞调用
+```
+</Tab>
+</Tabs>
+
+---
+
+## open_browser
+
+在系统默认浏览器中打开 URL。标准库 `webbrowser` 的简单封装。
+
+<Tabs>
+<Tab label="函数签名">
+```py
+def open_browser(url: str) -> None:
+    """在系统默认浏览器中打开 URL。"""
+```
+</Tab>
+<Tab label="使用示例">
+```py
+from utils import open_browser
+
+open_browser("http://localhost:8080")
+```
+</Tab>
+</Tabs>

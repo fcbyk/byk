@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "text": "文档",
+    "link": "/cli"
+  },
+  {
+    "text": "插件",
+    "link": "/plugins/pysdk"
+  }
+]
