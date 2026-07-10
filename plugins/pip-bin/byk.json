@@ -1,0 +1,13 @@
+{
+  "$var": {
+    "url": "https://github.com/fcbyk/byk/releases/download/assets"
+  },
+  "ex3": {
+    "pip": "bykpb @ {url}/bykpb-2026.7.10-py3-none-any.whl",
+    "command": {
+      "type": "pip-bin",
+      "entry": "bykpb",
+      "desc": "example plugin for pip-bin"
+    }
+  }
+}

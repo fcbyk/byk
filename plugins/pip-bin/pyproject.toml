@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bykpb"
+version = "2026.7.10"
+requires-python = ">=3.6"
+dependencies = [
+    "click",
+]
+
+[project.scripts]
+bykpb = "bykpb:bykpb"

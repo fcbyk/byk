@@ -1,0 +1,13 @@
+{
+  "$var": {
+    "url": "https://github.com/fcbyk/byk/releases/download/assets"
+  },
+  "ex2": {
+    "pip": "bykpym @ {url}/bykpym-2026.7.10-py3-none-any.whl",
+    "command": {
+        "type": "python-m",
+        "entry": "bykpym",
+        "desc": "example plugin for python-m"
+    }
+  }
+}
