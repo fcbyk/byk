@@ -14,11 +14,12 @@ body:has(.byk-home) {
 body:has(.byk-home) header.rp-nav {
   background: #fbfaf8;
 }
-html.dark:has(.byk-home) {
-  background: #16140f;
+html.dark:has(.byk-home),
+html.dark body:has(.byk-home) {
+  background: #121212;
 }
 html.dark:has(.byk-home) header.rp-nav {
-  background: #16140f;
+  background: #121212;
 }
 
 /* PC 端去掉侧边栏右边框线，移动端保留 */

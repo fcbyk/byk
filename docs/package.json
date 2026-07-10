@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "rspress dev",
+    "dev": "rspress dev --host 0.0.0.0",
     "build": "rspress build && cp ../scripts/install.sh doc_build/install.sh && cp ../scripts/install.ps1 doc_build/install.ps1",
     "preview": "rspress preview"
   },

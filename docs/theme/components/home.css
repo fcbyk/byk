@@ -740,26 +740,26 @@ html.dark .byk-home {
   --b-ink: #f5f5f4;
   --b-ink-2: #d6d3d1;
   --b-dim: #a8a29e;
-  --b-paper: #16140f;
-  --b-mute: #1f1d18;
-  --b-rule: #2e2a24;
-  --b-rule-soft: #26231e;
+  --b-paper: #121212;
+  --b-mute: #1a1a1a;
+  --b-rule: #2d2d2d;
+  --b-rule-soft: #242424;
   --b-accent: #fb923c;
   --b-accent-ink: #fdba74;
   --b-accent-soft: rgba(251, 146, 60, 0.1);
-  --b-card: #1c1a15;
-  --b-term-bg: #0c0b09;
+  --b-card: #1a1a1a;
+  --b-term-bg: #0a0a0a;
   --b-term-fg: #e7e5e4;
   --b-term-dim: #a8a29e;
 }
 html.dark .b-term {
-  border-color: #2e2a24;
+  border-color: #2d2d2d;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset,
     0 20px 50px -20px rgba(0, 0, 0, 0.5);
 }
 html.dark .b-term__bar {
-  background: #15130f;
-  border-color: #26231e;
+  background: #141414;
+  border-color: #242424;
 }
 html.dark .b-term .t-c {
   color: #f5f5f4;
