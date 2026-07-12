@@ -1,6 +1,19 @@
+## v0.5.1 (2026-07-13)
+
+### Features
+
+- **completion**: improve contextual tab completions
+- **plugins**: skip persistence for download-to-workdir-only plugins
+- **install**: add streaming download with progress bar
+
+### Bug Fixes
+
+- **plugins**: auto-create parent directories when saving files in add command
+- **scripts**: replace ?? operator with PS 5.1 compatible null check in install.ps1
+
 ## v0.5.0 (2026-07-06)
 
-## Breaking Changes
+### Breaking Changes
 
 - **plugins**: py-module → python-m, py-script → python, py-bin → pip-bin
 - **plugins**: unify all downloads into downloads / download-to-workdir / download-to-alias
