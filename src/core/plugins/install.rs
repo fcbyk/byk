@@ -856,17 +856,19 @@ pub fn install_plugin(
     // 8. 执行计划
     execute_install_plan(&plan, layout, &mut cmd_state);
 
-    // 9. 持久化
-    if cmd_state.python_executable.is_none() {
-        let py = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-        cmd_state.python_executable = Some(py.to_string_lossy().to_string());
+    // 9. 持久化（workdir-only 插件仅下载文件到工作目录，无需记录安装状态）
+    if !is_workdir_only(&plan) {
+        if cmd_state.python_executable.is_none() {
+            let py = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+            cmd_state.python_executable = Some(py.to_string_lossy().to_string());
+        }
+
+        let pkg_entry = build_pkg_entry(&plan);
+        pkg_state.insert(key.clone(), pkg_entry);
+
+        json_io::write_json(&cmd_file, &cmd_state);
+        json_io::write_json(&pkg_file, &pkg_state);
     }
-
-    let pkg_entry = build_pkg_entry(&plan);
-    pkg_state.insert(key.clone(), pkg_entry);
-
-    json_io::write_json(&cmd_file, &cmd_state);
-    json_io::write_json(&pkg_file, &pkg_state);
 
     println!(
         "{} installed {}",
@@ -1436,6 +1438,20 @@ fn execute_install_plan(
             );
         }
     }
+}
+
+/// 判断插件是否仅包含 download-to-workdir（无命令、无 pip、无其他下载目标）。
+/// 此类插件仅将文件下载到工作目录，无需在 plugins.pkg.json 中记录安装状态。
+fn is_workdir_only(plan: &InstallPlan) -> bool {
+    plan.plugin.commands.is_empty()
+        && plan.plugin.pip_packages.is_empty()
+        && plan.plugin.pip_keep_packages.is_empty()
+        && !plan.plugin.assets.is_empty()
+        && plan
+            .plugin
+            .assets
+            .iter()
+            .all(|a| matches!(a.target, AssetTarget::Workdir))
 }
 
 /// 从 InstallPlan 构建 PkgEntry（用于持久化到 plugins.pkg.json）。
