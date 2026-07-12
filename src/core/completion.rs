@@ -6,6 +6,7 @@
 //! 支持 zsh、bash、fish。
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use super::aliases::{self, MergedNode};
 use super::node;
@@ -64,6 +65,12 @@ const GLOBAL_FLAGS: &[&str] = &[
     "-h",
 ];
 
+/// `add` 命令特有选项。
+const ADD_FLAGS: &[&str] = &["--file", "-f", "--cdn", "--help", "-h"];
+
+/// 仅 `--help` / `-h`（内置于命令无额外选项时使用）。
+const HELP_FLAGS: &[&str] = &["--help", "-h"];
+
 /// 根据当前输入的部分词，从所有命令源收集匹配的补全候选。
 fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     if partial.starts_with('-') {
@@ -104,17 +111,23 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
         return Vec::new();
     }
 
-    // 当前仅处理单前缀词场景（如 `byk rust `）
-    // 多前缀词（如 `byk @release build `）暂不处理
+    // 多前缀词场景
     if prev.len() > 1 {
-        return Vec::new();
+        return complete_multi_prev(prev, partial, layout);
     }
 
     let first = &prev[0];
 
-    // 全局标志：前缀以 '-' 开头时始终返回全局标志
+    // 上下文标志：根据已知命令返回对应的选项
     if partial.starts_with('-') {
-        return GLOBAL_FLAGS
+        let flags = match first.as_str() {
+            "add" => ADD_FLAGS,
+            "remove" | "show" => HELP_FLAGS,
+            _ if is_known_plugin(first, layout) => HELP_FLAGS,
+            _ if is_known_npm(first, layout) => HELP_FLAGS,
+            _ => GLOBAL_FLAGS,
+        };
+        return flags
             .iter()
             .filter(|f| f.starts_with(partial))
             .map(|f| f.to_string())
@@ -139,11 +152,23 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
     // remove 子命令补全
     if first == "remove" {
         const RM_SUBS: &[&str] = &["comp", "node", "all", "py"];
-        return RM_SUBS
+        let mut candidates: Vec<String> = RM_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
             .map(|s| s.to_string())
             .collect();
+
+        // 补全已安装的插件
+        let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
+        for key in pkg_state.keys() {
+            if key.starts_with(partial) {
+                candidates.push(key.clone());
+            }
+        }
+
+        candidates.sort();
+        candidates.dedup();
+        return candidates;
     }
 
     // 1. @ 文件引用补全通过 complete_at_prefix 处理（@file. 语法），此处不处理
@@ -175,6 +200,88 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // 5. 无法识别 → 无补全
     Vec::new()
+}
+
+/// 多前缀词场景的补全。
+///
+/// 当前支持：
+/// - `byk add --file ` / `byk add -f ` → 补全文件路径
+fn complete_multi_prev(prev: &[String], partial: &str, _layout: &PathLayout) -> Vec<String> {
+    if prev.len() == 2 && prev[0] == "add" && (prev[1] == "--file" || prev[1] == "-f") {
+        return complete_file_path(partial);
+    }
+    Vec::new()
+}
+
+/// 补全文件路径。
+///
+/// 根据 partial 中已输入的路径前缀，返回匹配的文件/目录候选。
+/// 目录后缀 `/`，隐藏文件默认不显示（除非 partial 以 `.` 开头）。
+fn complete_file_path(partial: &str) -> Vec<String> {
+    // 展开 ~ 到 HOME
+    let expanded = expand_tilde(partial);
+
+    // 确定搜索目录和文件名前缀
+    let (base_dir, prefix) = if let Some(last_slash) = expanded.rfind('/') {
+        let dir = if last_slash == 0 {
+            // 以 / 开头（绝对路径），取 "/"
+            "/".to_string()
+        } else {
+            expanded[..=last_slash].to_string()
+        };
+        let pre = expanded[last_slash + 1..].to_string();
+        (dir, pre)
+    } else {
+        (".".to_string(), expanded)
+    };
+
+    let dir_path = Path::new(&base_dir);
+    if !dir_path.is_dir() {
+        return Vec::new();
+    }
+
+    let mut results = Vec::new();
+    let read_dir = match std::fs::read_dir(dir_path) {
+        Ok(rd) => rd,
+        Err(_) => return Vec::new(),
+    };
+
+    for entry in read_dir.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        // 隐藏文件仅在 prefix 以 . 开头时显示
+        if name.starts_with('.') && !prefix.starts_with('.') {
+            continue;
+        }
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+
+        let entry_path = entry.path();
+        let mut candidate = if let Some(last_slash) = partial.rfind('/') {
+            format!("{}{}", &partial[..=last_slash], name)
+        } else {
+            name.clone()
+        };
+
+        if entry_path.is_dir() {
+            candidate.push('/');
+        }
+
+        results.push(candidate);
+    }
+
+    results.sort();
+    results
+}
+
+/// 展开路径开头的 `~` 为用户 HOME 目录。
+fn expand_tilde(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix('~')
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return home + rest;
+    }
+    path.to_string()
 }
 
 /// 检查某个词是否是已知的插件命令。
@@ -368,7 +475,9 @@ fn collect_object_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::plugins::types::PkgEntry;
     use serde_json::json;
+    use std::collections::HashMap;
     use std::fs;
 
     // ==================== 测试辅助 ====================
@@ -689,6 +798,38 @@ mod tests {
     }
 
     #[test]
+    fn contextual_add_file_completes_paths() {
+        let env = TestEnv::new();
+        let prev = vec!["add".to_string(), "--file".to_string()];
+        let result = contextual_completions(&prev, "", &env.layout);
+        // 当前目录下至少应有文件/目录
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn contextual_add_f_short_completes_paths() {
+        let env = TestEnv::new();
+        let prev = vec!["add".to_string(), "-f".to_string()];
+        let result = contextual_completions(&prev, "", &env.layout);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn contextual_add_file_filters_by_prefix() {
+        let env = TestEnv::new();
+        // 在当前 tempdir 下创建一个已知文件，然后过滤
+        let known_file = env.temp.path().join("byk_test_completion_42.txt");
+        std::fs::write(&known_file, "test").unwrap();
+
+        let prev = vec!["add".to_string(), "--file".to_string()];
+        // partial 使用 temp dir 的完整路径前缀
+        let partial = format!("{}/byk_test", env.temp.path().display());
+        let result = contextual_completions(&prev, &partial, &env.layout);
+        // 应只匹配到我们刚创建的文件
+        assert!(result.iter().any(|c| c.ends_with("byk_test_completion_42.txt")));
+    }
+
+    #[test]
     fn contextual_flag_prefix_returns_global_flags() {
         let env = TestEnv::new();
         let prev = vec!["some-command".to_string()];
@@ -729,6 +870,47 @@ mod tests {
     }
 
     #[test]
+    fn contextual_add_flag_returns_add_specific_flags() {
+        let env = TestEnv::new();
+        let prev = vec!["add".to_string()];
+        let result = contextual_completions(&prev, "-", &env.layout);
+        // add 命令应有 --file, -f, --cdn
+        assert!(result.contains(&"--file".to_string()));
+        assert!(result.contains(&"-f".to_string()));
+        assert!(result.contains(&"--cdn".to_string()));
+        // 不应包含 --version / -v（这是全局选项）
+        assert!(!result.contains(&"--version".to_string()));
+        assert!(!result.contains(&"-v".to_string()));
+    }
+
+    #[test]
+    fn contextual_add_flag_filters_by_partial() {
+        let env = TestEnv::new();
+        let prev = vec!["add".to_string()];
+        let result = contextual_completions(&prev, "--c", &env.layout);
+        assert_eq!(result, vec!["--cdn".to_string()]);
+    }
+
+    #[test]
+    fn contextual_unknown_command_returns_global_flags() {
+        let env = TestEnv::new();
+        let prev = vec!["some-command".to_string()];
+        let result = contextual_completions(&prev, "-", &env.layout);
+        assert!(result.contains(&"--version".to_string()));
+        assert!(result.contains(&"-v".to_string()));
+        assert!(result.contains(&"--help".to_string()));
+        assert!(result.contains(&"-h".to_string()));
+    }
+
+    #[test]
+    fn contextual_known_plugin_returns_help_flags() {
+        let env = TestEnv::new();
+        let prev = vec!["test-plugin".to_string()];
+        let result = contextual_completions(&prev, "-", &env.layout);
+        assert_eq!(result, vec!["--help".to_string(), "-h".to_string()]);
+    }
+
+    #[test]
     fn contextual_known_plugin_returns_empty() {
         let env = TestEnv::new();
         let prev = vec!["test-plugin".to_string()];
@@ -750,6 +932,75 @@ mod tests {
         let prev = vec!["nobody".to_string()];
         let result = contextual_completions(&prev, "", &env.layout);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn contextual_remove_includes_builtin_subs() {
+        let env = TestEnv::new();
+        let prev = vec!["remove".to_string()];
+        let result = contextual_completions(&prev, "", &env.layout);
+        assert!(result.contains(&"comp".to_string()));
+        assert!(result.contains(&"node".to_string()));
+        assert!(result.contains(&"all".to_string()));
+        assert!(result.contains(&"py".to_string()));
+    }
+
+    #[test]
+    fn contextual_remove_includes_installed_plugins() {
+        let env = TestEnv::new();
+        // 写入 pkg 状态，添加一个已安装的插件
+        let pkg_file = env.layout.plugins_dir.join("plugins.pkg.json");
+        let mut pkg_state: HashMap<String, PkgEntry> = HashMap::new();
+        pkg_state.insert(
+            "my-plugin".to_string(),
+            PkgEntry {
+                source: Some("user/repo".to_string()),
+                pip: None,
+                pip_keep: None,
+                assets: vec![],
+                commands: vec!["run".to_string()],
+            },
+        );
+        crate::utils::json_io::write_json(&pkg_file, &pkg_state);
+
+        let prev = vec!["remove".to_string()];
+        let result = contextual_completions(&prev, "", &env.layout);
+        assert!(result.contains(&"my-plugin".to_string()));
+        // 内置子命令也存在
+        assert!(result.contains(&"comp".to_string()));
+    }
+
+    #[test]
+    fn contextual_remove_filters_by_partial() {
+        let env = TestEnv::new();
+        let pkg_file = env.layout.plugins_dir.join("plugins.pkg.json");
+        let mut pkg_state: HashMap<String, PkgEntry> = HashMap::new();
+        pkg_state.insert(
+            "alpha-tool".to_string(),
+            PkgEntry {
+                source: Some("a/b".to_string()),
+                pip: None,
+                pip_keep: None,
+                assets: vec![],
+                commands: vec!["run".to_string()],
+            },
+        );
+        pkg_state.insert(
+            "beta-tool".to_string(),
+            PkgEntry {
+                source: Some("x/y".to_string()),
+                pip: None,
+                pip_keep: None,
+                assets: vec![],
+                commands: vec!["run".to_string()],
+            },
+        );
+        crate::utils::json_io::write_json(&pkg_file, &pkg_state);
+
+        // "al" 前缀匹配内置 "all" 和插件 "alpha-tool"
+        let prev = vec!["remove".to_string()];
+        let result = contextual_completions(&prev, "al", &env.layout);
+        assert_eq!(result, vec!["all".to_string(), "alpha-tool".to_string()]);
     }
 
     // ==================== get_completions ====================
@@ -805,6 +1056,65 @@ mod tests {
     #[test]
     fn generate_unsupported_shell_does_not_panic() {
         // generate("invalid") 向 stderr 输出错误信息，不应 panic
+    }
+
+    // ==================== expand_tilde ====================
+
+    #[test]
+    fn expand_tilde_replaces_home() {
+        let result = expand_tilde("~/foo/bar");
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(result, format!("{}/foo/bar", home));
+    }
+
+    #[test]
+    fn expand_tilde_no_tilde_unchanged() {
+        let result = expand_tilde("/usr/local/bin");
+        assert_eq!(result, "/usr/local/bin".to_string());
+    }
+
+    #[test]
+    fn expand_tilde_relative_path_unchanged() {
+        let result = expand_tilde("./foo");
+        assert_eq!(result, "./foo".to_string());
+    }
+
+    // ==================== complete_file_path ====================
+
+    #[test]
+    fn complete_file_path_lists_current_dir() {
+        let result = complete_file_path("");
+        assert!(!result.is_empty(), "当前目录应至少包含一些文件");
+    }
+
+    #[test]
+    fn complete_file_path_filters_by_prefix() {
+        // 创建一个临时文件来验证过滤
+        let tmp_dir = std::env::temp_dir().join("fcbyk_test_path");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        std::fs::write(tmp_dir.join("abc.txt"), "test").unwrap();
+        std::fs::write(tmp_dir.join("xyz.txt"), "test").unwrap();
+
+        let result = complete_file_path(&format!("{}/a", tmp_dir.display()));
+        // 应该只匹配 abc.txt
+        assert!(result.iter().any(|c| c.ends_with("abc.txt")));
+        assert!(!result.iter().any(|c| c.ends_with("xyz.txt")));
+    }
+
+    #[test]
+    fn complete_file_path_hidden_files_only_with_dot_prefix() {
+        let tmp_dir = std::env::temp_dir().join("fcbyk_test_hidden");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        std::fs::write(tmp_dir.join(".hidden"), "test").unwrap();
+        std::fs::write(tmp_dir.join("normal"), "test").unwrap();
+
+        // 不输入 '.' 不应看到隐藏文件
+        let result = complete_file_path(&format!("{}/", tmp_dir.display()));
+        assert!(!result.iter().any(|c| c.ends_with(".hidden/") || c.ends_with(".hidden")));
+
+        // 输入 '.' 应能看到隐藏文件
+        let result = complete_file_path(&format!("{}/.", tmp_dir.display()));
+        assert!(result.iter().any(|c| c.contains(".hidden")));
     }
 }
 
