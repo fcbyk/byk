@@ -118,6 +118,13 @@ pub struct CommandDef {
     /// 描述文本
     #[serde(default)]
     pub desc: String,
+
+    /// 补全候选：
+    /// - `["a","b"]`：所有元素都是叶子候选
+    /// - `{"$": ["a","b"], "build": [...]}`：`$` 是叶子候选，其他 key 有下级
+    /// - value 可以是 string[] 或 object，支持任意嵌套
+    #[serde(default)]
+    pub args: Option<serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------

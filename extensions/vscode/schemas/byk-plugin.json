@@ -192,6 +192,29 @@
         "desc": {
           "description": "命令描述，显示在帮助信息中",
           "type": "string"
+        },
+        "args": {
+          "description": "补全候选（子命令树）。可嵌套的 object，支持三种特殊 key：\n- `$`：叶子候选（数组），选中后无下级\n- `$options`：可重复选项（数组），选中后留在当前层，已选过的自动排除\n- 其他 key：子命令，选中后进入该 key 的值继续补全\nvalue 可以是 string[] 或 object",
+          "oneOf": [
+            {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "扁平选项列表（全部为叶子候选）"
+            },
+            {
+              "type": "object",
+              "description": "嵌套子命令树",
+              "propertyNames": {
+                "pattern": "^(\\$|\\$options|[a-zA-Z_][\\w-]*)$"
+              },
+              "additionalProperties": {
+                "oneOf": [
+                  { "type": "array", "items": { "type": "string" } },
+                  { "$ref": "#/definitions/CommandEntry/properties/args" }
+                ]
+              }
+            }
+          ]
         }
       },
       "required": ["type", "entry"],

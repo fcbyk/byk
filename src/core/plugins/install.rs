@@ -1184,6 +1184,7 @@ fn build_install_plan(
             cmd_type: cmd.cmd_type.clone(),
             entry,
             desc: cmd.desc.clone(),
+            args: cmd.args.clone(),
         });
         has_command = true;
     }
@@ -1204,6 +1205,7 @@ fn build_install_plan(
                 cmd_type: cd.cmd_type.clone(),
                 entry,
                 desc: cd.desc.clone(),
+                args: cd.args.clone(),
             });
         }
     }
@@ -1434,6 +1436,7 @@ fn execute_install_plan(
                     cmd_type: cmd.cmd_type.clone(),
                     entry: cmd.entry.clone(),
                     desc: cmd.desc.clone(),
+                    args: cmd.args.clone(),
                 },
             );
         }

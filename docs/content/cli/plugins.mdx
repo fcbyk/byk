@@ -128,7 +128,14 @@ byk remove <plugin-key>   # 卸载指定插件
     "lansend": {
       "type": "python-m",
       "entry": "byklansend.main",
-      "desc": "Send messages via LAN"
+      "desc": "Send messages via LAN",
+      "args": {
+        "$options": [
+          "-d", "--directory",
+          "-p", "--port",
+          "-h", "--help"
+        ]
+      }
     },
     "myscript": {
       "type": "python",
@@ -145,6 +152,7 @@ byk remove <plugin-key>   # 卸载指定插件
 | `type` | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）或 `bin`（普通二进制） |
 | `entry` | 入口点：`python-m` 为模块路径，`python` 为 `plugins/<plugin_key>/` 下的相对路径，`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为 `plugins/<plugin_key>/` 下的二进制文件路径（支持相对路径如 `my-tool/bin/my-tool`） |
 | `desc` | 命令描述，显示在帮助信息中 |
+| `args` | Shell 补全候选，支持 `$`（叶子候选）、`$options`（可重复选项）和嵌套子命令，详见 [args 字段](/cli/plugin-registry#args-字段) |
 
 ### plugins.pkg.json（包追踪）
 

@@ -168,6 +168,7 @@ mod tests {
                 cmd_type: "python-m".to_string(),
                 entry: "mymod".to_string(),
                 desc: "test desc".to_string(),
+                args: None,
             },
         );
         let state = CmdState {

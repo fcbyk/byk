@@ -120,10 +120,24 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // 上下文标志：根据已知命令返回对应的选项
     if partial.starts_with('-') {
+        // 插件命令：优先用 args 中的候选过滤，fallback 到 HELP_FLAGS
+        if let Some(plugin_cmd) = get_plugin_command(first, layout) {
+            if let Some(ref args) = plugin_cmd.args {
+                let candidates = collect_args_candidates(args, partial, &[]);
+                if !candidates.is_empty() {
+                    return candidates;
+                }
+            }
+            return HELP_FLAGS
+                .iter()
+                .filter(|f| f.starts_with(partial))
+                .map(|f| f.to_string())
+                .collect();
+        }
+
         let flags = match first.as_str() {
             "add" => ADD_FLAGS,
             "remove" | "show" => HELP_FLAGS,
-            _ if is_known_plugin(first, layout) => HELP_FLAGS,
             _ if is_known_npm(first, layout) => HELP_FLAGS,
             _ => GLOBAL_FLAGS,
         };
@@ -189,7 +203,12 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
     }
 
     // 3. 检查是否是一个已知的插件命令
-    if is_known_plugin(first, layout) {
+    if let Some(plugin_cmd) = get_plugin_command(first, layout) {
+        if let Some(ref args) = plugin_cmd.args {
+            // prev[1..] 是已经输入的子命令/参数（去掉命令名本身）
+            let trailing: Vec<&str> = prev[1..].iter().map(|s| s.as_str()).collect();
+            return complete_plugin_args(args, &trailing, partial);
+        }
         return Vec::new();
     }
 
@@ -206,10 +225,22 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 ///
 /// 当前支持：
 /// - `byk add --file ` / `byk add -f ` → 补全文件路径
-fn complete_multi_prev(prev: &[String], partial: &str, _layout: &PathLayout) -> Vec<String> {
+/// - 插件命令多级参数补全
+fn complete_multi_prev(prev: &[String], partial: &str, layout: &PathLayout) -> Vec<String> {
     if prev.len() == 2 && prev[0] == "add" && (prev[1] == "--file" || prev[1] == "-f") {
         return complete_file_path(partial);
     }
+
+    // 插件命令多级参数补全
+    let first = &prev[0];
+    if let Some(plugin_cmd) = get_plugin_command(first, layout)
+        && let Some(ref args) = plugin_cmd.args
+    {
+        // trailing 是 prev[1..]，即命令名之后的所有参数
+        let trailing: Vec<&str> = prev[1..].iter().map(|s| s.as_str()).collect();
+        return complete_plugin_args(args, &trailing, partial);
+    }
+
     Vec::new()
 }
 
@@ -285,12 +316,18 @@ fn expand_tilde(path: &str) -> String {
 }
 
 /// 检查某个词是否是已知的插件命令。
+#[allow(dead_code)]
 fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
+    get_plugin_command(word, layout).is_some()
+}
+
+/// 获取插件命令定义（包含 args 信息）。
+fn get_plugin_command(word: &str, layout: &PathLayout) -> Option<plugins::types::PluginCommand> {
     if !layout.venv_dir.is_dir() {
-        return false;
+        return None;
     }
     let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-    plugin_state.commands.contains_key(word)
+    plugin_state.commands.get(word).cloned()
 }
 
 /// 检查某个词是否是已知的 NPM 命令。
@@ -395,6 +432,112 @@ fn complete_nested_alias(prefix: &str, key_partial: &str, layout: &PathLayout) -
         .filter(|k| k.starts_with(key_partial))
         .map(|k| format!("{}{}", prefix, k))
         .collect()
+}
+
+/// 根据插件 args 树补全子命令/参数候选。
+///
+/// `trailing`：已输入的子命令序列（不含命令名本身）
+/// `partial`：当前正在输入的部分词
+///
+/// 协议约定：
+/// - `$` 数组：叶子候选（不可重复，选中后无下级）
+/// - `$options` 数组：可重复选项（选中后留在当前层，排除已选）
+/// - 其他 key：子命令（选中后进入该 key 的值继续补全）
+/// - value 可以是 string[] 或 object，支持任意嵌套
+fn complete_plugin_args(
+    args: &serde_json::Value,
+    trailing: &[&str],
+    partial: &str,
+) -> Vec<String> {
+    let mut current = args;
+    // consumed_options 记录在当前层已被消费的 $options
+    let mut consumed_options: Vec<&str> = Vec::new();
+
+    for (i, t) in trailing.iter().enumerate() {
+        // 判断 t 是否是当前层的子命令（非 $ 非 $options 的 key）
+        if let serde_json::Value::Object(obj) = current
+            && obj.contains_key(*t) && *t != "$" && *t != "$options"
+        {
+            // 子命令：深入
+            current = &obj[*t];
+            consumed_options.clear();
+            continue;
+        }
+
+        // 不是子命令 → 可能是 option，检查当前层是否有 $options
+        if let serde_json::Value::Object(obj) = current
+            && let Some(opts) = obj.get("$options").and_then(|v| v.as_array())
+        {
+            let is_option = opts.iter().any(|v| v.as_str() == Some(*t));
+            if is_option {
+                consumed_options.push(t);
+                // 最后一个 trailing 是 partial，不加入 consumed
+                if i == trailing.len() - 1 && !t.is_empty() {
+                    consumed_options.pop();
+                }
+                continue;
+            }
+        }
+
+        // 既不是子命令也不是已知 option → 无法匹配
+        return Vec::new();
+    }
+
+    // 到达目标层级，收集候选
+    collect_args_candidates(current, partial, &consumed_options)
+}
+
+/// 从 args 的某个节点收集补全候选。
+///
+/// `consumed_options`：当前层已消费的 $options（需排除）。
+fn collect_args_candidates(
+    node: &serde_json::Value,
+    partial: &str,
+    consumed: &[&str],
+) -> Vec<String> {
+    match node {
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter(|s| s.starts_with(partial))
+            .map(|s| s.to_string())
+            .collect(),
+        serde_json::Value::Object(obj) => {
+            let mut candidates: Vec<String> = Vec::new();
+
+            // $options：可重复选项，排除已消费的
+            if let Some(opts) = obj.get("$options").and_then(|v| v.as_array()) {
+                candidates.extend(
+                    opts.iter()
+                        .filter_map(|v| v.as_str())
+                        .filter(|s| !consumed.contains(s) && s.starts_with(partial))
+                        .map(|s| s.to_string()),
+                );
+            }
+
+            // $ 数组中的叶子候选
+            if let Some(leaves) = obj.get("$").and_then(|v| v.as_array()) {
+                candidates.extend(
+                    leaves
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .filter(|s| s.starts_with(partial))
+                        .map(|s| s.to_string()),
+                );
+            }
+
+            // 非 $ / $options 的 key（子命令）
+            candidates.extend(
+                obj.keys()
+                    .filter(|k| *k != "$" && *k != "$options" && k.starts_with(partial))
+                    .cloned(),
+            );
+
+            candidates.sort();
+            candidates
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// 补全顶级命令：内置子命令 + 插件 + NPM + 顶级别名。

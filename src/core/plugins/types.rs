@@ -46,6 +46,9 @@ pub struct PluginCommand {
     /// 命令描述
     #[serde(rename = "desc")]
     pub desc: String,
+    /// 补全候选（None / string[] / object）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<serde_json::Value>,
 }
 
 /// 命令状态（持久化到 plugins/plugins.cmd.json）。
@@ -159,4 +162,5 @@ pub struct CommandReg {
     pub cmd_type: String,
     pub entry: String,
     pub desc: String,
+    pub args: Option<serde_json::Value>,
 }
