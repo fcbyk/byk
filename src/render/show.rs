@@ -142,13 +142,6 @@ fn render_overview_panel(overview: &OverviewInfo) {
 pub fn render_plugins(layout: &PathLayout) {
     println!();
 
-    if !layout.venv_dir.is_dir() {
-        println!("{}", "Python venv not initialized.".yellow());
-        println!("  {}", "$ byk add <user/repo>".dimmed());
-        println!();
-        return;
-    }
-
     let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
 
     if pkg_state.is_empty() {

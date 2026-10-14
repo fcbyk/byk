@@ -367,30 +367,20 @@ pub fn rm_all(layout: &PathLayout) {
 ///
 /// 流程：
 /// 1. 读取 plugins.pkg.json，在 packages 中查找 key
-/// 2. 收集其他插件共享的 pip 包名（跨插件安全检查）
-/// 3. 卸载 pip 包（跳过 pip-keep 包和其他插件也依赖的包）
-/// 4. 删除下载的脚本文件和二进制文件
-/// 5. 从 plugins.cmd.json 删除该插件的所有命令
-/// 6. 从 plugins.pkg.json 删除该 key
-/// 7. 写回
+/// 2. 仅当插件声明了 pip 依赖时才检查 venv（bin / workdir 类插件
+///    与 Python 环境无关，venv 被删除后仍可卸载）
+/// 3. 收集其他插件共享的 pip 包名（跨插件安全检查）
+/// 4. 卸载 pip 包（跳过 pip-keep 包和其他插件也依赖的包）
+/// 5. 删除下载的脚本文件和二进制文件
+/// 6. 从 plugins.cmd.json 删除该插件的所有命令
+/// 7. 从 plugins.pkg.json 删除该 key
+/// 8. 写回
 ///
 /// 注意：pip-keep 包永远不会被卸载。
 pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
-    // 1. 检查 venv（与 install_plugin 一致：pip 或 python 可执行文件存在即可）
-    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-    let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-    if !pip.is_file() && !py_exe.is_file() {
-        eprintln!(
-            "{} Python venv not found. Run {} first.",
-            "Error:".red(),
-            "`byk add <user/repo>`".bold(),
-        );
-        exit(1);
-    }
-
     let is_uv = layout.py_venv_dir.join("pyproject.toml").is_file();
 
-    // 2. 读取状态
+    // 1. 读取状态
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
     let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
 
@@ -408,6 +398,27 @@ pub fn uninstall_plugin(key: &str, layout: &PathLayout) {
             exit(1);
         }
     };
+
+    // 2. 仅当插件声明了 pip 依赖时才要求 venv 存在。
+    //    bin / workdir 类插件与 Python 环境无关，venv 被
+    //    `byk remove py` 删除后这些插件仍可正常卸载。
+    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+    if matches!(&pkg.pip, Some(list) if !list.is_empty()) {
+        let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+        if !pip.is_file() && !py_exe.is_file() {
+            eprintln!(
+                "{} plugin \"{}\" has pip dependencies, but the Python venv was not found.",
+                "Error:".red(),
+                key,
+            );
+            eprintln!(
+                "  Run {} first, or delete {} manually.",
+                "`byk add py-v`".bold(),
+                layout.plugins_dir.join(key).display().to_string().dimmed(),
+            );
+            exit(1);
+        }
+    }
 
     println!(
         "{} Uninstalling plugin: {}",

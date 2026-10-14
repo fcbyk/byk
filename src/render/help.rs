@@ -43,12 +43,8 @@ pub fn render_commands(layout: &PathLayout) {
         ("show".into(), "Show system info, plugins, or command sources".into()),
     ];
 
-    // 插件命令
-    let plugin_state = if layout.venv_dir.is_dir() {
-        plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
-    } else {
-        plugins::state::empty_cmd_state()
-    };
+    // 插件命令（不依赖 venv：bin 类型命令与 Python 环境无关）
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
     let mut plugins: Vec<(String, String)> = plugin_state
         .commands
         .iter()

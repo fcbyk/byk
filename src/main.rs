@@ -111,12 +111,9 @@ fn main() {
     let command_args = &cli.trailing[1..];
 
     // Step 2: 检查是否为插件命令（优先级高于 NPM）
-    // 仅 venv 存在时加载插件状态
-    let cmd_state = if layout.venv_dir.is_dir() {
-        plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir)
-    } else {
-        plugins::state::empty_cmd_state()
-    };
+    // 插件状态不依赖 venv：bin 类型命令与 Python 环境无关，
+    // venv 被删除后仍可用；python 类命令在执行时按需检查（见 execute.rs）
+    let cmd_state = plugins::state::load_plugin_state(&layout.plugins_dir);
     if cmd_state.commands.contains_key(command_name) {
         plugins::execute::execute_plugin_command(
             command_name,

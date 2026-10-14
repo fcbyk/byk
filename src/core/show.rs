@@ -48,9 +48,9 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
         });
     }
 
-    // 2. 插件命令
-    if layout.venv_dir.is_dir() {
-        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+    // 2. 插件命令（不依赖 venv：bin 类型命令与 Python 环境无关）
+    {
+        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
         if let Some(cmd) = plugin_state.commands.get(name) {
             entries.push(InfoEntry::Plugin {
                 name: name.to_string(),
@@ -199,12 +199,7 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
         version,
     };
 
-    let plugin_count = if layout.venv_dir.is_dir() {
-        let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
-        pkg_state.len()
-    } else {
-        0
-    };
+    let plugin_count = plugins::state::load_pkg_state(&layout.plugins_dir).len();
 
     let (merged, _files) = aliases::load_merged_aliases(layout);
     let alias_count = merged.len();

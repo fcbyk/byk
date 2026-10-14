@@ -51,14 +51,14 @@ pub(crate) fn get_python_executable(plugins_dir: &Path, venv_dir: &Path) -> Stri
 
 /// 读取命令状态（从 plugins.cmd.json）。
 ///
-/// - venv 不存在 → 返回空状态
 /// - 无状态文件 → 返回空状态
 /// - 有状态文件 → 直接返回
-pub fn load_plugin_state(plugins_dir: &Path, venv_dir: &Path) -> CmdState {
-    if !venv_dir.is_dir() {
-        return empty_cmd_state();
-    }
-
+///
+/// 刻意不检查 venv 是否存在：`bin` 类型插件命令与 Python 环境无关，
+/// venv 被 `byk remove py` 删除后这些命令仍应可用。
+/// 依赖 Python 的命令类型（python-m / python / pip-bin）在执行时
+/// 按需检查解释器是否存在（见 execute.rs）。
+pub fn load_plugin_state(plugins_dir: &Path) -> CmdState {
     let cmd_file = plugins_dir.join("plugins.cmd.json");
     json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state)
 }
@@ -131,34 +131,55 @@ mod tests {
     // ==================== load_plugin_state ====================
 
     #[test]
-    fn load_plugin_state_venv_not_exists() {
+    fn load_plugin_state_without_venv_still_loads_commands() {
+        // 回归测试：venv 不存在时（如 `byk remove py` 之后），
+        // bin 类型插件命令仍必须从 plugins.cmd.json 加载出来
         let tmp = std::env::temp_dir().join("fcbyk_test_state3");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
         let plugins_dir = tmp.join("plugins");
-        let venv_dir = tmp.join("nonexistent_venv");
-        let state = load_plugin_state(&plugins_dir, &venv_dir);
-        assert!(state.commands.is_empty());
+        std::fs::create_dir_all(&plugins_dir).unwrap();
+
+        let cmd_file = plugins_dir.join("plugins.cmd.json");
+        let mut commands = HashMap::new();
+        commands.insert(
+            "lansend".to_string(),
+            PluginCommand {
+                cmd_type: "bin".to_string(),
+                entry: "lansend/lansend".to_string(),
+                desc: "局域网文件共享".to_string(),
+                args: None,
+            },
+        );
+        let state = CmdState {
+            commands,
+            python_executable: None,
+        };
+        crate::utils::json_io::write_json(&cmd_file, &state);
+
+        // venv 目录不存在
+        let loaded = load_plugin_state(&plugins_dir);
+        assert!(loaded.commands.contains_key("lansend"));
+        assert_eq!(loaded.commands.get("lansend").unwrap().cmd_type, "bin");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn load_plugin_state_no_file() {
         let tmp = std::env::temp_dir().join("fcbyk_test_state4");
-        let _ = std::fs::create_dir_all(&tmp);
         let plugins_dir = tmp.join("plugins");
-        let venv_dir = tmp.join(".venv");
-        std::fs::create_dir_all(&venv_dir).unwrap();
 
-        let state = load_plugin_state(&plugins_dir, &venv_dir);
+        let state = load_plugin_state(&plugins_dir);
         assert!(state.commands.is_empty());
     }
 
     #[test]
     fn load_plugin_state_with_data() {
         let tmp = std::env::temp_dir().join("fcbyk_test_state5");
-        let _ = std::fs::create_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
         let plugins_dir = tmp.join("plugins");
         std::fs::create_dir_all(&plugins_dir).unwrap();
-        let venv_dir = tmp.join(".venv");
-        std::fs::create_dir_all(&venv_dir).unwrap();
 
         let cmd_file = plugins_dir.join("plugins.cmd.json");
         let mut commands = HashMap::new();
@@ -177,7 +198,7 @@ mod tests {
         };
         crate::utils::json_io::write_json(&cmd_file, &state);
 
-        let loaded = load_plugin_state(&plugins_dir, &venv_dir);
+        let loaded = load_plugin_state(&plugins_dir);
         assert!(loaded.commands.contains_key("test-cmd"));
         assert_eq!(
             loaded.commands.get("test-cmd").unwrap().cmd_type,

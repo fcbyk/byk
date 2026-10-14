@@ -6,6 +6,8 @@
 use std::path::Path;
 use std::process::{Command, exit};
 
+use colored::Colorize;
+
 use super::state::get_python_executable;
 use super::types::{CmdState, VENV_BIN};
 
@@ -174,6 +176,14 @@ fn executors() -> Vec<Box<dyn PluginExecutor>> {
 // 公开入口
 // ---------------------------------------------------------------------------
 
+/// 该命令类型是否依赖 Python venv。
+///
+/// 仅 `bin` 类型与 Python 生态无关（直接执行 plugins/ 下的二进制）；
+/// 其余类型（含未知类型，会 fallback 到 python-m）都需要解释器。
+fn requires_python(cmd_type: &str) -> bool {
+    cmd_type != "bin"
+}
+
 /// 将插件命令转发给对应的执行器。
 ///
 /// 根据 `cmd_type` 查找匹配的执行器并执行。
@@ -197,6 +207,18 @@ pub fn execute_plugin_command(
             exit(1);
         }
     };
+
+    // venv 缺失时（如 `byk remove py` 之后），依赖 Python 的命令类型
+    // 给出友好提示；`bin` 类型不依赖 Python 环境，正常放行。
+    if requires_python(&cmd.cmd_type) && !Path::new(&python_exe).is_file() {
+        eprintln!(
+            "{} command '{}' requires the Python environment, but the venv is missing.",
+            "Error:".red(),
+            cmd_name
+        );
+        eprintln!("  Restore it with: {}", "`byk add py-v`".bold());
+        exit(1);
+    }
 
     let executors = executors();
     let executor = executors
@@ -260,5 +282,27 @@ mod tests {
         assert!(types.contains(&"python"));
         assert!(types.contains(&"pip-bin"));
         assert!(types.contains(&"bin"));
+    }
+
+    // ==================== requires_python ====================
+
+    #[test]
+    fn requires_python_bin_is_independent() {
+        // 回归测试：bin 类型与 Python 环境无关，
+        // venv 被 `byk remove py` 删除后命令仍可执行
+        assert!(!requires_python("bin"));
+    }
+
+    #[test]
+    fn requires_python_python_types() {
+        assert!(requires_python("python-m"));
+        assert!(requires_python("python"));
+        assert!(requires_python("pip-bin"));
+    }
+
+    #[test]
+    fn requires_python_unknown_type_fallback() {
+        // 未知类型会 fallback 到 python-m，视为需要 Python
+        assert!(requires_python("unknown-type"));
     }
 }

@@ -323,10 +323,7 @@ fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
 
 /// 获取插件命令定义（包含 args 信息）。
 fn get_plugin_command(word: &str, layout: &PathLayout) -> Option<plugins::types::PluginCommand> {
-    if !layout.venv_dir.is_dir() {
-        return None;
-    }
-    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
     plugin_state.commands.get(word).cloned()
 }
 
@@ -351,10 +348,8 @@ fn complete_show_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     ];
 
     // 插件命令
-    if layout.venv_dir.is_dir() {
-        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-        candidates.extend(plugin_state.commands.keys().cloned());
-    }
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
+    candidates.extend(plugin_state.commands.keys().cloned());
 
     // NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
@@ -550,10 +545,8 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     candidates.push("show".into());
 
     // 插件命令
-    if layout.venv_dir.is_dir() {
-        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-        candidates.extend(plugin_state.commands.keys().cloned());
-    }
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
+    candidates.extend(plugin_state.commands.keys().cloned());
 
     // NPM 命令
     let cache_file = layout.cache_dir.join("node-pkg.json");
