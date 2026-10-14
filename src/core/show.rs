@@ -8,7 +8,6 @@ use std::fs;
 use std::process::Command;
 
 use crate::core::aliases::{self, ResolvedAlias};
-use crate::core::node;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
 
@@ -25,11 +24,6 @@ pub enum InfoEntry {
         cmd_type: String,
         entry: String,
         desc: String,
-    },
-    Npm {
-        name: String,
-        package: String,
-        version: String,
     },
     Alias {
         display_source: String,
@@ -61,24 +55,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
         }
     }
 
-    // 3. NPM 命令
-    let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(npm_cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir)
-        && let Some(pkg_name) = npm_cache.bin_map.get(name) {
-            let version = npm_cache
-                .packages
-                .iter()
-                .find(|p| &p.name == pkg_name)
-                .map(|p| p.version.clone())
-                .unwrap_or_else(|| "unknown".to_string());
-            entries.push(InfoEntry::Npm {
-                name: name.to_string(),
-                package: pkg_name.clone(),
-                version,
-            });
-        }
-
-    // 4. 精确别名 (@file.key / @@file.key)
+    // 3. 精确别名 (@file.key / @@file.key)
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(name) {
         let (_, files) = aliases::load_merged_aliases(layout);
         if let Some((resolved, display_source)) =
@@ -148,7 +125,6 @@ pub struct CompletionStatus {
 #[derive(Debug)]
 pub struct OverviewInfo {
     pub completion: CompletionStatus,
-    pub node_initialized: bool,
     pub python: PythonOverviewInfo,
     pub plugin_count: usize,
     pub alias_count: usize,
@@ -164,7 +140,6 @@ pub struct PythonOverviewInfo {
 /// 收集总览面板数据。
 pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
     let completion = check_completion_status();
-    let node_initialized = check_node_initialized(layout);
 
     let python_exe = plugins::state::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
     let state_file = layout.plugins_dir.join("plugins.cmd.json");
@@ -193,7 +168,6 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
 
     OverviewInfo {
         completion,
-        node_initialized,
         python,
         plugin_count,
         alias_count,
@@ -219,14 +193,6 @@ fn check_completion_status() -> CompletionStatus {
             configured: false,
         },
     }
-}
-
-/// 检查 Node 初始化状态。
-fn check_node_initialized(layout: &PathLayout) -> bool {
-    let node_dir = &layout.node_pkgs_dir;
-    let node_alias = layout.alias_dir.join("node.byk.json");
-    let node_cache = layout.cache_dir.join("node-pkg.json");
-    node_dir.exists() && node_alias.exists() && node_cache.exists()
 }
 
 /// 从 $SHELL 检测当前 shell。
@@ -349,38 +315,4 @@ mod tests {
         }
     }
 
-    // ==================== check_node_initialized ====================
-
-    use std::fs;
-
-    #[test]
-    fn check_node_initialized_all_exist() {
-        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_node_init");
-        let _ = fs::remove_dir_all(&layout.root_dir);
-        fs::create_dir_all(&layout.node_pkgs_dir).unwrap();
-        fs::create_dir_all(&layout.alias_dir).unwrap();
-        fs::create_dir_all(&layout.cache_dir).unwrap();
-        fs::write(layout.alias_dir.join("node.byk.json"), "{}").unwrap();
-        fs::write(layout.cache_dir.join("node-pkg.json"), "{}").unwrap();
-
-        assert!(check_node_initialized(&layout));
-        let _ = fs::remove_dir_all(&layout.root_dir);
-    }
-
-    #[test]
-    fn check_node_initialized_missing_dirs() {
-        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_node_init2");
-        let _ = fs::remove_dir_all(&layout.root_dir);
-        assert!(!check_node_initialized(&layout));
-        let _ = fs::remove_dir_all(&layout.root_dir);
-    }
-
-    #[test]
-    fn check_node_initialized_partial() {
-        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_node_init3");
-        let _ = fs::remove_dir_all(&layout.root_dir);
-        fs::create_dir_all(&layout.node_pkgs_dir).unwrap();
-        assert!(!check_node_initialized(&layout));
-        let _ = fs::remove_dir_all(&layout.root_dir);
-    }
 }

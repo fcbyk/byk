@@ -11,7 +11,6 @@ use cli::{Cli, Commands, extract_options};
 use core::aliases;
 use core::completion;
 use core::add;
-use core::node;
 use core::paths::PathLayout;
 use core::plugins;
 use core::remove;
@@ -36,7 +35,6 @@ fn main() {
         Some(Commands::Remove { feature }) => {
             match feature.as_deref() {
                 Some("comp") => remove::rm_comp(),
-                Some("node") => remove::rm_node(&layout),
                 Some("py") => {
                     eprintln!("{} 'byk remove py' has been removed.", "Note:".yellow());
                     eprintln!("  The Python environment is now created automatically when a plugin needs one.");
@@ -57,8 +55,6 @@ fn main() {
                 (None | Some("-h") | Some("--help"), None) => {
                     render::add::render();
                 }
-                (Some("npm"), None) => add::init_npm(&layout),
-                (Some("pnpm"), None) => add::init_pnpm(&layout),
                 (Some("comp"), None) => add::init_completion(),
                 (Some("py-v") | Some("uv"), None) => {
                     eprintln!(
@@ -136,14 +132,6 @@ fn main() {
         );
         return;
     }
-
-    // Step 3: 检查是否为 NPM Command
-    let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir)
-        && cache.bin_map.contains_key(command_name) {
-            node::execute_npm_command(command_name, command_args, &layout);
-            return;
-        }
 
     // 提前加载别名数据（精确执行和普通查找共用）
     let (merged, files) = aliases::load_merged_aliases(&layout);

@@ -5,7 +5,6 @@
 use colored::Colorize;
 
 use crate::core::aliases;
-use crate::core::node;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
 use crate::utils::display;
@@ -20,13 +19,6 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
 
     // 内置 + 插件命令合并到一个 Commands 区块
     render_commands(layout);
-
-    if let Some(npm_cache) = node::load_npm_cache(
-        &layout.cache_dir.join("node-pkg.json"),
-        &layout.node_pkgs_dir,
-    ) {
-        super::npm::render(&npm_cache.packages);
-    }
 
     let (merged, _files) = aliases::load_merged_aliases(layout);
     super::aliases::render(&merged, &layout.alias_dir);

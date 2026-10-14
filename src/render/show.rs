@@ -119,12 +119,6 @@ fn render_overview_panel(overview: &OverviewInfo) {
         println!("{}: {}", "Python Venv".yellow(), "disabled".dimmed());
     }
 
-    if overview.node_initialized {
-        println!("{}: {}", "Node Modules".yellow(), "enabled".green());
-    } else {
-        println!("{}: {}", "Node Modules".yellow(), "disabled".dimmed());
-    }
-
     println!();
 }
 
@@ -277,7 +271,6 @@ pub fn render_paths(layout: &PathLayout) {
     println!("{}: {}", "Alias".yellow(), layout.alias_dir.display());
     println!("{}: {}", "Plugins".yellow(), layout.plugins_dir.display());
     println!("{}: {}", "Python Venv".yellow(), layout.py_venv_dir.display());
-    println!("{}: {}", "Node Modules".yellow(), layout.node_pkgs_dir.display());
 
     println!();
 }
@@ -323,21 +316,6 @@ pub fn render_command(name: &str, layout: &PathLayout) {
                 println!("  {}: {}", label.yellow(), entry);
                 println!("  {}: {}", "Type".yellow(), cmd_type);
                 println!("  {}: {}", "Desc".yellow(), desc);
-            }
-            InfoEntry::Npm {
-                name,
-                package,
-                version,
-            } => {
-                println!("{}: {}", "NPM".green().bold(), name.cyan().bold());
-                println!("  {}: {}", "Package".yellow(), package);
-                println!("  {}: {}", "Version".yellow(), version);
-                let bin_path = layout
-                    .node_pkgs_dir
-                    .join("node_modules")
-                    .join(".bin")
-                    .join(name);
-                println!("  {}: {}", "Bin Path".yellow(), bin_path.display());
             }
             InfoEntry::Alias {
                 display_source,

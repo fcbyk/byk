@@ -70,52 +70,6 @@ pub fn rm_comp() {
 }
 
 // ---------------------------------------------------------------------------
-// remove node
-// ---------------------------------------------------------------------------
-
-/// 删除 node-pkgs 环境（覆盖 npm 和 pnpm）。
-pub fn rm_node(layout: &PathLayout) {
-    rm_node_pkgs(layout, "node");
-}
-
-fn rm_node_pkgs(layout: &PathLayout, pm: &str) {
-    let node_pkgs_dir = &layout.node_pkgs_dir;
-    let alias_path = layout.alias_dir.join("node.byk.json");
-    let cache_path = layout.cache_dir.join("node-pkg.json");
-
-    if !node_pkgs_dir.exists() && !alias_path.exists() && !cache_path.exists() {
-        println!(
-            "{} {}",
-            "Node package data not found.".dimmed(),
-            format!("({})", pm).dimmed()
-        );
-        return;
-    }
-
-    println!();
-    println!("{} ({})", "This will remove:".yellow(), pm.dimmed());
-    print_if_exists(node_pkgs_dir);
-    print_if_exists(&alias_path);
-    print_if_exists(&cache_path);
-    println!();
-
-    if !shell::prompt_confirm("node-pkgs") {
-        return;
-    }
-
-    remove_if_exists(node_pkgs_dir, "node-pkgs/");
-    remove_if_exists(&alias_path, "alias/node.byk.json");
-    remove_if_exists(&cache_path, "cache/node-pkg.json");
-
-    println!();
-    println!(
-        "{} ({})",
-        "Node packages removed.".green(),
-        pm.dimmed()
-    );
-}
-
-// ---------------------------------------------------------------------------
 // remove all
 // ---------------------------------------------------------------------------
 
@@ -221,7 +175,7 @@ pub fn rm_all(layout: &PathLayout) {
                 println!("  {}", layout.root_dir.display().to_string().dimmed());
                 println!(
                     "  {}",
-                    "(all subdirectories: venv, aliases, caches, logs, node-pkgs, bin)".dimmed()
+                    "(all subdirectories: venv, aliases, caches, plugins)".dimmed()
                 );
             }
         }
@@ -600,29 +554,6 @@ fn extract_pkg_name(raw: &str) -> &str {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 内部工具
-// ---------------------------------------------------------------------------
-
-/// 打印路径（存在时），dimmed 格式。
-fn print_if_exists(path: &std::path::Path) {
-    if path.exists() {
-        println!("  {}", path.display().to_string().dimmed());
-    }
-}
-
-/// 删除路径（存在时），打印 `- path (removed)`。
-fn remove_if_exists(path: &std::path::Path, label: &str) {
-    if path.exists() {
-        let is_dir = path.is_dir();
-        let _ = if is_dir {
-            fs::remove_dir_all(path)
-        } else {
-            fs::remove_file(path)
-        };
-        println!("  {} {} {}", "-".red(), label.dimmed(), "(removed)".dimmed());
-    }
-}
 
 // ---------------------------------------------------------------------------
 // 测试
@@ -676,66 +607,4 @@ mod tests {
         assert_eq!(extract_pkg_name(""), "");
     }
 
-    // ==================== remove_if_exists ====================
-
-    use std::fs;
-
-    #[test]
-    fn remove_if_exists_deletes_file() {
-        let tmp = std::env::temp_dir().join("fcbyk_test_rm_exists");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-        let file = tmp.join("test_file.txt");
-        fs::write(&file, "data").unwrap();
-
-        remove_if_exists(&file, "test_file.txt");
-        assert!(!file.exists());
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn remove_if_exists_deletes_dir() {
-        let tmp = std::env::temp_dir().join("fcbyk_test_rm_dir");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-        let subdir = tmp.join("subdir");
-        fs::create_dir_all(&subdir).unwrap();
-
-        remove_if_exists(&subdir, "subdir");
-        assert!(!subdir.exists());
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn remove_if_exists_noop_for_missing() {
-        let tmp = std::env::temp_dir().join("fcbyk_test_rm_noop");
-        let nonexistent = tmp.join("nothing_here");
-
-        remove_if_exists(&nonexistent, "nothing_here");
-        // should not panic
-    }
-
-    // ==================== print_if_exists ====================
-
-    #[test]
-    fn print_if_exists_when_file_exists() {
-        let tmp = std::env::temp_dir().join("fcbyk_test_print_exists");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-        let file = tmp.join("existing.txt");
-        fs::write(&file, "data").unwrap();
-
-        print_if_exists(&file);
-        // should not panic; output is to stdout
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn print_if_exists_when_file_missing() {
-        let tmp = std::env::temp_dir().join("fcbyk_test_print_missing");
-        let nonexistent = tmp.join("missing.txt");
-
-        print_if_exists(&nonexistent);
-        // should not panic
-    }
 }

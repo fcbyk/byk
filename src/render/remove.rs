@@ -16,10 +16,6 @@ pub fn render() {
         "comp".cyan().bold()
     );
     println!(
-        "  {:<8} Remove node-pkgs, aliases, and cache",
-        "node".cyan().bold()
-    );
-    println!(
         "  {:<8} Remove everything (~/.byk/ + shell completion)",
         "all".cyan().bold()
     );
@@ -33,7 +29,6 @@ pub fn render() {
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
         ("byk remove comp".into(), "Remove shell completion".into()),
-        ("byk remove node".into(), "Remove node-pkgs environment".into()),
         ("byk remove all".into(), "Remove everything".into()),
         ("byk remove hello".into(), "Uninstall plugin by key".into()),
     ];

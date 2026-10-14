@@ -11,7 +11,7 @@ byk 提供一组内置子命令，用于添加功能、管理插件、生成补�
 
 ## add
 
-添加插件（远程仓库 / 本地文件）或初始化内置功能（npm/pnpm/comp/cache）。
+添加插件（远程仓库 / 本地文件）或初始化内置功能（comp）。
 
 ```bash
 byk add [OPTIONS] <USER/REPO[@BRANCH][/KEY] | FEATURE>
@@ -44,17 +44,14 @@ byk add -f ./local.json key       # 使用本地 byk.json 安装
 
 | Feature | 说明 |
 |---------|------|
-| `npm` | 初始化 npm 包管理环境，创建 `~/.byk/node-pkgs/` 目录及 `ni`/`nu` 别名 |
-| `pnpm` | 初始化 pnpm 包管理环境，同上，但使用 pnpm 作为包管理器 |
 | `comp` | 初始化 shell 补全（自动检测 zsh/bash），在对应 rc 文件中追加补全脚本 |
 
 ```bash title="示例"
-byk add npm       # 初始化 npm 环境
 byk add comp      # 配置 shell 补全
 ```
 
 :::note
-`~/.byk/` 及其子目录无需手动初始化——安装插件、初始化 npm 或写入别名缓存时会按需自动创建。
+`~/.byk/` 及其子目录无需手动初始化——安装插件或写入别名缓存时会按需自动创建。
 :::
 
 :::note
@@ -72,13 +69,11 @@ byk remove <feature>
 | Feature | 说明 |
 |---------|------|
 | `comp` | 移除 shell 补全配置（从 .zshrc / .bashrc 中删除相关行） |
-| `node` | 移除 node-pkgs 环境、别名文件和缓存 |
 | `all` | 移除所有持久化数据（`~/.byk/` 和 shell 补全），需输入确认 |
 | `<plugin-key>` | 卸载指定插件（删除脚本文件并清除命令缓存，不卸载 pip 包） |
 
 ```bash title="示例"
 byk remove comp        # 移除 shell 补全
-byk remove node        # 移除 node-pkgs 环境
 byk remove hello       # 卸载名为 hello 的插件
 byk remove all         # 清除所有数据
 ```
@@ -141,7 +136,7 @@ byk show build               # 查询 "build" 命令的所有来源
 ```bash title="命令名查询示例"
 byk show build
 # 输出所有名为 "build" 的命令来源：
-# Built-in / Plugin / NPM / Alias（含优先级、模板、占位符等详情）
+# Built-in / Plugin / Alias（含优先级、模板、占位符等详情）
 ```
 
 ## 命令执行优先级
@@ -150,9 +145,8 @@ byk show build
 
 1. **内置子命令** — `add`、`remove`、`completion`、`show`
 2. **全局选项** — `-v`、`-h`
-3. **插件命令** — 通过 `byk add` 安装的 Python 插件
-4. **NPM 命令** — 通过 `byk add npm/pnpm` 安装的 npm 包
-5. **精确执行语法** — `@file.key`（本地）/ `@@file.key`（全局）
-6. **别名** — 从 `*.byk.json` 文件中加载的别名
+3. **插件命令** — 通过 `byk add` 安装的插件
+4. **精确执行语法** — `@file.key`（本地）/ `@@file.key`（全局）
+5. **别名** — 从 `*.byk.json` 文件中加载的别名
 
 匹配到第一个命中即执行，不会继续向下查找。

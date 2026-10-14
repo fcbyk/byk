@@ -19,16 +19,6 @@ byk remove <key>             # uninstall
 
 See [plugin registry](https://cli.fcbyk.com/cli/plugin-registry) for details.
 
-## npm commands
-
-Manage npm CLIs under a byk-scoped environment — no global pollution.
-
-```bash
-byk add npm           # first use only, activates & creates ni/nu aliases
-byk ni live-server     # install (ni = npm i)
-byk live-server        # run it
-```
-
 ## Aliases
 
 Give long commands short names.

@@ -22,14 +22,6 @@ pub fn render() {
     println!();
     println!("{}", "Features:".green().bold());
     println!(
-        "  {:<8} Initialize with npm (node-pkgs, ni/nu aliases)",
-        "npm".cyan().bold()
-    );
-    println!(
-        "  {:<8} Initialize with pnpm (node-pkgs, ni/nu aliases)",
-        "pnpm".cyan().bold()
-    );
-    println!(
         "  {:<8} Initialize shell completion (zsh/bash)",
         "comp".cyan().bold()
     );

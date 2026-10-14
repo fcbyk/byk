@@ -17,7 +17,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
-    /// 捕获命令名及参数（后续匹配 npm 命令 / 别名）
+    /// 捕获命令名及参数（后续匹配插件命令 / 别名）
     #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
     pub trailing: Vec<String>,
 }
@@ -31,7 +31,7 @@ pub enum Commands {
     },
     /// 移除插件或已初始化的功能
     Remove {
-        /// 插件 key 或功能名: comp | node | all
+        /// 插件 key 或功能名: comp | all
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
@@ -43,7 +43,7 @@ pub enum Commands {
         /// 通过 jsDelivr CDN 访问 GitHub 仓库（仅对 GitHub 仓库生效）
         #[arg(long)]
         cdn: bool,
-        /// 插件名(user/repo[@branch][/key]) 或 功能名(npm | pnpm | cache | comp)
+        /// 插件名(user/repo[@branch][/key]) 或 功能名(comp)
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,
     },

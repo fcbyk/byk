@@ -4,7 +4,6 @@ use std::path::PathBuf;
 pub struct PathLayout {
     pub root_dir: PathBuf,
     pub alias_dir: PathBuf,
-    pub node_pkgs_dir: PathBuf,
     pub py_venv_dir: PathBuf,
     pub venv_dir: PathBuf,
     pub cache_dir: PathBuf,
@@ -30,7 +29,6 @@ impl PathLayout {
         let home_exists = root_dir.is_dir();
 
         let alias_dir = root_dir.join("alias");
-        let node_pkgs_dir = root_dir.join("node-pkgs");
         let py_venv_dir = root_dir.join("py-venv");
         let venv_dir = py_venv_dir.join(".venv");
         let cache_dir = root_dir.join("cache");
@@ -43,7 +41,6 @@ impl PathLayout {
         PathLayout {
             root_dir,
             alias_dir,
-            node_pkgs_dir,
             py_venv_dir,
             venv_dir,
             cache_dir,
@@ -72,10 +69,6 @@ mod tests {
             home.join(".fcbyk_test_paths").join("alias")
         );
         assert_eq!(
-            layout.node_pkgs_dir,
-            home.join(".fcbyk_test_paths").join("node-pkgs")
-        );
-        assert_eq!(
             layout.venv_dir,
             home.join(".fcbyk_test_paths").join("py-venv").join(".venv")
         );
@@ -102,7 +95,6 @@ mod tests {
         assert!(!layout.alias_dir.exists());
         assert!(!layout.cache_dir.exists());
         assert!(!layout.plugins_dir.exists());
-        assert!(!layout.node_pkgs_dir.exists());
         assert!(!layout.venv_dir.exists());
         assert!(!layout.home_exists);
     }

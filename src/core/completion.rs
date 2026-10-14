@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::aliases::{self, MergedNode};
-use super::node;
 use super::paths::PathLayout;
 use super::plugins;
 
@@ -138,7 +137,6 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
         let flags = match first.as_str() {
             "add" => ADD_FLAGS,
             "remove" | "show" => HELP_FLAGS,
-            _ if is_known_npm(first, layout) => HELP_FLAGS,
             _ => GLOBAL_FLAGS,
         };
         return flags
@@ -155,7 +153,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // add 子命令补全
     if first == "add" {
-        const ADD_SUBS: &[&str] = &["npm", "pnpm", "comp"];
+        const ADD_SUBS: &[&str] = &["comp"];
         return ADD_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -165,7 +163,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // remove 子命令补全
     if first == "remove" {
-        const RM_SUBS: &[&str] = &["comp", "node", "all"];
+        const RM_SUBS: &[&str] = &["comp", "all"];
         let mut candidates: Vec<String> = RM_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -212,12 +210,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
         return Vec::new();
     }
 
-    // 4. 检查是否是一个已知的 NPM 命令
-    if is_known_npm(first, layout) {
-        return Vec::new();
-    }
-
-    // 5. 无法识别 → 无补全
+    // 4. 无法识别 → 无补全
     Vec::new()
 }
 
@@ -327,15 +320,6 @@ fn get_plugin_command(word: &str, layout: &PathLayout) -> Option<plugins::types:
     plugin_state.commands.get(word).cloned()
 }
 
-/// 检查某个词是否是已知的 NPM 命令。
-fn is_known_npm(word: &str, layout: &PathLayout) -> bool {
-    let cache_file = layout.cache_dir.join("node-pkg.json");
-    match node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
-        Some(npm_cache) => npm_cache.bin_map.contains_key(word),
-        None => false,
-    }
-}
-
 /// 补全 `byk show` 后面的子命令。
 fn complete_show_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = vec![
@@ -350,12 +334,6 @@ fn complete_show_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     // 插件命令
     let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
     candidates.extend(plugin_state.commands.keys().cloned());
-
-    // NPM 命令
-    let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(npm_cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
-        candidates.extend(npm_cache.bin_map.keys().cloned());
-    }
 
     // 别名路径
     let (merged, _files) = aliases::load_merged_aliases(layout);
@@ -535,7 +513,7 @@ fn collect_args_candidates(
     }
 }
 
-/// 补全顶级命令：内置子命令 + 插件 + NPM + 顶级别名。
+/// 补全顶级命令：内置子命令 + 插件 + 顶级别名。
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
@@ -547,12 +525,6 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     // 插件命令
     let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
     candidates.extend(plugin_state.commands.keys().cloned());
-
-    // NPM 命令
-    let cache_file = layout.cache_dir.join("node-pkg.json");
-    if let Some(npm_cache) = node::load_npm_cache(&cache_file, &layout.node_pkgs_dir) {
-        candidates.extend(npm_cache.bin_map.keys().cloned());
-    }
 
     // 顶级别名（叶子节点 + 中间 dict 节点，dict 加 . 后缀提示可展开）
     let (merged, files) = aliases::load_merged_aliases(layout);
@@ -618,7 +590,7 @@ mod tests {
 
     // ==================== 测试辅助 ====================
 
-    /// 创建临时目录布局，设置 alias 文件、插件缓存和 NPM 缓存。
+    /// 创建临时目录布局，设置 alias 文件与插件缓存。
     #[allow(dead_code)]
     struct TestEnv {
         temp: tempfile::TempDir,
@@ -631,19 +603,17 @@ mod tests {
             let alias_dir = temp.path().join("alias");
             let cache_dir = temp.path().join("cache");
             let plugins_dir = temp.path().join("plugins");
-            let node_pkgs_dir = temp.path().join("node-pkgs");
             let py_venv_dir = temp.path().join("py-venv");
             let venv_dir = py_venv_dir.join(".venv");
             let root_dir = temp.path().to_path_buf();
 
-            for d in [&alias_dir, &cache_dir, &plugins_dir, &node_pkgs_dir, &py_venv_dir, &venv_dir] {
+            for d in [&alias_dir, &cache_dir, &plugins_dir, &py_venv_dir, &venv_dir] {
                 fs::create_dir_all(d).unwrap();
             }
 
             let layout = PathLayout {
                 root_dir: root_dir.clone(),
                 alias_dir,
-                node_pkgs_dir,
                 py_venv_dir,
                 venv_dir,
                 cache_dir: cache_dir.clone(),
@@ -658,19 +628,6 @@ mod tests {
             fs::write(
                 plugins_dir.join("plugins.cmd.json"),
                 serde_json::to_string_pretty(&plugin_state).unwrap(),
-            )
-            .unwrap();
-
-            // 写入 NPM 缓存
-            let npm_cache = json!({
-                "watched_mtimes": {},
-                "scanned_at": 0,
-                "packages": [],
-                "bin_map": {"eslint": "eslint"}
-            });
-            fs::write(
-                cache_dir.join("node-pkg.json"),
-                serde_json::to_string_pretty(&npm_cache).unwrap(),
             )
             .unwrap();
 
@@ -774,7 +731,7 @@ mod tests {
         assert!(result.contains(&"obj_val.nested".to_string()));
     }
 
-    // ==================== is_known_plugin / is_known_npm ====================
+    // ==================== is_known_plugin ====================
 
     #[test]
     fn known_plugin_returns_true() {
@@ -788,26 +745,13 @@ mod tests {
         assert!(!is_known_plugin("no-such-plugin", &env.layout));
     }
 
-    #[test]
-    fn known_npm_returns_true() {
-        let env = TestEnv::new();
-        assert!(is_known_npm("eslint", &env.layout));
-    }
-
-    #[test]
-    fn unknown_npm_returns_false() {
-        let env = TestEnv::new();
-        assert!(!is_known_npm("no-such-bin", &env.layout));
-    }
-
     // ==================== get_top_level_completions ====================
 
     #[test]
-    fn top_level_includes_plugins_and_npm() {
+    fn top_level_includes_plugins() {
         let env = TestEnv::new();
         let completions = get_top_level_completions("", &env.layout);
         assert!(completions.contains(&"test-plugin".to_string()));
-        assert!(completions.contains(&"eslint".to_string()));
     }
 
     #[test]
@@ -1053,14 +997,6 @@ mod tests {
     }
 
     #[test]
-    fn contextual_known_npm_returns_empty() {
-        let env = TestEnv::new();
-        let prev = vec!["eslint".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.is_empty());
-    }
-
-    #[test]
     fn contextual_unknown_word_returns_empty() {
         let env = TestEnv::new();
         let prev = vec!["nobody".to_string()];
@@ -1074,10 +1010,10 @@ mod tests {
         let prev = vec!["remove".to_string()];
         let result = contextual_completions(&prev, "", &env.layout);
         assert!(result.contains(&"comp".to_string()));
-        assert!(result.contains(&"node".to_string()));
         assert!(result.contains(&"all".to_string()));
-        // py 子命令已移除：Python 环境由插件安装流程自动管理
+        // py / node 子命令已移除：Python 环境自动管理，npm 交给插件与别名
         assert!(!result.contains(&"py".to_string()));
+        assert!(!result.contains(&"node".to_string()));
     }
 
     #[test]
@@ -1151,9 +1087,7 @@ mod tests {
     fn get_completions_empty_delegates_to_top_level() {
         let env = TestEnv::new();
         let result = get_completions("", &env.layout);
-        // 至少包含插件和 npm 命令
         assert!(result.contains(&"test-plugin".to_string()));
-        assert!(result.contains(&"eslint".to_string()));
     }
 
     #[test]

@@ -148,23 +148,11 @@ export function BykHome() {
           <span className="b-head__label">核心能力</span>
           <h2 className="b-head__title">一个二进制，按需启用</h2>
           <p className="b-head__sub">
-            npm 管理、命令别名、插件系统——都是可选初始化，零隐式副作用。
+            命令别名与插件系统——都是可选初始化，零隐式副作用。
           </p>
         </div>
 
         <div className="b-features">
-          <Link href="/cli/commands" className="b-feature">
-            <span className="b-feature__mark">byk ni</span>
-            <h3 className="b-feature__title">npm 命令管理</h3>
-            <p className="b-feature__desc">
-              在 byk 独立作用域（<span className="b-ic">~/.byk/node-pkgs</span>）下管理
-              npm CLI，不污染全局环境。首次 <span className="b-ic">byk add npm</span> 自动创建 ni / nu 别名。
-            </p>
-            <span className="b-feature__more">
-              内置命令 <Arrow />
-            </span>
-          </Link>
-
           <Link href="/cli/alias/start" className="b-feature">
             <span className="b-feature__mark">byk ssh.prod</span>
             <h3 className="b-feature__title">命令别名</h3>
@@ -317,7 +305,7 @@ export function BykHome() {
               <strong>按需启用</strong>
             </div>
             <p>
-              npm / 补全 / 缓存 / venv 都是可选初始化（<span className="b-ic">byk add &lt;feature&gt;</span>），无任何隐式副作用。
+              补全、缓存、venv 都是可选初始化，无任何隐式副作用；不使用时不会创建任何目录。
             </p>
           </div>
           <div className="b-why__item">
@@ -326,7 +314,7 @@ export function BykHome() {
               <strong>隔离环境</strong>
             </div>
             <p>
-              插件运行在专属 venv（<span className="b-ic">~/.byk/venv</span>），与系统 pip 隔离；别名和 npm 也有独立作用域。
+              插件运行在专属 venv（<span className="b-ic">~/.byk/py-venv</span>），与系统 pip 隔离；别名按文件独立作用域。
             </p>
           </div>
           <div className="b-why__item">
