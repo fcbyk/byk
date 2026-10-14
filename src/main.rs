@@ -37,7 +37,14 @@ fn main() {
             match feature.as_deref() {
                 Some("comp") => remove::rm_comp(),
                 Some("node") => remove::rm_node(&layout),
-                Some("py") => remove::rm_py_v(&layout),
+                Some("py") => {
+                    eprintln!("{} 'byk remove py' has been removed.", "Note:".yellow());
+                    eprintln!("  The Python environment is now created automatically when a plugin needs one.");
+                    eprintln!(
+                        "  To remove everything including it: {}",
+                        "byk remove all".bold()
+                    );
+                }
                 Some("all") => remove::rm_all(&layout),
                 Some("-h") | Some("--help") => render::remove::render(),
                 Some(key) => remove::uninstall_plugin(key, &layout),
@@ -54,8 +61,14 @@ fn main() {
                 (Some("pnpm"), None) => add::init_pnpm(&layout),
                 (Some("cache"), None) => add::init_cache(&layout),
                 (Some("comp"), None) => add::init_completion(),
-                (Some("py-v"), None) => add::init_py_v(&layout),
-                (Some("uv"), None) => add::init_uv(&layout),
+                (Some("py-v") | Some("uv"), None) => {
+                    eprintln!(
+                        "{} 'byk add py-v' / 'byk add uv' have been removed.",
+                        "Note:".yellow()
+                    );
+                    eprintln!("  Python environments are now created automatically when a plugin needs one.");
+                    eprintln!("  Just run: {}", "byk add <user/repo>".bold());
+                }
                 (spec, _file) => {
                     add::install_plugin(
                         spec.unwrap_or(""),

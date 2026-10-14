@@ -37,14 +37,6 @@ pub fn render() {
         "  {:<8} Initialize CLI home & cache directories",
         "cache".cyan().bold()
     );
-    println!(
-        "  {:<8} Initialize Python venv & pip aliases",
-        "py-v".cyan().bold()
-    );
-    println!(
-        "  {:<8} Initialize Python venv & uv aliases (uv add/remove)",
-        "uv".cyan().bold()
-    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![

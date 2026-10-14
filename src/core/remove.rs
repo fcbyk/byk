@@ -116,50 +116,6 @@ fn rm_node_pkgs(layout: &PathLayout, pm: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// remove py-v
-// ---------------------------------------------------------------------------
-
-/// 删除 Python 虚拟环境及别名。
-///
-/// 删除 ~/.byk/py-venv/ 整个目录和 alias/py.byk.json。
-/// 无论 py-v 还是 uv 模式，统一用此函数删除。
-pub fn rm_py_v(layout: &PathLayout) {
-    let py_venv_dir = &layout.py_venv_dir;
-    let alias_path = layout.alias_dir.join("py.byk.json");
-
-    if !py_venv_dir.exists() && !alias_path.exists() {
-        println!("{}", "Python venv not found, nothing to remove.".dimmed());
-        return;
-    }
-
-    println!();
-    println!("{}", "This will remove:".yellow());
-    if py_venv_dir.exists() {
-        println!("  {}", py_venv_dir.display().to_string().dimmed());
-    }
-    if alias_path.exists() {
-        println!("  {}", alias_path.display().to_string().dimmed());
-    }
-    println!();
-
-    if !shell::prompt_confirm("py-venv") {
-        return;
-    }
-
-    if py_venv_dir.exists() {
-        let _ = fs::remove_dir_all(py_venv_dir);
-        println!("  {} py-venv/ {}", "-".red(), "(removed)".dimmed());
-    }
-    if alias_path.exists() {
-        let _ = fs::remove_file(&alias_path);
-        println!("  {} alias/py.byk.json {}", "-".red(), "(removed)".dimmed());
-    }
-
-    println!();
-    println!("{}", "Python venv removed.".green());
-}
-
-// ---------------------------------------------------------------------------
 // remove all
 // ---------------------------------------------------------------------------
 

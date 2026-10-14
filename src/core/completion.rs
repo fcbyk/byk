@@ -155,7 +155,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // add 子命令补全
     if first == "add" {
-        const ADD_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp", "py-v", "uv"];
+        const ADD_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp"];
         return ADD_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -165,7 +165,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // remove 子命令补全
     if first == "remove" {
-        const RM_SUBS: &[&str] = &["comp", "node", "all", "py"];
+        const RM_SUBS: &[&str] = &["comp", "node", "all"];
         let mut candidates: Vec<String> = RM_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -1078,7 +1078,8 @@ mod tests {
         assert!(result.contains(&"comp".to_string()));
         assert!(result.contains(&"node".to_string()));
         assert!(result.contains(&"all".to_string()));
-        assert!(result.contains(&"py".to_string()));
+        // py 子命令已移除：Python 环境由插件安装流程自动管理
+        assert!(!result.contains(&"py".to_string()));
     }
 
     #[test]

@@ -23,10 +23,6 @@ pub fn render() {
         "  {:<8} Remove everything (~/.byk/ + shell completion)",
         "all".cyan().bold()
     );
-    println!(
-        "  {:<8} Remove Python venv & aliases",
-        "py".cyan().bold()
-    );
     println!();
     println!("{}", "Plugins:".green().bold());
     println!(

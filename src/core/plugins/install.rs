@@ -806,29 +806,56 @@ pub fn install_plugin(
         })
         .unwrap_or(false);
 
-    if needs_venv {
-        let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-        let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-        let venv_ready = pip.is_file() || py_exe.is_file();
-        if !venv_ready {
-            println!("{}", "? Python venv not found.".yellow());
-            println!("Choose package manager:");
-            println!("[1] pip  [2] uv  [n] cancel");
-            print!("Enter your choice: ");
-            let _ = io::stdout().flush();
-            let mut input = String::new();
-            if io::stdin().read_line(&mut input).is_err() {
-                exit(1);
+    if needs_venv && !venv_is_ready(layout) {
+        // venv 缺失：智能探测创建工具并一次性确认。
+        // 用户不需要理解"虚拟环境管理器选型"这个概念——
+        // 探测到 uv 就用 uv（快、不依赖系统 Python），否则用系统 Python。
+        match detect_py_tool() {
+            Some(tool) => {
+                println!();
+                println!(
+                    "{} plugin \"{}\" needs a Python virtual environment.",
+                    "!".yellow(),
+                    key.bold()
+                );
+                println!(
+                    "  byk will create {} using {} and install its dependencies.",
+                    "~/.byk/py-venv".dimmed(),
+                    tool.label().bold()
+                );
+                println!();
+                print!("Continue? [Y/n] ");
+                let _ = io::stdout().flush();
+                let mut input = String::new();
+                if io::stdin().read_line(&mut input).is_err() {
+                    eprintln!();
+                    eprintln!(
+                        "{} cancelled: cannot read confirmation from stdin.",
+                        "Error:".red()
+                    );
+                    exit(1);
+                }
+                let answer = input.trim().to_lowercase();
+                if answer == "n" || answer == "no" {
+                    println!("{}", "Cancelled.".dimmed());
+                    exit(1);
+                }
+                init_py(layout, tool);
+                if !venv_is_ready(layout) {
+                    exit(1);
+                }
             }
-            let answer = input.trim().to_lowercase();
-            match answer.as_str() {
-                "1" | "y" => init_py(layout, false),
-                "2" => init_py(layout, true),
-                _ => exit(1),
-            }
-            let pip = layout.venv_dir.join(VENV_BIN).join("pip");
-            let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-            if !pip.is_file() && !py_exe.is_file() {
+            None => {
+                eprintln!(
+                    "{} plugin \"{}\" needs a Python environment, but neither {} nor {} was found.",
+                    "Error:".red(),
+                    key,
+                    "uv".bold(),
+                    python_hint().bold(),
+                );
+                eprintln!();
+                eprintln!("Install one of them, then retry:");
+                print_python_install_hints();
                 exit(1);
             }
         }
@@ -858,7 +885,9 @@ pub fn install_plugin(
 
     // 9. 持久化（workdir-only 插件仅下载文件到工作目录，无需记录安装状态）
     if !is_workdir_only(&plan) {
-        if cmd_state.python_executable.is_none() {
+        // 仅当插件依赖 Python 时才记录解释器路径，
+        // 避免为纯 bin 插件写入可能失效的 venv 路径
+        if needs_venv && cmd_state.python_executable.is_none() {
             let py = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
             cmd_state.python_executable = Some(py.to_string_lossy().to_string());
         }
@@ -1500,6 +1529,17 @@ fn is_uv_mode(layout: &crate::core::paths::PathLayout) -> bool {
 /// 安装 Python 包（自动检测 py-v / uv 模式）
 fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout) {
     if is_uv_mode(layout) {
+        if !tool_exists("uv") {
+            eprintln!(
+                "{} this environment is managed by uv, but uv was not found.",
+                "Error:".red(),
+            );
+            eprintln!(
+                "  Reinstall uv, or delete ~/.byk/py-venv/ to let byk rebuild it with {}.",
+                default_python_name()
+            );
+            exit(1);
+        }
         let args = vec!["add", pkg];
         let status = Command::new("uv")
             .args(&args)
@@ -1548,20 +1588,125 @@ fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout) {
 // Python venv 初始化
 // ---------------------------------------------------------------------------
 
-/// 初始化 Python 虚拟环境。
+// ---------------------------------------------------------------------------
+// Python venv 初始化
+// ---------------------------------------------------------------------------
+
+/// venv 创建工具。
 ///
-/// 创建 ~/.byk/py-venv/.venv/（不存在时），写入 plugins.cmd.json、plugins.pkg.json
-/// 和 alias/py.byk.json。is_uv=true 时使用 uv venv + uv init 创建 pyproject.toml。
-pub fn init_py(layout: &crate::core::paths::PathLayout, is_uv: bool) {
+/// 优先级：uv 优于系统 Python——uv 不依赖系统 Python（可自行管理
+/// 解释器），venv 创建和包安装也都更快。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PyTool {
+    /// uv（`uv venv` + `uv init`）
+    Uv,
+    /// 系统 Python（具体的解释器命令，如 python3 / python / py）
+    Python(&'static str),
+}
+
+impl PyTool {
+    /// 提示文案中展示的工具名。
+    fn label(&self) -> &'static str {
+        match self {
+            PyTool::Uv => "uv",
+            PyTool::Python(exe) => exe,
+        }
+    }
+}
+
+/// 根据探测结果选择 venv 创建工具（纯函数，便于测试）。
+fn choose_py_tool(has_uv: bool, has_python: bool) -> Option<PyTool> {
+    if has_uv {
+        Some(PyTool::Uv)
+    } else if has_python {
+        Some(PyTool::Python(default_python_name()))
+    } else {
+        None
+    }
+}
+
+/// 探测 PATH 中可用的 venv 创建工具。
+fn detect_py_tool() -> Option<PyTool> {
+    let has_python = python_candidates()
+        .iter()
+        .any(|name| tool_exists(name));
+    choose_py_tool(tool_exists("uv"), has_python)
+}
+
+/// 系统 Python 的候选可执行名（按优先级）。
+fn python_candidates() -> Vec<&'static str> {
+    #[cfg(windows)]
+    {
+        vec!["python", "py"]
+    }
+    #[cfg(not(windows))]
+    {
+        vec!["python3", "python"]
+    }
+}
+
+/// 默认系统 Python 可执行名（提示文案与 venv 创建共用）。
+fn default_python_name() -> &'static str {
+    python_candidates()[0]
+}
+
+/// 无 Python 环境时提示文案中的解释器名。
+fn python_hint() -> &'static str {
+    default_python_name()
+}
+
+/// 探测可执行文件是否在 PATH 中且可运行。
+fn tool_exists(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
+}
+
+/// 按平台打印 Python / uv 的安装指引。
+fn print_python_install_hints() {
+    #[cfg(target_os = "macos")]
+    {
+        eprintln!("  {}", "brew install uv                 # recommended".dimmed());
+        eprintln!("  {}", "brew install python".dimmed());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        eprintln!("  {}", "curl -LsSf https://astral.sh/uv/install.sh | sh".dimmed());
+        eprintln!("  {}", "sudo apt install python3-venv    # Debian/Ubuntu".dimmed());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        eprintln!("  {}", "winget install astral-sh.uv".dimmed());
+        eprintln!("  {}", "winget install Python.Python.3.13".dimmed());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        eprintln!("  {}", "https://docs.astral.sh/uv/".dimmed());
+        eprintln!("  {}", "https://www.python.org/downloads/".dimmed());
+    }
+}
+
+/// venv 是否已就绪（pip 或 python 可执行文件存在即可；
+/// uv 创建的 venv 不含 pip，因此二者满足其一）。
+fn venv_is_ready(layout: &crate::core::paths::PathLayout) -> bool {
+    let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+    let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+    pip.is_file() || py_exe.is_file()
+}
+
+/// 初始化 Python 虚拟环境（插件安装时按需调用）。
+///
+/// 创建 ~/.byk/py-venv/.venv/（不存在时）并写入最小状态文件。
+/// uv 模式额外创建 pyproject.toml。
+/// 刻意不注入 pi/pu/pl 别名：用户只使用插件命令，
+/// 包管理是 byk 的内部事务。
+fn init_py(layout: &crate::core::paths::PathLayout, tool: PyTool) {
     let venv_dir = &layout.venv_dir;
     let py_venv_dir = &layout.py_venv_dir;
-    let alias_path = layout.alias_dir.join("py.byk.json");
     let pyproject_toml = py_venv_dir.join("pyproject.toml");
-
-    #[cfg(windows)]
-    let sys_python = "python";
-    #[cfg(not(windows))]
-    let sys_python = "python3";
 
     // ensure common dirs
     ensure_dir(&layout.root_dir, "CLI home");
@@ -1574,53 +1719,42 @@ pub fn init_py(layout: &crate::core::paths::PathLayout, is_uv: bool) {
         println!("{}", "venv already exists, skipping creation.".dimmed());
     } else {
         println!("{}", "Creating Python virtual environment...".dimmed());
-        if is_uv {
-            let status = Command::new("uv")
+        let status = match tool {
+            PyTool::Uv => Command::new("uv")
                 .args(["venv", &venv_dir.to_string_lossy()])
-                .status();
-            match status {
-                Ok(s) if s.success() => {
-                    println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
-                }
-                Ok(s) => {
-                    eprintln!(
-                        "{} uv venv failed with code {}",
-                        "Error:".red(),
-                        s.code().unwrap_or(1)
-                    );
-                    return;
-                }
-                Err(e) => {
-                    eprintln!("{} Failed to run uv venv: {}", "Error:".red(), e);
-                    return;
-                }
-            }
-        } else {
-            let status = Command::new(sys_python)
+                .status(),
+            PyTool::Python(exe) => Command::new(exe)
                 .args(["-m", "venv", &venv_dir.to_string_lossy()])
-                .status();
-            match status {
-                Ok(s) if s.success() => {
-                    println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
-                }
-                Ok(s) => {
+                .status(),
+        };
+        match status {
+            Ok(s) if s.success() => {
+                println!("  {} venv/ {}", "+".green(), "(created)".dimmed());
+            }
+            Ok(s) => {
+                eprintln!(
+                    "{} venv creation failed with code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1)
+                );
+                #[cfg(target_os = "linux")]
+                if matches!(tool, PyTool::Python(_)) {
                     eprintln!(
-                        "{} venv creation failed with code {}",
-                        "Error:".red(),
-                        s.code().unwrap_or(1)
+                        "  {}",
+                        "hint: Debian/Ubuntu may need: sudo apt install python3-venv".dimmed()
                     );
-                    return;
                 }
-                Err(e) => {
-                    eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
-                    return;
-                }
+                return;
+            }
+            Err(e) => {
+                eprintln!("{} Failed to create venv: {}", "Error:".red(), e);
+                return;
             }
         }
     }
 
     // ② uv 模式：创建 pyproject.toml
-    if is_uv && !pyproject_toml.is_file() {
+    if matches!(tool, PyTool::Uv) && !pyproject_toml.is_file() {
         println!("{}", "Initializing uv project...".dimmed());
         let status = Command::new("uv")
             .args(["init", "--name", "byk", "--no-readme", "--no-pin-python"])
@@ -1645,33 +1779,7 @@ pub fn init_py(layout: &crate::core::paths::PathLayout, is_uv: bool) {
         }
     }
 
-    // ③ 写入别名模板
-    let template = if is_uv {
-        serde_json::json!({
-            "$cwd": "../py-venv/",
-            "pi": "uv add",
-            "pu": "uv remove",
-            "pl": "uv tree",
-        })
-    } else {
-        serde_json::json!({
-            "$cwd": format!("../py-venv/.venv/{}/", VENV_BIN),
-            "pi": "./pip install",
-            "pu": "./pip uninstall",
-            "pl": "./pip list",
-        })
-    };
-    let template_str = serde_json::to_string_pretty(&template).unwrap_or_default();
-    if alias_path.exists() {
-        println!("  {} alias/py.byk.json {}", "*".dimmed(), "(updated)".dimmed());
-    } else {
-        println!("  {} alias/py.byk.json {}", "+".green(), "(created)".dimmed());
-    }
-    std::fs::write(&alias_path, template_str).unwrap_or_else(|e| {
-        eprintln!("Failed to write alias/py.byk.json: {}", e);
-    });
-
-    // ④ 写入最小状态（venv 刚创建，无插件，commands 为空）
+    // ③ 写入最小状态（venv 刚创建，无插件，commands 为空）
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
     let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
     let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
@@ -1697,7 +1805,7 @@ pub fn init_py(layout: &crate::core::paths::PathLayout, is_uv: bool) {
     println!(
         "{} {}",
         "Python environment ready.".green(),
-        if is_uv { "(uv)".dimmed() } else { "(pip)".dimmed() }
+        format!("({})", tool.label()).dimmed()
     );
 }
 
@@ -1724,6 +1832,28 @@ fn ensure_dir(path: &Path, label: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ==================== choose_py_tool ====================
+
+    #[test]
+    fn choose_py_tool_prefers_uv() {
+        // uv 优先：它不依赖系统 Python，venv 创建与包安装都更快
+        assert_eq!(choose_py_tool(true, false), Some(PyTool::Uv));
+        assert_eq!(choose_py_tool(true, true), Some(PyTool::Uv));
+    }
+
+    #[test]
+    fn choose_py_tool_falls_back_to_system_python() {
+        assert_eq!(
+            choose_py_tool(false, true),
+            Some(PyTool::Python(default_python_name()))
+        );
+    }
+
+    #[test]
+    fn choose_py_tool_none_when_nothing_available() {
+        assert_eq!(choose_py_tool(false, false), None);
+    }
 
     // ==================== parse_spec ====================
 
