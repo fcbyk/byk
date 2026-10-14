@@ -6,7 +6,7 @@ import './home.css';
  * byk docs — 自定义首页
  *
  * 设计方向：terminal-native。
- * byk 是终端工具，哲学是 "opt-in, nothing until you need it"。
+ * byk 是终端工具，只有两个概念：插件与别名。
  * 所以页面克制——等宽字体扛个性，颜色只活在终端里，
  * 其余是 ink-on-paper + 发丝线。
  *
@@ -59,7 +59,7 @@ export function BykHome() {
 
         <p className="b-hero__lede">轻量级、可扩展的命令行工具集</p>
         <p className="b-hero__sub">
-          Features are opt-in. Nothing is created until you need it.
+          通过插件扩展能力，通过别名简化命令
         </p>
 
         <div className="b-install-row">
@@ -123,19 +123,21 @@ export function BykHome() {
             <pre className="b-term__body">
               <code>
                 <span className="t-p">$ </span>
-                <span className="t-c">byk hello</span>
-                {'\n'}
-                <span className="t-o">hello world</span>
-                {'\n\n'}
-                <span className="t-p">$ </span>
                 <span className="t-c">byk add</span> <span className="t-a">fcbyk/hello</span>
                 {'\n'}
                 <span className="t-s">✓</span> <span className="t-o">plugin installed · ~/.byk/plugins/hello</span>
                 {'\n\n'}
                 <span className="t-p">$ </span>
+                <span className="t-c">byk hello</span>
+                {'\n'}
+                <span className="t-o">hello world</span>
+                <span className="t-x"> ← from plugin</span>
+                {'\n\n'}
+                <span className="t-p">$ </span>
                 <span className="t-c">byk dev</span>
                 {'\n'}
-                <span className="t-x"># running pnpm dev in ~/project/web</span>
+                <span className="t-o">pnpm dev</span>
+                <span className="t-x"> ← from alias · ~/project/web</span>
               </code>
             </pre>
           </div>
@@ -146,9 +148,9 @@ export function BykHome() {
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
           <span className="b-head__label">核心能力</span>
-          <h2 className="b-head__title">一个二进制，按需启用</h2>
+          <h2 className="b-head__title">两个来源，一个入口</h2>
           <p className="b-head__sub">
-            命令别名与插件系统——都是可选初始化，零隐式副作用。
+            从 GitHub 安装插件，别名把长命令收成短名字
           </p>
         </div>
 
@@ -170,7 +172,7 @@ export function BykHome() {
             <span className="b-feature__mark">byk add</span>
             <h3 className="b-feature__title">插件系统</h3>
             <p className="b-feature__desc">
-              从 GitHub 一键安装 Python 插件，在隔离 venv 中运行。支持
+              从 GitHub 一键安装插件， Python插件在隔离 venv 中运行。支持
               py-script、py-module、pip-bin、bin 四种类型。
             </p>
             <span className="b-feature__more">
@@ -295,17 +297,18 @@ export function BykHome() {
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
           <span className="b-head__label">为什么选 byk</span>
-          <h2 className="b-head__title">为不喜欢副作用的人设计</h2>
+          <h2 className="b-head__title">把零散命令收进一个入口</h2>
         </div>
 
         <div className="b-why">
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">01</span>
-              <strong>按需启用</strong>
+              <strong>来源可预期</strong>
             </div>
             <p>
-              补全、缓存、venv 都是可选初始化，无任何隐式副作用；不使用时不会创建任何目录。
+              命令按 内置 → 插件 → <span className="b-ic">@file.key</span> → 别名 顺序匹配，
+              第一个命中即执行；<span className="b-ic">byk show &lt;name&gt;</span> 可查任意命令的来源。
             </p>
           </div>
           <div className="b-why__item">
@@ -314,7 +317,7 @@ export function BykHome() {
               <strong>隔离环境</strong>
             </div>
             <p>
-              插件运行在专属 venv（<span className="b-ic">~/.byk/py-venv</span>），与系统 pip 隔离；别名按文件独立作用域。
+              Python件运行在专属 venv（<span className="b-ic">~/.byk/py-venv</span>），与系统 pip 隔离；别名按文件独立作用域。
             </p>
           </div>
           <div className="b-why__item">
@@ -329,10 +332,10 @@ export function BykHome() {
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">04</span>
-              <strong>零 Python 依赖</strong>
+              <strong>零依赖</strong>
             </div>
             <p>
-              Shell 脚本一键安装即可使用 byk 本体；需要插件时才要求 Python。
+              Shell 脚本一键安装即可使用 byk 本体；插件按需启用隔离环境。
             </p>
           </div>
           <div className="b-why__item">
@@ -347,10 +350,11 @@ export function BykHome() {
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">06</span>
-              <strong>清晰的优先级</strong>
+              <strong>按需落盘</strong>
             </div>
             <p>
-              命令按 内置 → 全局选项 → 插件 → NPM → @file.key → 别名 顺序匹配，第一个命中即执行。
+              <span className="b-ic">~/.byk/</span> 只在首次安装插件或写入别名缓存时出现，
+              在此之前不产生任何文件。
             </p>
           </div>
         </div>

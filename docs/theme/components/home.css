@@ -474,7 +474,8 @@
 
 .b-features {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* 两个核心能力（插件 / 别名）等分；新增卡片时改为 repeat(3, 1fr) */
+  grid-template-columns: repeat(2, 1fr);
   gap: 0;
   border: 1px solid var(--b-rule);
   border-radius: var(--b-radius);

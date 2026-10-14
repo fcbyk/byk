@@ -51,11 +51,7 @@ byk add comp      # 配置 shell 补全
 ```
 
 :::note
-`~/.byk/` 及其子目录无需手动初始化——安装插件或写入别名缓存时会按需自动创建。
-:::
-
-:::note
-功能初始化操作是幂等的——已存在的目录或已配置的补全会被跳过，不会重复创建。
+`byk add comp` 是幂等的——已配置过补全时会跳过，不会重复追加。
 :::
 
 ## remove
@@ -108,7 +104,7 @@ byk completion fish | source
 | 选项 | 说明 |
 |------|------|
 | `-v, --version` | 打印版本号、构建信息及安装路径 |
-| `-h, --help` | 打印帮助信息（含 Commands、NPM Commands、Aliases 一览） |
+| `-h, --help` | 打印帮助信息（含 Commands、Aliases 一览） |
 
 ## show
 
@@ -120,9 +116,9 @@ byk show [SUBCOMMAND]
 
 | Subcommand | 说明 |
 |------------|------|
-| `overview` | 总览面板：目录路径、缓存状态、补全、Node、Python |
+| `overview` | 总览面板：目录路径、补全状态、Python |
 | `plugins` | 已安装插件列表及其命令和脚本 |
-| `<command-name>` | 命令名全量路由查询（查找内置命令、插件、NPM、别名中的所有匹配） |
+| `<command-name>` | 命令名全量路由查询（查找内置命令、插件、别名中的所有匹配） |
 
 不带子命令时显示帮助信息。
 

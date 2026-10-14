@@ -118,7 +118,7 @@ fn main() {
     let command_name = &cli.trailing[0];
     let command_args = &cli.trailing[1..];
 
-    // Step 2: 检查是否为插件命令（优先级高于 NPM）
+    // Step 2: 检查是否为插件命令（优先级高于别名）
     // 插件状态不依赖 venv：bin 类型命令与 Python 环境无关，
     // venv 被删除后仍可用；python 类命令在执行时按需检查（见 execute.rs）
     let cmd_state = plugins::state::load_plugin_state(&layout.plugins_dir);

@@ -2,7 +2,12 @@ import { SourceCode } from '@rspress/core/theme';
 
 # byk
 
-轻量级、可扩展的 CLI 命令行工具集。
+轻量级、可扩展的 CLI 命令行工具集。命令只有两个来源：**插件**与**别名**。
+
+| 来源 | 做什么 | 怎么用 |
+|------|--------|--------|
+| 插件 | 安装别人写好的命令 | `byk add user/repo` |
+| 别名 | 把长命令收成短名字 | 写一个 `*.byk.json` |
 
 ## 快速开始
 
@@ -15,4 +20,11 @@ echo '{"hello":"echo hello world"}' > run.byk.json
 
 # 运行
 byk hello
+```
+
+安装一个插件也是一条命令：
+
+```bash
+byk add user/repo            # 从 GitHub 安装
+byk show plugins             # 查看已安装插件
 ```

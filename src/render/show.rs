@@ -29,7 +29,7 @@ pub fn render_help() {
     println!();
     println!("{}", "Subcommands:".green().bold());
     println!(
-        "  {:<20} Display system overview (paths, cache, completion, Node, Python)",
+        "  {:<20} Display system overview (paths, completion, Python)",
         "overview".cyan().bold(),
     );
     println!(
@@ -37,7 +37,7 @@ pub fn render_help() {
         "plugins".cyan().bold(),
     );
     println!(
-        "  {:<20} Query the source of a command (built-in / plugin / NPM / alias)",
+        "  {:<20} Query the source of a command (built-in / plugin / alias)",
         "<command-name>".cyan().bold(),
     );
     println!(

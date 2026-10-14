@@ -1,4 +1,4 @@
-//! 帮助信息渲染（Usage / Options / NPM / Aliases）。
+//! 帮助信息渲染（Usage / Options / Commands / Aliases）。
 //!
 //! `render_all` 为 -h/--help 回调及无参数时的默认输出。
 
@@ -9,7 +9,7 @@ use crate::core::paths::PathLayout;
 use crate::core::plugins;
 use crate::utils::display;
 
-/// 渲染完整帮助信息（Usage + Options + Commands + NPM Commands + Aliases）。
+/// 渲染完整帮助信息（Usage + Options + Commands + Aliases）。
 ///
 /// -h / --help 直接调用，仪表盘在之前叠加 banner。
 pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
@@ -60,7 +60,7 @@ pub fn render_commands(layout: &PathLayout) {
 /// 渲染 Usage 说明。
 pub fn render_usage() {
     println!(
-        "{} byk [OPTIONS] [COMMAND|NPM_COMMAND|ALIAS] [ARGS]...",
+        "{} byk [OPTIONS] [COMMAND|ALIAS] [ARGS]...",
         "Usage:".green().bold()
     );
 }

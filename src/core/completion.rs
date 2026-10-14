@@ -103,7 +103,6 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
 /// - 别名节点（如 `rust`）→ 补全其子节点
 /// - @文件引用（如 `@release`）→ 补全文件内的 key
 /// - 插件命令 → 无子命令，返回空
-/// - NPM 命令 → 无子命令，返回空
 /// - 无法识别的词 → 返回空
 fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -> Vec<String> {
     if prev.is_empty() {

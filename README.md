@@ -2,16 +2,18 @@
 
 > A lightweight, extensible collection of CLI utilities 🚀
 
-Features are opt-in. Nothing is created until you need it.
+Two sources of commands: plugins you install, aliases you write.
 
 ## Plugins
 
-Install plugins from any GitHub repo, isolated in a shared Python venv.
+Install commands from any GitHub repo. Python plugins run in a shared venv,
+binary plugins need nothing else.
 
 ```bash
 byk add user/repo            # install default plugin
 byk add user/repo/key        # install a specific plugin
-byk run-plugin-command       # run it
+byk add user/repo@v1.0/key   # pin a branch, tag or commit
+byk <command>                # run it
 
 byk show plugins             # list installed plugins
 byk remove <key>             # uninstall
