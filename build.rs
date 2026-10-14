@@ -25,6 +25,12 @@ fn main() {
     println!("cargo:rustc-env=BUILD_DATE={}", date);
     println!("cargo:rustc-env=PLATFORM={}", platform);
 
-    // HEAD 变化时自动重新运行 build script
-    println!("cargo:rerun-if-changed=.git/HEAD");
+    // 这里刻意不声明 `rerun-if-changed`：一旦声明，cargo 就只看那一个路径，
+    // 连改源码都不再重跑 build script。
+    //
+    // 曾经 watch `.git/HEAD`，但提交时该文件内容不变（恒为 `ref: refs/heads/main`），
+    // 真正变的是 `.git/refs/heads/<branch>`，导致版本号长期冻结在旧提交上。
+    //
+    // 不声明即回到 cargo 默认：包内任何文件变化时重跑本脚本，
+    // 于是 BUILD_DATE 每次构建刷新、GIT_HASH 在提交后刷新。
 }
