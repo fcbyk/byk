@@ -33,10 +33,6 @@ pub fn render() {
         "  {:<8} Initialize shell completion (zsh/bash)",
         "comp".cyan().bold()
     );
-    println!(
-        "  {:<8} Initialize CLI home & cache directories",
-        "cache".cyan().bold()
-    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![

@@ -88,12 +88,6 @@ fn render_overview_panel(overview: &OverviewInfo) {
 
     println!("{}", "-".repeat(29).dimmed());
 
-    if overview.cache_initialized {
-        println!("{}: {}", "Cache".yellow(), "enabled".green());
-    } else {
-        println!("{}: {}", "Cache".yellow(), "disabled".dimmed());
-    }
-
     if let Some(shell_name) = &overview.completion.shell {
         if overview.completion.configured {
             println!(

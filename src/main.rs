@@ -59,7 +59,6 @@ fn main() {
                 }
                 (Some("npm"), None) => add::init_npm(&layout),
                 (Some("pnpm"), None) => add::init_pnpm(&layout),
-                (Some("cache"), None) => add::init_cache(&layout),
                 (Some("comp"), None) => add::init_completion(),
                 (Some("py-v") | Some("uv"), None) => {
                     eprintln!(

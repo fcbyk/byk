@@ -155,7 +155,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // add 子命令补全
     if first == "add" {
-        const ADD_SUBS: &[&str] = &["npm", "pnpm", "cache", "comp"];
+        const ADD_SUBS: &[&str] = &["npm", "pnpm", "comp"];
         return ADD_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -634,16 +634,14 @@ mod tests {
             let node_pkgs_dir = temp.path().join("node-pkgs");
             let py_venv_dir = temp.path().join("py-venv");
             let venv_dir = py_venv_dir.join(".venv");
-            let logs_dir = temp.path().join("logs");
             let root_dir = temp.path().to_path_buf();
 
-            for d in [&alias_dir, &cache_dir, &plugins_dir, &node_pkgs_dir, &py_venv_dir, &venv_dir, &logs_dir] {
+            for d in [&alias_dir, &cache_dir, &plugins_dir, &node_pkgs_dir, &py_venv_dir, &venv_dir] {
                 fs::create_dir_all(d).unwrap();
             }
 
             let layout = PathLayout {
                 root_dir: root_dir.clone(),
-                logs_dir,
                 alias_dir,
                 node_pkgs_dir,
                 py_venv_dir,

@@ -47,13 +47,15 @@ byk add -f ./local.json key       # 使用本地 byk.json 安装
 | `npm` | 初始化 npm 包管理环境，创建 `~/.byk/node-pkgs/` 目录及 `ni`/`nu` 别名 |
 | `pnpm` | 初始化 pnpm 包管理环境，同上，但使用 pnpm 作为包管理器 |
 | `comp` | 初始化 shell 补全（自动检测 zsh/bash），在对应 rc 文件中追加补全脚本 |
-| `cache` | 初始化 CLI 家目录 `~/.byk/` 及缓存目录结构（alias、cache、logs、plugins） |
 
 ```bash title="示例"
 byk add npm       # 初始化 npm 环境
 byk add comp      # 配置 shell 补全
-byk add cache     # 创建家目录和缓存
 ```
+
+:::note
+`~/.byk/` 及其子目录无需手动初始化——安装插件、初始化 npm 或写入别名缓存时会按需自动创建。
+:::
 
 :::note
 功能初始化操作是幂等的——已存在的目录或已配置的补全会被跳过，不会重复创建。

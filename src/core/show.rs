@@ -147,7 +147,6 @@ pub struct CompletionStatus {
 /// 总览面板数据。
 #[derive(Debug)]
 pub struct OverviewInfo {
-    pub cache_initialized: bool,
     pub completion: CompletionStatus,
     pub node_initialized: bool,
     pub python: PythonOverviewInfo,
@@ -164,18 +163,6 @@ pub struct PythonOverviewInfo {
 
 /// 收集总览面板数据。
 pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
-    let cache_initialized = {
-        let cache_dir = &layout.cache_dir;
-        if cache_dir.exists() {
-            let entries = fs::read_dir(cache_dir).ok();
-            entries
-                .map(|e| e.filter_map(|en| en.ok()).count() > 0)
-                .unwrap_or(false)
-        } else {
-            false
-        }
-    };
-
     let completion = check_completion_status();
     let node_initialized = check_node_initialized(layout);
 
@@ -205,7 +192,6 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
     let alias_count = merged.len();
 
     OverviewInfo {
-        cache_initialized,
         completion,
         node_initialized,
         python,

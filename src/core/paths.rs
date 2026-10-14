@@ -3,7 +3,6 @@ use std::path::PathBuf;
 /// CLI 持久化目录布局。
 pub struct PathLayout {
     pub root_dir: PathBuf,
-    pub logs_dir: PathBuf,
     pub alias_dir: PathBuf,
     pub node_pkgs_dir: PathBuf,
     pub py_venv_dir: PathBuf,
@@ -30,7 +29,6 @@ impl PathLayout {
         let root_dir = home.join(format!(".{}", app_name));
         let home_exists = root_dir.is_dir();
 
-        let logs_dir = root_dir.join("logs");
         let alias_dir = root_dir.join("alias");
         let node_pkgs_dir = root_dir.join("node-pkgs");
         let py_venv_dir = root_dir.join("py-venv");
@@ -41,11 +39,9 @@ impl PathLayout {
         // 子目录不在此处创建，由各子系统按需创建：
         // - cache/  → json_io::write_json 内部 create_dir_all
         // - alias/  → 用户手动放入文件，scan 缺失时天然空
-        // - logs/   → 暂未使用，后续日志模块自行创建
 
         PathLayout {
             root_dir,
-            logs_dir,
             alias_dir,
             node_pkgs_dir,
             py_venv_dir,
@@ -71,7 +67,6 @@ mod tests {
         let home = dirs::home_dir().unwrap();
 
         assert_eq!(layout.root_dir, home.join(".fcbyk_test_paths"));
-        assert_eq!(layout.logs_dir, home.join(".fcbyk_test_paths").join("logs"));
         assert_eq!(
             layout.alias_dir,
             home.join(".fcbyk_test_paths").join("alias")
@@ -104,7 +99,6 @@ mod tests {
 
         // home_exists=false → 不创建任何目录
         assert!(!layout.root_dir.exists());
-        assert!(!layout.logs_dir.exists());
         assert!(!layout.alias_dir.exists());
         assert!(!layout.cache_dir.exists());
         assert!(!layout.plugins_dir.exists());
