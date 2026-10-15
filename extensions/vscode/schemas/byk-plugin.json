@@ -177,16 +177,17 @@
         "type": {
           "description": "命令类型",
           "type": "string",
-          "enum": ["python-m", "python", "pip-bin", "bin"],
+          "enum": ["python-m", "python", "pip-bin", "bin", "node"],
           "enumDescriptions": [
             "python -m <entry>",
             "python plugins/<entry>",
             "直接执行 venv/bin/<entry>",
-            "直接执行 plugins/<entry>"
+            "直接执行 plugins/<entry>",
+            "node plugins/<entry>（零依赖单文件 JS 脚本，需系统安装 Node.js）"
           ]
         },
         "entry": {
-          "description": "入口点：python-m 为模块路径，python 为脚本文件名（相对于插件目录），pip-bin 为 pip 安装的可执行文件名，bin 为二进制文件名（相对于插件目录）",
+          "description": "入口点：python-m 为模块路径，python 为脚本文件名（相对于插件目录），pip-bin 为 pip 安装的可执行文件名，bin 为二进制文件名（相对于插件目录），node 为 JS 脚本文件名（相对于插件目录）",
           "type": "string"
         },
         "desc": {

@@ -1,7 +1,7 @@
 //! 插件命令执行引擎。
 //!
 //! 支持多种执行类型，通过 `PluginExecutor` trait 实现可扩展架构。
-//! 当前内置：python-m、python、pip-bin、bin。
+//! 当前内置：python-m、python、pip-bin、bin、node。
 
 use std::path::Path;
 use std::process::{Command, exit};
@@ -156,6 +156,38 @@ impl PluginExecutor for BinExecutor {
     }
 }
 
+/// Node.js 脚本执行器（`node plugins/<entry> <args>`）。
+///
+/// 适用于零依赖的单文件 JS 脚本。node 从 PATH 解析，
+/// 由用户自行管理，与 byk 的 Python venv 无关。
+pub struct NodeExecutor;
+
+impl PluginExecutor for NodeExecutor {
+    fn cmd_type(&self) -> &'static str {
+        "node"
+    }
+
+    fn execute(
+        &self,
+        entry: &str,
+        args: &[String],
+        plugins_dir: &Path,
+        _venv_dir: &Path,
+        _python_exe: &str,
+    ) -> std::process::ExitStatus {
+        let script_path = plugins_dir.join(entry);
+        Command::new("node")
+            .arg(script_path)
+            .args(args)
+            .status()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to start Node.js runtime: {}", e);
+                eprintln!("  Make sure `node` is installed and available in PATH.");
+                exit(1);
+            })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 执行器注册表
 // ---------------------------------------------------------------------------
@@ -169,6 +201,7 @@ fn executors() -> Vec<Box<dyn PluginExecutor>> {
         Box::new(PythonExecutor),
         Box::new(PipBinExecutor),
         Box::new(BinExecutor),
+        Box::new(NodeExecutor),
     ]
 }
 
@@ -178,10 +211,11 @@ fn executors() -> Vec<Box<dyn PluginExecutor>> {
 
 /// 该命令类型是否依赖 Python venv。
 ///
-/// 仅 `bin` 类型与 Python 生态无关（直接执行 plugins/ 下的二进制）；
+/// 仅 `bin` / `node` 类型与 Python 生态无关（分别直接执行
+/// plugins/ 下的二进制和 node 脚本，node 从 PATH 解析）；
 /// 其余类型（含未知类型，会 fallback 到 python-m）都需要解释器。
 fn requires_python(cmd_type: &str) -> bool {
-    cmd_type != "bin"
+    !matches!(cmd_type, "bin" | "node")
 }
 
 /// 将插件命令转发给对应的执行器。
@@ -266,12 +300,17 @@ mod tests {
         assert_eq!(BinExecutor.cmd_type(), "bin");
     }
 
+    #[test]
+    fn node_executor_type() {
+        assert_eq!(NodeExecutor.cmd_type(), "node");
+    }
+
     // ==================== executors ====================
 
     #[test]
-    fn executors_has_four_builtin() {
+    fn executors_has_five_builtin() {
         let exes = executors();
-        assert_eq!(exes.len(), 4);
+        assert_eq!(exes.len(), 5);
     }
 
     #[test]
@@ -282,6 +321,7 @@ mod tests {
         assert!(types.contains(&"python"));
         assert!(types.contains(&"pip-bin"));
         assert!(types.contains(&"bin"));
+        assert!(types.contains(&"node"));
     }
 
     // ==================== requires_python ====================
@@ -291,6 +331,12 @@ mod tests {
         // 回归测试：bin 类型与 Python 环境无关，
         // venv 被 `byk remove py` 删除后命令仍可执行
         assert!(!requires_python("bin"));
+    }
+
+    #[test]
+    fn requires_python_node_is_independent() {
+        // node 类型只依赖 PATH 中的 node，与 Python venv 无关
+        assert!(!requires_python("node"));
     }
 
     #[test]

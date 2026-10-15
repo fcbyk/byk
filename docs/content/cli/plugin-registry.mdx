@@ -445,8 +445,8 @@ Map 模式下支持 `$name` 键指定容器目录名。`$name` 不会创建实�
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `type` | string | 是 | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）或 `bin`（普通二进制） |
-| `entry` | string | 是 | 入口点：`python-m` 为模块路径，`python` 为脚本文件名（相对于 `plugins/<plugin_key>/`），`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（相对于 `plugins/<plugin_key>/`） |
+| `type` | string | 是 | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）、`bin`（普通二进制）或 `node`（Node.js 脚本） |
+| `entry` | string | 是 | 入口点：`python-m` 为模块路径，`python` 为脚本文件名（相对于 `plugins/<plugin_key>/`），`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（相对于 `plugins/<plugin_key>/`），`node` 为 JS 脚本文件名（相对于 `plugins/<plugin_key>/`） |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 | `args` | object | 否 | Shell 补全候选，支持嵌套子命令和可重复选项，详见 [args 字段](#args-字段) |
 
@@ -475,8 +475,8 @@ Map 模式下支持 `$name` 键指定容器目录名。`$name` 不会创建实�
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `type` | string | 是 | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）或 `bin`（普通二进制） |
-| `entry` | string | 是 | 入口点：`python-m` 为模块路径，`python` 为脚本文件名（相对于 `plugins/<plugin_key>/`），`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（相对于 `plugins/<plugin_key>/`） |
+| `type` | string | 是 | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）、`bin`（普通二进制）或 `node`（Node.js 脚本） |
+| `entry` | string | 是 | 入口点：`python-m` 为模块路径，`python` 为脚本文件名（相对于 `plugins/<plugin_key>/`），`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（相对于 `plugins/<plugin_key>/`），`node` 为 JS 脚本文件名（相对于 `plugins/<plugin_key>/`） |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 | `args` | object | 否 | Shell 补全候选，支持嵌套子命令和可重复选项，详见 [args 字段](#args-字段) |
 
@@ -488,8 +488,11 @@ Map 模式下支持 `$name` 键指定容器目录名。`$name` 不会创建实�
 | `python` | `python plugins/<plugin_key>/<entry>` | `"entry": "runner.py"` |
 | `pip-bin` | 直接执行 `venv/bin/<entry>` | `"entry": "my-tool"` |
 | `bin` | 直接执行 `plugins/<plugin_key>/<entry>` | `"entry": "my-tool"` 或 `"entry": "my-tool/bin/my-tool"` |
+| `node` | `node plugins/<plugin_key>/<entry>` | `"entry": "main.js"` |
 
 一个插件可以注册多个命令，每个命令对应一个独立的入口点。
+
+> **node 类型**：执行零依赖的单文件 JS 脚本，`node` 从 PATH 解析，由用户自行管理。安装时若检测不到 `node`，byk 会拒绝安装并给出各平台的安装指引。
 
 > **与 `command` 共存**：`command` 和 `commands` 可以同时使用。`command` 注册的命令名 = 插件 key，`commands` 注册额外的命名命令。但 `commands` 中不能定义与插件 key 同名的子命令，否则安装时报错。
 

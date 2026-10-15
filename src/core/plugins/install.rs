@@ -861,6 +861,33 @@ pub fn install_plugin(
         }
     }
 
+    // 仅当插件协议中声明了 node 类型命令时，才检查 Node.js 环境。
+    // 与 Python 不同：node 由用户自行管理（PATH 解析），byk 不创建
+    // 也不托管运行时，缺失时直接拒绝安装并给出指引。
+    let needs_node = registry.plugins.get(&key)
+        .map(|def| {
+            def.command
+                .as_ref()
+                .is_some_and(|c| c.cmd_type == "node")
+                || def
+                    .commands
+                    .as_ref()
+                    .is_some_and(|cs| cs.values().any(|c| c.cmd_type == "node"))
+        })
+        .unwrap_or(false);
+
+    if needs_node && !tool_exists("node") {
+        eprintln!(
+            "{} plugin \"{}\" requires Node.js, but `node` was not found in PATH.",
+            "Error:".red(),
+            key
+        );
+        eprintln!();
+        eprintln!("Install Node.js, then retry:");
+        print_node_install_hints();
+        exit(1);
+    }
+
     let source_display = source_label
         .as_ref()
         .map(|s| format!(" ({})", s.dimmed()))
@@ -1266,11 +1293,11 @@ fn build_install_plan(
     }
 }
 
-/// 为 python / bin 类型命令的 entry 注入 `{plugin_key}/` 前缀。
+/// 为 python / bin / node 类型命令的 entry 注入 `{plugin_key}/` 前缀。
 /// python-m / pip-bin 类型保持原样。
 fn inject_plugin_prefix(plugin_key: &str, entry: &str, cmd_type: &str) -> String {
     match cmd_type {
-        "python" | "bin" => format!("{}/{}", plugin_key, entry),
+        "python" | "bin" | "node" => format!("{}/{}", plugin_key, entry),
         _ => entry.to_string(),
     }
 }
@@ -1689,6 +1716,26 @@ fn print_python_install_hints() {
     }
 }
 
+/// 按平台打印 Node.js 的安装指引。
+fn print_node_install_hints() {
+    #[cfg(target_os = "macos")]
+    {
+        eprintln!("  {}", "brew install node".dimmed());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        eprintln!("  {}", "sudo apt install nodejs npm    # Debian/Ubuntu".dimmed());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        eprintln!("  {}", "winget install OpenJS.NodeJS".dimmed());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        eprintln!("  {}", "https://nodejs.org/en/download".dimmed());
+    }
+}
+
 /// venv 是否已就绪（pip 或 python 可执行文件存在即可；
 /// uv 创建的 venv 不含 pip，因此二者满足其一）。
 fn venv_is_ready(layout: &crate::core::paths::PathLayout) -> bool {
@@ -1853,6 +1900,23 @@ mod tests {
     #[test]
     fn choose_py_tool_none_when_nothing_available() {
         assert_eq!(choose_py_tool(false, false), None);
+    }
+
+    // ==================== inject_plugin_prefix ====================
+
+    #[test]
+    fn inject_prefix_for_plugin_dir_types() {
+        // python / bin / node 的 entry 相对于插件目录，需注入 {plugin_key}/ 前缀
+        assert_eq!(inject_plugin_prefix("mykey", "main.py", "python"), "mykey/main.py");
+        assert_eq!(inject_plugin_prefix("mykey", "tool", "bin"), "mykey/tool");
+        assert_eq!(inject_plugin_prefix("mykey", "main.js", "node"), "mykey/main.js");
+    }
+
+    #[test]
+    fn inject_prefix_keeps_other_types_bare() {
+        // python-m / pip-bin 的 entry 保持原样（模块路径 / venv bin 名）
+        assert_eq!(inject_plugin_prefix("mykey", "mymod", "python-m"), "mymod");
+        assert_eq!(inject_plugin_prefix("mykey", "mytool", "pip-bin"), "mytool");
     }
 
     // ==================== parse_spec ====================

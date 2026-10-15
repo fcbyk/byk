@@ -108,7 +108,7 @@ pub enum DownloadEntry {
 /// 命令注册定义。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CommandDef {
-    /// 命令类型："python-m" | "python" | "pip-bin" | "bin"
+    /// 命令类型："python-m" | "python" | "pip-bin" | "bin" | "node"
     #[serde(rename = "type")]
     pub cmd_type: String,
 
@@ -529,5 +529,19 @@ mod tests {
         let cmds = def.commands.as_ref().unwrap();
         let sub = cmds.get("sub").unwrap();
         assert_eq!(sub.cmd_type, "python");
+    }
+
+    #[test]
+    fn parse_node_command() {
+        let raw = to_map(r#"{
+            "app": {
+                "command": {"type": "node", "entry": "main.js", "desc": "js script"}
+            }
+        }"#);
+        let registry = parse_registry(&raw);
+        let def = registry.plugins.get("app").unwrap();
+        let cmd = def.command.as_ref().unwrap();
+        assert_eq!(cmd.cmd_type, "node");
+        assert_eq!(cmd.entry, "main.js");
     }
 }
