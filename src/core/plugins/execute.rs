@@ -199,6 +199,18 @@ impl PluginExecutor for NodeExecutor {
         _python_exe: &str,
     ) -> std::process::ExitStatus {
         let script_path = plugins_dir.join(entry);
+        if !script_path.is_file() {
+            eprintln!(
+                "{} plugin script not found: {}",
+                "Error:".red(),
+                script_path.display()
+            );
+            eprintln!(
+                "  The plugin may have been removed. Reinstall it with {}.",
+                "`byk add <plugin>`".bold()
+            );
+            exit(1);
+        }
         let mut cmd = Command::new("node");
         cmd.arg(script_path);
         cmd.args(args);

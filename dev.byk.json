@@ -1,4 +1,5 @@
 {
+  "$priority": -1,
   "dev": {
     "test": "cargo test && cargo clippy ",
     "运行": "cargo run",
@@ -18,7 +19,6 @@
   },
 
 
-  "test-all": "byk 测试.test && byk 测试.lint && byk 测试.cov && byk 测试.run && byk 测试.build",
   "测试": {
     "test": "cargo test",
     "lint": "cargo clippy",
@@ -28,7 +28,6 @@
   },
 
 
-  "打包-all": "byk 发布.maturin.打包arm && byk 发布.maturin.打包x86 && byk 发布.maturin.源码包",
   "发布": {
     "生成变更日志": "cz changelog --incremental",
     "更新版本号": {

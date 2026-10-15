@@ -1,8 +1,4 @@
 {
-  "pysdk": {
-    "download-to-workdir": {
-      "byksdk.py": "plugins/pysdk/byksdk.py",
-      "utils.py": "plugins/pysdk/utils.py"
-    }
-  }
+  "pysdk": "plugins/pysdk/byk.json",
+  "npm": "plugins/npm/byk.json"
 }
