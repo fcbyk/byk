@@ -1850,7 +1850,7 @@ fn venv_is_ready(layout: &crate::core::paths::PathLayout) -> bool {
 
 /// 初始化 Python 虚拟环境（插件安装时按需调用）。
 ///
-/// 创建 ~/.byk/py-venv/.venv/（不存在时）并写入最小状态文件。
+/// 创建 ~/.byk/py-venv/.venv/（不存在时）并合并写入状态文件（保留已注册的命令）。
 /// uv 模式额外创建 pyproject.toml。
 /// 刻意不注入 pi/pu/pl 别名：用户只使用插件命令，
 /// 包管理是 byk 的内部事务。
@@ -1930,26 +1930,26 @@ fn init_py(layout: &crate::core::paths::PathLayout, tool: PyTool) {
         }
     }
 
-    // ③ 写入最小状态（venv 刚创建，无插件，commands 为空）
+    // ③ 合并写入状态：保留已注册的命令与包条目，仅补 python_executable。
+    //    plugins.cmd.json 可能已有命令（如 node 类型插件在 venv 创建前
+    //    注册的命令），覆盖写会丢数据。
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
     let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
+    let cmd_existed = cmd_file.is_file();
+    let pkg_existed = pkg_file.is_file();
+
     let python_exe = venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-    let cmd_state = CmdState {
-        commands: std::collections::HashMap::new(),
-        python_executable: Some(python_exe.to_string_lossy().to_string()),
-    };
-    let pkg_state: PkgState = std::collections::HashMap::new();
-    json_io::write_json(&cmd_file, &cmd_state);
-    json_io::write_json(&pkg_file, &pkg_state);
+    merge_py_state(layout, &python_exe);
+
     println!(
         "  {} plugins/plugins.cmd.json {}",
         "+".green(),
-        "(created)".dimmed()
+        if cmd_existed { "(updated)".dimmed() } else { "(created)".dimmed() }
     );
     println!(
         "  {} plugins/plugins.pkg.json {}",
         "+".green(),
-        "(created)".dimmed()
+        if pkg_existed { "(updated)".dimmed() } else { "(created)".dimmed() }
     );
 
     println!();
@@ -1958,6 +1958,25 @@ fn init_py(layout: &crate::core::paths::PathLayout, tool: PyTool) {
         "Python environment ready.".green(),
         format!("({})", tool.label()).dimmed()
     );
+}
+
+/// 合并写入插件状态（init_py 收尾）。
+///
+/// plugins.cmd.json / plugins.pkg.json 可能已有内容——node 类型插件
+/// 可以在 venv 创建前就注册命令（npm 插件正是如此），直接覆盖写会丢数据。
+/// 因此读-改-写：保留 commands 与包条目，仅在缺失时补 python_executable。
+fn merge_py_state(layout: &crate::core::paths::PathLayout, python_exe: &Path) {
+    let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
+    let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
+
+    let mut cmd_state = load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
+    if cmd_state.python_executable.is_none() {
+        cmd_state.python_executable = Some(python_exe.to_string_lossy().to_string());
+    }
+    let pkg_state = load_pkg_state(&layout.plugins_dir);
+
+    json_io::write_json(&cmd_file, &cmd_state);
+    json_io::write_json(&pkg_file, &pkg_state);
 }
 
 // ---------------------------------------------------------------------------
@@ -2113,6 +2132,91 @@ mod tests {
         assert!(!plugin_needs_venv(&plugin_def(
             r#"{"p": {"downloads": "https://example.com/x"}}"#
         )));
+    }
+
+    // ==================== merge_py_state ====================
+
+    #[test]
+    fn merge_py_state_preserves_existing_commands() {
+        // 回归测试：venv 创建前 plugins.cmd.json 可能已有命令
+        // （node 类型插件在运行时注册），合并写必须保留 commands 与包条目
+        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_merge_py_state");
+        let _ = std::fs::remove_dir_all(&layout.root_dir);
+        std::fs::create_dir_all(&layout.plugins_dir).unwrap();
+
+        let mut commands = HashMap::new();
+        commands.insert(
+            "ni".to_string(),
+            PluginCommand {
+                cmd_type: "node".to_string(),
+                entry: "npm/npm.js".to_string(),
+                desc: "from @antfu/ni".to_string(),
+                args: None,
+            },
+        );
+        json_io::write_json(
+            &layout.plugins_dir.join("plugins.cmd.json"),
+            &CmdState {
+                commands,
+                python_executable: None,
+            },
+        );
+
+        let mut pkg_state: PkgState = HashMap::new();
+        pkg_state.insert(
+            "npm".to_string(),
+            PkgEntry {
+                source: None,
+                pip: None,
+                pip_keep: None,
+                assets: vec![],
+                commands: vec!["ni".to_string()],
+            },
+        );
+        json_io::write_json(&layout.plugins_dir.join("plugins.pkg.json"), &pkg_state);
+
+        let python_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+        merge_py_state(&layout, &python_exe);
+
+        // 命令保留，python_executable 补上
+        let expected = python_exe.to_string_lossy().to_string();
+        let loaded: CmdState =
+            json_io::read_json(&layout.plugins_dir.join("plugins.cmd.json")).unwrap();
+        assert!(loaded.commands.contains_key("ni"));
+        assert_eq!(loaded.commands.get("ni").unwrap().cmd_type, "node");
+        assert_eq!(loaded.python_executable.as_deref(), Some(expected.as_str()));
+
+        // 包条目保留
+        let loaded_pkg: PkgState =
+            json_io::read_json(&layout.plugins_dir.join("plugins.pkg.json")).unwrap();
+        assert_eq!(loaded_pkg.get("npm").unwrap().commands, vec!["ni".to_string()]);
+
+        let _ = std::fs::remove_dir_all(&layout.root_dir);
+    }
+
+    #[test]
+    fn merge_py_state_keeps_existing_python_executable() {
+        // 已有的 python_executable 不被覆盖
+        let layout = crate::core::paths::PathLayout::with_name("fcbyk_test_merge_py_state2");
+        let _ = std::fs::remove_dir_all(&layout.root_dir);
+        std::fs::create_dir_all(&layout.plugins_dir).unwrap();
+
+        json_io::write_json(
+            &layout.plugins_dir.join("plugins.cmd.json"),
+            &CmdState {
+                commands: HashMap::new(),
+                python_executable: Some("/custom/python".to_string()),
+            },
+        );
+
+        let python_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+        merge_py_state(&layout, &python_exe);
+
+        let loaded: CmdState =
+            json_io::read_json(&layout.plugins_dir.join("plugins.cmd.json")).unwrap();
+        assert_eq!(loaded.python_executable.as_deref(), Some("/custom/python"));
+
+        let _ = std::fs::remove_dir_all(&layout.root_dir);
     }
 
     // ==================== parse_spec ====================
