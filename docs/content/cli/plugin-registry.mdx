@@ -445,8 +445,8 @@ Map 模式下支持 `$name` 键指定容器目录名。`$name` 不会创建实�
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `type` | string | 是 | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）、`bin`（普通二进制）或 `node`（Node.js 脚本） |
-| `entry` | string | 是 | 入口点：`python-m` 为模块路径，`python` 为脚本文件名（相对于 `plugins/<plugin_key>/`），`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（相对于 `plugins/<plugin_key>/`），`node` 为 JS 脚本文件名（相对于 `plugins/<plugin_key>/`） |
+| `type` | string | 是 | 命令类型：`python-m`（模块）、`python`（脚本）、`bin`（二进制）或 `node`（Node.js 脚本） |
+| `entry` | string | 是 | 入口点：`python-m` 为模块路径，`python` 为脚本文件名（相对于 `plugins/<plugin_key>/`），`node` 为 JS 脚本文件名（相对于 `plugins/<plugin_key>/`），`bin` 为 `$this` / `$venv` token 路径 |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 | `args` | object | 否 | Shell 补全候选，支持嵌套子命令和可重复选项，详见 [args 字段](#args-字段) |
 
@@ -475,8 +475,8 @@ Map 模式下支持 `$name` 键指定容器目录名。`$name` 不会创建实�
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `type` | string | 是 | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）、`bin`（普通二进制）或 `node`（Node.js 脚本） |
-| `entry` | string | 是 | 入口点：`python-m` 为模块路径，`python` 为脚本文件名（相对于 `plugins/<plugin_key>/`），`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为二进制文件名（相对于 `plugins/<plugin_key>/`），`node` 为 JS 脚本文件名（相对于 `plugins/<plugin_key>/`） |
+| `type` | string | 是 | 命令类型：`python-m`（模块）、`python`（脚本）、`bin`（二进制）或 `node`（Node.js 脚本） |
+| `entry` | string | 是 | 入口点：`python-m` 为模块路径，`python` 为脚本文件名（相对于 `plugins/<plugin_key>/`），`node` 为 JS 脚本文件名（相对于 `plugins/<plugin_key>/`），`bin` 为 `$this` / `$venv` token 路径 |
 | `desc` | string | 否 | 命令描述，显示在帮助信息中 |
 | `args` | object | 否 | Shell 补全候选，支持嵌套子命令和可重复选项，详见 [args 字段](#args-字段) |
 
@@ -486,11 +486,26 @@ Map 模式下支持 `$name` 键指定容器目录名。`$name` 不会创建实�
 |------|----------|------|
 | `python-m` | `python -m <entry>` | `"entry": "hello.one"` |
 | `python` | `python plugins/<plugin_key>/<entry>` | `"entry": "runner.py"` |
-| `pip-bin` | 直接执行 `venv/bin/<entry>` | `"entry": "my-tool"` |
-| `bin` | 直接执行 `plugins/<plugin_key>/<entry>` | `"entry": "my-tool"` 或 `"entry": "my-tool/bin/my-tool"` |
+| `bin` | 执行 `$this` / `$venv` 解析出的可执行文件 | `"entry": "$this/bin/my-tool"` |
 | `node` | `node plugins/<plugin_key>/<entry>` | `"entry": "main.js"` |
 
 一个插件可以注册多个命令，每个命令对应一个独立的入口点。
+
+#### bin 类型的 entry：`$this` / `$venv` token
+
+`bin` 类型的 entry 必须显式指定根目录 token，安装期解析为绝对路径，执行期纯消费：
+
+| 形态 | 写法 | 执行行为 |
+|------|------|----------|
+| 目录 | `"$this/bin"` | 前置该目录到子进程 PATH，按**命令名**查找可执行文件 |
+| 目录 | `"$venv"` | 同上，指向 venv bin 目录（替代原 `pip-bin` 场景） |
+| 文件 | `"$this/bin/my-tool"` | 直接执行该文件，并前置其所在目录到子进程 PATH |
+| 文件 | `"$venv/hello"` | 同上，指向 venv bin 下的文件 |
+
+- `$this` = 插件目录 `plugins/<plugin_key>/`；`$venv` = venv bin 目录（Windows 为 `Scripts`）
+- 裸 `$this` / `$venv`（不带子路径）= 目录形态；带子路径 = 文件形态
+- 目录形态按 json key（`commands` 的命令名 / `command` 时的插件 key）查找可执行文件
+- 拒绝裸相对路径、绝对路径、`~`、`..` 越界；旧版 `pip-bin` 类型已移除，请改用 `"$venv"` 或 `"$venv/<名字>"`
 
 > **node 类型**：执行零依赖的单文件 JS 脚本，`node` 从 PATH 解析，由用户自行管理。安装时若检测不到 `node`，byk 会拒绝安装并给出各平台的安装指引。
 

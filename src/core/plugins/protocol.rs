@@ -108,11 +108,15 @@ pub enum DownloadEntry {
 /// 命令注册定义。
 #[derive(Debug, Clone, Deserialize)]
 pub struct CommandDef {
-    /// 命令类型："python-m" | "python" | "pip-bin" | "bin" | "node"
+    /// 命令类型："python-m" | "python" | "bin" | "node"
     #[serde(rename = "type")]
     pub cmd_type: String,
 
-    /// 入口点路径
+    /// 入口点：
+    /// - python-m：模块路径
+    /// - python / node：插件目录下的脚本相对路径
+    /// - bin：`$this/<路径>` 或 `$venv/<路径>`（裸 token 表示目录形态），
+    ///   安装期解析为绝对路径；目录形态按命令名查找，文件形态直接执行
     pub entry: String,
 
     /// 描述文本

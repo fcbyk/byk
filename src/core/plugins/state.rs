@@ -49,18 +49,46 @@ pub(crate) fn get_python_executable(plugins_dir: &Path, venv_dir: &Path) -> Stri
 // 状态加载
 // ---------------------------------------------------------------------------
 
-/// 读取命令状态（从 plugins.cmd.json）。
+/// 读取命令状态（从 plugins.cmd.json），并迁移旧版条目。
 ///
-/// - 无状态文件 → 返回空状态
-/// - 有状态文件 → 直接返回
+/// 迁移规则（幂等，旧格式 → 新格式）：
+/// - `pip-bin` → `bin`，entry 指向 venv bin 目录（Windows 为 Scripts）
+/// - `bin` 的插件相对 entry（旧格式，无 token）→ 拼接为绝对路径
 ///
-/// 刻意不检查 venv 是否存在：`bin` 类型插件命令与 Python 环境无关，
-/// venv 被 `byk remove py` 删除后这些命令仍应可用。
-/// 依赖 Python 的命令类型（python-m / python / pip-bin）在执行时
+/// 新格式：bin 类型 entry 一律为 `$this` / `$venv` 在安装期解析出的绝对路径。
+///
+/// 刻意不检查 venv 是否存在：`bin` / `node` 类型插件命令与 Python 环境无关，
+/// venv 被删除后这些命令仍应可用。
+/// 依赖 Python 的命令类型（python-m / python）在执行时
 /// 按需检查解释器是否存在（见 execute.rs）。
-pub fn load_plugin_state(plugins_dir: &Path) -> CmdState {
+pub fn load_plugin_state(plugins_dir: &Path, venv_dir: &Path) -> CmdState {
     let cmd_file = plugins_dir.join("plugins.cmd.json");
-    json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state)
+    let mut state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
+    migrate_cmd_state(&mut state, plugins_dir, venv_dir);
+    state
+}
+
+/// 就地迁移旧版命令状态（幂等）：
+/// `pip-bin` 合并进 `bin`，bin 的 entry 统一为绝对路径。
+fn migrate_cmd_state(state: &mut CmdState, plugins_dir: &Path, venv_dir: &Path) {
+    let venv_bin = venv_dir.join(VENV_BIN);
+    for cmd in state.commands.values_mut() {
+        match cmd.cmd_type.as_str() {
+            // pip-bin 已合并进 bin：旧 entry 是 venv bin 下的裸文件名
+            "pip-bin" => {
+                cmd.cmd_type = "bin".to_string();
+                cmd.entry = venv_bin.join(&cmd.entry).to_string_lossy().into_owned();
+            }
+            // 旧 bin entry 是相对于 plugins/ 的路径（含 plugin_key 前缀）
+            "bin" if !Path::new(&cmd.entry).is_absolute() => {
+                cmd.entry = plugins_dir
+                    .join(&cmd.entry)
+                    .to_string_lossy()
+                    .into_owned();
+            }
+            _ => {}
+        }
+    }
 }
 
 /// 读取包状态（从 plugins.pkg.json）。
@@ -158,9 +186,16 @@ mod tests {
         crate::utils::json_io::write_json(&cmd_file, &state);
 
         // venv 目录不存在
-        let loaded = load_plugin_state(&plugins_dir);
+        let venv_dir = tmp.join("py-venv").join(".venv");
+        let loaded = load_plugin_state(&plugins_dir, &venv_dir);
         assert!(loaded.commands.contains_key("lansend"));
-        assert_eq!(loaded.commands.get("lansend").unwrap().cmd_type, "bin");
+        let cmd = loaded.commands.get("lansend").unwrap();
+        assert_eq!(cmd.cmd_type, "bin");
+        // 旧格式插件相对 entry → 绝对路径
+        assert_eq!(
+            cmd.entry,
+            plugins_dir.join("lansend/lansend").to_string_lossy()
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -168,8 +203,9 @@ mod tests {
     fn load_plugin_state_no_file() {
         let tmp = std::env::temp_dir().join("fcbyk_test_state4");
         let plugins_dir = tmp.join("plugins");
+        let venv_dir = tmp.join("py-venv").join(".venv");
 
-        let state = load_plugin_state(&plugins_dir);
+        let state = load_plugin_state(&plugins_dir, &venv_dir);
         assert!(state.commands.is_empty());
     }
 
@@ -180,6 +216,7 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
         let plugins_dir = tmp.join("plugins");
         std::fs::create_dir_all(&plugins_dir).unwrap();
+        let venv_dir = tmp.join("py-venv").join(".venv");
 
         let cmd_file = plugins_dir.join("plugins.cmd.json");
         let mut commands = HashMap::new();
@@ -198,12 +235,138 @@ mod tests {
         };
         crate::utils::json_io::write_json(&cmd_file, &state);
 
-        let loaded = load_plugin_state(&plugins_dir);
+        let loaded = load_plugin_state(&plugins_dir, &venv_dir);
         assert!(loaded.commands.contains_key("test-cmd"));
         assert_eq!(
             loaded.commands.get("test-cmd").unwrap().cmd_type,
             "python-m"
         );
+        // 非 bin 类型 entry 不受迁移影响
+        assert_eq!(loaded.commands.get("test-cmd").unwrap().entry, "mymod");
+    }
+
+    // ==================== migrate_cmd_state ====================
+
+    fn cmd_entry(state: &CmdState, name: &str) -> (String, String) {
+        let cmd = state.commands.get(name).unwrap();
+        (cmd.cmd_type.clone(), cmd.entry.clone())
+    }
+
+    #[test]
+    fn migrate_pip_bin_to_bin_with_venv_path() {
+        // 旧 pip-bin：entry 是 venv bin 下的裸文件名 → bin + venv bin 绝对路径
+        let mut state = CmdState {
+            commands: HashMap::new(),
+            python_executable: None,
+        };
+        state.commands.insert(
+            "hello".to_string(),
+            PluginCommand {
+                cmd_type: "pip-bin".to_string(),
+                entry: "hello".to_string(),
+                desc: String::new(),
+                args: None,
+            },
+        );
+        let plugins_dir = Path::new("/home/u/.byk/plugins");
+        let venv_dir = Path::new("/home/u/.byk/py-venv/.venv");
+
+        migrate_cmd_state(&mut state, plugins_dir, venv_dir);
+
+        let (cmd_type, entry) = cmd_entry(&state, "hello");
+        assert_eq!(cmd_type, "bin");
+        assert_eq!(
+            entry,
+            venv_dir.join(VENV_BIN).join("hello").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn migrate_relative_bin_entry_to_absolute() {
+        // 旧 bin：entry 是 plugins/ 下的相对路径 → 绝对路径
+        let mut state = CmdState {
+            commands: HashMap::new(),
+            python_executable: None,
+        };
+        state.commands.insert(
+            "tool".to_string(),
+            PluginCommand {
+                cmd_type: "bin".to_string(),
+                entry: "my-tool/bin/my-tool".to_string(),
+                desc: String::new(),
+                args: None,
+            },
+        );
+        let plugins_dir = Path::new("/home/u/.byk/plugins");
+        let venv_dir = Path::new("/home/u/.byk/py-venv/.venv");
+
+        migrate_cmd_state(&mut state, plugins_dir, venv_dir);
+
+        let (cmd_type, entry) = cmd_entry(&state, "tool");
+        assert_eq!(cmd_type, "bin");
+        assert_eq!(
+            entry,
+            plugins_dir.join("my-tool/bin/my-tool").to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn migrate_keeps_absolute_bin_entry() {
+        // 新格式（安装期已解析为绝对路径）不受影响；幂等
+        let mut state = CmdState {
+            commands: HashMap::new(),
+            python_executable: None,
+        };
+        state.commands.insert(
+            "tool".to_string(),
+            PluginCommand {
+                cmd_type: "bin".to_string(),
+                entry: "/home/u/.byk/py-venv/.venv/bin/tool".to_string(),
+                desc: String::new(),
+                args: None,
+            },
+        );
+        let plugins_dir = Path::new("/home/u/.byk/plugins");
+        let venv_dir = Path::new("/home/u/.byk/py-venv/.venv");
+
+        migrate_cmd_state(&mut state, plugins_dir, venv_dir);
+        migrate_cmd_state(&mut state, plugins_dir, venv_dir);
+
+        let (cmd_type, entry) = cmd_entry(&state, "tool");
+        assert_eq!(cmd_type, "bin");
+        assert_eq!(entry, "/home/u/.byk/py-venv/.venv/bin/tool");
+    }
+
+    #[test]
+    fn migrate_ignores_non_bin_types() {
+        // python / python-m / node 的 entry 语义不变
+        let mut state = CmdState {
+            commands: HashMap::new(),
+            python_executable: None,
+        };
+        for (name, cmd_type, entry) in [
+            ("a", "python", "myplugin/runner.py"),
+            ("b", "python-m", "mymod.cli"),
+            ("c", "node", "myplugin/main.js"),
+        ] {
+            state.commands.insert(
+                name.to_string(),
+                PluginCommand {
+                    cmd_type: cmd_type.to_string(),
+                    entry: entry.to_string(),
+                    desc: String::new(),
+                    args: None,
+                },
+            );
+        }
+        let plugins_dir = Path::new("/home/u/.byk/plugins");
+        let venv_dir = Path::new("/home/u/.byk/py-venv/.venv");
+
+        migrate_cmd_state(&mut state, plugins_dir, venv_dir);
+
+        assert_eq!(cmd_entry(&state, "a").1, "myplugin/runner.py");
+        assert_eq!(cmd_entry(&state, "b").1, "mymod.cli");
+        assert_eq!(cmd_entry(&state, "c").1, "myplugin/main.js");
     }
 
     // ==================== load_pkg_state ====================

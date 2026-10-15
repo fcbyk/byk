@@ -315,7 +315,7 @@ fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
 
 /// 获取插件命令定义（包含 args 信息）。
 fn get_plugin_command(word: &str, layout: &PathLayout) -> Option<plugins::types::PluginCommand> {
-    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
     plugin_state.commands.get(word).cloned()
 }
 
@@ -331,7 +331,7 @@ fn complete_show_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     ];
 
     // 插件命令
-    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
     candidates.extend(plugin_state.commands.keys().cloned());
 
     // 别名路径
@@ -522,7 +522,7 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     candidates.push("show".into());
 
     // 插件命令
-    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
     candidates.extend(plugin_state.commands.keys().cloned());
 
     // 顶级别名（叶子节点 + 中间 dict 节点，dict 加 . 后缀提示可展开）

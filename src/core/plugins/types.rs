@@ -37,10 +37,11 @@ pub const PYTHON_BIN: &str = "python";
 /// 单个插件命令的缓存条目。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PluginCommand {
-    /// 命令类型（"python-m" | "python" | ...）
+    /// 命令类型（"python-m" | "python" | "bin" | "node"）
     #[serde(rename = "type")]
     pub cmd_type: String,
-    /// 入口点（python-m: 模块路径, python: 脚本文件名）
+    /// 入口点（python-m: 模块路径, python/node: 脚本文件名,
+    /// bin: 安装期解析好的绝对路径——目录或文件）
     #[serde(rename = "entry")]
     pub entry: String,
     /// 命令描述

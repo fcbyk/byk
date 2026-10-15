@@ -19,8 +19,7 @@ byk 通过隔离的 Python 虚拟环境运行插件，不污染系统全局的 p
 之后运行 `byk <command>` 时，byk 根据 `type` 字段区分执行方式：
 - `python-m`：执行 `python -m <entry>`
 - `python`：执行 `python plugins/<plugin_key>/<entry>`
-- `pip-bin`：直接执行 `venv/bin/<entry>`
-- `bin`：直接执行 `plugins/<plugin_key>/<entry>`（支持相对路径如 `my-tool/bin/my-tool`）
+- `bin`：执行 `$this` / `$venv` 解析出的可执行文件，并把其所在目录前置到子进程 PATH（详见 [插件协议](/cli/plugin-registry)）
 - `node`：执行 `node plugins/<plugin_key>/<entry>`（零依赖单文件 JS 脚本，需系统已安装 Node.js）
 
 ## 初始化
@@ -150,8 +149,8 @@ byk remove <plugin-key>   # 卸载指定插件
 | 字段 | 说明 |
 |------|------|
 | `commands` | 命令名 → 类型、入口点、描述的映射 |
-| `type` | 命令类型：`python-m`（模块）、`python`（脚本）、`pip-bin`（pip 安装的可执行文件）、`bin`（普通二进制）或 `node`（Node.js 脚本） |
-| `entry` | 入口点：`python-m` 为模块路径，`python` 为 `plugins/<plugin_key>/` 下的相对路径，`pip-bin` 为 venv/bin 下的可执行文件名，`bin` 为 `plugins/<plugin_key>/` 下的二进制文件路径（支持相对路径如 `my-tool/bin/my-tool`），`node` 为 `plugins/<plugin_key>/` 下的 JS 脚本相对路径 |
+| `type` | 命令类型：`python-m`（模块）、`python`（脚本）、`bin`（二进制）或 `node`（Node.js 脚本） |
+| `entry` | 入口点：`python-m` 为模块路径，`python` 为 `plugins/<plugin_key>/` 下的相对路径，`node` 为 `plugins/<plugin_key>/` 下的 JS 脚本相对路径，`bin` 为 `$this` / `$venv` token 路径（安装期解析为绝对路径） |
 | `desc` | 命令描述，显示在帮助信息中 |
 | `args` | Shell 补全候选，支持 `$`（叶子候选）、`$options`（可重复选项）和嵌套子命令，详见 [args 字段](/cli/plugin-registry#args-字段) |
 

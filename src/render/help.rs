@@ -36,7 +36,7 @@ pub fn render_commands(layout: &PathLayout) {
     ];
 
     // 插件命令（不依赖 venv：bin 类型命令与 Python 环境无关）
-    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
+    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
     let mut plugins: Vec<(String, String)> = plugin_state
         .commands
         .iter()

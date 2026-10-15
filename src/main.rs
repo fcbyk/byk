@@ -121,7 +121,7 @@ fn main() {
     // Step 2: 检查是否为插件命令（优先级高于别名）
     // 插件状态不依赖 venv：bin 类型命令与 Python 环境无关，
     // venv 被删除后仍可用；python 类命令在执行时按需检查（见 execute.rs）
-    let cmd_state = plugins::state::load_plugin_state(&layout.plugins_dir);
+    let cmd_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
     if cmd_state.commands.contains_key(command_name) {
         plugins::execute::execute_plugin_command(
             command_name,

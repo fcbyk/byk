@@ -7,13 +7,13 @@
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, exit};
 
 use colored::Colorize;
 
 use super::protocol::{self, Registry};
-use super::state::{empty_cmd_state, load_pkg_state};
+use super::state::{load_pkg_state, load_plugin_state};
 use super::types::*;
 use crate::utils::json_io;
 
@@ -798,12 +798,12 @@ pub fn install_plugin(
     // 6. 解析协议 → 构建执行计划
     let registry = protocol::parse_registry(&registry);
 
-    // 仅当插件协议中包含 pip / pip-keep 依赖时，才检查/初始化 Python venv
-    let needs_venv = registry.plugins.get(&key)
-        .map(|def| {
-            def.pip.as_ref().is_some_and(|p| !p.is_empty())
-                || def.pip_keep.as_ref().is_some_and(|p| !p.is_empty())
-        })
+    // 仅当插件需要 Python venv 时才检查/初始化：
+    // 协议中包含 pip / pip-keep 依赖，或注册了 python / python-m 类型命令
+    let needs_venv = registry
+        .plugins
+        .get(&key)
+        .map(plugin_needs_venv)
         .unwrap_or(false);
 
     if needs_venv && !venv_is_ready(layout) {
@@ -899,12 +899,12 @@ pub fn install_plugin(
         source_display,
     );
 
-    let plan = build_install_plan(&registry, &key, source_label, &ref_base, cdn);
+    let plan = build_install_plan(&registry, &key, source_label, &ref_base, cdn, layout);
 
-    // 7. 加载状态
+    // 7. 加载状态（顺带迁移旧版条目：pip-bin → bin，相对 entry → 绝对路径）
     let cmd_file = layout.plugins_dir.join("plugins.cmd.json");
     let pkg_file = layout.plugins_dir.join("plugins.pkg.json");
-    let mut cmd_state: CmdState = json_io::read_json(&cmd_file).unwrap_or_else(empty_cmd_state);
+    let mut cmd_state: CmdState = load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
     let mut pkg_state: PkgState = load_pkg_state(&layout.plugins_dir);
 
     // 8. 执行计划
@@ -1198,6 +1198,7 @@ fn build_install_plan(
     source_label: Option<String>,
     ref_base: &RefBase,
     cdn: bool,
+    layout: &crate::core::paths::PathLayout,
 ) -> InstallPlan {
     let def = match registry.plugins.get(key) {
         Some(d) => d.clone(),
@@ -1233,8 +1234,8 @@ fn build_install_plan(
     let mut has_command = false;
 
     if let Some(cmd) = &def.command {
-        // 注入 plugin_key 前缀（仅 python / bin 类型需要）
-        let entry = inject_plugin_prefix(key, &cmd.entry, &cmd.cmd_type);
+        // bin：$this/$venv token → 绝对路径；python/node：注入 plugin_key 前缀
+        let entry = resolve_command_entry(key, &cmd.entry, &cmd.cmd_type, layout);
         commands.push(CommandReg {
             name: key.to_string(),
             cmd_type: cmd.cmd_type.clone(),
@@ -1255,7 +1256,7 @@ fn build_install_plan(
                 );
                 exit(1);
             }
-            let entry = inject_plugin_prefix(key, &cd.entry, &cd.cmd_type);
+            let entry = resolve_command_entry(key, &cd.entry, &cd.cmd_type, layout);
             commands.push(CommandReg {
                 name: name.clone(),
                 cmd_type: cd.cmd_type.clone(),
@@ -1293,13 +1294,101 @@ fn build_install_plan(
     }
 }
 
-/// 为 python / bin / node 类型命令的 entry 注入 `{plugin_key}/` 前缀。
-/// python-m / pip-bin 类型保持原样。
+/// 为 python / node 类型命令的 entry 注入 `{plugin_key}/` 前缀。
+/// python-m 等类型保持原样；bin 类型走 token 解析（resolve_command_entry）。
 fn inject_plugin_prefix(plugin_key: &str, entry: &str, cmd_type: &str) -> String {
     match cmd_type {
-        "python" | "bin" | "node" => format!("{}/{}", plugin_key, entry),
+        "python" | "node" => format!("{}/{}", plugin_key, entry),
         _ => entry.to_string(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// bin 命令 entry 解析（$this / $venv token）
+// ---------------------------------------------------------------------------
+
+/// bin 类型 entry 的根 token。
+const THIS_TOKEN: &str = "$this";
+const VENV_TOKEN: &str = "$venv";
+
+/// 解析命令 entry 为执行期消费的最终形态：
+/// - `bin`：`$this` / `$venv` token → 绝对路径（目录或文件形态）
+/// - `python` / `node`：注入 `{plugin_key}/` 前缀（相对 plugins/ 根）
+/// - 其余类型（python-m 等）：原样保留
+fn resolve_command_entry(
+    plugin_key: &str,
+    entry: &str,
+    cmd_type: &str,
+    layout: &crate::core::paths::PathLayout,
+) -> String {
+    if cmd_type == "bin" {
+        let plugin_dir = layout.plugins_dir.join(plugin_key);
+        let venv_bin = layout.venv_dir.join(VENV_BIN);
+        match resolve_bin_entry(entry, &plugin_dir, &venv_bin) {
+            Ok(p) => p.to_string_lossy().into_owned(),
+            Err(e) => {
+                eprintln!(
+                    "{} invalid bin entry for plugin \"{}\": {}",
+                    "Error:".red(),
+                    plugin_key,
+                    e
+                );
+                exit(1);
+            }
+        }
+    } else {
+        inject_plugin_prefix(plugin_key, entry, cmd_type)
+    }
+}
+
+/// 解析 bin 命令 entry：`$this` → 插件目录，`$venv` → venv bin 目录。
+///
+/// 合法形态：`$this`、`$venv`（裸目录）或 `$this/<子路径>`、`$venv/<子路径>`。
+/// 拒绝裸相对路径、绝对路径、`~`、`..` 越界。
+fn resolve_bin_entry(entry: &str, plugin_dir: &Path, venv_bin: &Path) -> Result<PathBuf, String> {
+    let (root, rest) = if let Some(rest) = entry.strip_prefix(THIS_TOKEN) {
+        (plugin_dir, rest)
+    } else if let Some(rest) = entry.strip_prefix(VENV_TOKEN) {
+        (venv_bin, rest)
+    } else {
+        return Err(format!(
+            "entry must start with `$this` or `$venv` (e.g. \"$this/bin/my-tool\"), got: \"{entry}\""
+        ));
+    };
+
+    // token 后必须是结尾或 `/`：拒绝 `$thisfoo` 之类的误写
+    if !rest.is_empty() && !rest.starts_with('/') {
+        return Err(format!(
+            "invalid entry \"{entry}\": expected `$this`, `$venv`, `$this/<path>` or `$venv/<path>`"
+        ));
+    }
+
+    let sub = rest.strip_prefix('/').unwrap_or(rest);
+    if sub.is_empty() {
+        // 裸 token：目录形态指向根本身
+        return Ok(root.to_path_buf());
+    }
+
+    // 子路径复用相对路径校验（拒绝绝对路径 / ~ / ..）
+    let sub = validate_relative_path(sub)?;
+    Ok(root.join(sub))
+}
+
+/// 插件是否需要 Python venv：声明了 pip / pip-keep 依赖，
+/// 或注册了 python / python-m 类型命令。
+///
+/// bin / node 类型与 Python 生态无关，不触发 venv 创建。
+fn plugin_needs_venv(def: &protocol::PluginDef) -> bool {
+    def.pip.as_ref().is_some_and(|p| !p.is_empty())
+        || def.pip_keep.as_ref().is_some_and(|p| !p.is_empty())
+        || def
+            .command
+            .as_ref()
+            .is_some_and(|c| matches!(c.cmd_type.as_str(), "python" | "python-m"))
+        || def.commands.as_ref().is_some_and(|cs| {
+            cs.values()
+                .any(|c| matches!(c.cmd_type.as_str(), "python" | "python-m"))
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -1469,11 +1558,26 @@ fn execute_install_plan(
     if !plan.plugin.commands.is_empty() {
         println!("{} commands", "==>".cyan().bold());
         for cmd in &plan.plugin.commands {
-            if cmd.cmd_type == "bin"
-                && let Err(e) = validate_relative_path(&cmd.entry)
-            {
-                eprintln!("{} invalid entry for bin command: {}", "Error:".red(), e);
-                exit(1);
+            if cmd.cmd_type == "bin" {
+                // entry 已在 build 期解析为绝对路径（token 已替换）：
+                // 目录形态查 <目录>/<命令名>，文件形态查文件本身。
+                // 此时 pip 已安装、downloads 已就位，可以 fail-fast。
+                let entry_path = Path::new(&cmd.entry);
+                let exe = if entry_path.is_dir() {
+                    entry_path.join(&cmd.name)
+                } else {
+                    entry_path.to_path_buf()
+                };
+                if !exe.is_file() {
+                    eprintln!(
+                        "{} bin entry not found for command '{}': {}",
+                        "Error:".red(),
+                        cmd.name,
+                        exe.display()
+                    );
+                    eprintln!("  (resolved from entry: {})", entry_path.display());
+                    exit(1);
+                }
             }
             println!(
                 "{}",
@@ -1906,17 +2010,109 @@ mod tests {
 
     #[test]
     fn inject_prefix_for_plugin_dir_types() {
-        // python / bin / node 的 entry 相对于插件目录，需注入 {plugin_key}/ 前缀
+        // python / node 的 entry 相对于插件目录，需注入 {plugin_key}/ 前缀
         assert_eq!(inject_plugin_prefix("mykey", "main.py", "python"), "mykey/main.py");
-        assert_eq!(inject_plugin_prefix("mykey", "tool", "bin"), "mykey/tool");
         assert_eq!(inject_plugin_prefix("mykey", "main.js", "node"), "mykey/main.js");
     }
 
     #[test]
     fn inject_prefix_keeps_other_types_bare() {
-        // python-m / pip-bin 的 entry 保持原样（模块路径 / venv bin 名）
+        // python-m 的 entry 是模块路径，保持原样
         assert_eq!(inject_plugin_prefix("mykey", "mymod", "python-m"), "mymod");
-        assert_eq!(inject_plugin_prefix("mykey", "mytool", "pip-bin"), "mytool");
+    }
+
+    // ==================== resolve_bin_entry ====================
+
+    #[test]
+    fn resolve_bin_entry_this_token() {
+        let plugin_dir = Path::new("/home/u/.byk/plugins/my-tool");
+        let venv_bin = Path::new("/home/u/.byk/py-venv/.venv/bin");
+
+        // 裸 $this → 插件目录（目录形态，按命令名查找）
+        assert_eq!(
+            resolve_bin_entry("$this", plugin_dir, venv_bin).unwrap(),
+            plugin_dir
+        );
+        // $this/<子路径> → 插件目录下的文件
+        assert_eq!(
+            resolve_bin_entry("$this/bin/my-tool", plugin_dir, venv_bin).unwrap(),
+            plugin_dir.join("bin/my-tool")
+        );
+    }
+
+    #[test]
+    fn resolve_bin_entry_venv_token() {
+        let plugin_dir = Path::new("/home/u/.byk/plugins/my-tool");
+        let venv_bin = Path::new("/home/u/.byk/py-venv/.venv/bin");
+
+        // 裸 $venv → venv bin 目录（目录形态，按命令名查找）
+        assert_eq!(
+            resolve_bin_entry("$venv", plugin_dir, venv_bin).unwrap(),
+            venv_bin
+        );
+        // $venv/<名字> → venv bin 下的文件
+        assert_eq!(
+            resolve_bin_entry("$venv/hello", plugin_dir, venv_bin).unwrap(),
+            venv_bin.join("hello")
+        );
+    }
+
+    #[test]
+    fn resolve_bin_entry_rejects_invalid_forms() {
+        let plugin_dir = Path::new("/p");
+        let venv_bin = Path::new("/v");
+
+        // 裸相对路径 / 绝对路径 / ~ 均不接受
+        assert!(resolve_bin_entry("bin/my-tool", plugin_dir, venv_bin).is_err());
+        assert!(resolve_bin_entry("/usr/bin/tool", plugin_dir, venv_bin).is_err());
+        assert!(resolve_bin_entry("~/bin/tool", plugin_dir, venv_bin).is_err());
+        // .. 越界
+        assert!(resolve_bin_entry("$this/../evil", plugin_dir, venv_bin).is_err());
+        assert!(resolve_bin_entry("$venv/../evil", plugin_dir, venv_bin).is_err());
+        // token 后必须是结尾或 /
+        assert!(resolve_bin_entry("$thisx", plugin_dir, venv_bin).is_err());
+        assert!(resolve_bin_entry("$venvx/y", plugin_dir, venv_bin).is_err());
+        // 空 entry
+        assert!(resolve_bin_entry("", plugin_dir, venv_bin).is_err());
+    }
+
+    // ==================== plugin_needs_venv ====================
+
+    fn plugin_def(json: &str) -> protocol::PluginDef {
+        let raw: HashMap<String, serde_json::Value> = serde_json::from_str(json).unwrap();
+        let registry = protocol::parse_registry(&raw);
+        registry.plugins.get("p").cloned().unwrap()
+    }
+
+    #[test]
+    fn plugin_needs_venv_by_pip_deps() {
+        assert!(plugin_needs_venv(&plugin_def(r#"{"p": {"pip": ["requests"]}}"#)));
+        assert!(plugin_needs_venv(&plugin_def(r#"{"p": {"pip-keep": ["requests"]}}"#)));
+    }
+
+    #[test]
+    fn plugin_needs_venv_by_python_command_types() {
+        // python / python-m 命令类型同样需要 venv（修复此前仅看 pip 字段的缺口）
+        assert!(plugin_needs_venv(&plugin_def(
+            r#"{"p": {"command": {"type": "python", "entry": "main.py"}}}"#
+        )));
+        assert!(plugin_needs_venv(&plugin_def(
+            r#"{"p": {"commands": {"x": {"type": "python-m", "entry": "m.cli"}}}}"#
+        )));
+    }
+
+    #[test]
+    fn plugin_needs_venv_false_for_bin_and_node() {
+        // bin / node 与 Python 无关；pip-bin 已移除
+        assert!(!plugin_needs_venv(&plugin_def(
+            r#"{"p": {"command": {"type": "bin", "entry": "$this/bin/tool"}}}"#
+        )));
+        assert!(!plugin_needs_venv(&plugin_def(
+            r#"{"p": {"command": {"type": "node", "entry": "main.js"}}}"#
+        )));
+        assert!(!plugin_needs_venv(&plugin_def(
+            r#"{"p": {"downloads": "https://example.com/x"}}"#
+        )));
     }
 
     // ==================== parse_spec ====================

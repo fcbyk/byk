@@ -44,7 +44,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
 
     // 2. 插件命令（不依赖 venv：bin 类型命令与 Python 环境无关）
     {
-        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir);
+        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
         if let Some(cmd) = plugin_state.commands.get(name) {
             entries.push(InfoEntry::Plugin {
                 name: name.to_string(),
