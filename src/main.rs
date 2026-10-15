@@ -128,6 +128,7 @@ fn main() {
             command_args,
             &layout.plugins_dir,
             &layout.venv_dir,
+            &layout.root_dir,
             &cmd_state,
         );
         return;

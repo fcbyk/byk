@@ -28,7 +28,9 @@ pub trait PluginExecutor {
     /// - `args`：用户传入的额外参数
     /// - `plugins_dir`：plugins 目录路径
     /// - `venv_dir`：venv 根目录路径
+    /// - `root_dir`：byk 根目录路径（`~/.byk`）
     /// - `python_exe`：Python 解释器路径
+    #[allow(clippy::too_many_arguments)]
     fn execute(
         &self,
         cmd_name: &str,
@@ -36,6 +38,7 @@ pub trait PluginExecutor {
         args: &[String],
         plugins_dir: &Path,
         venv_dir: &Path,
+        root_dir: &Path,
         python_exe: &str,
     ) -> std::process::ExitStatus;
 }
@@ -59,6 +62,7 @@ impl PluginExecutor for PythonMExecutor {
         args: &[String],
         _plugins_dir: &Path,
         _venv_dir: &Path,
+        _root_dir: &Path,
         python_exe: &str,
     ) -> std::process::ExitStatus {
         Command::new(python_exe)
@@ -88,6 +92,7 @@ impl PluginExecutor for PythonExecutor {
         args: &[String],
         plugins_dir: &Path,
         _venv_dir: &Path,
+        _root_dir: &Path,
         python_exe: &str,
     ) -> std::process::ExitStatus {
         let script_path = plugins_dir.join(entry);
@@ -124,6 +129,7 @@ impl PluginExecutor for BinExecutor {
         args: &[String],
         _plugins_dir: &Path,
         _venv_dir: &Path,
+        _root_dir: &Path,
         _python_exe: &str,
     ) -> std::process::ExitStatus {
         let entry_path = Path::new(entry);
@@ -172,6 +178,9 @@ impl PluginExecutor for BinExecutor {
 ///
 /// 适用于零依赖的单文件 JS 脚本。node 从 PATH 解析，
 /// 由用户自行管理，与 byk 的 Python venv 无关。
+///
+/// 向子进程注入 byk 上下文环境变量（见 `build_node_env`），
+/// 使 JS 插件无需硬编码 `~/.byk` 路径。
 pub struct NodeExecutor;
 
 impl PluginExecutor for NodeExecutor {
@@ -186,19 +195,40 @@ impl PluginExecutor for NodeExecutor {
         args: &[String],
         plugins_dir: &Path,
         _venv_dir: &Path,
+        root_dir: &Path,
         _python_exe: &str,
     ) -> std::process::ExitStatus {
         let script_path = plugins_dir.join(entry);
-        Command::new("node")
-            .arg(script_path)
-            .args(args)
-            .status()
-            .unwrap_or_else(|e| {
-                eprintln!("Failed to start Node.js runtime: {}", e);
-                eprintln!("  Make sure `node` is installed and available in PATH.");
-                exit(1);
-            })
+        let mut cmd = Command::new("node");
+        cmd.arg(script_path);
+        cmd.args(args);
+        for (key, value) in build_node_env(root_dir, plugins_dir) {
+            cmd.env(key, value);
+        }
+        cmd.status().unwrap_or_else(|e| {
+            eprintln!("Failed to start Node.js runtime: {}", e);
+            eprintln!("  Make sure `node` is installed and available in PATH.");
+            exit(1);
+        })
     }
+}
+
+/// 构造 node 执行器注入子进程的环境变量（纯函数，便于测试）。
+///
+/// 让 JS 插件无需硬编码 `~/.byk` 路径：
+/// - `BYK_HOME`：byk 根目录（插件在此定位 node-pkgs 等数据目录）
+/// - `BYK_PLUGINS_DIR`：plugins 目录（定位 plugins.cmd.json / plugins.pkg.json）
+fn build_node_env(root_dir: &Path, plugins_dir: &Path) -> Vec<(String, String)> {
+    vec![
+        (
+            "BYK_HOME".to_string(),
+            root_dir.to_string_lossy().into_owned(),
+        ),
+        (
+            "BYK_PLUGINS_DIR".to_string(),
+            plugins_dir.to_string_lossy().into_owned(),
+        ),
+    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +293,7 @@ pub fn execute_plugin_command(
     cmd_args: &[String],
     plugins_dir: &Path,
     venv_dir: &Path,
+    root_dir: &Path,
     cmd_state: &CmdState,
 ) {
     let python_exe = get_python_executable(plugins_dir, venv_dir);
@@ -296,10 +327,26 @@ pub fn execute_plugin_command(
         .find(|e| e.cmd_type() == cmd.cmd_type.as_str());
 
     let status = match executor {
-        Some(e) => e.execute(cmd_name, &cmd.entry, cmd_args, plugins_dir, venv_dir, &python_exe),
+        Some(e) => e.execute(
+            cmd_name,
+            &cmd.entry,
+            cmd_args,
+            plugins_dir,
+            venv_dir,
+            root_dir,
+            &python_exe,
+        ),
         None => {
             // fallback: 默认使用 python-m
-            PythonMExecutor.execute(cmd_name, &cmd.entry, cmd_args, plugins_dir, venv_dir, &python_exe)
+            PythonMExecutor.execute(
+                cmd_name,
+                &cmd.entry,
+                cmd_args,
+                plugins_dir,
+                venv_dir,
+                root_dir,
+                &python_exe,
+            )
         }
     };
 
@@ -403,5 +450,30 @@ mod tests {
     fn requires_python_unknown_type_fallback() {
         // 未知类型会 fallback 到 python-m，视为需要 Python
         assert!(requires_python("unknown-type"));
+    }
+
+    // ==================== build_node_env ====================
+
+    fn env_value<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
+        env.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    }
+
+    #[test]
+    fn build_node_env_contains_home_and_plugins_dir() {
+        let env = build_node_env(Path::new("/home/u/.byk"), Path::new("/home/u/.byk/plugins"));
+        assert_eq!(env.len(), 2);
+        assert_eq!(env_value(&env, "BYK_HOME"), Some("/home/u/.byk"));
+        assert_eq!(
+            env_value(&env, "BYK_PLUGINS_DIR"),
+            Some("/home/u/.byk/plugins")
+        );
+    }
+
+    #[test]
+    fn build_node_env_no_extra_variables() {
+        // 只注入约定的两个变量，避免污染插件进程环境
+        let env = build_node_env(Path::new("/root/.byk"), Path::new("/root/.byk/plugins"));
+        let keys: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, vec!["BYK_HOME", "BYK_PLUGINS_DIR"]);
     }
 }
