@@ -1,8 +1,8 @@
 {
   "pysdk": {
     "download-to-workdir": {
-      "byksdk.py": "sdks/byksdk.py",
-      "utils.py": "sdks/utils.py"
+      "byksdk.py": "plugins/pysdk/byksdk.py",
+      "utils.py": "plugins/pysdk/utils.py"
     }
   }
 }

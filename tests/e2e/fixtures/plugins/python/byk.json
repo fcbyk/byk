@@ -1,0 +1,10 @@
+{
+  "py-script": {
+    "downloads": "main.py",
+    "command": {
+      "type": "python",
+      "entry": "main.py",
+      "desc": "e2e fixture for the python command type"
+    }
+  }
+}

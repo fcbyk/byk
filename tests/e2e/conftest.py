@@ -16,15 +16,22 @@ class BykRunner:
         self.home = Path(home)
         self.byk_dir = self.home / ".byk"
 
-    def run(self, *args: str) -> subprocess.CompletedProcess[str]:
-        """执行 byk 命令，HOME 指向隔离的临时目录"""
+    def run(self, *args: str, input: str | None = None) -> subprocess.CompletedProcess[str]:
+        """执行 byk 命令，HOME 指向隔离的临时目录
+
+        input: 经 stdin 喂入的内容（如首次创建 venv 的确认）。
+                为 None 时 stdin 指向 DEVNULL，避免子进程继承终端
+                导致交互提示卡住测试。
+        """
         env = {**os.environ, "HOME": str(self.home)}
         return subprocess.run(
             [str(self.binary), *args],
             capture_output=True,
             text=True,
+            input=input,
+            stdin=None if input is not None else subprocess.DEVNULL,
             env=env,
-            timeout=10,
+            timeout=120,
         )
 
     def prepare_alias_file(self, stem: str, content: str) -> Path:

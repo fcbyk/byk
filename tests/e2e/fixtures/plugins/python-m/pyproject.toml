@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bykpb"
-version = "2026.7.10"
+name = "py-module"
+version = "0.1.0"
 requires-python = ">=3.6"
 dependencies = [
     "click",
 ]
 
-[project.scripts]
-bykpb = "bykpb:bykpb"
+[tool.setuptools]
+py-modules = ["py_module"]
