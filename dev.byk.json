@@ -1,5 +1,4 @@
 {
-  "$priority": -1,
   "dev": {
     "test": "cargo test && cargo clippy ",
     "运行": "cargo run",

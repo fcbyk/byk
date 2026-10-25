@@ -21,7 +21,7 @@ type AliasObject = {
 
 // JSON 文件格式类型
 type AliasFileJSON = {
-  $priority?: number;      // 优先级，默认本地=10 全局=0
+  $priority?: number;      // 优先级，默认本地=-1（不参与合并）全局=0
   $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
   $interactive?: boolean;   // 文件级 / 分组级交互模式，子别名自动继承
   $paths?: string[];        // 文件级 PATH 目录列表，子别名自动继承
@@ -548,10 +548,12 @@ byk 扫描当前目录和全局目录下所有 `*.byk.json` 文件，自动合�
 
 | 文件位置 | 默认优先级 |
 |---------|-----------|
-| 本地 `[name].byk.json` | 10 |
-| 本地 `.byk.json` | 10（匿名文件排序靠后） |
+| 本地 `[name].byk.json` | -1（不参与合并，仅 `@file.key` 精确调用） |
+| 本地 `.byk.json` | -1（不参与合并） |
 | 全局 `[name].byk.json` | 0 |
 | 全局 `.byk.json` | 0（匿名文件排序靠后） |
+
+本地文件默认不进入全局 key 空间——它们是项目级脚本，须通过 `@file.key` 精确调用，或显式声明 `$priority >= 0` 才参与合并。全局文件（含 `byk add @file` 安装的）默认 0，直接 `byk <key>` 可用。
 
 同优先级文件按文件名字母序加载，后者覆盖前者，行为确定。
 

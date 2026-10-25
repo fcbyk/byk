@@ -353,17 +353,17 @@ mod tests {
         fs::create_dir_all(&cwd_a).unwrap();
         fs::create_dir_all(&cwd_b).unwrap();
 
-        // 项目 A 有本地别名
+        // 项目 A 有本地别名（显式 $priority: 0 参与合并，本地默认 -1 不合并）
         fs::write(
             cwd_a.join(".byk.json"),
-            r#"{"build_a": "cargo build"}"#,
+            r#"{"$priority": 0, "build_a": "cargo build"}"#,
         )
         .unwrap();
 
         // 项目 B 有本地别名
         fs::write(
             cwd_b.join(".byk.json"),
-            r#"{"build_b": "npm run build"}"#,
+            r#"{"$priority": 0, "build_b": "npm run build"}"#,
         )
         .unwrap();
 
