@@ -7,18 +7,17 @@
  *   byk npm uni <pkg>   卸载包并注销对应命令
  *   byk npm ls          列出已注册的 npm 命令
  *
- * 设计约定（与 byk 的契约，见 docs/content/cli/plugin-registry.mdx）：
- *   - 包统一安装到 $BYK_HOME/node-pkgs/，bin 目录为 node-pkgs/node_modules/.bin
+ * 设计约定：
+ *   - 包统一安装到 ~/.byk/node-pkgs/，bin 目录为 node-pkgs/node_modules/.bin
+ *   - 路径写死为 ~/.byk（不依赖 byk 注入环境变量）
  *   - 仓库源管理：use/source 子命令读写 node-pkgs/.npmrc 的 registry= 行，
  *     i 的 -r/--registry 一次性覆盖；npm 原生 .npmrc 是唯一事实源
  *   - 自愈同步：package.json 的直接依赖（dependencies）是唯一事实源，
- *     不含间接依赖；每次调用对齐 cmd/pkg 注册表（补注册 / 刷描述 / 剪枝）；
+ *     不含间接依赖；每次调用对齐别名文件（补注册 / 刷描述 / 剪枝）；
  *     clean 显式清空包与注册
- *   - 直接读写 $BYK_PLUGINS_DIR/plugins.cmd.json（命令路由表）与
- *     plugins.pkg.json（包追踪表）：前者让 `byk <cmd>` 能路由到 bin，
- *     后者让 `byk remove npm` 能清理本插件注册的命令
- *   - 注册时跳过已存在的命令名（可能是其他插件的），不覆盖
- *   - 读-改-写整个文件，保留其他字段；原子写（临时文件 + rename）
+ *   - 动态读写 ~/.byk/alias/npm-pkgs.byk.json（一个平铺的别名文件），
+ *     每条 bin 命令 = { $cmd: "$byk/node-pkgs/node_modules/.bin/<名>", $description }
+ *   - 读-改-写整个文件；原子写（临时文件 + rename）
  *   - 零依赖，仅使用 node 内置模块
  */
 'use strict';
@@ -29,16 +28,13 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 // ---------------------------------------------------------------------------
-// 路径（环境变量由 byk 的 node 执行器注入，缺失时回退默认布局）
+// 路径（写死 ~/.byk，不依赖 byk 注入环境变量）
 // ---------------------------------------------------------------------------
 
-const BYK_HOME = process.env.BYK_HOME || path.join(os.homedir(), '.byk');
-const PLUGINS_DIR = process.env.BYK_PLUGINS_DIR || path.join(BYK_HOME, 'plugins');
+const BYK_HOME = path.join(os.homedir(), '.byk');
 const NODE_PKGS = path.join(BYK_HOME, 'node-pkgs');
 const BIN_DIR = path.join(NODE_PKGS, 'node_modules', '.bin');
-const CMD_FILE = path.join(PLUGINS_DIR, 'plugins.cmd.json');
-const PKG_FILE = path.join(PLUGINS_DIR, 'plugins.pkg.json');
-const PLUGIN_KEY = 'npm';
+const ALIAS_FILE = path.join(BYK_HOME, 'alias', 'npm-pkgs.byk.json');
 
 // Windows 上 npm 是 npm.cmd，无 shell 直接 spawn 需要显式扩展名
 const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -231,26 +227,10 @@ function setRegistry(url) {
 // 状态文件读写
 // ---------------------------------------------------------------------------
 
-/// 读命令路由表；保留 commands 以外的字段（如 python_executable）
-function loadCmdState() {
-  const state = readJson(CMD_FILE);
-  if (!state || typeof state !== 'object') return { commands: {} };
-  if (!state.commands || typeof state.commands !== 'object') state.commands = {};
-  return state;
-}
-
-/// 读包追踪表；确保本插件条目存在且 commands 为数组
-/// （文件不存在/损坏时也要保证条目存在，否则调用方解构会崩）
-function loadPkgState() {
-  const state = readJson(PKG_FILE);
-  const result = state && typeof state === 'object' ? state : {};
-  if (!result[PLUGIN_KEY] || typeof result[PLUGIN_KEY] !== 'object') {
-    result[PLUGIN_KEY] = {};
-  }
-  if (!Array.isArray(result[PLUGIN_KEY].commands)) {
-    result[PLUGIN_KEY].commands = [];
-  }
-  return result;
+/// 读别名文件（~/.byk/alias/npm-pkgs.byk.json）；不存在/损坏返回空对象
+function loadAliases() {
+  const data = readJson(ALIAS_FILE);
+  return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
 }
 
 // ---------------------------------------------------------------------------
@@ -267,15 +247,15 @@ function collectPackage(pkgDir, expected) {
   }
 }
 
-/// 以 package.json 的直接依赖为唯一事实源，对齐命令注册表：
+/// 以 package.json 的直接依赖为唯一事实源，对齐别名文件：
 /// - 依赖已安装且有 bin：未注册则注册，已注册则刷新描述（版本变化）
-/// - 注册表中属于本插件但已不是直接依赖：剪掉（如 uni 之后、手动改动）
-/// - 命令名被其他插件占用：跳过并报告
+/// - 别名文件中已不是直接依赖的：剪掉（如 uni 之后、手动改动）
 /// 只认 dependencies，不扫整个 node_modules——间接依赖（传递依赖）
 /// 不注册，哪怕它带 bin（如 vite 的 rolldown / nanoid）。
-/// 返回汇总 { registered, updated, pruned, skipped }
+/// 文件级 $paths 前置 bin 目录，让每条 bin 命令的 $cmd 只写命令名。
+/// 返回汇总 { registered, updated, pruned }
 function syncRegistrations() {
-  // 1. 读取直接依赖，构建期望注册表
+  // 1. 读取直接依赖，构建期望注册表（bin 命令名 → desc）
   const expected = new Map();
   const rootPkg = readJsonSoft(path.join(NODE_PKGS, 'package.json'));
   const deps =
@@ -288,66 +268,40 @@ function syncRegistrations() {
     collectPackage(path.join(NODE_PKGS, 'node_modules', depName), expected);
   }
 
-  // 2. 注册 / 刷新
-  const cmdState = loadCmdState();
-  const registered = [];
-  const updated = [];
-  const skipped = [];
-  for (const [name, desc] of expected) {
-    const existing = cmdState.commands[name];
-    if (existing && existing.entry !== BIN_DIR) {
-      skipped.push(name);
-      continue;
-    }
-    if (existing) {
-      if (existing.desc !== desc) {
-        existing.desc = desc;
-        updated.push(name);
-      }
-    } else {
-      cmdState.commands[name] = { type: 'bin', entry: BIN_DIR, desc };
-      registered.push(name);
+  // 2. 期望的别名文件：$paths 前置 bin 目录 + 每条 bin 命令一个别名（$cmd 只写命令名）
+  const next = {};
+  if (expected.size > 0) {
+    next['$paths'] = ['$byk/node-pkgs/node_modules/.bin'];
+    for (const [name, desc] of expected) {
+      next[name] = { $cmd: name, $description: desc };
     }
   }
 
-  // 3. 剪掉本插件注册但磁盘上已没有的
+  // 3. 与当前文件对比，汇总差异（registered / updated / pruned）
+  const aliases = loadAliases();
+  const registered = [];
+  const updated = [];
+  for (const [name, desc] of expected) {
+    const existing = aliases[name];
+    if (!existing) {
+      registered.push(name);
+    } else if (existing.$description !== desc) {
+      updated.push(name);
+    }
+  }
   const pruned = [];
-  for (const [name, cmd] of Object.entries(cmdState.commands)) {
-    if (cmd.entry === BIN_DIR && !expected.has(name)) {
-      delete cmdState.commands[name];
+  for (const name of Object.keys(aliases)) {
+    if (!name.startsWith('$') && !expected.has(name)) {
       pruned.push(name);
     }
   }
-  if (registered.length + updated.length + pruned.length > 0) {
-    writeJson(CMD_FILE, cmdState);
+
+  // 4. 有变化才落盘
+  if (JSON.stringify(next) !== JSON.stringify(aliases)) {
+    writeJson(ALIAS_FILE, next);
   }
 
-  // 4. 同步包追踪表（保证 byk remove npm 能清理本插件的命令）。
-  //    只接管 bin 目录形态的命令；安装期注册的静态命令（如 npm 本身）
-  //    必须保留在追踪表里，否则卸载时会漏删、留下僵尸命令。
-  const ours = Object.keys(cmdState.commands)
-    .filter((name) => cmdState.commands[name].entry === BIN_DIR)
-    .sort();
-  const pkgState = loadPkgState();
-  const kept = new Set(
-    pkgState[PLUGIN_KEY].commands.filter(
-      (name) =>
-        cmdState.commands[name] !== undefined &&
-        cmdState.commands[name].entry !== BIN_DIR
-    )
-  );
-  // 补救：静态命令曾被挤出追踪表的（entry 以 {plugin_key}/ 开头），重新纳入
-  for (const [name, cmd] of Object.entries(cmdState.commands)) {
-    if (cmd.entry.startsWith(`${PLUGIN_KEY}/`)) kept.add(name);
-  }
-  const merged = [...new Set([...kept, ...ours])].sort();
-  const current = pkgState[PLUGIN_KEY].commands.slice().sort();
-  if (JSON.stringify(merged) !== JSON.stringify(current)) {
-    pkgState[PLUGIN_KEY].commands = merged;
-    writeJson(PKG_FILE, pkgState);
-  }
-
-  return { registered, updated, pruned, skipped };
+  return { registered, updated, pruned };
 }
 
 /// 打印同步汇总（只打非空项）
@@ -356,9 +310,6 @@ function reportSync(r) {
   if (r.updated.length > 0) info(`Updated:    ${r.updated.join(', ')}`);
   if (r.pruned.length > 0) {
     info(`Pruned:     ${r.pruned.join(', ')} (package no longer installed)`);
-  }
-  if (r.skipped.length > 0) {
-    info(`Skipped (registered elsewhere): ${r.skipped.join(', ')}`);
   }
 }
 
@@ -468,9 +419,9 @@ function cmdUninstall(spec) {
 function cmdList() {
   reportSync(syncRegistrations());
 
-  const cmdState = loadCmdState();
-  const mine = Object.keys(cmdState.commands)
-    .filter((name) => cmdState.commands[name].entry === BIN_DIR)
+  const aliases = loadAliases();
+  const mine = Object.keys(aliases)
+    .filter((name) => !name.startsWith('$'))
     .sort();
   if (mine.length === 0) {
     info('No npm commands registered.');
@@ -478,26 +429,16 @@ function cmdList() {
   }
   info(`Registered npm commands (${mine.length}):`);
   for (const name of mine) {
-    info(`  ${name}  ${cmdState.commands[name].desc || ''}`);
+    info(`  ${name}  ${aliases[name].$description || ''}`);
   }
 }
 
 /// byk npm clean：清空所有已安装包并注销全部本插件命令。
 /// 保留 .npmrc（仓库源偏好与安装的包无关）。
 function cmdClean() {
-  const cmdState = loadCmdState();
-  const ours = Object.keys(cmdState.commands).filter(
-    (name) => cmdState.commands[name].entry === BIN_DIR
-  );
-  for (const name of ours) delete cmdState.commands[name];
-  writeJson(CMD_FILE, cmdState);
-
-  // 只清动态命令的追踪；静态命令（如 npm 本身）保留，保证卸载时能删掉
-  const pkgState = loadPkgState();
-  pkgState[PLUGIN_KEY].commands = pkgState[PLUGIN_KEY].commands.filter(
-    (name) => cmdState.commands[name] !== undefined
-  );
-  writeJson(PKG_FILE, pkgState);
+  const aliases = loadAliases();
+  const ours = Object.keys(aliases).filter((name) => !name.startsWith('$'));
+  writeJson(ALIAS_FILE, {});
 
   // 清理包文件；保留 .npmrc
   for (const target of ['node_modules', 'package.json', 'package-lock.json']) {
@@ -521,7 +462,7 @@ Usage:
   byk npm source                 Show current registry and presets
 
 Packages are installed under: ${NODE_PKGS}
-Bin commands are registered as "bin" type pointing at: ${BIN_DIR}
+Bin commands are registered as aliases in: ${ALIAS_FILE}
 Registry config file: ${NPMRC}`);
 }
 

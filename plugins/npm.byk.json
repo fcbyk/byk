@@ -1,0 +1,11 @@
+{
+  "$assets": {
+    "$to": "$byk/plugins/npm",
+    "npm.js": "npm/npm.js"
+  },
+  "npm": {
+    "$cmd": "node $byk/plugins/npm/npm.js",
+    "$description": "Manage npm packages and auto-register their bin commands",
+    "$install": true
+  }
+}
