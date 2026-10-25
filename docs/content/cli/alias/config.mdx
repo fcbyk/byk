@@ -416,6 +416,39 @@ byk add assets --cdn @demo     # GitHub raw 走 jsDelivr CDN 加速
 未声明 `$assets` 的文件执行 `byk add assets` 是友好的 no-op（退出码 0），不会创建任何目录；命令里用了 `$assets` 变量但文件未声明则明确报错。
 :::
 
+### 安装标志 $install
+
+`$install` 标记哪些别名需要被安装到全局（`byk add @file`）。它与 `$interactive` 完全同构——三级继承，opt-in（默认不装）：
+
+```json title=".byk.json"
+{
+  "tools": {
+    "$install": true,                       // 分组级：整组安装
+    "lint": { "$cmd": "$python -m ruff {args}" },
+    "fmt": "prettier --write {args}"
+  },
+  "dev": "vite dev",                        // 未标记 → 不安装，留在本地
+  "one-off": { "$cmd": "echo hi", "$install": true }   // 别名级
+}
+```
+
+```bash
+byk add @demo          # 安装当前目录 demo.byk.json
+byk add @demo --cdn    # 同时用 jsDelivr 加速 $assets 下载
+```
+
+| 规则 | 说明 |
+|------|------|
+| 作用域 | 文件级 / 分组级 / 别名级，子级 `false` 可覆盖，未指定继承上级 |
+| opt-in | 默认不装；只有标记 `$install: true` 的别名子树进入全局副本 |
+| 粒度 | 下载（`$pip`/`$assets`）是文件级的，筛选是别名级的——装整份依赖、只留标记别名 |
+| 副本 | 安装后写 `~/.byk/alias/<file>.byk.json`（文件级字段 + 筛选后的别名，`$install` 本身不进入副本） |
+| 无别名时 | 文件有 `$pip`/`$assets` 仍写副本（记录已安装内容，为卸载留钩子）；三者皆无 → 报错 |
+
+:::note
+`byk add @file` 只接受本地文件（`@`）；全局文件（`@@`）已在全局，没有「安装」语义。带 `$assets` 的别名若要装成全局工具，建议显式 `$to` 指向确定位置（如 `$byk/tools/xxx`），否则资源按缺省根规则落在运行时的当前目录。
+:::
+
 ### 调用示例
 
 <Tabs>

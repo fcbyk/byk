@@ -78,6 +78,9 @@ fn main() {
                     );
                     exit(1);
                 }
+                (Some(n), None, None) if n.starts_with('@') => {
+                    add::install_alias(Some(n), &layout, cdn);
+                }
                 (_, _, Some(t)) => {
                     eprintln!("{} unexpected argument '{}'", "Error:".red(), t);
                     eprintln!("  Run {} for usage.", "byk add -h".bold());

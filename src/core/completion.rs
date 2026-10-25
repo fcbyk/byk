@@ -165,6 +165,16 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // add 子命令补全
     if first == "add" {
+        // byk add @<TAB> → 补全本地文件 stem（仅 @stem，安装不支持 @@stem）
+        if partial.starts_with('@') {
+            let (_, files) = aliases::load_merged_aliases(layout);
+            return files
+                .iter()
+                .map(|f| f.key.clone())
+                .filter(|k| k.starts_with('@') && !k.starts_with("@@"))
+                .filter(|k| k.starts_with(partial))
+                .collect();
+        }
         const ADD_SUBS: &[&str] = &["comp", "pip", "assets"];
         return ADD_SUBS
             .iter()

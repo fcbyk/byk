@@ -33,6 +33,10 @@ pub fn render() {
         "  {:<8} Download $assets resources from an alias file",
         "assets".cyan().bold()
     );
+    println!(
+        "  {:<8} Install a local alias file to the global directory",
+        "@file".cyan().bold()
+    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
@@ -43,6 +47,7 @@ pub fn render() {
         ("byk add --file https://example.com/byk.json key".into(), "Install from remote registry URL".into()),
         ("byk add pip @jiahao".into(), "Install $pip deps declared by jiahao.byk.json".into()),
         ("byk add assets @jiahao".into(), "Download $assets resources declared by jiahao.byk.json".into()),
+        ("byk add @jiahao".into(), "Install jiahao.byk.json (deps + $install aliases) globally".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {
@@ -109,6 +114,22 @@ pub fn render_assets() {
     println!();
 }
 
+/// 渲染 `byk add @file` 用法信息。
+pub fn render_alias() {
+    println!();
+    print!("{}", "Usage:".green().bold());
+    println!("{}", " byk add @file".bold());
+    println!();
+    println!("Install a local alias file to the global directory (~/.byk/alias/).");
+    println!("Installs its $pip deps, downloads its $assets, and keeps only aliases");
+    println!("marked with $install: true.");
+    println!();
+    println!("{}", "Examples:".green().bold());
+    println!("  {}", "byk add @demo".dimmed());
+    println!("  {}", "byk add @demo --cdn".dimmed());
+    println!();
+}
+
 // ---------------------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------------------
@@ -131,5 +152,10 @@ mod tests {
     #[test]
     fn render_assets_runs_without_panic() {
         render_assets();
+    }
+
+    #[test]
+    fn render_alias_runs_without_panic() {
+        render_alias();
     }
 }

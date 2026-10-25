@@ -47,11 +47,13 @@ byk add -f ./local.json key       # 使用本地 byk.json 安装
 | `comp` | 初始化 shell 补全（自动检测 zsh/bash），在对应 rc 文件中追加补全脚本 |
 | `pip <@file\|@@file\|PATH>` | 安装别名文件 `$pip` 声明的 Python 依赖到 byk 托管 venv |
 | `assets <@file\|@@file>` | 拉取别名文件 `$assets` 声明的资源（URL/本地路径/解压/可执行位） |
+| `@file` | 安装本地别名文件到全局：装 `$pip`/`$assets` + 保留 `$install` 标记的别名 |
 
 ```bash title="示例"
 byk add comp      # 配置 shell 补全
 byk add pip @jiahao   # 安装 jiahao.byk.json 的 $pip 依赖
 byk add assets @demo  # 拉取 demo.byk.json 的 $assets 资源
+byk add @demo         # 安装 demo.byk.json 到全局
 ```
 
 :::tip
@@ -60,6 +62,10 @@ byk add assets @demo  # 拉取 demo.byk.json 的 $assets 资源
 
 :::tip
 `byk add assets` 的 target 支持 `@file`（当前目录）、`@@file`（全局目录）两种形态（资源目录需要文件 key）。支持 `--cdn`（GitHub raw 走 jsDelivr）。详见 [别名配置 - 资源下载](/cli/alias/config)。
+:::
+
+:::tip
+`byk add @file` 只接受本地文件（`@`），安装后写副本到 `~/.byk/alias/<file>.byk.json`。保留 `$install: true` 的别名子树；文件有 `$pip`/`$assets` 时即使无 `$install` 别名也会写副本（记录已安装内容）。详见 [别名配置 - 安装标志](/cli/alias/config)。
 :::
 
 :::note
