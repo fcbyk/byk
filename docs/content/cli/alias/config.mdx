@@ -25,6 +25,8 @@ type AliasFileJSON = {
   $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
   $interactive?: boolean;   // 文件级 / 分组级交互模式，子别名自动继承
   $paths?: string[];        // 文件级 PATH 目录列表，子别名自动继承
+  $pip?: string | string[]; // 文件级 Python 专属依赖（remove 语义，删文件时卸载）
+  $pip-keep?: string | string[]; // 文件级 Python 共享依赖（keep 语义，删文件时保留）
   $var?: Record<string, string | Record<string, string>>;  // 文件级变量（阶段一替换）
   $assets?: AssetsBlock;    // 文件级资源下载声明
   [key: string]: string | AliasObject | number | boolean | undefined;
@@ -314,33 +316,34 @@ byk py 8000        # 用 venv 的 python 启动 http.server
 byk info           # 打印 venv 的 site-packages 前缀
 ```
 
-### Python 依赖 $pip
+### Python 依赖 $pip / $pip-keep
 
-文件级 `$pip` 声明该别名文件所需的 Python 依赖，经 `byk add pip` 安装到 byk 托管的 venv：
+文件级 `$pip` / `$pip-keep` 声明该别名文件所需的 Python 依赖，经 `byk add pip` 安装到 byk 托管的 venv。两者区别在**卸载语义**：
 
 ```json title=".byk.json"
 {
-  "$pip": ["rich", "click>=8.0"],
+  "$pip": ["my-tool", "its-lib"],   // 专属依赖：删文件时卸载
+  "$pip-keep": ["rich", "click"],   // 共享依赖：删文件时保留
   "fmt": { "$cmd": "$python -m rich.markdown {file}" }
 }
 ```
 
 ```bash
-byk add pip @demo           # 安装当前目录 demo.byk.json 的 $pip
-byk add pip @@demo          # 安装全局目录 ~/.byk/alias/demo.byk.json 的 $pip
+byk add pip @demo           # 安装当前目录 demo.byk.json 的 $pip 与 $pip-keep
+byk add pip @@demo          # 安装全局目录 ~/.byk/alias/demo.byk.json 的依赖
 byk add pip ./demo.byk.json # 直接传路径
 ```
 
 | 规则 | 说明 |
 |------|------|
-| 取值 | `string \| string[]`，语法同 pip：包名、版本约束、`name @ url` |
+| 取值 | 两者均 `string \| string[]`，语法同 pip：包名、版本约束、`name @ url` |
 | 作用域 | 仅文件级；子分组不需要也不继承 |
-| 语义 | keep——不随文件删除自动卸载（venv 由 byk 托管，包可能被多个文件共享） |
+| 语义 | `$pip` = remove（文件专属，删文件时卸载）；`$pip-keep` = keep（跨文件共享，删文件时保留） |
 | venv | 不存在时 `byk add pip` 按需创建（uv 优先，一次性确认） |
 | 配合 | 别名命令用 `$python` 变量调用 venv 解释器（见上文保留变量） |
 
 :::note
-未声明 `$pip` 的文件执行 `byk add pip` 是友好的 no-op（退出码 0），不会触发 venv 创建。
+未声明 `$pip` 或 `$pip-keep` 的文件执行 `byk add pip` 是友好的 no-op（退出码 0），不会触发 venv 创建。卸载时的区分留待后续 remove 读 `*.byk.json` 时实现。
 :::
 
 ### 文件级变量 $var

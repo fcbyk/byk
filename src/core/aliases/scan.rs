@@ -98,9 +98,15 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         })
         .unwrap_or_default();
 
-    // 提取文件级 $pip（Python 依赖声明，宽松解析）
+    // 提取文件级 $pip（Python 专属依赖，remove 语义，宽松解析）
     let inherited_pip = obj
         .remove("$pip")
+        .and_then(|v| parse_pip_field(&v))
+        .unwrap_or_default();
+
+    // 提取文件级 $pip-keep（Python 共享依赖，keep 语义，宽松解析）
+    let inherited_pip_keep = obj
+        .remove("$pip-keep")
         .and_then(|v| parse_pip_field(&v))
         .unwrap_or_default();
 
@@ -119,6 +125,7 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         inherited_interactive,
         inherited_paths,
         inherited_pip,
+        inherited_pip_keep,
         assets,
     })
 }
@@ -160,6 +167,7 @@ mod tests {
             inherited_interactive: None,
             inherited_paths: Vec::new(),
             inherited_pip: Vec::new(),
+            inherited_pip_keep: Vec::new(),
             assets: None,
         }
     }
@@ -343,5 +351,42 @@ mod tests {
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
         assert!(!files[0].aliases.contains_key("$pip"));
+    }
+
+    // ==================== $pip-keep 提取 ====================
+
+    #[test]
+    fn pip_keep_extracted_from_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(
+            &file,
+            r#"{"$pip": ["mytool"], "$pip-keep": ["rich", "click>=8.0"], "build": "make"}"#,
+        )
+        .unwrap();
+        let files = scan_alias_files(dir.path(), false);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].inherited_pip, vec!["mytool"]);
+        assert_eq!(files[0].inherited_pip_keep, vec!["rich", "click>=8.0"]);
+    }
+
+    #[test]
+    fn pip_keep_empty_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(&file, r#"{"$pip": ["rich"], "build": "make"}"#).unwrap();
+        let files = scan_alias_files(dir.path(), false);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].inherited_pip_keep.is_empty());
+    }
+
+    #[test]
+    fn pip_keep_not_leaked_into_aliases() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(&file, r#"{"$pip-keep": ["rich"], "build": "make"}"#).unwrap();
+        let files = scan_alias_files(dir.path(), false);
+        assert_eq!(files.len(), 1);
+        assert!(!files[0].aliases.contains_key("$pip-keep"));
     }
 }

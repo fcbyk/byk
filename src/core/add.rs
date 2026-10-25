@@ -270,7 +270,7 @@ fn download_assets_block(
 
 /// 副本保留的文件级字段（`$install` 是安装期元数据，刻意排除）。
 const FILE_LEVEL_FIELDS: &[&str] = &[
-    "$priority", "$cwd", "$interactive", "$paths", "$pip", "$assets", "$var",
+    "$priority", "$cwd", "$interactive", "$paths", "$pip", "$pip-keep", "$assets", "$var",
 ];
 
 /// `$install` 三级继承筛选：保留 install=true 的别名子树，剔除 `$install` 标志本身。
@@ -326,15 +326,17 @@ fn strip_install(val: &serde_json::Value) -> serde_json::Value {
 // --add pip <target>
 // ---------------------------------------------------------------------------
 
-/// `byk add pip <target>`：安装别名文件 `$pip` 声明的包到 byk venv。
+/// `byk add pip <target>`：安装别名文件 `$pip` / `$pip-keep` 声明的包到 byk venv。
 ///
 /// target 三种形态：
 /// - `@stem`  → 当前目录 `<stem>.byk.json`
 /// - `@@stem` → 全局目录 `~/.byk/alias/<stem>.byk.json`
 /// - 路径     → 任意 `.byk.json` 文件
 ///
+/// `$pip`（remove 语义）与 `$pip-keep`（keep 语义）目前行为一致，均安装到共享
+/// venv；卸载时的区分留待后续 remove 读 *.byk.json 时实现。
 /// venv 不存在时按需创建（探测 uv / 系统 Python，一次性确认）。
-/// 文件未声明 `$pip` 时为友好 no-op（退出码 0）。
+/// 文件未声明两者时为友好 no-op（退出码 0）。
 pub fn install_alias_pip(target: Option<&str>, layout: &PathLayout) {
     let target = match target {
         Some(t) => t,
@@ -354,7 +356,7 @@ pub fn install_alias_pip(target: Option<&str>, layout: &PathLayout) {
         }
     };
 
-    // 读取并提取文件级 $pip（宽松解析：string | string[]）
+    // 读取并提取文件级 $pip / $pip-keep（宽松解析：string | string[]）
     let content = match fs::read_to_string(&path) {
         Ok(c) => c,
         Err(e) => {
@@ -373,10 +375,14 @@ pub fn install_alias_pip(target: Option<&str>, layout: &PathLayout) {
         .get("$pip")
         .and_then(aliases::parse_pip_field)
         .unwrap_or_default();
+    let packages_keep = json
+        .get("$pip-keep")
+        .and_then(aliases::parse_pip_field)
+        .unwrap_or_default();
 
-    if packages.is_empty() {
+    if packages.is_empty() && packages_keep.is_empty() {
         println!(
-            "{} no $pip declared in {}",
+            "{} no $pip or $pip-keep declared in {}",
             "*".dimmed(),
             path.display().to_string().dimmed()
         );
@@ -389,12 +395,17 @@ pub fn install_alias_pip(target: Option<&str>, layout: &PathLayout) {
         path.display().to_string().bold()
     );
 
-    install_pip_packages(&packages, layout, "byk add pip");
+    if !packages.is_empty() {
+        install_pip_packages(&packages, layout, "byk add pip");
+    }
+    if !packages_keep.is_empty() {
+        install_pip_packages(&packages_keep, layout, "byk add pip");
+    }
 
     println!(
         "{} installed {} package(s) for {}",
         "Successfully".green(),
-        packages.len(),
+        packages.len() + packages_keep.len(),
         path.display().to_string().dimmed()
     );
 }
@@ -530,9 +541,13 @@ pub fn install_alias(target: Option<&str>, layout: &PathLayout, cdn: bool) {
     let mut substituted = original.clone();
     crate::core::vars::preprocess_vars(&mut substituted);
 
-    // 提取 pip / assets（替换后）
+    // 提取 pip / pip-keep / assets（替换后）
     let packages = substituted
         .get("$pip")
+        .and_then(aliases::parse_pip_field)
+        .unwrap_or_default();
+    let packages_keep = substituted
+        .get("$pip-keep")
         .and_then(aliases::parse_pip_field)
         .unwrap_or_default();
     let assets_block = substituted
@@ -550,7 +565,7 @@ pub fn install_alias(target: Option<&str>, layout: &PathLayout, cdn: bool) {
 
     // 判断是否有可安装内容
     let has_install_alias = !filtered.is_empty();
-    let has_pip = !packages.is_empty();
+    let has_pip = !packages.is_empty() || !packages_keep.is_empty();
     let has_assets = assets_block.is_some();
     if !has_install_alias && !has_pip && !has_assets {
         eprintln!(
@@ -558,22 +573,27 @@ pub fn install_alias(target: Option<&str>, layout: &PathLayout, cdn: bool) {
             "Error:".red(),
             path.display().to_string().dimmed()
         );
-        eprintln!("  Mark aliases with $install: true, or declare $pip / $assets.");
+        eprintln!("  Mark aliases with $install: true, or declare $pip / $pip-keep / $assets.");
         std::process::exit(1);
     }
 
-    // 装 pip
+    // 装 pip（$pip + $pip-keep 目前行为一致，均安装到 venv）
     if has_pip {
         println!(
             "{} Installing pip dependencies from {}",
             "==>".cyan().bold(),
             path.display().to_string().bold()
         );
-        install_pip_packages(&packages, layout, "byk add");
+        if !packages.is_empty() {
+            install_pip_packages(&packages, layout, "byk add");
+        }
+        if !packages_keep.is_empty() {
+            install_pip_packages(&packages_keep, layout, "byk add");
+        }
         println!(
             "{} installed {} package(s)",
             "Successfully".green(),
-            packages.len()
+            packages.len() + packages_keep.len()
         );
     }
 

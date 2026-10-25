@@ -25,7 +25,23 @@
       }
     },
     "$pip": {
-      "description": "文件级 Python 依赖声明，经 `byk add pip <file>` 安装到 byk 托管 venv（keep 语义，不随文件删除自动卸载）。支持单字符串或字符串数组，语法同 pip：包名、版本约束或 \"name @ url\"。示例：[\"rich\", \"click>=8.0\"]",
+      "description": "文件级 Python 专属依赖，经 `byk add pip <file>` 安装到 byk 托管 venv（remove 语义，删文件时卸载）。支持单字符串或字符串数组，语法同 pip：包名、版本约束或 \"name @ url\"。示例：[\"my-tool\", \"click>=8.0\"]",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "单个包。示例：\"rich\""
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "包名、版本约束，或 \"name @ url\" 格式"
+          }
+        }
+      ]
+    },
+    "$pip-keep": {
+      "description": "文件级 Python 共享依赖，经 `byk add pip <file>` 安装到 byk 托管 venv（keep 语义，删文件时保留）。取值同 $pip：单字符串或字符串数组。示例：[\"rich\", \"click>=8.0\"]",
       "oneOf": [
         {
           "type": "string",
