@@ -45,10 +45,16 @@ byk add -f ./local.json key       # 使用本地 byk.json 安装
 | Feature | 说明 |
 |---------|------|
 | `comp` | 初始化 shell 补全（自动检测 zsh/bash），在对应 rc 文件中追加补全脚本 |
+| `pip <@file\|@@file\|PATH>` | 安装别名文件 `$pip` 声明的 Python 依赖到 byk 托管 venv |
 
 ```bash title="示例"
 byk add comp      # 配置 shell 补全
+byk add pip @jiahao   # 安装 jiahao.byk.json 的 $pip 依赖
 ```
+
+:::tip
+`byk add pip` 的 target 支持三种形态：`@file`（当前目录）、`@@file`（全局目录 `~/.byk/alias/`）、`.byk.json` 路径。venv 不存在时按需创建（uv 优先，一次性确认）。详见 [别名配置 - Python 依赖](/cli/alias/config)。
+:::
 
 :::note
 `byk add comp` 是幂等的——已配置过补全时会跳过，不会重复追加。

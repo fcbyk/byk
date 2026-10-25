@@ -91,6 +91,28 @@ function flattenAliases(
       items.push(...flattenAliases(value as Record<string, unknown>, stem, fullPath));
     }
   }
+
+  // 文件级 $pip → 转换为可执行项（byk add pip @stem）。
+  // 仅顶层合成（prefix 非空说明是嵌套分组，不重复）
+  if (prefix === '') {
+    const pip = obj.$pip;
+    const pipCount =
+      typeof pip === 'string'
+        ? pip.trim()
+          ? 1
+          : 0
+        : Array.isArray(pip)
+          ? pip.filter((p) => typeof p === 'string' && p.trim()).length
+          : 0;
+    if (pipCount > 0) {
+      items.push({
+        label: '$pip',
+        description: `install ${pipCount} pip package(s) → byk add pip @${stem}`,
+        exactCommand: `add pip @${stem}`,
+      });
+    }
+  }
+
   return items;
 }
 
@@ -424,12 +446,12 @@ function runAliasTask(exactCommand: string, cwd: string) {
     env: { PATH: buildPath() },
   };
 
-  // PowerShell treats @ as the splat operator — escape with backtick.
+  // PowerShell treats @ as the splat operator — escape every @ with a backtick.
   // cmd.exe, bash, zsh don't need this, and backtick would be literal there.
   const shellPath = vscode.env.shell || '';
   const isPowerShell = /powershell|pwsh/i.test(shellPath);
   const cmd = isPowerShell
-    ? 'byk `' + exactCommand
+    ? 'byk ' + exactCommand.replace(/@/g, '`@')
     : 'byk ' + exactCommand;
 
   const task = new vscode.Task(
@@ -561,6 +583,51 @@ export function activate(context: vscode.ExtensionContext) {
       if (!selected) return;
 
       runAliasTask(selected.exactCommand, path.dirname(fileUri.fsPath));
+    }),
+  );
+
+  // Right-click "Install $pip Dependencies": byk add pip @stem
+  context.subscriptions.push(
+    vscode.commands.registerCommand('byk.installDeps', async (uri?: vscode.Uri) => {
+      let fileUri = uri;
+      if (!fileUri) {
+        const editor = vscode.window.activeTextEditor;
+        if (editor && isBykFile(path.basename(editor.document.fileName))) {
+          fileUri = editor.document.uri;
+        }
+      }
+      if (!fileUri) {
+        vscode.window.showErrorMessage('No .byk.json file found');
+        return;
+      }
+
+      const filename = path.basename(fileUri.fsPath);
+      if (!isBykFile(filename)) {
+        vscode.window.showErrorMessage(`Not a valid .byk.json file: ${filename}`);
+        return;
+      }
+
+      // 预检 $pip：未声明时直接提示，不启动任务
+      let config: Record<string, unknown>;
+      try {
+        config = JSON.parse(fs.readFileSync(fileUri.fsPath, 'utf-8'));
+      } catch (err) {
+        vscode.window.showErrorMessage(`Failed to parse ${filename}: ${(err as Error).message}`);
+        return;
+      }
+      const pip = config.$pip;
+      const hasPip =
+        (typeof pip === 'string' && pip.trim().length > 0) ||
+        (Array.isArray(pip) && pip.some((p) => typeof p === 'string' && p.trim().length > 0));
+      if (!hasPip) {
+        vscode.window.showInformationMessage(`No $pip declared in ${filename}`);
+        return;
+      }
+
+      const stem = bykFileStem(filename);
+      // cwd = 文件所在目录：@stem 在该目录下即精确指向此文件，
+      // 避免把绝对路径拼进 shell 命令带来的引号问题
+      runAliasTask(`add pip @${stem}`, path.dirname(fileUri.fsPath));
     }),
   );
 }

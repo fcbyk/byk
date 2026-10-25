@@ -563,6 +563,7 @@ mod tests {
             inherited_cwd: None,
             inherited_interactive: None,
             inherited_paths: vec!["./scripts".into(), "~/tools/bin".into()],
+            inherited_pip: Vec::new(),
         }];
         let merged = build_merged_aliases(&files);
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
@@ -584,6 +585,7 @@ mod tests {
             inherited_cwd: None,
             inherited_interactive: None,
             inherited_paths: Vec::new(),
+            inherited_pip: Vec::new(),
         }];
         let merged = build_merged_aliases(&files);
         let resolved = resolve_merged_alias(&merged, "build").unwrap();

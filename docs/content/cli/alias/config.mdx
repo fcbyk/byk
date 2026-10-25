@@ -273,6 +273,35 @@ byk py 8000        # 用 venv 的 python 启动 http.server
 byk info           # 打印 venv 的 site-packages 前缀
 ```
 
+### Python 依赖 $pip
+
+文件级 `$pip` 声明该别名文件所需的 Python 依赖，经 `byk add pip` 安装到 byk 托管的 venv：
+
+```json title=".byk.json"
+{
+  "$pip": ["rich", "click>=8.0"],
+  "fmt": { "$cmd": "$python -m rich.markdown {file}" }
+}
+```
+
+```bash
+byk add pip @demo           # 安装当前目录 demo.byk.json 的 $pip
+byk add pip @@demo          # 安装全局目录 ~/.byk/alias/demo.byk.json 的 $pip
+byk add pip ./demo.byk.json # 直接传路径
+```
+
+| 规则 | 说明 |
+|------|------|
+| 取值 | `string \| string[]`，语法同 pip：包名、版本约束、`name @ url` |
+| 作用域 | 仅文件级；子分组不需要也不继承 |
+| 语义 | keep——不随文件删除自动卸载（venv 由 byk 托管，包可能被多个文件共享） |
+| venv | 不存在时 `byk add pip` 按需创建（uv 优先，一次性确认） |
+| 配合 | 别名命令用 `$python` 变量调用 venv 解释器（见上文保留变量） |
+
+:::note
+未声明 `$pip` 的文件执行 `byk add pip` 是友好的 no-op（退出码 0），不会触发 venv 创建。
+:::
+
 
 
 ### 调用示例

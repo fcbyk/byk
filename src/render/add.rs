@@ -25,6 +25,10 @@ pub fn render() {
         "  {:<8} Initialize shell completion (zsh/bash)",
         "comp".cyan().bold()
     );
+    println!(
+        "  {:<8} Install $pip dependencies from an alias file",
+        "pip".cyan().bold()
+    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
@@ -33,6 +37,7 @@ pub fn render() {
         ("byk add user/repo@dev/key".into(), "Install from a specific branch/tag".into()),
         ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
         ("byk add --file https://example.com/byk.json key".into(), "Install from remote registry URL".into()),
+        ("byk add pip @jiahao".into(), "Install $pip deps declared by jiahao.byk.json".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {
@@ -40,6 +45,33 @@ pub fn render() {
         print!("  {}", name.dimmed());
         println!("{}", rest);
     }
+    println!();
+}
+
+/// 渲染 `byk add pip` 用法信息。
+pub fn render_pip() {
+    println!();
+    print!("{}", "Usage:".green().bold());
+    println!("{}", " byk add pip <@file | @@file | PATH>".bold());
+    println!();
+    println!("Install the packages declared by a *.byk.json file's $pip field into the byk venv.");
+    println!();
+    println!("{}", "Targets:".green().bold());
+    println!(
+        "  {:<24}Local alias file in the current directory",
+        "@file".cyan().bold()
+    );
+    println!(
+        "  {:<24}Global alias file (~/.byk/alias/)",
+        "@@file".cyan().bold()
+    );
+    println!(
+        "  {:<24}Direct path to a .byk.json file",
+        "./path.byk.json".cyan().bold()
+    );
+    println!();
+    println!("{}", "Example:".green().bold());
+    println!("  {}", "byk add pip @jiahao".dimmed());
     println!();
 }
 
@@ -55,5 +87,10 @@ mod tests {
     fn render_runs_without_panic() {
         // render() only prints to stdout; verify it doesn't panic
         render();
+    }
+
+    #[test]
+    fn render_pip_runs_without_panic() {
+        render_pip();
     }
 }

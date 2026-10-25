@@ -3,5 +3,6 @@
   "byk.useSystemBinary.description": "Use the system PATH byk binary instead of the bundled one",
   "byk.binaryPath.description": "Custom path to the byk binary. Takes priority when set, supports ~ expansion",
   "command.runAtCursor.title": "Run Alias",
-  "command.runScript.title": "Alias List"
+  "command.runScript.title": "Alias List",
+  "command.installDeps.title": "Install $pip Dependencies"
 }

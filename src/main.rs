@@ -50,13 +50,13 @@ fn main() {
             }
             return;
         }
-        Some(Commands::Add { file, name, cdn }) => {
-            match (name.as_deref(), file.as_deref()) {
-                (None | Some("-h") | Some("--help"), None) => {
+        Some(Commands::Add { file, name, cdn, target }) => {
+            match (name.as_deref(), file.as_deref(), target.as_deref()) {
+                (None | Some("-h") | Some("--help"), None, None) => {
                     render::add::render();
                 }
-                (Some("comp"), None) => add::init_completion(),
-                (Some("py-v") | Some("uv"), None) => {
+                (Some("comp"), None, None) => add::init_completion(),
+                (Some("py-v") | Some("uv"), None, None) => {
                     eprintln!(
                         "{} 'byk add py-v' / 'byk add uv' have been removed.",
                         "Note:".yellow()
@@ -64,10 +64,25 @@ fn main() {
                     eprintln!("  Python environments are now created automatically when a plugin needs one.");
                     eprintln!("  Just run: {}", "byk add <user/repo>".bold());
                 }
-                (spec, _file) => {
+                (Some("pip"), None, target) => {
+                    add::install_alias_pip(target, &layout);
+                }
+                (Some("pip"), Some(_), _) => {
+                    eprintln!(
+                        "{} -f/--file is not used with 'byk add pip'; pass the .byk.json path directly.",
+                        "Error:".red()
+                    );
+                    exit(1);
+                }
+                (_, _, Some(t)) => {
+                    eprintln!("{} unexpected argument '{}'", "Error:".red(), t);
+                    eprintln!("  Run {} for usage.", "byk add -h".bold());
+                    exit(1);
+                }
+                (spec, file, None) => {
                     add::install_plugin(
                         spec.unwrap_or(""),
-                        file.as_deref(),
+                        file,
                         &layout,
                         cdn,
                     );

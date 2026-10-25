@@ -806,59 +806,8 @@ pub fn install_plugin(
         .map(plugin_needs_venv)
         .unwrap_or(false);
 
-    if needs_venv && !venv_is_ready(layout) {
-        // venv 缺失：智能探测创建工具并一次性确认。
-        // 用户不需要理解"虚拟环境管理器选型"这个概念——
-        // 探测到 uv 就用 uv（快、不依赖系统 Python），否则用系统 Python。
-        match detect_py_tool() {
-            Some(tool) => {
-                println!();
-                println!(
-                    "{} plugin \"{}\" needs a Python virtual environment.",
-                    "!".yellow(),
-                    key.bold()
-                );
-                println!(
-                    "  byk will create {} using {} and install its dependencies.",
-                    "~/.byk/py-venv".dimmed(),
-                    tool.label().bold()
-                );
-                println!();
-                print!("Continue? [Y/n] ");
-                let _ = io::stdout().flush();
-                let mut input = String::new();
-                if io::stdin().read_line(&mut input).is_err() {
-                    eprintln!();
-                    eprintln!(
-                        "{} cancelled: cannot read confirmation from stdin.",
-                        "Error:".red()
-                    );
-                    exit(1);
-                }
-                let answer = input.trim().to_lowercase();
-                if answer == "n" || answer == "no" {
-                    println!("{}", "Cancelled.".dimmed());
-                    exit(1);
-                }
-                init_py(layout, tool);
-                if !venv_is_ready(layout) {
-                    exit(1);
-                }
-            }
-            None => {
-                eprintln!(
-                    "{} plugin \"{}\" needs a Python environment, but neither {} nor {} was found.",
-                    "Error:".red(),
-                    key,
-                    "uv".bold(),
-                    python_hint().bold(),
-                );
-                eprintln!();
-                eprintln!("Install one of them, then retry:");
-                print_python_install_hints();
-                exit(1);
-            }
-        }
+    if needs_venv {
+        ensure_python_env(layout, &format!("plugin \"{}\"", key));
     }
 
     // 仅当插件协议中声明了 node 类型命令时，才检查 Node.js 环境。
@@ -1658,7 +1607,7 @@ fn is_uv_mode(layout: &crate::core::paths::PathLayout) -> bool {
 }
 
 /// 安装 Python 包（自动检测 py-v / uv 模式）
-fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout) {
+pub(crate) fn install_python_package(pkg: &str, layout: &crate::core::paths::PathLayout) {
     if is_uv_mode(layout) {
         if !tool_exists("uv") {
             eprintln!(
@@ -1846,6 +1795,68 @@ fn venv_is_ready(layout: &crate::core::paths::PathLayout) -> bool {
     let pip = layout.venv_dir.join(VENV_BIN).join("pip");
     let py_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
     pip.is_file() || py_exe.is_file()
+}
+
+/// 确保 Python venv 可用（不存在则探测工具、一次性确认、创建）。
+///
+/// venv 已就绪时直接返回。`subject` 为触发原因的描述，
+/// 如 `plugin "hello"` / `byk add pip`。
+///
+/// 用户不需要理解“虚拟环境管理器选型”这个概念——
+/// 探测到 uv 就用 uv（快、不依赖系统 Python），否则用系统 Python。
+pub(crate) fn ensure_python_env(layout: &crate::core::paths::PathLayout, subject: &str) {
+    if venv_is_ready(layout) {
+        return;
+    }
+    match detect_py_tool() {
+        Some(tool) => {
+            println!();
+            println!(
+                "{} {} needs a Python virtual environment.",
+                "!".yellow(),
+                subject.bold()
+            );
+            println!(
+                "  byk will create {} using {} and install its dependencies.",
+                "~/.byk/py-venv".dimmed(),
+                tool.label().bold()
+            );
+            println!();
+            print!("Continue? [Y/n] ");
+            let _ = io::stdout().flush();
+            let mut input = String::new();
+            if io::stdin().read_line(&mut input).is_err() {
+                eprintln!();
+                eprintln!(
+                    "{} cancelled: cannot read confirmation from stdin.",
+                    "Error:".red()
+                );
+                exit(1);
+            }
+            let answer = input.trim().to_lowercase();
+            if answer == "n" || answer == "no" {
+                println!("{}", "Cancelled.".dimmed());
+                exit(1);
+            }
+            init_py(layout, tool);
+            if !venv_is_ready(layout) {
+                exit(1);
+            }
+        }
+        None => {
+            eprintln!(
+                "{} {} needs a Python environment, but neither {} nor {} was found.",
+                "Error:".red(),
+                subject,
+                "uv".bold(),
+                python_hint().bold(),
+            );
+            eprintln!();
+            eprintln!("Install one of them, then retry:");
+            print_python_install_hints();
+            exit(1);
+        }
+    }
 }
 
 /// 初始化 Python 虚拟环境（插件安装时按需调用）。

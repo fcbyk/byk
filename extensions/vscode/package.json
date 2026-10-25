@@ -2,7 +2,7 @@
   "name": "byk",
   "displayName": "BYK",
   "description": "BYK CLI integration for VS Code — run tasks, manage plugins, and validate configs",
-  "version": "2026.6.10",
+  "version": "2026.10.25",
   "publisher": "fcbyk",
   "license": "MIT",
   "main": "./out/extension.js",
@@ -64,6 +64,11 @@
       {
         "command": "byk.runScript",
         "title": "%command.runScript.title%"
+      },
+      {
+        "command": "byk.installDeps",
+        "title": "%command.installDeps.title%",
+        "icon": "$(package)"
       }
     ],
     "jsonValidation": [
@@ -82,6 +87,11 @@
           "command": "byk.runScript",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation"
+        },
+        {
+          "command": "byk.installDeps",
+          "when": "resourceFilename =~ /\\.byk\\.json$/",
+          "group": "navigation"
         }
       ],
       "editor/context": [
@@ -94,6 +104,11 @@
           "command": "byk.runScript",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@2"
+        },
+        {
+          "command": "byk.installDeps",
+          "when": "resourceFilename =~ /\\.byk\\.json$/",
+          "group": "navigation@3"
         }
       ],
       "editor/title/context": [
@@ -106,6 +121,11 @@
           "command": "byk.runScript",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@2"
+        },
+        {
+          "command": "byk.installDeps",
+          "when": "resourceFilename =~ /\\.byk\\.json$/",
+          "group": "navigation@3"
         }
       ]
     }

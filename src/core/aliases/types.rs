@@ -56,6 +56,10 @@ pub struct AliasFile {
     pub inherited_interactive: Option<bool>,
     /// 文件级 $paths，需要前置到 PATH 环境变量的目录列表
     pub inherited_paths: Vec<String>,
+    /// 文件级 $pip，该文件声明的 Python 依赖（keep 语义，不随文件删除自动卸载）
+    /// 经 `byk add pip <file>` 安装到 byk 托管 venv
+    #[serde(default)]
+    pub inherited_pip: Vec<String>,
 }
 
 /// 合并后叶子节点，包含来源信息。

@@ -23,3 +23,40 @@ def test_python_missing_venv_errors(runner):
     r = runner.run("py")
     assert r.returncode != 0
     assert "venv" in r.stderr.lower()
+
+
+def test_add_pip_no_target_shows_usage(runner):
+    """byk add pip 无 target → 用法帮助，退出码 0"""
+    r = runner.run("add", "pip")
+    assert r.returncode == 0
+    assert "byk add pip" in r.stdout
+
+
+def test_add_pip_file_not_found(runner):
+    """目标文件不存在 → 报错，退出码非 0"""
+    r = runner.run("add", "pip", "@nope")
+    assert r.returncode != 0
+    assert "not found" in r.stderr
+
+
+def test_add_pip_no_declaration_is_noop(runner):
+    """文件无 $pip → 友好 no-op，且不触发 venv 创建（无交互卡住）"""
+    runner.prepare_alias_file("nodeps", '{"hi": "echo hello"}')
+    r = runner.run("add", "pip", "@@nodeps")
+    assert r.returncode == 0
+    assert "no $pip" in r.stdout
+
+
+def test_add_pip_path_form(runner):
+    """路径形态：任意位置的 .byk.json 都能作为 target"""
+    path = runner.prepare_alias_file("nodeps", '{"hi": "echo hello"}')
+    r = runner.run("add", "pip", str(path))
+    assert r.returncode == 0
+    assert "no $pip" in r.stdout
+
+
+def test_add_unexpected_target_errors(runner):
+    """comp 等功能不接受额外位置参数"""
+    r = runner.run("add", "comp", "extra")
+    assert r.returncode != 0
+    assert "unexpected argument" in r.stderr
