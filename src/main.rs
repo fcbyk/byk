@@ -12,7 +12,6 @@ use core::aliases;
 use core::completion;
 use core::add;
 use core::paths::PathLayout;
-use core::plugins;
 use core::remove;
 
 fn main() {
@@ -45,7 +44,16 @@ fn main() {
                 }
                 Some("all") => remove::rm_all(&layout),
                 Some("-h") | Some("--help") => render::remove::render(),
-                Some(key) => remove::uninstall_plugin(key, &layout),
+                Some(key) => {
+                    eprintln!(
+                        "{} 'byk remove <plugin>' has been removed.",
+                        "Note:".yellow()
+                    );
+                    eprintln!(
+                        "  Plugins are now *.byk.json files; delete {} to uninstall.",
+                        format!("~/.byk/alias/{}.byk.json", key).bold()
+                    );
+                }
                 None => render::remove::render(),
             }
             return;
@@ -110,7 +118,13 @@ fn main() {
             match topic.as_deref() {
                 None | Some("-h") | Some("--help") => render::show::render_help(),
                 Some("overview") => render::show::render_overview(&layout),
-                Some("plugins") => render::show::render_plugins(&layout),
+                Some("plugins") => {
+                    eprintln!("{} 'byk show plugins' has been removed.", "Note:".yellow());
+                    eprintln!(
+                        "  Plugins are now *.byk.json files; run {} to list commands.",
+                        "byk -h".bold()
+                    );
+                }
                 Some("paths") => render::show::render_paths(&layout),
                 Some(name) => render::show::render_command(name, &layout),
             }
@@ -148,22 +162,6 @@ fn main() {
 
     let command_name = &cli.trailing[0];
     let command_args = &cli.trailing[1..];
-
-    // Step 2: 检查是否为插件命令（优先级高于别名）
-    // 插件状态不依赖 venv：bin 类型命令与 Python 环境无关，
-    // venv 被删除后仍可用；python 类命令在执行时按需检查（见 execute.rs）
-    let cmd_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-    if cmd_state.commands.contains_key(command_name) {
-        plugins::execute::execute_plugin_command(
-            command_name,
-            command_args,
-            &layout.plugins_dir,
-            &layout.venv_dir,
-            &layout.root_dir,
-            &cmd_state,
-        );
-        return;
-    }
 
     // 提前加载别名数据（精确执行和普通查找共用）
     let (merged, files) = aliases::load_merged_aliases(&layout);

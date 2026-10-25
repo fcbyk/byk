@@ -3,7 +3,6 @@
 //! 三种模式：
 //! - `byk show` — 帮助信息
 //! - `byk show overview` — 总览面板
-//! - `byk show plugins` — 已安装插件列表
 //! - `byk show <name>` — 命令名全量路由查询
 //!
 //! 本模块只负责格式化输出，业务逻辑在 core::show 中。
@@ -14,7 +13,7 @@ use crate::core::aliases::AliasValue;
 use crate::core::show::{self, InfoEntry, OverviewInfo};
 use crate::core::aliases::ResolvedAlias;
 use crate::core::paths::PathLayout;
-use crate::core::plugins;
+use crate::core::plugins::types::{PYTHON_BIN, VENV_BIN};
 use crate::utils::display;
 
 // ---------------------------------------------------------------------------
@@ -33,11 +32,7 @@ pub fn render_help() {
         "overview".cyan().bold(),
     );
     println!(
-        "  {:<20} List installed plugins and their commands",
-        "plugins".cyan().bold(),
-    );
-    println!(
-        "  {:<20} Query the source of a command (built-in / plugin / alias)",
+        "  {:<20} Query the source of a command (built-in / alias)",
         "<command-name>".cyan().bold(),
     );
     println!(
@@ -49,7 +44,6 @@ pub fn render_help() {
     let examples: Vec<(String, String)> = vec![
         ("byk show".into(), "Show this help".into()),
         ("byk show overview".into(), "Display system overview panel".into()),
-        ("byk show plugins".into(), "List all installed plugins".into()),
         ("byk show build".into(), "Find all sources of the \"build\" command".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
@@ -75,11 +69,6 @@ pub fn render_overview(layout: &PathLayout) {
 
 /// 渲染总览面板内容。
 fn render_overview_panel(overview: &OverviewInfo) {
-    println!(
-        "{}：{}",
-        "插件数量".yellow(),
-        overview.plugin_count.to_string().cyan().bold()
-    );
     println!(
         "{}：{}",
         "别名数量".yellow(),
@@ -123,118 +112,12 @@ fn render_overview_panel(overview: &OverviewInfo) {
 }
 
 // ---------------------------------------------------------------------------
-// 插件列表（byk show plugins）
-// ---------------------------------------------------------------------------
-
-/// 渲染已安装插件列表。
-pub fn render_plugins(layout: &PathLayout) {
-    println!();
-
-    let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
-
-    if pkg_state.is_empty() {
-        println!("{}", "No plugins installed.".yellow());
-        println!("  {}", "$ byk add <user/repo>".dimmed());
-        println!();
-        return;
-    }
-
-    let mut keys: Vec<&String> = pkg_state.keys().collect();
-    keys.sort();
-
-    let separator = "-".repeat(29);
-
-    for (i, key) in keys.iter().enumerate() {
-        if i > 0 {
-            println!("{}", separator.dimmed());
-        }
-
-        let pkg = &pkg_state[*key];
-
-        println!("{}: {}", "name".yellow(), key.cyan().bold());
-
-        if !pkg.commands.is_empty() {
-            println!("{}: {}", "cmd".yellow(), pkg.commands.join(", "));
-        }
-
-        if !pkg.assets.is_empty() {
-            println!("{}: {}", "assets".yellow(), pkg.assets.join(", "));
-        }
-
-        if let Some(ref pip_list) = pkg.pip {
-            let names: Vec<&str> = pip_list
-                .iter()
-                .filter_map(|item| extract_display_name(item))
-                .collect();
-            if !names.is_empty() {
-                println!("{}: {}", "pip".yellow(), names.join(", "));
-            }
-        }
-
-        if let Some(ref pip_keep_list) = pkg.pip_keep {
-            let names: Vec<&str> = pip_keep_list
-                .iter()
-                .filter_map(|item| extract_display_name(item))
-                .collect();
-            if !names.is_empty() {
-                println!("{}: {}", "pip-keep".yellow(), names.join(", "));
-            }
-        }
-    }
-    println!();
-}
-
-/// 从 pip 安装字符串中提取可展示的包名。
-/// - "name @ url" → "name"
-/// - "name" → "name"
-/// - "https://..." → None（纯 URL 不展示）
-fn extract_display_name(raw: &str) -> Option<&str> {
-    if raw.starts_with("http://") || raw.starts_with("https://") {
-        None
-    } else if let Some(pos) = raw.find(" @ ") {
-        Some(raw[..pos].trim())
-    } else {
-        Some(raw.trim())
-    }
-}
-
-// ---------------------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ==================== extract_display_name ====================
-
-    #[test]
-    fn display_name_simple() {
-        assert_eq!(extract_display_name("requests"), Some("requests"));
-    }
-
-    #[test]
-    fn display_name_with_at_url() {
-        assert_eq!(
-            extract_display_name("mypkg @ https://example.com/whl"),
-            Some("mypkg")
-        );
-    }
-
-    #[test]
-    fn display_name_pure_url_none() {
-        assert_eq!(extract_display_name("https://example.com/pkg"), None);
-    }
-
-    #[test]
-    fn display_name_http_url_none() {
-        assert_eq!(extract_display_name("http://example.com/pkg"), None);
-    }
-
-    #[test]
-    fn display_name_trim_whitespace() {
-        assert_eq!(extract_display_name("  requests  "), Some("requests"));
-    }
 
     // ==================== render_paths ====================
 
@@ -260,11 +143,9 @@ mod tests {
 pub fn render_paths(layout: &PathLayout) {
     println!();
 
-    let python_exe = plugins::state::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
-    let cmd_state_file = layout.plugins_dir.join("plugins.cmd.json");
+    let python_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
 
-    println!("{}: {}", "Python".yellow(), python_exe);
-    println!("{}: {}", "Commands".yellow(), cmd_state_file.display());
+    println!("{}: {}", "Python".yellow(), python_exe.display());
     println!("{}", "-".repeat(29).dimmed());
     println!("{}: {}", "CLI Home".yellow(), layout.root_dir.display());
     println!("{}: {}", "Cache".yellow(), layout.cache_dir.display());
@@ -301,21 +182,6 @@ pub fn render_command(name: &str, layout: &PathLayout) {
                     "Description".yellow(),
                     show::lookup_builtin(name).unwrap_or_default()
                 );
-            }
-            InfoEntry::Plugin {
-                name,
-                cmd_type,
-                entry,
-                desc,
-            } => {
-                println!("{}: {}", "Plugin".green().bold(), name.cyan().bold());
-                let label = match cmd_type.as_str() {
-                    "python" => "Script",
-                    _ => "Module",
-                };
-                println!("  {}: {}", label.yellow(), entry);
-                println!("  {}: {}", "Type".yellow(), cmd_type);
-                println!("  {}: {}", "Desc".yellow(), desc);
             }
             InfoEntry::Alias {
                 display_source,

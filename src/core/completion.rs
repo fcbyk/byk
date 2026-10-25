@@ -10,7 +10,6 @@ use std::path::Path;
 
 use super::aliases::{self, MergedNode};
 use super::paths::PathLayout;
-use super::plugins;
 
 // ---------------------------------------------------------------------------
 // 公开入口
@@ -121,21 +120,6 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // 上下文标志：根据已知命令返回对应的选项
     if partial.starts_with('-') {
-        // 插件命令：优先用 args 中的候选过滤，fallback 到 HELP_FLAGS
-        if let Some(plugin_cmd) = get_plugin_command(first, layout) {
-            if let Some(ref args) = plugin_cmd.args {
-                let candidates = collect_args_candidates(args, partial, &[]);
-                if !candidates.is_empty() {
-                    return candidates;
-                }
-            }
-            return HELP_FLAGS
-                .iter()
-                .filter(|f| f.starts_with(partial))
-                .map(|f| f.to_string())
-                .collect();
-        }
-
         // 别名 $args 的 $options 也可能包含 flag
         if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
             && let Some(args) = alias_args(&resolved.value)
@@ -192,14 +176,6 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             .map(|s| s.to_string())
             .collect();
 
-        // 补全已安装的插件
-        let pkg_state = plugins::state::load_pkg_state(&layout.plugins_dir);
-        for key in pkg_state.keys() {
-            if key.starts_with(partial) {
-                candidates.push(key.clone());
-            }
-        }
-
         candidates.sort();
         candidates.dedup();
         return candidates;
@@ -228,17 +204,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
         return Vec::new();
     }
 
-    // 4. 检查是否是一个已知的插件命令
-    if let Some(plugin_cmd) = get_plugin_command(first, layout) {
-        if let Some(ref args) = plugin_cmd.args {
-            // prev[1..] 是已经输入的子命令/参数（去掉命令名本身）
-            let trailing: Vec<&str> = prev[1..].iter().map(|s| s.as_str()).collect();
-            return complete_args_tree(args, &trailing, partial);
-        }
-        return Vec::new();
-    }
-
-    // 5. 无法识别 → 无补全
+    // 4. 无法识别 → 无补全
     Vec::new()
 }
 
@@ -257,17 +223,8 @@ fn complete_multi_prev(prev: &[String], partial: &str, layout: &PathLayout) -> V
         return complete_at_prefix(partial, layout);
     }
 
-    // 插件命令多级参数补全
+    // 别名命令多级参数补全（$args 树）
     let first = &prev[0];
-    if let Some(plugin_cmd) = get_plugin_command(first, layout)
-        && let Some(ref args) = plugin_cmd.args
-    {
-        // trailing 是 prev[1..]，即命令名之后的所有参数
-        let trailing: Vec<&str> = prev[1..].iter().map(|s| s.as_str()).collect();
-        return complete_args_tree(args, &trailing, partial);
-    }
-
-    // 别名命令多级参数补全（$args 树；执行优先级插件高于别名，故放在插件分支之后）
     let (merged, _) = aliases::load_merged_aliases(layout);
     if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
         && let Some(args) = alias_args(&resolved.value)
@@ -358,32 +315,15 @@ fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
-/// 检查某个词是否是已知的插件命令。
-#[allow(dead_code)]
-fn is_known_plugin(word: &str, layout: &PathLayout) -> bool {
-    get_plugin_command(word, layout).is_some()
-}
-
-/// 获取插件命令定义（包含 args 信息）。
-fn get_plugin_command(word: &str, layout: &PathLayout) -> Option<plugins::types::PluginCommand> {
-    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-    plugin_state.commands.get(word).cloned()
-}
-
 /// 补全 `byk show` 后面的子命令。
 fn complete_show_topic(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = vec![
         "overview".into(),
-        "plugins".into(),
         "paths".into(),
         "add".into(),
         "remove".into(),
         "completion".into(),
     ];
-
-    // 插件命令
-    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-    candidates.extend(plugin_state.commands.keys().cloned());
 
     // 别名路径
     let (merged, _files) = aliases::load_merged_aliases(layout);
@@ -570,10 +510,6 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
     candidates.push("remove".into());
     candidates.push("show".into());
 
-    // 插件命令
-    let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-    candidates.extend(plugin_state.commands.keys().cloned());
-
     // 顶级别名（叶子节点 + 中间 dict 节点，dict 加 . 后缀提示可展开）
     let (merged, files) = aliases::load_merged_aliases(layout);
 
@@ -631,9 +567,7 @@ fn collect_object_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::plugins::types::PkgEntry;
     use serde_json::json;
-    use std::collections::HashMap;
     use std::fs;
 
     // ==================== 测试辅助 ====================
@@ -668,16 +602,6 @@ mod tests {
                 plugins_dir: plugins_dir.clone(),
                 home_exists: true,
             };
-
-            // 写入插件状态
-            let plugin_state = json!({
-                "commands": {"test-plugin": {"type": "python-m", "entry": "test.module:Plugin", "desc": "A test plugin"}}
-            });
-            fs::write(
-                plugins_dir.join("plugins.cmd.json"),
-                serde_json::to_string_pretty(&plugin_state).unwrap(),
-            )
-            .unwrap();
 
             TestEnv { temp, layout }
         }
@@ -779,28 +703,7 @@ mod tests {
         assert!(result.contains(&"obj_val.nested".to_string()));
     }
 
-    // ==================== is_known_plugin ====================
-
-    #[test]
-    fn known_plugin_returns_true() {
-        let env = TestEnv::new();
-        assert!(is_known_plugin("test-plugin", &env.layout));
-    }
-
-    #[test]
-    fn unknown_plugin_returns_false() {
-        let env = TestEnv::new();
-        assert!(!is_known_plugin("no-such-plugin", &env.layout));
-    }
-
     // ==================== get_top_level_completions ====================
-
-    #[test]
-    fn top_level_includes_plugins() {
-        let env = TestEnv::new();
-        let completions = get_top_level_completions("", &env.layout);
-        assert!(completions.contains(&"test-plugin".to_string()));
-    }
 
     #[test]
     fn top_level_includes_alias_files() {
@@ -826,7 +729,6 @@ mod tests {
         );
         let completions = get_top_level_completions("te", &env.layout);
         assert!(completions.contains(&"test".to_string()));
-        assert!(completions.contains(&"test-plugin".to_string()));
         assert!(!completions.contains(&"task".to_string()));
     }
 
@@ -1163,22 +1065,6 @@ mod tests {
     }
 
     #[test]
-    fn contextual_known_plugin_returns_help_flags() {
-        let env = TestEnv::new();
-        let prev = vec!["test-plugin".to_string()];
-        let result = contextual_completions(&prev, "-", &env.layout);
-        assert_eq!(result, vec!["--help".to_string(), "-h".to_string()]);
-    }
-
-    #[test]
-    fn contextual_known_plugin_returns_empty() {
-        let env = TestEnv::new();
-        let prev = vec!["test-plugin".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.is_empty());
-    }
-
-    #[test]
     fn contextual_unknown_word_returns_empty() {
         let env = TestEnv::new();
         let prev = vec!["nobody".to_string()];
@@ -1199,61 +1085,11 @@ mod tests {
     }
 
     #[test]
-    fn contextual_remove_includes_installed_plugins() {
-        let env = TestEnv::new();
-        // 写入 pkg 状态，添加一个已安装的插件
-        let pkg_file = env.layout.plugins_dir.join("plugins.pkg.json");
-        let mut pkg_state: HashMap<String, PkgEntry> = HashMap::new();
-        pkg_state.insert(
-            "my-plugin".to_string(),
-            PkgEntry {
-                source: Some("user/repo".to_string()),
-                pip: None,
-                pip_keep: None,
-                assets: vec![],
-                commands: vec!["run".to_string()],
-            },
-        );
-        crate::utils::json_io::write_json(&pkg_file, &pkg_state);
-
-        let prev = vec!["remove".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.contains(&"my-plugin".to_string()));
-        // 内置子命令也存在
-        assert!(result.contains(&"comp".to_string()));
-    }
-
-    #[test]
     fn contextual_remove_filters_by_partial() {
         let env = TestEnv::new();
-        let pkg_file = env.layout.plugins_dir.join("plugins.pkg.json");
-        let mut pkg_state: HashMap<String, PkgEntry> = HashMap::new();
-        pkg_state.insert(
-            "alpha-tool".to_string(),
-            PkgEntry {
-                source: Some("a/b".to_string()),
-                pip: None,
-                pip_keep: None,
-                assets: vec![],
-                commands: vec!["run".to_string()],
-            },
-        );
-        pkg_state.insert(
-            "beta-tool".to_string(),
-            PkgEntry {
-                source: Some("x/y".to_string()),
-                pip: None,
-                pip_keep: None,
-                assets: vec![],
-                commands: vec!["run".to_string()],
-            },
-        );
-        crate::utils::json_io::write_json(&pkg_file, &pkg_state);
-
-        // "al" 前缀匹配内置 "all" 和插件 "alpha-tool"
         let prev = vec!["remove".to_string()];
         let result = contextual_completions(&prev, "al", &env.layout);
-        assert_eq!(result, vec!["all".to_string(), "alpha-tool".to_string()]);
+        assert_eq!(result, vec!["all".to_string()]);
     }
 
     // ==================== get_completions ====================
@@ -1269,7 +1105,8 @@ mod tests {
     fn get_completions_empty_delegates_to_top_level() {
         let env = TestEnv::new();
         let result = get_completions("", &env.layout);
-        assert!(result.contains(&"test-plugin".to_string()));
+        assert!(result.contains(&"add".to_string()));
+        assert!(result.contains(&"show".to_string()));
     }
 
     #[test]

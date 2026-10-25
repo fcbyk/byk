@@ -9,7 +9,7 @@ use std::process::Command;
 
 use crate::core::aliases::{self, ResolvedAlias};
 use crate::core::paths::PathLayout;
-use crate::core::plugins;
+use crate::core::plugins::types::{PYTHON_BIN, VENV_BIN};
 
 // ---------------------------------------------------------------------------
 // 命令名查询
@@ -19,15 +19,9 @@ use crate::core::plugins;
 #[derive(Debug)]
 pub enum InfoEntry {
     Builtin { name: String },
-    Plugin {
-        name: String,
-        cmd_type: String,
-        entry: String,
-        desc: String,
-    },
     Alias {
         display_source: String,
-        resolved: ResolvedAlias,
+        resolved: Box<ResolvedAlias>,
     },
 }
 
@@ -42,20 +36,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
         });
     }
 
-    // 2. 插件命令（不依赖 venv：bin 类型命令与 Python 环境无关）
-    {
-        let plugin_state = plugins::state::load_plugin_state(&layout.plugins_dir, &layout.venv_dir);
-        if let Some(cmd) = plugin_state.commands.get(name) {
-            entries.push(InfoEntry::Plugin {
-                name: name.to_string(),
-                cmd_type: cmd.cmd_type.clone(),
-                entry: cmd.entry.clone(),
-                desc: cmd.desc.clone(),
-            });
-        }
-    }
-
-    // 3. 精确别名 (@file.key / @@file.key)
+    // 2. 精确别名 (@file.key / @@file.key)
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(name) {
         let (_, files) = aliases::load_merged_aliases(layout);
         if let Some((resolved, display_source)) =
@@ -63,7 +44,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
         {
             entries.push(InfoEntry::Alias {
                 display_source,
-                resolved,
+                resolved: Box::new(resolved),
             });
         }
     }
@@ -76,7 +57,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
             let display_source = format!("{}.{}", resolved.source, name);
             entries.push(InfoEntry::Alias {
                 display_source,
-                resolved,
+                resolved: Box::new(resolved),
             });
         }
     }
@@ -126,7 +107,6 @@ pub struct CompletionStatus {
 pub struct OverviewInfo {
     pub completion: CompletionStatus,
     pub python: PythonOverviewInfo,
-    pub plugin_count: usize,
     pub alias_count: usize,
 }
 
@@ -141,9 +121,8 @@ pub struct PythonOverviewInfo {
 pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
     let completion = check_completion_status();
 
-    let python_exe = plugins::state::get_python_executable(&layout.plugins_dir, &layout.venv_dir);
-    let state_file = layout.plugins_dir.join("plugins.cmd.json");
-    let py_initialized = state_file.exists() || layout.venv_dir.exists();
+    let python_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
+    let py_initialized = layout.venv_dir.exists();
 
     let version = if py_initialized {
         Command::new(&python_exe)
@@ -161,15 +140,12 @@ pub fn collect_overview(layout: &PathLayout) -> OverviewInfo {
         version,
     };
 
-    let plugin_count = plugins::state::load_pkg_state(&layout.plugins_dir).len();
-
     let (merged, _files) = aliases::load_merged_aliases(layout);
     let alias_count = merged.len();
 
     OverviewInfo {
         completion,
         python,
-        plugin_count,
         alias_count,
     }
 }
