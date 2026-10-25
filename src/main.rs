@@ -141,7 +141,7 @@ fn main() {
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(command_name) {
         match aliases::lookup_exact_alias(&files, &file_key, &alias_key) {
             Some((resolved, display_source)) => {
-                aliases::execute_alias(&resolved, command_args, &display_source);
+                aliases::execute_alias(&resolved, command_args, &display_source, &layout);
                 return;
             }
             None => {
@@ -163,7 +163,7 @@ fn main() {
     match aliases::resolve_merged_alias(&merged, command_name) {
         Some(resolved) => {
             let display_source = format!("{}.{}", resolved.source, command_name);
-            aliases::execute_alias(resolved, command_args, &display_source);
+            aliases::execute_alias(resolved, command_args, &display_source, &layout);
         }
         None => {
             // 生成建议列表

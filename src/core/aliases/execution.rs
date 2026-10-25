@@ -8,6 +8,8 @@ use std::process::{Command, exit};
 use super::parse::to_alias_definition;
 use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mapping, split_ternary};
 use super::types::ResolvedAlias;
+use super::variables::{VarContext, expand_variables};
+use crate::core::paths::PathLayout;
 
 // ---------------------------------------------------------------------------
 // 危险命令检测（对应 Python `is_dangerous_command`）
@@ -284,10 +286,16 @@ fn convert_unix_path_for_cmd(command: &str) -> String {
 
 /// 执行别名命令。
 ///
-/// 根据别名定义中的 `$interactive` 字段决定行为：
+/// 先展开保留变量（`$python` / `$venv` / `$byk`，先于占位符解析），
+/// 再根据别名定义中的 `$interactive` 字段决定行为：
 /// - `false`（默认）：从 CLI 参数自动解析占位符，显示映射关系后直接执行。
 /// - `true`：逐项提示用户输入占位符值，显示最终命令后按 Enter 确认执行。
-pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: &str) {
+pub fn execute_alias(
+    resolved: &ResolvedAlias,
+    args: &[String],
+    display_source: &str,
+    layout: &PathLayout,
+) {
     let definition = match to_alias_definition(&resolved.value) {
         Some(d) => d,
         None => {
@@ -296,19 +304,54 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
         }
     };
 
+    // 保留变量展开：对 $cmd / $cwd / $paths 一致生效；
+    // 未命中的 $ token 透传给 shell
+    let var_ctx = VarContext::from_layout(layout);
+    let command = match expand_variables(&definition.command, &var_ctx) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{}", e);
+            exit(1);
+        }
+    };
+    let cwd = match definition
+        .cwd
+        .as_deref()
+        .map(|c| expand_variables(c, &var_ctx))
+        .transpose()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{}", e);
+            exit(1);
+        }
+    };
+    let custom_paths: Vec<String> = match resolved
+        .paths
+        .iter()
+        .map(|p| expand_variables(p, &var_ctx))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{}", e);
+            exit(1);
+        }
+    };
+
     let working_dir = resolve_working_dir(
-        definition.cwd.as_deref(),
+        cwd.as_deref(),
         resolved.source_path.as_deref().and_then(|p| p.parent()),
     );
-    let placeholders = collect_placeholders(&definition.command);
+    let placeholders = collect_placeholders(&command);
 
     // --- 公共输出: header ---
     println!("\n> {} {}", display_source, working_dir.display());
 
     if definition.interactive {
-        execute_interactive_impl(&definition.command, args, &placeholders, &working_dir, &resolved.paths);
+        execute_interactive_impl(&command, args, &placeholders, &working_dir, &custom_paths);
     } else {
-        execute_direct_impl(&definition.command, args, &placeholders, &working_dir, &resolved.paths);
+        execute_direct_impl(&command, args, &placeholders, &working_dir, &custom_paths);
     }
 }
 

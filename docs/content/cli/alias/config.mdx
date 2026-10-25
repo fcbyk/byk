@@ -239,6 +239,40 @@ Aliases:
 
 :::
 
+### 保留变量
+
+别名命令中的以下变量由 byk 在执行前展开为具体路径，shell 不会看到 `$` 变量：
+
+| 变量 | 展开为 | 说明 |
+|------|--------|------|
+| `$python` | byk 托管 venv 的 Python 解释器 | 与插件命令使用同一个解释器；venv 不存在时友好报错 |
+| `$venv` | venv 的 bin 目录（Windows 为 `Scripts`） | 用于 `$paths` 或拼接路径 |
+| `$byk` | byk 根目录 `~/.byk` | 引用插件产物等持久化数据 |
+
+**规则**：
+
+- 展开发生在占位符解析**之前**，`$cmd` / `$cwd` / `$paths` 三个位置一致生效
+- 仅以上三个变量会被展开；其他 `$` 开头的内容（如 `$HOME`、`$PATH`）原样透传给 shell 处理
+- 整词匹配：`$pythonfoo` 不会被误认为 `$python`
+- 展开值包含空格时，byk 自动补上双引号，无需手写
+- `${args}` 等系统占位符不受影响
+
+```json title=".byk.json"
+{
+  "$paths": ["$venv"],
+  "py": {
+    "$cmd": "$python -m http.server {port}",
+    "$interactive": true
+  },
+  "info": "$python -c \"import sys; print(sys.prefix)\""
+}
+```
+
+```bash
+byk py 8000        # 用 venv 的 python 启动 http.server
+byk info           # 打印 venv 的 site-packages 前缀
+```
+
 
 
 ### 调用示例
