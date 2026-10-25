@@ -185,7 +185,7 @@ def test_assets_var_without_declaration_errors(runner):
     assert "$assets" in r.stderr
 
 
-# ==================== byk add @file（别名安装） ====================
+# ==================== byk add <file>（别名安装） ====================
 
 
 def test_install_alias_filters_and_writes_copy(runner):
@@ -197,7 +197,7 @@ def test_install_alias_filters_and_writes_copy(runner):
         ' "skip": {"$cmd": "echo skip", "$install": false},'
         ' "local": {"dev": "vite dev"}}'
     )
-    r = runner.run("add", "@tool", cwd=str(work))
+    r = runner.run("add", "tool", cwd=str(work))
     assert r.returncode == 0, r.stderr
 
     dest = runner.byk_dir / "alias" / "tool.byk.json"
@@ -223,7 +223,7 @@ def test_install_alias_assets_only_still_writes_copy(runner):
     (work / "asset.byk.json").write_text(
         '{"$assets": {"$to": "$byk/tools/asset", "tool.sh": "[exe] ' + str(src) + '"}}'
     )
-    r = runner.run("add", "@asset", cwd=str(work))
+    r = runner.run("add", "asset", cwd=str(work))
     assert r.returncode == 0, r.stderr
     # 资源下载到 $to
     assert (runner.byk_dir / "tools" / "asset" / "tool.sh").is_file()
@@ -239,22 +239,37 @@ def test_install_alias_nothing_to_install_errors(runner):
     work = runner.home / "work3"
     work.mkdir(parents=True, exist_ok=True)
     (work / "empty.byk.json").write_text('{"x": "echo x"}')
-    r = runner.run("add", "@empty", cwd=str(work))
+    r = runner.run("add", "empty", cwd=str(work))
     assert r.returncode != 0
     assert "nothing to install" in r.stderr
     assert not (runner.byk_dir / "alias" / "empty.byk.json").exists()
 
 
-def test_install_alias_at_at_not_supported(runner):
-    """@@file 不支持 → 报错"""
-    r = runner.run("add", "@@foo")
-    assert r.returncode != 0
-    assert "not supported" in r.stderr
-
-
 def test_install_alias_file_not_found(runner):
-    """@file 文件不存在 → 报错"""
-    r = runner.run("add", "@nope")
+    """<file> 文件不存在 → 报错"""
+    r = runner.run("add", "nope")
     assert r.returncode != 0
     assert "not found" in r.stderr
+
+
+def test_install_alias_from_path(runner):
+    """-f 本地路径：任意路径的 .byk.json 文件"""
+    work = runner.home / "work4"
+    work.mkdir(parents=True, exist_ok=True)
+    sub = work / "sub"
+    sub.mkdir(parents=True, exist_ok=True)
+    (sub / "x.byk.json").write_text(
+        '{"tools": {"$install": true, "hi": {"$cmd": "echo from-path"}}}'
+    )
+    r = runner.run("add", "-f", str(sub / "x.byk.json"), cwd=str(work))
+    assert r.returncode == 0, r.stderr
+    assert (runner.byk_dir / "alias" / "x.byk.json").is_file()
+
+
+def test_install_remote_missing_path_errors(runner):
+    """远程 spec 缺 path（user/repo）→ 报错"""
+    r = runner.run("add", "user/repo")
+    assert r.returncode != 0
+    assert "missing a file path" in r.stderr
+
 

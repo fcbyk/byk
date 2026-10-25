@@ -8,11 +8,11 @@ use crate::utils::display;
 pub fn render() {
     println!();
     print!("{}", "Usage:".green().bold());
-    println!("{}", " byk add [OPTIONS] <USER/REPO[@BRANCH][/KEY] | FEATURE>".bold());
+    println!("{}", " byk add [OPTIONS] <user/repo[/path]> | <file> | FEATURE".bold());
     println!();
     println!("{}", "Options:".green().bold());
     println!(
-        "  {:<22} Use byk.json file path or URL",
+        "  {:<22} Install a local .byk.json file by path",
         "-f, --file <PATH>".cyan().bold(),
     );
     println!(
@@ -33,21 +33,17 @@ pub fn render() {
         "  {:<8} Download $assets resources from an alias file",
         "assets".cyan().bold()
     );
-    println!(
-        "  {:<8} Install a local alias file to the global directory",
-        "@file".cyan().bold()
-    );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
-        ("byk add user/repo/key".into(), "Install specific key from a repo".into()),
-        ("byk add user/repo".into(), "Install first key from a repo".into()),
-        ("byk add user/repo@dev/key".into(), "Install from a specific branch/tag".into()),
-        ("byk add --file ./local.json my-key".into(), "Install from local registry file".into()),
-        ("byk add --file https://example.com/byk.json key".into(), "Install from remote registry URL".into()),
+        ("byk add user/repo/pysdk".into(), "Fetch pysdk.byk.json from a GitHub repo".into()),
+        ("byk add user/repo/tools/lint".into(), "Fetch lint.byk.json from a repo subdirectory".into()),
+        ("byk add user/repo@dev/hello".into(), "Fetch hello.byk.json from the dev branch".into()),
+        ("byk add --cdn user/repo/hello".into(), "Fetch via jsDelivr CDN".into()),
+        ("byk add myfile".into(), "Install myfile.byk.json from the current directory".into()),
+        ("byk add -f ./path/to/x.byk.json".into(), "Install a local .byk.json file by path".into()),
         ("byk add pip @jiahao".into(), "Install $pip deps declared by jiahao.byk.json".into()),
         ("byk add assets @jiahao".into(), "Download $assets resources declared by jiahao.byk.json".into()),
-        ("byk add @jiahao".into(), "Install jiahao.byk.json (deps + $install aliases) globally".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {
@@ -114,19 +110,19 @@ pub fn render_assets() {
     println!();
 }
 
-/// 渲染 `byk add @file` 用法信息。
+/// 渲染 `byk add <file>` 用法信息。
 pub fn render_alias() {
     println!();
     print!("{}", "Usage:".green().bold());
-    println!("{}", " byk add @file".bold());
+    println!("{}", " byk add <file>".bold());
     println!();
-    println!("Install a local alias file to the global directory (~/.byk/alias/).");
+    println!("Install a local *.byk.json file to the global directory (~/.byk/alias/).");
     println!("Installs its $pip deps, downloads its $assets, and keeps only aliases");
     println!("marked with $install: true.");
     println!();
     println!("{}", "Examples:".green().bold());
-    println!("  {}", "byk add @demo".dimmed());
-    println!("  {}", "byk add @demo --cdn".dimmed());
+    println!("  {}", "byk add demo".dimmed());
+    println!("  {}", "byk add user/repo/pysdk".dimmed());
     println!();
 }
 

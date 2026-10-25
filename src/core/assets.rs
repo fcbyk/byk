@@ -38,6 +38,9 @@ pub struct AssetsCtx<'a> {
     pub byk_root: &'a Path,
     /// venv 目录（`$venv`/`$python` 展开用）
     pub venv_dir: &'a Path,
+    /// 远程文件的 base URL（远程分发时传入，相对路径据此解析成相对 URL；
+    /// 本地文件为 None，相对路径按本地文件目录解析）
+    pub remote_base: Option<&'a str>,
 }
 
 /// 资产来源。
@@ -133,8 +136,16 @@ fn expand_tilde(p: &str) -> PathBuf {
     PathBuf::from(p)
 }
 
-/// 解析条目源字符串：剥离 `[tar] `/`[exe] ` 前缀，区分 URL 与本地路径。
-fn parse_source(raw: &str, file_dir: &Path) -> Result<(AssetSource, AssetAction), String> {
+/// 解析条目源字符串：剥离 `[tar] `/`[exe] ` 前缀，区分 URL / 相对 URL / 本地路径。
+///
+/// - `http(s)://` → 完整 URL
+/// - 相对路径 + `remote_base`（远程文件）→ 解析成相对 URL
+/// - 相对路径 + 无 `remote_base`（本地文件）→ 本地路径（相对文件目录）
+fn parse_source(
+    raw: &str,
+    file_dir: &Path,
+    remote_base: Option<&str>,
+) -> Result<(AssetSource, AssetAction), String> {
     let (raw, action) = if let Some(u) = raw.strip_prefix("[tar] ") {
         (u, AssetAction::Tar)
     } else if let Some(u) = raw.strip_prefix("[exe] ") {
@@ -148,6 +159,9 @@ fn parse_source(raw: &str, file_dir: &Path) -> Result<(AssetSource, AssetAction)
     }
     let source = if raw.starts_with("http://") || raw.starts_with("https://") {
         AssetSource::Url(raw.to_string())
+    } else if let Some(base) = remote_base {
+        // 远程文件：相对路径相对 base URL 解析（如仓库内 `bin/tool` → `{base}/bin/tool`）
+        AssetSource::Url(resolve_relative_url(base, raw))
     } else {
         let expanded = expand_tilde(raw);
         let p = if expanded.is_absolute() {
@@ -158,6 +172,16 @@ fn parse_source(raw: &str, file_dir: &Path) -> Result<(AssetSource, AssetAction)
         AssetSource::LocalPath(p)
     };
     Ok((source, action))
+}
+
+/// 相对路径拼接为完整 URL（相对 URL 解析，与 byk.json 的 RefBase 同语义）。
+fn resolve_relative_url(base_url: &str, rel: &str) -> String {
+    let rel = rel.strip_prefix("./").unwrap_or(rel);
+    let base = match base_url.rsplit_once('/') {
+        Some((parent, _)) => parent,
+        None => base_url,
+    };
+    format!("{}/{}", base, rel)
 }
 
 /// 解析 `$to` → 显式根目录。None 表示未设置（走缺省根）。
@@ -251,7 +275,7 @@ pub fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<AssetsPlan,
             skipped.push(name.clone());
             continue;
         };
-        let (source, action) = parse_source(&raw, file_dir)?;
+        let (source, action) = parse_source(&raw, file_dir, ctx.remote_base)?;
         entries.push(AssetEntry {
             name: name.clone(),
             source,
@@ -302,6 +326,7 @@ mod tests {
             cwd,
             byk_root: Path::new("/home/u/.byk"),
             venv_dir: Path::new("/home/u/.byk/py-venv/.venv"),
+            remote_base: None,
         }
     }
 
@@ -454,5 +479,29 @@ mod tests {
             PathBuf::from("/opt/linux")
         };
         assert_eq!(plan.root, expected);
+    }
+
+    #[test]
+    fn relative_url_with_remote_base() {
+        let mut c = ctx(Path::new("/tmp/demo.byk.json"), "@demo", Path::new("/proj"));
+        c.remote_base = Some("https://raw.githubusercontent.com/u/r/main/demo.byk.json");
+        let block = json!({"tool": "bin/tool"});
+        let plan = resolve_assets_plan(&block, &c).unwrap();
+        assert_eq!(
+            plan.entries[0].source,
+            AssetSource::Url("https://raw.githubusercontent.com/u/r/main/bin/tool".into())
+        );
+    }
+
+    #[test]
+    fn full_url_ignores_remote_base() {
+        let mut c = ctx(Path::new("/tmp/demo.byk.json"), "@demo", Path::new("/proj"));
+        c.remote_base = Some("https://raw.githubusercontent.com/u/r/main/demo.byk.json");
+        let block = json!({"tool": "https://other.example/tool"});
+        let plan = resolve_assets_plan(&block, &c).unwrap();
+        assert_eq!(
+            plan.entries[0].source,
+            AssetSource::Url("https://other.example/tool".into())
+        );
     }
 }

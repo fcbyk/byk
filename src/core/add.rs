@@ -15,9 +15,6 @@ use crate::core::paths::PathLayout;
 use crate::core::plugins;
 use crate::utils::shell;
 
-// 重导出插件安装入口
-pub use super::plugins::install::install_plugin;
-
 // ---------------------------------------------------------------------------
 // --add comp（原 --init comp）
 // ---------------------------------------------------------------------------
@@ -118,6 +115,7 @@ fn download_assets_block(
     file_key: &str,
     layout: &PathLayout,
     cdn: bool,
+    remote_base: Option<&str>,
 ) -> bool {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let ctx = assets::AssetsCtx {
@@ -126,6 +124,7 @@ fn download_assets_block(
         cwd: &cwd,
         byk_root: &layout.root_dir,
         venv_dir: &layout.venv_dir,
+        remote_base,
     };
     let plan = match assets::resolve_assets_plan(block, &ctx) {
         Ok(p) => p,
@@ -463,67 +462,35 @@ pub fn install_alias_assets(target: Option<&str>, layout: &PathLayout, cdn: bool
         }
     };
 
-    download_assets_block(&block, &path, target, layout, cdn);
+    download_assets_block(&block, &path, target, layout, cdn, None);
 }
 
 // ---------------------------------------------------------------------------
 // --add @xxx（别名安装）
 // ---------------------------------------------------------------------------
 
-/// `byk add @xxx`：安装本地别名文件到全局目录。
+// ---------------------------------------------------------------------------
+// --add <xxx>（别名安装，本地 / 远程共用核心）
+// ---------------------------------------------------------------------------
+
+/// 从文件路径安装为全局别名文件（本地 / 远程共用）。
 ///
-/// 流程：读原始 JSON → `$var` 阶段一替换（下载用）→ 装 `$pip` → 下载 `$assets`
-/// → `$install` 筛选（保留 install=true 的别名子树）→ 写副本到 `~/.byk/alias/`。
+/// 流程：读原始 JSON → `$var` 阶段一替换（下载用）→ 装 `$pip`/`$pip-keep`
+/// → 下载 `$assets`（`remote_base` 非空时相对路径解析成相对 URL）
+/// → `$install` 筛选 → 写副本到 `~/.byk/alias/<stem>.byk.json`。
 ///
-/// 副本 = 文件级字段（`$var`/`$pip`/`$assets`/`$cwd`/`$paths`/`$priority`/`$interactive`）
-///       + 筛选后的别名（`$install` 标志本身不进入副本）。
-///
-/// 无 `$install` 别名时，若文件有 `$pip`/`$assets` 仍写副本（记录已安装内容，为卸载提供钩子）；
+/// 无 `$install` 别名时，若文件有 `$pip`/`$assets` 仍写副本（记录已安装内容）；
 /// 三者皆无 → 报错，不写副本。
-pub fn install_alias(target: Option<&str>, layout: &PathLayout, cdn: bool) {
-    let target = match target {
-        Some(t) => t,
-        None => {
-            crate::render::add::render_alias();
-            return;
-        }
-    };
-
-    // 只支持 @xxx（本地文件安装到全局）；@@ / 路径形态不支持
-    let stem = match target.strip_prefix('@') {
-        Some(s) => s,
-        None => {
-            eprintln!(
-                "{} install target must be @file (e.g. byk add @demo)",
-                "Error:".red()
-            );
-            eprintln!("  Found: {}", target.bold());
-            std::process::exit(1);
-        }
-    };
-    if stem.starts_with('@') {
-        eprintln!(
-            "{} '@@file' is not supported for alias install.",
-            "Error:".red()
-        );
-        eprintln!("  Global files are already installed; use @file to install a local file.");
-        std::process::exit(1);
-    }
-
-    // 解析本地文件
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let path = cwd.join(alias_file_name(stem));
-    if !path.is_file() {
-        eprintln!("{} alias file not found: {}", "Error:".red(), target.bold());
-        eprintln!(
-            "  Expected {} in the current directory.",
-            path.display().to_string().dimmed()
-        );
-        std::process::exit(1);
-    }
-
+fn install_alias_from_file(
+    path: &Path,
+    file_key: &str,
+    stem: &str,
+    layout: &PathLayout,
+    cdn: bool,
+    remote_base: Option<&str>,
+) {
     // 读原始 JSON
-    let content = fs::read_to_string(&path).unwrap_or_else(|e| {
+    let content = fs::read_to_string(path).unwrap_or_else(|e| {
         eprintln!("{} failed to read {}: {}", "Error:".red(), path.display(), e);
         std::process::exit(1);
     });
@@ -599,7 +566,7 @@ pub fn install_alias(target: Option<&str>, layout: &PathLayout, cdn: bool) {
 
     // 下载 assets
     if let Some(block) = &assets_block {
-        download_assets_block(block, &path, target, layout, cdn);
+        download_assets_block(block, path, file_key, layout, cdn, remote_base);
     }
 
     // 组装副本：文件级字段 + 筛选后别名（$install 排除）
@@ -639,6 +606,151 @@ pub fn install_alias(target: Option<&str>, layout: &PathLayout, cdn: bool) {
         "Successfully".green(),
         dest.display().to_string().dimmed()
     );
+}
+
+/// `byk add <xxx>`：安装当前目录的 `<xxx>.byk.json` 到全局目录。
+pub fn install_alias(target: Option<&str>, layout: &PathLayout, cdn: bool) {
+    let stem = match target {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            crate::render::add::render_alias();
+            return;
+        }
+    };
+
+    // 解析本地文件（当前目录）
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let path = cwd.join(alias_file_name(stem));
+    if !path.is_file() {
+        eprintln!("{} alias file not found: {}", "Error:".red(), stem.bold());
+        eprintln!(
+            "  Expected {} in the current directory.",
+            path.display().to_string().dimmed()
+        );
+        std::process::exit(1);
+    }
+
+    install_alias_from_file(&path, &format!("@{}", stem), stem, layout, cdn, None);
+}
+
+/// `byk add -f <path>`：安装指定路径的 *.byk.json 文件（本地）。
+pub fn install_alias_from_path(path_str: &str, layout: &PathLayout, cdn: bool) {
+    let path = PathBuf::from(path_str);
+    if !path.is_file() {
+        eprintln!(
+            "{} alias file not found: {}",
+            "Error:".red(),
+            path.display().to_string().bold()
+        );
+        std::process::exit(1);
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    let stem = file_name.strip_suffix(".byk.json").unwrap_or(file_name);
+    if stem.is_empty() {
+        eprintln!("{} invalid alias file: {}", "Error:".red(), path_str.bold());
+        std::process::exit(1);
+    }
+    install_alias_from_file(&path, &format!("@{}", stem), stem, layout, cdn, None);
+}
+
+// ---------------------------------------------------------------------------
+// --add user/repo/path（远程 *.byk.json 分发）
+// ---------------------------------------------------------------------------
+
+/// 解析远程 spec：`user/repo[@branch]/path/to/file` → (owner, repo, branch, path)。
+/// path 可为多级（`aaa/bbb`），空字符串表示不带 path（由调用方报错）。
+fn parse_remote_spec(spec: &str) -> Option<(&str, &str, &str, &str)> {
+    let (owner, rest) = spec.split_once('/')?;
+    let (repo_part, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let (repo, branch) = repo_part.split_once('@').unwrap_or((repo_part, "main"));
+    Some((owner, repo, branch, path))
+}
+
+/// 拼接 *.byk.json 的远程 URL（path 无后缀时自动补 `.byk.json`）。
+fn build_file_url(owner: &str, repo: &str, branch: &str, path: &str, cdn: bool) -> String {
+    let file = if path.ends_with(".byk.json") {
+        path.to_string()
+    } else {
+        format!("{}.byk.json", path)
+    };
+    if cdn {
+        format!(
+            "https://cdn.jsdelivr.net/gh/{}/{}@{}/{}",
+            owner, repo, branch, file
+        )
+    } else {
+        format!(
+            "https://raw.githubusercontent.com/{}/{}/{}/{}",
+            owner, repo, branch, file
+        )
+    }
+}
+
+/// 从 path 提取 stem（最后一段，去 `.byk.json` 后缀）。
+fn stem_from_path(path: &str) -> &str {
+    let last = path.rsplit('/').next().unwrap_or(path);
+    last.strip_suffix(".byk.json").unwrap_or(last)
+}
+
+/// `byk add user/repo/path`：拉取远程 *.byk.json 并安装为全局别名文件。
+pub fn install_remote(spec: &str, layout: &PathLayout, cdn: bool) {
+    let (owner, repo, branch, path) = match parse_remote_spec(spec) {
+        Some(x) => x,
+        None => {
+            eprintln!("{} invalid remote spec: {}", "Error:".red(), spec.bold());
+            eprintln!("  Expected: byk add <user>/<repo>[/<path>]");
+            std::process::exit(1);
+        }
+    };
+    if path.is_empty() {
+        eprintln!(
+            "{} remote spec '{}' is missing a file path.",
+            "Error:".red(),
+            spec.bold()
+        );
+        eprintln!("  Use: byk add <user>/<repo>/<file>  (e.g. byk add fcbyk/byk/pysdk)");
+        std::process::exit(1);
+    }
+
+    let url = build_file_url(owner, repo, branch, path, cdn);
+    let stem = stem_from_path(path);
+    println!(
+        "{} Fetching {} from {}/{}",
+        "==>".cyan().bold(),
+        format!("{}.byk.json", stem).bold(),
+        format!("{}/{}", owner, repo).dimmed(),
+        branch.dimmed()
+    );
+
+    // 下载到临时文件
+    let temp_dir = layout.cache_dir.join("tmp-remote");
+    if let Err(e) = fs::create_dir_all(&temp_dir) {
+        eprintln!("{} failed to create {}: {}", "Error:".red(), temp_dir.display(), e);
+        std::process::exit(1);
+    }
+    let temp_file = temp_dir.join(format!("{}.byk.json", stem));
+    if let Err(e) = plugins::install::download_script(&url, &temp_file) {
+        eprintln!("{} failed to download {}: {}", "Error:".red(), url, e);
+        std::process::exit(1);
+    }
+
+    // 落点冲突：全局已有同名文件 → 提示覆盖（幂等）
+    let dest = layout.alias_dir.join(format!("{}.byk.json", stem));
+    if dest.exists() {
+        println!(
+            "{} {} already exists, overwriting.",
+            "*".dimmed(),
+            dest.display().to_string().dimmed()
+        );
+    }
+
+    // 安装（装 $pip/$assets + 筛选 $install + 写副本）；remote_base = 文件 URL，
+    // 使 $assets 的相对路径解析成相对 URL
+    let file_key = format!("@@{}", stem);
+    install_alias_from_file(&temp_file, &file_key, stem, layout, cdn, Some(&url));
 }
 
 /// 解析 target 为具体文件路径（pip / assets 共用）。文件不存在返回 None。
@@ -811,6 +923,62 @@ mod tests {
         let g = result["g"].as_object().unwrap();
         assert!(g.contains_key("b"));
         assert!(!g.contains_key("a"));
+    }
+
+    // ==================== parse_remote_spec / build_file_url ====================
+
+    #[test]
+    fn remote_spec_simple_path() {
+        let (o, r, b, p) = parse_remote_spec("user/repo/pysdk").unwrap();
+        assert_eq!((o, r, b, p), ("user", "repo", "main", "pysdk"));
+    }
+
+    #[test]
+    fn remote_spec_multi_level_path() {
+        let (o, r, b, p) = parse_remote_spec("user/repo/tools/lint").unwrap();
+        assert_eq!((o, r, b, p), ("user", "repo", "main", "tools/lint"));
+    }
+
+    #[test]
+    fn remote_spec_branch() {
+        let (o, r, b, p) = parse_remote_spec("user/repo@dev/hello").unwrap();
+        assert_eq!((o, r, b, p), ("user", "repo", "dev", "hello"));
+    }
+
+    #[test]
+    fn remote_spec_no_path() {
+        let (o, r, b, p) = parse_remote_spec("user/repo").unwrap();
+        assert_eq!((o, r, b, p), ("user", "repo", "main", ""));
+    }
+
+    #[test]
+    fn remote_spec_invalid() {
+        assert!(parse_remote_spec("onlyone").is_none());
+        assert!(parse_remote_spec("").is_none());
+    }
+
+    #[test]
+    fn file_url_raw_and_cdn() {
+        let raw = build_file_url("u", "r", "main", "pysdk", false);
+        assert_eq!(
+            raw,
+            "https://raw.githubusercontent.com/u/r/main/pysdk.byk.json"
+        );
+        let cdn = build_file_url("u", "r", "dev", "tools/lint", true);
+        assert_eq!(cdn, "https://cdn.jsdelivr.net/gh/u/r@dev/tools/lint.byk.json");
+    }
+
+    #[test]
+    fn file_url_keeps_existing_suffix() {
+        let url = build_file_url("u", "r", "main", "x.byk.json", false);
+        assert_eq!(url, "https://raw.githubusercontent.com/u/r/main/x.byk.json");
+    }
+
+    #[test]
+    fn stem_from_path_forms() {
+        assert_eq!(stem_from_path("pysdk"), "pysdk");
+        assert_eq!(stem_from_path("tools/lint"), "lint");
+        assert_eq!(stem_from_path("x.byk.json"), "x");
     }
 }
 

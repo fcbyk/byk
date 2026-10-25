@@ -1,3 +1,5 @@
+#![allow(dead_code)] // 临时：byk.json 插件系统（install_plugin）待 npm 迁移后整体删除
+
 //! 插件系统数据结构。
 //!
 //! 三层架构：

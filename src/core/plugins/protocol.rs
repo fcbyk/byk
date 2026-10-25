@@ -1,3 +1,5 @@
+#![allow(dead_code)] // 临时：byk.json 插件系统（install_plugin）待 npm 迁移后整体删除
+
 //! 插件协议层数据结构。
 //!
 //! 直接映射 byk.json 的 JSON 形状，保持清晰、扁平的嵌套结构。

@@ -410,7 +410,7 @@ byk add assets --cdn @demo     # GitHub raw 走 jsDelivr CDN 加速
 | 目标 `$to` | 可选。变量/平台映射/`~`，相对路径相对文件目录解析，不存在自动创建。显式设置时条目直接落 `<root>/<名字>` |
 | 缺省根 | 本地文件=文件所在目录，全局文件=当前工作目录；声明 1 条目平铺、≥2 条目自动进 `<root>/assets/` |
 | 条目名 | 即资产相对路径，`/` 天然表达子目录；拒绝 `..`/绝对路径 |
-| 源 | URL 或本地路径（相对文件目录）；条目值可为平台映射（当前平台不在映射 → 跳过） |
+| 源 | URL 或本地路径（相对文件目录）；远程包的相对路径解析成相对 URL（相对仓库内文件目录）；条目值可为平台映射（当前平台不在映射 → 跳过） |
 | 前缀 | `[exe]` 下载后加执行位；`[tar]` 解压到同名子目录；无前缀原样下载 |
 | 幂等 | 每次全量重下，目标已存在则注记；不引入 `--force` |
 | `$assets` 变量 | 展开为资源实际所在目录（吸收 root+容器逻辑），命令写 `$assets/...` 永远不用猜落点 |
@@ -421,7 +421,7 @@ byk add assets --cdn @demo     # GitHub raw 走 jsDelivr CDN 加速
 
 ### 安装标志 $install
 
-`$install` 标记哪些别名需要被安装到全局（`byk add @file`）。它与 `$interactive` 完全同构——三级继承，opt-in（默认不装）：
+`$install` 标记哪些别名需要被安装到全局（`byk add <file>`）。它与 `$interactive` 完全同构——三级继承，opt-in（默认不装）：
 
 ```json title=".byk.json"
 {
@@ -436,8 +436,8 @@ byk add assets --cdn @demo     # GitHub raw 走 jsDelivr CDN 加速
 ```
 
 ```bash
-byk add @demo          # 安装当前目录 demo.byk.json
-byk add @demo --cdn    # 同时用 jsDelivr 加速 $assets 下载
+byk add demo            # 安装当前目录 demo.byk.json
+byk add user/repo/pysdk # 拉取远程 pysdk.byk.json 并安装
 ```
 
 | 规则 | 说明 |
@@ -449,7 +449,7 @@ byk add @demo --cdn    # 同时用 jsDelivr 加速 $assets 下载
 | 无别名时 | 文件有 `$pip`/`$assets` 仍写副本（记录已安装内容，为卸载留钩子）；三者皆无 → 报错 |
 
 :::note
-`byk add @file` 只接受本地文件（`@`）；全局文件（`@@`）已在全局，没有「安装」语义。带 `$assets` 的别名若要装成全局工具，建议显式 `$to` 指向确定位置（如 `$byk/tools/xxx`），否则资源按缺省根规则落在运行时的当前目录。
+`byk add <file>` 安装当前目录的 `<file>.byk.json`（本地）；`byk add user/repo/path` 拉取远程 `*.byk.json`；`byk add -f <path>` 安装指定路径的本地文件。带 `$assets` 的别名若要装成全局工具，建议显式 `$to` 指向确定位置（如 `$byk/tools/xxx`），否则资源按缺省根规则落在运行时的当前目录。
 :::
 
 ### 调用示例

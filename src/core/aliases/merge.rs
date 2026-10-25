@@ -167,6 +167,7 @@ pub(crate) fn file_assets_dir(f: &AliasFile, layout: &PathLayout, cwd: &Path) ->
         cwd,
         byk_root: &layout.root_dir,
         venv_dir: &layout.venv_dir,
+        remote_base: None,
     };
     assets_dir_or_warn(block, &ctx)
 }

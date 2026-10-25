@@ -11,33 +11,38 @@ byk 提供一组内置子命令，用于添加功能、管理插件、生成补�
 
 ## add
 
-添加插件（远程仓库 / 本地文件）或初始化内置功能（comp）。
+安装别名文件（远程 `*.byk.json` / 本地）或初始化内置功能（comp）。
 
 ```bash
-byk add [OPTIONS] <USER/REPO[@BRANCH][/KEY] | FEATURE>
+byk add [OPTIONS] <user/repo[/path]> | <file> | FEATURE
 ```
 
-### 插件 (Plugins)
+### 别名安装 (Aliases)
 
 | 选项 | 说明 |
 |------|------|
-| `-f, --file <PATH>` | 使用本地 `byk.json` 文件代替远程仓库 |
+| `-f, --file <PATH>` | 安装指定路径的本地 `.byk.json` 文件 |
 | `--cdn` | 通过 jsDelivr CDN 访问 GitHub 仓库 |
 
-插件来源支持两种模式：
+三种安装来源：
 
-- **远程仓库**：`byk add user/repo` 或 `byk add user/repo/key` — 从指定 GitHub 仓库安装。可通过 `@` 指定分支：`byk add user/repo@dev/key`
-- **本地安装**：`byk add -f ./local.json my-key`
+- **远程**：`byk add user/repo/path` 从 GitHub 仓库拉取 `path.byk.json`（支持多级目录）；`repo@branch` 指定分支/tag
+- **本地文件名**：`byk add myfile` 安装当前目录的 `myfile.byk.json`
+- **本地路径**：`byk add -f ./path/to/x.byk.json`
 
 ```bash title="示例"
-byk add user/repo/key             # 从远程仓库安装指定 key
-byk add user/repo                 # 安装远程仓库 byk.json 中的第一个 key
-byk add user/repo@dev/key         # 从 dev 分支安装
-byk add -f ./local.json key       # 使用本地 byk.json 安装
+byk add user/repo/pysdk        # 拉取 pysdk.byk.json
+byk add user/repo/tools/lint   # 拉取 tools/lint.byk.json（多级目录）
+byk add user/repo@dev/hello    # 从 dev 分支拉取 hello.byk.json
+byk add --cdn user/repo/hello  # 走 jsDelivr CDN
+byk add myfile                 # 安装当前目录 myfile.byk.json
+byk add -f ./path/x.byk.json   # 安装指定路径的本地文件
 ```
 
+安装 = 装 `$pip`/`$pip-keep` + 下载 `$assets` + 保留 `$install` 标记的别名，副本写入 `~/.byk/alias/<file>.byk.json`。
+
 :::tip
-首次运行 `byk add` 安装插件时，如果 Python venv 尚未初始化，会提示是否自动创建。
+远程包的 `$assets` 相对路径解析成**相对 URL**（相对仓库内文件目录）；本地文件则解析成相对文件目录的本地路径。详见 [别名配置 - 资源下载](/cli/alias/config)。
 :::
 
 ### 功能 (Features)
@@ -47,13 +52,11 @@ byk add -f ./local.json key       # 使用本地 byk.json 安装
 | `comp` | 初始化 shell 补全（自动检测 zsh/bash），在对应 rc 文件中追加补全脚本 |
 | `pip <@file\|@@file\|PATH>` | 安装别名文件 `$pip` 声明的 Python 依赖到 byk 托管 venv |
 | `assets <@file\|@@file>` | 拉取别名文件 `$assets` 声明的资源（URL/本地路径/解压/可执行位） |
-| `@file` | 安装本地别名文件到全局：装 `$pip`/`$assets` + 保留 `$install` 标记的别名 |
 
 ```bash title="示例"
 byk add comp      # 配置 shell 补全
 byk add pip @jiahao   # 安装 jiahao.byk.json 的 $pip 依赖
 byk add assets @demo  # 拉取 demo.byk.json 的 $assets 资源
-byk add @demo         # 安装 demo.byk.json 到全局
 ```
 
 :::tip
@@ -62,10 +65,6 @@ byk add @demo         # 安装 demo.byk.json 到全局
 
 :::tip
 `byk add assets` 的 target 支持 `@file`（当前目录）、`@@file`（全局目录）两种形态（资源目录需要文件 key）。支持 `--cdn`（GitHub raw 走 jsDelivr）。详见 [别名配置 - 资源下载](/cli/alias/config)。
-:::
-
-:::tip
-`byk add @file` 只接受本地文件（`@`），安装后写副本到 `~/.byk/alias/<file>.byk.json`。保留 `$install: true` 的别名子树；文件有 `$pip`/`$assets` 时即使无 `$install` 别名也会写副本（记录已安装内容）。详见 [别名配置 - 安装标志](/cli/alias/config)。
 :::
 
 :::note

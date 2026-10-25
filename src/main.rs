@@ -78,21 +78,30 @@ fn main() {
                     );
                     exit(1);
                 }
-                (Some(n), None, None) if n.starts_with('@') => {
-                    add::install_alias(Some(n), &layout, cdn);
-                }
                 (_, _, Some(t)) => {
                     eprintln!("{} unexpected argument '{}'", "Error:".red(), t);
                     eprintln!("  Run {} for usage.", "byk add -h".bold());
                     exit(1);
                 }
-                (spec, file, None) => {
-                    add::install_plugin(
-                        spec.unwrap_or(""),
-                        file,
-                        &layout,
-                        cdn,
+                (None, Some(f), None) => {
+                    // -f：本地 *.byk.json 文件路径
+                    add::install_alias_from_path(f, &layout, cdn);
+                }
+                (Some(_), Some(_), None) => {
+                    eprintln!(
+                        "{} -f/--file takes a single .byk.json path; unexpected argument '{}'",
+                        "Error:".red(),
+                        name.as_deref().unwrap_or("")
                     );
+                    exit(1);
+                }
+                (Some(n), None, None) if n.contains('/') => {
+                    // 远程：user/repo/path → 拉取 *.byk.json
+                    add::install_remote(n, &layout, cdn);
+                }
+                (Some(n), None, None) => {
+                    // 本地：当前目录 <n>.byk.json
+                    add::install_alias(Some(n), &layout, cdn);
                 }
             }
             return;
