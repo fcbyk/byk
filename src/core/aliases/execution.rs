@@ -1,4 +1,4 @@
-//! 别名执行：危险命令检测、环境构建、交互模式、执行入口。
+//! 别名执行：环境构建、交互模式、执行入口。
 
 use std::collections::{HashMap, HashSet};
 use rustyline::DefaultEditor;
@@ -10,30 +10,6 @@ use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mappin
 use super::types::ResolvedAlias;
 use super::variables::{VarContext, expand_variables};
 use crate::core::paths::PathLayout;
-
-// ---------------------------------------------------------------------------
-// 危险命令检测（对应 Python `is_dangerous_command`）
-// ---------------------------------------------------------------------------
-
-/// 判断命令是否存在明显风险（rm -rf、git push -f、shutdown 等）。
-#[allow(dead_code)]
-pub fn is_dangerous_command(command: &str) -> bool {
-    let lower = command.to_lowercase();
-    lower.contains("rm -rf")
-        || lower.contains("rm -fr")
-        || lower.contains("rm -r -f")
-        || lower.contains("rm -f -r")
-        || lower.contains("rm  -rf")
-        || lower.contains("rm  -fr")
-        || (lower.contains("git push") && (lower.contains(" -f") || lower.contains(" --force")))
-        || lower.contains("shutdown")
-        || lower.contains("reboot")
-        || lower.starts_with("format ")
-        || lower.starts_with("rd /s")
-        || lower.starts_with("rd /q")
-        || lower.starts_with("del /s")
-        || lower.starts_with("del /q")
-}
 
 // ---------------------------------------------------------------------------
 // 别名执行环境构建
@@ -677,52 +653,6 @@ fn strip_extended_path_prefix(path: PathBuf) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ==================== is_dangerous_command ====================
-
-    #[test]
-    fn dangerous_rm_rf_variants() {
-        assert!(is_dangerous_command("rm -rf /tmp/test"));
-        assert!(is_dangerous_command("rm -fr /tmp/test"));
-        assert!(is_dangerous_command("rm -r -f /tmp/test"));
-        assert!(is_dangerous_command("rm -f -r /tmp/test"));
-        assert!(is_dangerous_command("rm  -rf /tmp/test"));
-        assert!(is_dangerous_command("rm  -fr /tmp/test"));
-    }
-
-    #[test]
-    fn dangerous_git_push_force() {
-        assert!(is_dangerous_command("git push -f origin main"));
-        assert!(is_dangerous_command("git push --force origin main"));
-    }
-
-    #[test]
-    fn dangerous_shutdown_reboot() {
-        assert!(is_dangerous_command("shutdown now"));
-        assert!(is_dangerous_command("reboot"));
-    }
-
-    #[test]
-    fn dangerous_format_del_rd() {
-        assert!(is_dangerous_command("format c:"));
-        assert!(is_dangerous_command("rd /s /q folder"));
-        assert!(is_dangerous_command("del /s /q *.tmp"));
-    }
-
-    #[test]
-    fn not_dangerous_normal_commands() {
-        assert!(!is_dangerous_command("echo hello"));
-        assert!(!is_dangerous_command("git push origin main"));
-        assert!(!is_dangerous_command("npm start"));
-        assert!(!is_dangerous_command("ls -la"));
-    }
-
-    #[test]
-    fn not_dangerous_partial_match() {
-        // "rm" 单独出现不算危险
-        assert!(!is_dangerous_command("rm file.txt"));
-        assert!(!is_dangerous_command("formatting text")); // "format " 带空格才算
-    }
 
     // ==================== is_named_placeholder ====================
 

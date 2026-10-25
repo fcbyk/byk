@@ -129,8 +129,6 @@ pub enum AssetTarget {
     PluginDir,
     /// 当前工作目录
     Workdir,
-    /// ~/.byk/alias/
-    Alias,
 }
 
 /// 统一下载项，由 build_install_plan 完全构建，execute 按顺序消费。

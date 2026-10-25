@@ -58,10 +58,6 @@ pub struct PluginDef {
     #[serde(rename = "download-to-workdir", default)]
     pub download_to_workdir: Option<DownloadsSection>,
 
-    /// 下载到 ~/.byk/alias/
-    #[serde(rename = "download-to-alias", default)]
-    pub download_to_alias: Option<DownloadsSection>,
-
     /// 单个命令注册（命令名 = 插件 key）
     #[serde(default)]
     pub command: Option<CommandDef>,
@@ -69,12 +65,6 @@ pub struct PluginDef {
     /// 多个命令注册
     #[serde(default)]
     pub commands: Option<HashMap<String, CommandDef>>,
-
-    /// 别名部署：安装时写入 *.byk.json 文件
-    /// key = "@filename"（当前目录）或 "@@filename"（~/.byk/alias/）
-    /// value = 别名 key-value 定义
-    #[serde(default)]
-    pub alias: Option<HashMap<String, serde_json::Value>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -483,29 +473,6 @@ mod tests {
                         }
                     }
                     _ => panic!("expected Tree"),
-                }
-            }
-            _ => panic!("expected Map"),
-        }
-    }
-
-    #[test]
-    fn parse_download_to_alias() {
-        let raw = to_map(r#"{
-            "app": {
-                "download-to-alias": {
-                    "myalias": "https://example.com/alias.py"
-                }
-            }
-        }"#);
-        let registry = parse_registry(&raw);
-        let def = registry.plugins.get("app").unwrap();
-        let al = def.download_to_alias.as_ref().unwrap();
-        match al {
-            DownloadsSection::Map(m) => {
-                match m.get("myalias").unwrap() {
-                    DownloadValue::Url(s) => assert_eq!(s, "https://example.com/alias.py"),
-                    _ => panic!("expected Url"),
                 }
             }
             _ => panic!("expected Map"),
