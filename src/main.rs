@@ -67,10 +67,14 @@ fn main() {
                 (Some("pip"), None, target) => {
                     add::install_alias_pip(target, &layout);
                 }
-                (Some("pip"), Some(_), _) => {
+                (Some("assets"), None, target) => {
+                    add::install_alias_assets(target, &layout, cdn);
+                }
+                (Some("pip" | "assets"), Some(_), _) => {
                     eprintln!(
-                        "{} -f/--file is not used with 'byk add pip'; pass the .byk.json path directly.",
-                        "Error:".red()
+                        "{} -f/--file is not used with 'byk add {}'; pass the .byk.json path directly.",
+                        "Error:".red(),
+                        name.as_deref().unwrap_or("")
                     );
                     exit(1);
                 }
@@ -154,7 +158,7 @@ fn main() {
 
     // Step 4a: 检查精确执行语法（@file.key 或 @@file.key）
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(command_name) {
-        match aliases::lookup_exact_alias(&files, &file_key, &alias_key) {
+        match aliases::lookup_exact_alias(&files, &file_key, &alias_key, &layout) {
             Some((resolved, display_source)) => {
                 aliases::execute_alias(&resolved, command_args, &display_source, &layout);
                 return;

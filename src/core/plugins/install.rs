@@ -110,7 +110,7 @@ fn build_registry_url(branch: &str, owner: &str, repo: &str) -> String {
 ///
 /// raw:  https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}
 /// cdn:  https://cdn.jsdelivr.net/gh/{owner}/{repo}@{branch}/{path}
-fn to_jsdelivr_url(raw_url: &str) -> String {
+pub(crate) fn to_jsdelivr_url(raw_url: &str) -> String {
     let prefix = "https://raw.githubusercontent.com/";
     if let Some(rest) = raw_url.strip_prefix(prefix) {
         let parts: Vec<&str> = rest.splitn(3, '/').collect();
@@ -169,7 +169,7 @@ fn fetch_registry(url: &str) -> Result<String, String> {
 }
 
 /// 下载脚本文件到目标路径（流式写入 + 进度条）。
-fn download_script(url: &str, dest: &Path) -> Result<(), String> {
+pub(crate) fn download_script(url: &str, dest: &Path) -> Result<(), String> {
     let response = ureq::get(url)
         .call()
         .map_err(|e| format!("HTTP request failed: {}", e))?;
@@ -340,7 +340,7 @@ fn peek_archive(path: &Path) -> Result<usize, String> {
 }
 
 /// 解压压缩包到目标目录。
-fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
+pub(crate) fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
     if !dest.exists()
         && let Err(e) = std::fs::create_dir_all(dest)
     {
@@ -1995,7 +1995,7 @@ fn merge_py_state(layout: &crate::core::paths::PathLayout, python_exe: &Path) {
 // ---------------------------------------------------------------------------
 
 /// 创建目录，打印操作信息。
-fn ensure_dir(path: &Path, label: &str) {
+pub(crate) fn ensure_dir(path: &Path, label: &str) {
     if path.exists() {
         println!("  {} {} {}", "+".dimmed(), label.dimmed(), "(exists)".dimmed());
     } else {

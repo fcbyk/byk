@@ -46,14 +46,20 @@ byk add -f ./local.json key       # 使用本地 byk.json 安装
 |---------|------|
 | `comp` | 初始化 shell 补全（自动检测 zsh/bash），在对应 rc 文件中追加补全脚本 |
 | `pip <@file\|@@file\|PATH>` | 安装别名文件 `$pip` 声明的 Python 依赖到 byk 托管 venv |
+| `assets <@file\|@@file>` | 拉取别名文件 `$assets` 声明的资源（URL/本地路径/解压/可执行位） |
 
 ```bash title="示例"
 byk add comp      # 配置 shell 补全
 byk add pip @jiahao   # 安装 jiahao.byk.json 的 $pip 依赖
+byk add assets @demo  # 拉取 demo.byk.json 的 $assets 资源
 ```
 
 :::tip
 `byk add pip` 的 target 支持三种形态：`@file`（当前目录）、`@@file`（全局目录 `~/.byk/alias/`）、`.byk.json` 路径。venv 不存在时按需创建（uv 优先，一次性确认）。详见 [别名配置 - Python 依赖](/cli/alias/config)。
+:::
+
+:::tip
+`byk add assets` 的 target 支持 `@file`（当前目录）、`@@file`（全局目录）两种形态（资源目录需要文件 key）。支持 `--cdn`（GitHub raw 走 jsDelivr）。详见 [别名配置 - 资源下载](/cli/alias/config)。
 :::
 
 :::note

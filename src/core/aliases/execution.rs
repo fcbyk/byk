@@ -306,7 +306,7 @@ pub fn execute_alias(
 
     // 保留变量展开：对 $cmd / $cwd / $paths 一致生效；
     // 未命中的 $ token 透传给 shell
-    let var_ctx = VarContext::from_layout(layout);
+    let var_ctx = VarContext::from_layout(layout).with_assets_dir(resolved.assets_dir.clone());
     let command = match expand_variables(&definition.command, &var_ctx) {
         Ok(c) => c,
         Err(e) => {

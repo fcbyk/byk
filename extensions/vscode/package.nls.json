@@ -4,5 +4,6 @@
   "byk.binaryPath.description": "Custom path to the byk binary. Takes priority when set, supports ~ expansion",
   "command.runAtCursor.title": "Run Alias",
   "command.runScript.title": "Alias List",
-  "command.installDeps.title": "Install $pip Dependencies"
+  "command.installDeps.title": "Install $pip Dependencies",
+  "command.downloadAssets.title": "Download $assets Resources"
 }

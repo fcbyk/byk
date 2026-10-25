@@ -10,6 +10,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use crate::core::aliases;
+use crate::core::assets;
 use crate::core::paths::PathLayout;
 use crate::core::plugins;
 use crate::utils::shell;
@@ -116,7 +117,7 @@ pub fn install_alias_pip(target: Option<&str>, layout: &PathLayout) {
     };
 
     // 解析目标文件路径
-    let path = match resolve_pip_target(target, layout) {
+    let path = match resolve_alias_file(target, layout) {
         Some(p) => p,
         None => {
             eprintln!("{} alias file not found: {}", "Error:".red(), target.bold());
@@ -177,8 +178,187 @@ pub fn install_alias_pip(target: Option<&str>, layout: &PathLayout) {
     );
 }
 
-/// 解析 pip target 为具体文件路径。文件不存在返回 None。
-fn resolve_pip_target(target: &str, layout: &PathLayout) -> Option<PathBuf> {
+/// `byk add assets <target>`：下载别名文件 `$assets` 声明的资源。
+///
+/// target: `@stem`（cwd 文件）/ `@@stem`（全局目录）。v1 不支持路径形态——
+/// 资产目录需要文件 key 来定位。
+/// 与 `add pip` 的本质差别：不涉及 venv，纯文件获取。
+pub fn install_alias_assets(target: Option<&str>, layout: &PathLayout, cdn: bool) {
+    let target = match target {
+        Some(t) => t,
+        None => {
+            crate::render::add::render_assets();
+            return;
+        }
+    };
+
+    // 解析目标文件
+    let path = match resolve_alias_file(target, layout) {
+        Some(p) => p,
+        None => {
+            eprintln!("{} alias file not found: {}", "Error:".red(), target.bold());
+            eprintln!("  Target must be @file or @@file.");
+            std::process::exit(1);
+        }
+    };
+
+    // 读取文件 + 阶段一变量替换（与扫描同一函数，保证两边看到一致的内容）
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{} failed to read {}: {}", "Error:".red(), path.display(), e);
+            std::process::exit(1);
+        }
+    };
+    let mut json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{} invalid JSON in {}: {}", "Error:".red(), path.display(), e);
+            std::process::exit(1);
+        }
+    };
+    crate::core::vars::preprocess_vars(&mut json);
+
+    let block = match json.get("$assets") {
+        Some(b) if b.is_object() => b.clone(),
+        _ => {
+            println!(
+                "{} no $assets declared in {}",
+                "*".dimmed(),
+                path.display().to_string().dimmed()
+            );
+            return;
+        }
+    };
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let ctx = assets::AssetsCtx {
+        file_path: &path,
+        file_key: target,
+        cwd: &cwd,
+        byk_root: &layout.root_dir,
+        venv_dir: &layout.venv_dir,
+    };
+    let plan = match assets::resolve_assets_plan(&block, &ctx) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{} invalid $assets in {}: {}", "Error:".red(), path.display(), e);
+            std::process::exit(1);
+        }
+    };
+
+    if plan.entries.is_empty() {
+        let note = if plan.skipped.is_empty() {
+            "no entries".to_string()
+        } else {
+            format!("{} skipped on this platform", plan.skipped.len())
+        };
+        println!("{} nothing to download ({})", "*".dimmed(), note.dimmed());
+        return;
+    }
+
+    println!(
+        "{} Downloading {} asset(s) from {}",
+        "==>".cyan().bold(),
+        plan.entries.len(),
+        path.display().to_string().bold()
+    );
+    println!(
+        "  {} {}",
+        "target:".dimmed(),
+        plan.assets_dir().display().to_string().dimmed()
+    );
+
+    // 资产根目录（含容器）自动创建
+    plugins::install::ensure_dir(&plan.assets_dir(), "assets");
+
+    for entry in &plan.entries {
+        let dest = plan.entry_dest(&entry.name);
+        if let Some(parent) = dest.parent() {
+            plugins::install::ensure_dir(parent, "asset");
+        }
+
+        // 获取文件：[tar] 先进临时文件（解压后删除），其余直接落目标
+        let is_tar = entry.action == assets::AssetAction::Tar;
+        let fetch_target = if is_tar {
+            dest.with_extension("byk-tmp")
+        } else {
+            dest.clone()
+        };
+
+        match &entry.source {
+            assets::AssetSource::Url(url) => {
+                let url = if cdn {
+                    plugins::install::to_jsdelivr_url(url)
+                } else {
+                    url.clone()
+                };
+                if let Err(e) = plugins::install::download_script(&url, &fetch_target) {
+                    eprintln!("{} failed to download {}: {}", "Error:".red(), entry.name.bold(), e);
+                    std::process::exit(1);
+                }
+            }
+            assets::AssetSource::LocalPath(p) => {
+                if !p.is_file() {
+                    eprintln!(
+                        "{} local source not found for '{}': {}",
+                        "Error:".red(),
+                        entry.name.bold(),
+                        p.display()
+                    );
+                    std::process::exit(1);
+                }
+                if let Err(e) = fs::copy(p, &fetch_target) {
+                    eprintln!("{} failed to copy {}: {}", "Error:".red(), entry.name.bold(), e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        // 后处理：解压 / chmod
+        match entry.action {
+            assets::AssetAction::Tar => {
+                if let Err(e) = plugins::install::extract_archive(&fetch_target, &dest) {
+                    eprintln!("{} failed to extract {}: {}", "Error:".red(), entry.name.bold(), e);
+                    std::process::exit(1);
+                }
+                let _ = fs::remove_file(&fetch_target);
+            }
+            assets::AssetAction::Exec => {
+                #[cfg(not(windows))]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = fs::metadata(&dest) {
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o755);
+                        let _ = fs::set_permissions(&dest, perms);
+                    }
+                }
+            }
+            assets::AssetAction::None => {}
+        }
+
+        println!("{} {}", "+".green(), entry.name.bold());
+    }
+
+    for name in &plan.skipped {
+        println!(
+            "{} {} (skipped on this platform)",
+            "*".dimmed(),
+            name.dimmed()
+        );
+    }
+
+    println!(
+        "{} downloaded {} asset(s) for {}",
+        "Successfully".green(),
+        plan.entries.len(),
+        path.display().to_string().dimmed()
+    );
+}
+
+/// 解析 target 为具体文件路径（pip / assets 共用）。文件不存在返回 None。
+fn resolve_alias_file(target: &str, layout: &PathLayout) -> Option<PathBuf> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let path = pip_target_path(target, &cwd, &layout.alias_dir);
     if path.is_file() { Some(path) } else { None }

@@ -165,7 +165,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // add 子命令补全
     if first == "add" {
-        const ADD_SUBS: &[&str] = &["comp", "pip"];
+        const ADD_SUBS: &[&str] = &["comp", "pip", "assets"];
         return ADD_SUBS
             .iter()
             .filter(|s| s.starts_with(partial))
@@ -243,7 +243,7 @@ fn complete_multi_prev(prev: &[String], partial: &str, layout: &PathLayout) -> V
     }
 
     // byk add pip @<TAB> → 补全别名文件 key（@stem / @@stem）
-    if prev.len() == 2 && prev[0] == "add" && prev[1] == "pip" {
+    if prev.len() == 2 && prev[0] == "add" && (prev[1] == "pip" || prev[1] == "assets") {
         return complete_at_prefix(partial, layout);
     }
 

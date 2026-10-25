@@ -10,6 +10,7 @@ use super::cache::load_alias_cache;
 use super::parse::{is_alias_value, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, ResolvedAlias};
+use crate::core::assets::{AssetsCtx, assets_dir_or_warn};
 use crate::core::paths::PathLayout;
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,8 @@ struct MergeContext<'a> {
     inherited_cwd: Option<&'a str>,
     inherited_interactive: Option<bool>,
     inherited_paths: &'a [String],
+    /// 文件 `$assets` 解析出的资产目录（每文件计算一次）
+    assets_dir: Option<&'a Path>,
 }
 
 /// 将 source 深度合并到 target。
@@ -70,6 +73,7 @@ fn deep_merge_dict(
                     source_path: ctx.source_path.map(|p| p.to_path_buf()),
                     priority: ctx.priority,
                     paths: ctx.inherited_paths.to_vec(),
+                    assets_dir: ctx.assets_dir.map(|p| p.to_path_buf()),
                 });
 
                 if let serde_json::Value::Object(inner) = val {
@@ -154,15 +158,29 @@ pub(crate) fn apply_inherited(
 // 别名加载（主入口）
 // ---------------------------------------------------------------------------
 
+/// 计算文件的 `$assets` 资产目录（未声明或解析失败返回 None）。
+pub(crate) fn file_assets_dir(f: &AliasFile, layout: &PathLayout, cwd: &Path) -> Option<PathBuf> {
+    let block = f.assets.as_ref()?;
+    let ctx = AssetsCtx {
+        file_path: &f.path,
+        file_key: &f.key,
+        cwd,
+        byk_root: &layout.root_dir,
+        venv_dir: &layout.venv_dir,
+    };
+    assets_dir_or_warn(block, &ctx)
+}
+
 /// 从已排序的 AliasFile 列表构建合并配置树。
 ///
 /// 负数 priority 的文件不参与合并（仅可通过精确语法 @file.key 访问）。
-pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
+pub(crate) fn build_merged_aliases(files: &[AliasFile], layout: &PathLayout, cwd: &Path) -> MergedConfig {
     let mut merged: MergedConfig = HashMap::new();
     for f in files {
         if f.priority < 0 {
             continue;
         }
+        let assets_dir = file_assets_dir(f, layout, cwd);
         deep_merge_dict(
             &mut merged,
             &f.aliases,
@@ -173,6 +191,7 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
                 inherited_cwd: f.inherited_cwd.as_deref(),
                 inherited_interactive: f.inherited_interactive,
                 inherited_paths: &f.inherited_paths,
+                assets_dir: assets_dir.as_deref(),
             },
         );
     }
@@ -190,13 +209,13 @@ pub fn load_merged_aliases(layout: &PathLayout) -> (MergedConfig, Vec<AliasFile>
         let cache_file = layout.cache_dir.join("alias.json");
         let global_dir = &layout.alias_dir;
 
-        let (merged, mut files) = load_alias_cache(&cache_file, &cwd, global_dir);
+        let (merged, mut files) = load_alias_cache(&cache_file, &cwd, global_dir, layout);
         sort_alias_files(&mut files);
         (merged, files)
     } else {
         let mut files = scan_alias_files(&cwd, false);
         sort_alias_files(&mut files);
-        let merged = build_merged_aliases(&files);
+        let merged = build_merged_aliases(&files, layout, &cwd);
         (merged, files)
     }
 }
@@ -252,13 +271,15 @@ pub fn resolve_merged_alias<'a>(
 /// 与 `resolve_merged_alias` 不同，此函数遍历所有 AliasFile，
 /// 返回所有包含该 key 路径的 ResolvedAlias，按文件优先级排序。
 /// 这暴露了"谁覆盖了谁"的信息。
-pub fn lookup_all_aliases(files: &[AliasFile], name: &str) -> Vec<ResolvedAlias> {
+pub fn lookup_all_aliases(files: &[AliasFile], name: &str, layout: &PathLayout) -> Vec<ResolvedAlias> {
     let parts: Vec<&str> = name.split('.').collect();
     let mut results: Vec<ResolvedAlias> = Vec::new();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     for f in files {
         // 负数优先级文件不参与普通合并，但 --info 仍应展示
         let mut current: &serde_json::Map<String, serde_json::Value> = &f.aliases;
+        let assets_dir = file_assets_dir(f, layout, &cwd);
 
         // 沿路径遍历到倒数第二级
         let mut group_cwd = f.inherited_cwd.as_deref();
@@ -280,6 +301,7 @@ pub fn lookup_all_aliases(files: &[AliasFile], name: &str) -> Vec<ResolvedAlias>
                         source_path: Some(f.path.clone()),
                         priority: f.priority,
                         paths: f.inherited_paths.clone(),
+                        assets_dir: assets_dir.clone(),
                     });
                 }
                 break;
@@ -315,6 +337,19 @@ mod tests {
     use super::*;
     use crate::core::aliases::types::MergedNode;
 
+    /// 测试用目录布局（这些用例不涉及 $assets，路径仅为占位）
+    fn test_layout() -> PathLayout {
+        PathLayout {
+            root_dir: PathBuf::from("/home/u/.byk"),
+            alias_dir: PathBuf::from("/home/u/.byk/alias"),
+            py_venv_dir: PathBuf::from("/home/u/.byk/py-venv"),
+            venv_dir: PathBuf::from("/home/u/.byk/py-venv/.venv"),
+            cache_dir: PathBuf::from("/home/u/.byk/cache"),
+            plugins_dir: PathBuf::from("/home/u/.byk/plugins"),
+            home_exists: true,
+        }
+    }
+
     fn make_alias(cmd: &str) -> ResolvedAlias {
         ResolvedAlias {
             value: AliasValue::Str(cmd.into()),
@@ -322,6 +357,7 @@ mod tests {
             source_path: None,
             priority: 0,
             paths: Vec::new(),
+        assets_dir: None,
         }
     }
 
@@ -573,8 +609,9 @@ mod tests {
             inherited_interactive: None,
             inherited_paths: vec!["./scripts".into(), "~/tools/bin".into()],
             inherited_pip: Vec::new(),
+            assets: None,
         }];
-        let merged = build_merged_aliases(&files);
+        let merged = build_merged_aliases(&files, &test_layout(), Path::new("/proj"));
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
         assert_eq!(resolved.paths, vec!["./scripts", "~/tools/bin"]);
     }
@@ -595,8 +632,9 @@ mod tests {
             inherited_interactive: None,
             inherited_paths: Vec::new(),
             inherited_pip: Vec::new(),
+            assets: None,
         }];
-        let merged = build_merged_aliases(&files);
+        let merged = build_merged_aliases(&files, &test_layout(), Path::new("/proj"));
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
         assert!(resolved.paths.is_empty());
     }

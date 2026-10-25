@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::merge::build_merged_aliases;
 use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, MergedConfig};
+use crate::core::paths::PathLayout;
 use crate::utils::json_io;
 
 // ---------------------------------------------------------------------------
@@ -82,12 +83,14 @@ fn build_full_mtimes(cwd: &Path, global_dir: &Path) -> HashMap<String, u64> {
 /// - `cache_file`: ~/.byk/cache/alias.json 路径
 /// - `cwd`: 当前工作目录
 /// - `global_dir`: ~/.byk/alias/ 目录路径
+/// - `layout`: 目录布局（`$assets` 变量求值需要 byk 根与 venv 路径）
 ///
 /// 返回 (合并配置, 文件列表)。
 pub fn load_alias_cache(
     cache_file: &Path,
     cwd: &Path,
     global_dir: &Path,
+    layout: &PathLayout,
 ) -> (MergedConfig, Vec<AliasFile>) {
     let current_mtimes = build_full_mtimes(cwd, global_dir);
 
@@ -106,7 +109,7 @@ pub fn load_alias_cache(
     files.extend(scan_alias_files(cwd, false));
     files.extend(scan_alias_files(global_dir, true));
     sort_alias_files(&mut files);
-    let merged = build_merged_aliases(&files);
+    let merged = build_merged_aliases(&files, layout, cwd);
 
     let scanned_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -135,6 +138,19 @@ mod tests {
     use std::fs;
     use std::thread;
     use std::time::Duration;
+
+    /// 构造测试用目录布局（这些测试不涉及 $assets，路径仅为占位）
+    fn test_layout(root: &Path, global_dir: &Path, cache_dir: &Path) -> PathLayout {
+        PathLayout {
+            root_dir: root.to_path_buf(),
+            alias_dir: global_dir.to_path_buf(),
+            py_venv_dir: root.join("py-venv"),
+            venv_dir: root.join("py-venv").join(".venv"),
+            cache_dir: cache_dir.to_path_buf(),
+            plugins_dir: root.join("plugins"),
+            home_exists: true,
+        }
+    }
 
     // ==================== get_watched_mtimes ====================
 
@@ -206,6 +222,7 @@ mod tests {
         let cache_dir = temp.path().join("cache");
         fs::create_dir_all(&global_dir).unwrap();
         fs::create_dir_all(&cache_dir).unwrap();
+        let layout = test_layout(temp.path(), &global_dir, &cache_dir);
 
         // 写入一个别名文件
         fs::write(
@@ -217,13 +234,13 @@ mod tests {
         let cache_file = cache_dir.join("alias.json");
 
         // 首次加载 → 构建缓存
-        let (merged1, files1) = load_alias_cache(&cache_file, temp.path(), &global_dir);
+        let (merged1, files1) = load_alias_cache(&cache_file, temp.path(), &global_dir, &layout);
         assert!(merged1.contains_key("greet"));
         assert!(!files1.is_empty());
         assert!(cache_file.exists(), "首次加载应写入缓存文件");
 
         // 二次加载 → 缓存命中
-        let (merged2, files2) = load_alias_cache(&cache_file, temp.path(), &global_dir);
+        let (merged2, files2) = load_alias_cache(&cache_file, temp.path(), &global_dir, &layout);
         assert_eq!(merged2.len(), merged1.len());
         assert_eq!(files2.len(), files1.len());
     }
@@ -235,6 +252,7 @@ mod tests {
         let cache_dir = temp.path().join("cache");
         fs::create_dir_all(&global_dir).unwrap();
         fs::create_dir_all(&cache_dir).unwrap();
+        let layout = test_layout(temp.path(), &global_dir, &cache_dir);
 
         let alias_file = global_dir.join("test.byk.json");
         fs::write(&alias_file, r#"{"greet": "echo hello"}"#).unwrap();
@@ -242,7 +260,7 @@ mod tests {
         let cache_file = cache_dir.join("alias.json");
 
         // 首次加载
-        let (merged1, _) = load_alias_cache(&cache_file, temp.path(), &global_dir);
+        let (merged1, _) = load_alias_cache(&cache_file, temp.path(), &global_dir, &layout);
         assert!(merged1.contains_key("greet"));
 
         // 修改文件（等待 mtime 变化）
@@ -250,7 +268,7 @@ mod tests {
         fs::write(&alias_file, r#"{"farewell": "echo bye"}"#).unwrap();
 
         // 再次加载 → 应检测到变化并重建
-        let (merged2, _) = load_alias_cache(&cache_file, temp.path(), &global_dir);
+        let (merged2, _) = load_alias_cache(&cache_file, temp.path(), &global_dir, &layout);
         assert!(
             !merged2.contains_key("greet"),
             "旧别名不应出现在重建后的缓存中"
@@ -265,6 +283,7 @@ mod tests {
         let cache_dir = temp.path().join("cache");
         fs::create_dir_all(&global_dir).unwrap();
         fs::create_dir_all(&cache_dir).unwrap();
+        let layout = test_layout(temp.path(), &global_dir, &cache_dir);
 
         fs::write(
             global_dir.join("one.byk.json"),
@@ -275,7 +294,7 @@ mod tests {
         let cache_file = cache_dir.join("alias.json");
 
         // 首次加载
-        let (merged1, _) = load_alias_cache(&cache_file, temp.path(), &global_dir);
+        let (merged1, _) = load_alias_cache(&cache_file, temp.path(), &global_dir, &layout);
         assert!(merged1.contains_key("first"));
 
         // 新增文件
@@ -286,7 +305,7 @@ mod tests {
         .unwrap();
 
         // 再次加载 → mtime 快照多了新文件，应重建
-        let (merged2, _) = load_alias_cache(&cache_file, temp.path(), &global_dir);
+        let (merged2, _) = load_alias_cache(&cache_file, temp.path(), &global_dir, &layout);
         assert!(merged2.contains_key("first"));
         assert!(merged2.contains_key("second"));
     }
@@ -298,6 +317,7 @@ mod tests {
         let cache_dir = temp.path().join("cache");
         fs::create_dir_all(&global_dir).unwrap();
         fs::create_dir_all(&cache_dir).unwrap();
+        let layout = test_layout(temp.path(), &global_dir, &cache_dir);
 
         let file = global_dir.join("remove_me.byk.json");
         fs::write(&file, r#"{"temp": "echo temp"}"#).unwrap();
@@ -305,14 +325,14 @@ mod tests {
         let cache_file = cache_dir.join("alias.json");
 
         // 首次加载
-        let (merged1, _) = load_alias_cache(&cache_file, temp.path(), &global_dir);
+        let (merged1, _) = load_alias_cache(&cache_file, temp.path(), &global_dir, &layout);
         assert!(merged1.contains_key("temp"));
 
         // 删除文件
         fs::remove_file(&file).unwrap();
 
         // 再次加载 → mtime 快照少了文件，应重建
-        let (merged2, _) = load_alias_cache(&cache_file, temp.path(), &global_dir);
+        let (merged2, _) = load_alias_cache(&cache_file, temp.path(), &global_dir, &layout);
         assert!(
             !merged2.contains_key("temp"),
             "已删除文件的别名不应出现"
@@ -329,6 +349,7 @@ mod tests {
         let cwd_b = temp.path().join("project_b");
         fs::create_dir_all(&global_dir).unwrap();
         fs::create_dir_all(&cache_dir).unwrap();
+        let layout = test_layout(temp.path(), &global_dir, &cache_dir);
         fs::create_dir_all(&cwd_a).unwrap();
         fs::create_dir_all(&cwd_b).unwrap();
 
@@ -349,12 +370,12 @@ mod tests {
         let cache_file = cache_dir.join("alias.json");
 
         // 在项目 A 加载
-        let (merged_a, _) = load_alias_cache(&cache_file, &cwd_a, &global_dir);
+        let (merged_a, _) = load_alias_cache(&cache_file, &cwd_a, &global_dir, &layout);
         assert!(merged_a.contains_key("build_a"));
         assert!(!merged_a.contains_key("build_b"));
 
         // 切换到项目 B 加载 → CWD 不同，mtime 快照不匹配，应重建
-        let (merged_b, _) = load_alias_cache(&cache_file, &cwd_b, &global_dir);
+        let (merged_b, _) = load_alias_cache(&cache_file, &cwd_b, &global_dir, &layout);
         assert!(!merged_b.contains_key("build_a"));
         assert!(merged_b.contains_key("build_b"));
     }

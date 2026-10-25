@@ -16,12 +16,20 @@ class BykRunner:
         self.home = Path(home)
         self.byk_dir = self.home / ".byk"
 
-    def run(self, *args: str, input: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run(
+        self,
+        *args: str,
+        input: str | None = None,
+        cwd: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         """执行 byk 命令，HOME 指向隔离的临时目录
 
         input: 经 stdin 喂入的内容（如首次创建 venv 的确认）。
                 为 None 时 stdin 指向 DEVNULL，避免子进程继承终端
                 导致交互提示卡住测试。
+        cwd:    子进程工作目录（默认继承 pytest 的 cwd）。
+                测试全局文件“缺省根 = 工作目录”时须传隔离目录，
+                避免污染项目根。
         """
         env = {**os.environ, "HOME": str(self.home)}
         return subprocess.run(
@@ -31,6 +39,7 @@ class BykRunner:
             input=input,
             stdin=None if input is not None else subprocess.DEVNULL,
             env=env,
+            cwd=cwd,
             timeout=120,
         )
 

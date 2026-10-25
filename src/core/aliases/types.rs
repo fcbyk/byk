@@ -66,6 +66,10 @@ pub struct AliasFile {
     /// 经 `byk add pip <file>` 安装到 byk 托管 venv
     #[serde(default)]
     pub inherited_pip: Vec<String>,
+    /// 文件级 $assets 原始块（$to + 条目；用户变量已在扫描期替换）。
+    /// 由 `byk add assets <file>` 下载，合并期解析出 `$assets` 变量值
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assets: Option<serde_json::Value>,
 }
 
 /// 合并后叶子节点，包含来源信息。
@@ -83,6 +87,10 @@ pub struct ResolvedAlias {
     /// 来源文件的 $paths，需要前置到 PATH 环境变量的目录列表
     #[serde(default)]
     pub paths: Vec<String>,
+    /// 来源文件 `$assets` 解析出的资产目录（文件未声明时为 None）。
+    /// 加载期计算并随缓存持久化；全局文件的缺省根与加载期 cwd 绑定
+    #[serde(default)]
+    pub assets_dir: Option<PathBuf>,
 }
 
 /// 合并配置树节点。每个节点可以同时拥有别名和子节点。

@@ -59,7 +59,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(name) {
         let (_, files) = aliases::load_merged_aliases(layout);
         if let Some((resolved, display_source)) =
-            aliases::lookup_exact_alias(&files, &file_key, &alias_key)
+            aliases::lookup_exact_alias(&files, &file_key, &alias_key, layout)
         {
             entries.push(InfoEntry::Alias {
                 display_source,
@@ -71,7 +71,7 @@ pub fn query_command(name: &str, layout: &PathLayout) -> Vec<InfoEntry> {
     // 5. 普通别名（所有文件中的同名别名）
     {
         let (_, files) = aliases::load_merged_aliases(layout);
-        let all = aliases::lookup_all_aliases(&files, name);
+        let all = aliases::lookup_all_aliases(&files, name, layout);
         for resolved in all {
             let display_source = format!("{}.{}", resolved.source, name);
             entries.push(InfoEntry::Alias {

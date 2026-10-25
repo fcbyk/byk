@@ -113,6 +113,23 @@ function flattenAliases(
     }
   }
 
+  // 文件级 $assets → 转换为可执行项（byk add assets @stem）。
+  // 条目计数排除块内保留键（$to/$var 等 $ 前缀）。
+  if (prefix === '') {
+    const assets = obj.$assets;
+    const assetCount =
+      typeof assets === 'object' && assets !== null && !Array.isArray(assets)
+        ? Object.keys(assets).filter((k) => !k.startsWith('$')).length
+        : 0;
+    if (assetCount > 0) {
+      items.push({
+        label: '$assets',
+        description: `download ${assetCount} asset(s) → byk add assets @${stem}`,
+        exactCommand: `add assets @${stem}`,
+      });
+    }
+  }
+
   return items;
 }
 
@@ -628,6 +645,51 @@ export function activate(context: vscode.ExtensionContext) {
       // cwd = 文件所在目录：@stem 在该目录下即精确指向此文件，
       // 避免把绝对路径拼进 shell 命令带来的引号问题
       runAliasTask(`add pip @${stem}`, path.dirname(fileUri.fsPath));
+    }),
+  );
+
+  // Right-click "Download $assets Resources": byk add assets @stem
+  context.subscriptions.push(
+    vscode.commands.registerCommand('byk.downloadAssets', async (uri?: vscode.Uri) => {
+      let fileUri = uri;
+      if (!fileUri) {
+        const editor = vscode.window.activeTextEditor;
+        if (editor && isBykFile(path.basename(editor.document.fileName))) {
+          fileUri = editor.document.uri;
+        }
+      }
+      if (!fileUri) {
+        vscode.window.showErrorMessage('No .byk.json file found');
+        return;
+      }
+
+      const filename = path.basename(fileUri.fsPath);
+      if (!isBykFile(filename)) {
+        vscode.window.showErrorMessage(`Not a valid .byk.json file: ${filename}`);
+        return;
+      }
+
+      // 预检 $assets：未声明时直接提示，不启动任务
+      let config: Record<string, unknown>;
+      try {
+        config = JSON.parse(fs.readFileSync(fileUri.fsPath, 'utf-8'));
+      } catch (err) {
+        vscode.window.showErrorMessage(`Failed to parse ${filename}: ${(err as Error).message}`);
+        return;
+      }
+      const assets = config.$assets;
+      const hasAssets =
+        typeof assets === 'object' &&
+        assets !== null &&
+        !Array.isArray(assets) &&
+        Object.keys(assets).some((k) => !k.startsWith('$'));
+      if (!hasAssets) {
+        vscode.window.showInformationMessage(`No $assets declared in ${filename}`);
+        return;
+      }
+
+      const stem = bykFileStem(filename);
+      runAliasTask(`add assets @${stem}`, path.dirname(fileUri.fsPath));
     }),
   );
 }

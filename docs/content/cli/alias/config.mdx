@@ -25,6 +25,8 @@ type AliasFileJSON = {
   $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
   $interactive?: boolean;   // 文件级 / 分组级交互模式，子别名自动继承
   $paths?: string[];        // 文件级 PATH 目录列表，子别名自动继承
+  $var?: Record<string, string | Record<string, string>>;  // 文件级变量（阶段一替换）
+  $assets?: AssetsBlock;    // 文件级资源下载声明
   [key: string]: string | AliasObject | number | boolean | undefined;
 };
 ```
@@ -286,11 +288,12 @@ byk deploy --dry-run <TAB>  # 已选过的选项被排除
 | `$python` | byk 托管 venv 的 Python 解释器 | 与插件命令使用同一个解释器；venv 不存在时友好报错 |
 | `$venv` | venv 的 bin 目录（Windows 为 `Scripts`） | 用于 `$paths` 或拼接路径 |
 | `$byk` | byk 根目录 `~/.byk` | 引用插件产物等持久化数据 |
+| `$assets` | 当前别名文件的资源下载根目录 | 引用 `$assets` 字段下载的产物；文件未声明 `$assets` 时明确报错 |
 
 **规则**：
 
 - 展开发生在占位符解析**之前**，`$cmd` / `$cwd` / `$paths` 三个位置一致生效
-- 仅以上三个变量会被展开；其他 `$` 开头的内容（如 `$HOME`、`$PATH`）原样透传给 shell 处理
+- 仅以上四个变量会被展开；其他 `$` 开头的内容（如 `$HOME`、`$PATH`）原样透传给 shell 处理
 - 整词匹配：`$pythonfoo` 不会被误认为 `$python`
 - 展开值包含空格时，byk 自动补上双引号，无需手写
 - `${args}` 等系统占位符不受影响
@@ -340,7 +343,78 @@ byk add pip ./demo.byk.json # 直接传路径
 未声明 `$pip` 的文件执行 `byk add pip` 是友好的 no-op（退出码 0），不会触发 venv 创建。
 :::
 
+### 文件级变量 $var
 
+`$var` 声明文件级变量，在**扫描阶段**（阶段一）做全局替换，作用于文件内所有字符串值——尤其适合长 URL 前缀、版本号等需要在多处复用的内容：
+
+```json title=".byk.json"
+{
+  "$var": {
+    "BASE": "https://github.com/owner/repo/releases/download/v1.2.0",
+    "VER": "v1.2.0",
+    "BIN": {
+      "darwin-arm64": "$BASE/darwin-arm64",
+      "linux-x86_64": "$BASE/linux-x64"
+    }
+  },
+  "$assets": {
+    "tool": "[exe] $BIN/tool"
+  },
+  "run": { "$cmd": "$assets/tool --version $VER" }
+}
+```
+
+| 规则 | 说明 |
+|------|------|
+| 语法 | `$NAME`，约定全大写；替换发生在阶段一（扫描时，结果进缓存） |
+| 作用域 | 文件级全局，`$cmd` / `$cwd` / `$paths` / `$assets` 等所有字符串值均生效 |
+| 平台映射 | 值可为平台映射（当前平台取值）；值里可交叉引用其他变量 |
+| 保留字 | 内置变量（`$python`/`$venv`/`$byk`/`$assets`）声明也无效，内置优先 |
+| 未知变量 | 未定义的 `$xxx` 原样透传（阶段二由 shell 或内置变量处理） |
+
+:::tip
+两阶段展开：阶段一替换**用户变量**（`$NAME`），阶段二展开**内置变量**（`$python` 等）。因此用户变量可以组合内置变量——`{"TOOLS": "$byk/tools"}` 阶段一替换出 `$byk/tools` 字面量，阶段二再展开 `$byk`。
+:::
+
+### 资源下载 $assets
+
+文件级 `$assets` 声明需要下载的资源，经 `byk add assets` 拉取。这是 byk.json 的 `downloads` 能力迁移后的形态——重新设计为「单一目标 + 声明式拉取」：
+
+```json title=".byk.json"
+{
+  "$assets": {
+    "$to": "$byk/tools/demo",
+    "tool": "[exe] $BIN/tool",
+    "helper": {
+      "darwin-arm64": "[exe] $BASE/helper-mac",
+      "linux-x86_64": "[exe] $BASE/helper-linux"
+    },
+    "toolchain": "[tar] $BASE/toolchain.tar.gz",
+    "scripts/lint.sh": "$BASE/lint.sh"
+  },
+  "run": { "$cmd": "$assets/tool {args}" }
+}
+```
+
+```bash
+byk add assets @demo           # 拉取当前目录 demo.byk.json 的资源
+byk add assets @@demo          # 拉取全局目录 ~/.byk/alias/demo.byk.json 的资源
+byk add assets --cdn @demo     # GitHub raw 走 jsDelivr CDN 加速
+```
+
+| 规则 | 说明 |
+|------|------|
+| 目标 `$to` | 可选。变量/平台映射/`~`，相对路径相对文件目录解析，不存在自动创建。显式设置时条目直接落 `<root>/<名字>` |
+| 缺省根 | 本地文件=文件所在目录，全局文件=当前工作目录；声明 1 条目平铺、≥2 条目自动进 `<root>/assets/` |
+| 条目名 | 即资产相对路径，`/` 天然表达子目录；拒绝 `..`/绝对路径 |
+| 源 | URL 或本地路径（相对文件目录）；条目值可为平台映射（当前平台不在映射 → 跳过） |
+| 前缀 | `[exe]` 下载后加执行位；`[tar]` 解压到同名子目录；无前缀原样下载 |
+| 幂等 | 每次全量重下，目标已存在则注记；不引入 `--force` |
+| `$assets` 变量 | 展开为资源实际所在目录（吸收 root+容器逻辑），命令写 `$assets/...` 永远不用猜落点 |
+
+:::note
+未声明 `$assets` 的文件执行 `byk add assets` 是友好的 no-op（退出码 0），不会创建任何目录；命令里用了 `$assets` 变量但文件未声明则明确报错。
+:::
 
 ### 调用示例
 

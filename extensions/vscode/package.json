@@ -69,6 +69,11 @@
         "command": "byk.installDeps",
         "title": "%command.installDeps.title%",
         "icon": "$(package)"
+      },
+      {
+        "command": "byk.downloadAssets",
+        "title": "%command.downloadAssets.title%",
+        "icon": "$(cloud-download)"
       }
     ],
     "jsonValidation": [
@@ -92,6 +97,11 @@
           "command": "byk.installDeps",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation"
+        },
+        {
+          "command": "byk.downloadAssets",
+          "when": "resourceFilename =~ /\\.byk\\.json$/",
+          "group": "navigation"
         }
       ],
       "editor/context": [
@@ -109,6 +119,11 @@
           "command": "byk.installDeps",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@3"
+        },
+        {
+          "command": "byk.downloadAssets",
+          "when": "resourceFilename =~ /\\.byk\\.json$/",
+          "group": "navigation@4"
         }
       ],
       "editor/title/context": [
@@ -126,6 +141,11 @@
           "command": "byk.installDeps",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@3"
+        },
+        {
+          "command": "byk.downloadAssets",
+          "when": "resourceFilename =~ /\\.byk\\.json$/",
+          "group": "navigation@4"
         }
       ]
     }

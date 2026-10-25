@@ -43,7 +43,7 @@ pub enum Commands {
         /// 通过 jsDelivr CDN 访问 GitHub 仓库（仅对 GitHub 仓库生效）
         #[arg(long)]
         cdn: bool,
-        /// 插件名(user/repo[@branch][/key]) 或 功能名(comp | pip)
+        /// 插件名(user/repo[@branch][/key]) 或 功能名(comp | pip | assets)
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,
         /// pip 功能的目标文件：@file | @@file | .byk.json 路径（仅 name=pip 时使用）

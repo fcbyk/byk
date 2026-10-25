@@ -39,6 +39,25 @@
           }
         }
       ]
+    },
+    "$var": {
+      "description": "文件级变量，扫描时做阶段一替换（作用于文件内所有字符串值，如长 URL 前缀）。约定全大写命名。值可为字符串或平台映射（当前平台取值）。内置保留变量（$python/$venv/$byk/$assets）声明无效。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"$BASE/mac\"}}",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "普通字符串值"
+          },
+          {
+            "$ref": "#/$defs/PlatformMap"
+          }
+        ]
+      }
+    },
+    "$assets": {
+      "description": "文件级资源下载声明，经 `byk add assets <file>` 拉取。目标根由 $to 控制（缺省时本地文件=文件目录、全局文件=当前工作目录，≥2 条目自动进 assets/ 子目录）。条目名即相对路径（可含 /），值可为 URL、本地路径（相对文件目录）或平台映射；[exe] 前缀下载后加执行位，[tar] 前缀解压到同名子目录。",
+      "$ref": "#/$defs/AssetsBlock"
     }
   },
   "additionalProperties": {
@@ -116,6 +135,40 @@
           }
         }
       ]
+    },
+    "PlatformMap": {
+      "title": "平台映射",
+      "description": "平台 → 值 的映射。平台键取自 linux-x86_64 / linux-arm64 / darwin-x86_64 / darwin-arm64 / windows-x64。当前平台不在映射中时跳过该条目（条件下载）。",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "AssetsBlock": {
+      "title": "$assets 资源块",
+      "description": "资源下载声明。特殊 key：$to 目标根目录。其余条目名即资产相对路径，值为 URL、本地路径或平台映射。",
+      "type": "object",
+      "properties": {
+        "$to": {
+          "description": "目标根目录（可选）。支持变量/$var/~/相对路径（相对文件目录解析），不存在则自动创建。可为平台映射（根目录按平台不同）。显式设置时条目直接落该目录（不套 assets/ 容器）。",
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "#/$defs/PlatformMap" }
+          ]
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "源：URL 或本地路径（相对文件目录）。[exe] 前缀下载后加执行位，[tar] 前缀解压到同名子目录。示例：\"[exe] https://x/tool\" 或 \"./vendor/tool\""
+          },
+          {
+            "$ref": "#/$defs/PlatformMap",
+            "description": "平台映射：当前平台取值下载，不在映射中则跳过。"
+          }
+        ]
+      }
     }
   }
 }
