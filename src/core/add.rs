@@ -1,9 +1,8 @@
 //! `byk add` 子命令逻辑。
 //!
 //! 包含：
-//! - 插件安装（委托给 plugins 模块）
 //! - 内置功能初始化（comp）
-//! - 别名文件 $pip 依赖安装（pip）
+//! - 别名文件 $pip / $assets 安装（本地 / 远程 *.byk.json）
 
 use colored::Colorize;
 use std::fs;
@@ -12,7 +11,8 @@ use std::path::{Path, PathBuf};
 use crate::core::aliases;
 use crate::core::assets;
 use crate::core::paths::PathLayout;
-use crate::core::plugins;
+use crate::core::download;
+use crate::core::pip;
 use crate::utils::shell;
 
 // ---------------------------------------------------------------------------
@@ -97,13 +97,13 @@ pub fn init_completion() {
 
 /// 安装 pip 包列表到 byk 托管 venv（按需创建，含一次性确认）。
 fn install_pip_packages(packages: &[String], layout: &PathLayout, subject: &str) {
-    plugins::install::ensure_python_env(layout, subject);
+    pip::ensure_python_env(layout, subject);
     for pkg in packages {
         println!(
             "{}",
             format!("Installing pip package: {}", pkg).dimmed()
         );
-        plugins::install::install_python_package(pkg, layout);
+        pip::install_python_package(pkg, layout);
         println!("{} {}", "+".green(), pkg.bold());
     }
 }
@@ -161,12 +161,12 @@ fn download_assets_block(
         plan.assets_dir().display().to_string().dimmed()
     );
 
-    plugins::install::ensure_dir(&plan.assets_dir(), "assets");
+    download::ensure_dir(&plan.assets_dir(), "assets");
 
     for entry in &plan.entries {
         let dest = plan.entry_dest(&entry.name);
         if let Some(parent) = dest.parent() {
-            plugins::install::ensure_dir(parent, "asset");
+            download::ensure_dir(parent, "asset");
         }
 
         let is_tar = entry.action == assets::AssetAction::Tar;
@@ -179,11 +179,11 @@ fn download_assets_block(
         match &entry.source {
             assets::AssetSource::Url(url) => {
                 let url = if cdn {
-                    plugins::install::to_jsdelivr_url(url)
+                    download::to_jsdelivr_url(url)
                 } else {
                     url.clone()
                 };
-                if let Err(e) = plugins::install::download_script(&url, &fetch_target) {
+                if let Err(e) = download::download_script(&url, &fetch_target) {
                     eprintln!(
                         "{} failed to download {}: {}",
                         "Error:".red(),
@@ -217,7 +217,7 @@ fn download_assets_block(
 
         match entry.action {
             assets::AssetAction::Tar => {
-                if let Err(e) = plugins::install::extract_archive(&fetch_target, &dest) {
+                if let Err(e) = download::extract_archive(&fetch_target, &dest) {
                     eprintln!(
                         "{} failed to extract {}: {}",
                         "Error:".red(),
@@ -732,7 +732,7 @@ pub fn install_remote(spec: &str, layout: &PathLayout, cdn: bool) {
         std::process::exit(1);
     }
     let temp_file = temp_dir.join(format!("{}.byk.json", stem));
-    if let Err(e) = plugins::install::download_script(&url, &temp_file) {
+    if let Err(e) = download::download_script(&url, &temp_file) {
         eprintln!("{} failed to download {}: {}", "Error:".red(), url, e);
         std::process::exit(1);
     }
