@@ -335,18 +335,20 @@ pub fn render_command(name: &str, layout: &PathLayout) {
 
 /// 渲染别名详细信息。
 fn render_alias_detail(resolved: &ResolvedAlias) {
-    let (command, cwd, interactive, description) = match &resolved.value {
-        AliasValue::Str(cmd) => (cmd.clone(), None, false, None),
+    let (command, cwd, interactive, description, args) = match &resolved.value {
+        AliasValue::Str(cmd) => (cmd.clone(), None, false, None, None),
         AliasValue::Meta {
             cmd,
             cwd,
             interactive,
             description,
+            args,
         } => (
             cmd.clone(),
             cwd.clone(),
             interactive.unwrap_or(false),
             description.clone(),
+            args.clone(),
         ),
     };
 
@@ -379,6 +381,32 @@ fn render_alias_detail(resolved: &ResolvedAlias) {
     // 描述
     if let Some(desc) = description {
         println!("  {}: {}", "Description".yellow(), desc);
+    }
+
+    // 补全候选（$args 树顶层）
+    if let Some(args) = args {
+        let mut cands: Vec<String> = Vec::new();
+        match &args {
+            serde_json::Value::Array(arr) => {
+                cands.extend(arr.iter().filter_map(|v| v.as_str().map(String::from)));
+            }
+            serde_json::Value::Object(obj) => {
+                for key in ["$options", "$"] {
+                    if let Some(arr) = obj.get(key).and_then(|v| v.as_array()) {
+                        cands.extend(arr.iter().filter_map(|v| v.as_str().map(String::from)));
+                    }
+                }
+                cands.extend(
+                    obj.keys()
+                        .filter(|k| *k != "$" && *k != "$options")
+                        .cloned(),
+                );
+            }
+            _ => {}
+        }
+        if !cands.is_empty() {
+            println!("  {}: {}", "Completion".yellow(), cands.join(", "));
+        }
     }
 
     // 占位符

@@ -239,6 +239,44 @@ Aliases:
 
 :::
 
+### 补全候选 $args
+
+`$args` 为别名条目声明 shell 补全树，结构与插件协议的 `args` 字段完全一致：
+
+```json title=".byk.json"
+{
+  "deploy": {
+    "$cmd": "deploy --env {env}",
+    "$args": {
+      "$": ["prod", "staging"],
+      "$options": ["--dry-run", "--verbose"],
+      "build": {
+        "$": ["debug", "release"]
+      }
+    }
+  }
+}
+```
+
+```bash
+byk deploy <TAB>            # prod  staging  --dry-run  --verbose  build
+byk deploy build <TAB>      # debug  release
+byk deploy --dry-run <TAB>  # 已选过的选项被排除
+```
+
+| 特殊 key | 语义 |
+|---------|------|
+| `$` | 叶子候选数组，选中后无下级 |
+| `$options` | 可重复选项数组，选中后留在当前层，已选过的自动排除 |
+| 其他 key | 子命令，选中后进入其值继续补全 |
+
+**规则**：
+
+- `$args` 仅对当前条目生效，不继承
+- 声明了 `$args` 的条目，补全走补全树（优先于点号子节点）；执行仍走 `$cmd`，互不影响
+- `byk show <别名>` 的详情页会展示补全候选
+- value 可以是 `string[]`（全部为叶子候选）或嵌套 object，支持任意层级
+
 ### 保留变量
 
 别名命令中的以下变量由 byk 在执行前展开为具体路径，shell 不会看到 `$` 变量：

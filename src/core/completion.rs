@@ -116,6 +116,9 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     let first = &prev[0];
 
+    // 别名合并配置（$args 补全与嵌套别名节点共用一次加载）
+    let (merged, _) = aliases::load_merged_aliases(layout);
+
     // 上下文标志：根据已知命令返回对应的选项
     if partial.starts_with('-') {
         // 插件命令：优先用 args 中的候选过滤，fallback 到 HELP_FLAGS
@@ -131,6 +134,16 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
                 .filter(|f| f.starts_with(partial))
                 .map(|f| f.to_string())
                 .collect();
+        }
+
+        // 别名 $args 的 $options 也可能包含 flag
+        if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
+            && let Some(args) = alias_args(&resolved.value)
+        {
+            let candidates = collect_args_candidates(args, partial, &[]);
+            if !candidates.is_empty() {
+                return candidates;
+            }
         }
 
         let flags = match first.as_str() {
@@ -184,8 +197,14 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // 1. @ 文件引用补全通过 complete_at_prefix 处理（@file. 语法），此处不处理
 
-    // 2. 检查嵌套别名：`byk rust ` → 补全子节点
-    let (merged, _) = aliases::load_merged_aliases(layout);
+    // 2. 别名条目带 $args → 按补全树补全（优先于点号子节点）
+    if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
+        && let Some(args) = alias_args(&resolved.value)
+    {
+        return complete_args_tree(args, &[], partial);
+    }
+
+    // 3. 检查嵌套别名：`byk rust ` → 补全子节点
     if let Some(node) = merged.get(first.as_str()) {
         if !node.children.is_empty() {
             return node
@@ -199,17 +218,17 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
         return Vec::new();
     }
 
-    // 3. 检查是否是一个已知的插件命令
+    // 4. 检查是否是一个已知的插件命令
     if let Some(plugin_cmd) = get_plugin_command(first, layout) {
         if let Some(ref args) = plugin_cmd.args {
             // prev[1..] 是已经输入的子命令/参数（去掉命令名本身）
             let trailing: Vec<&str> = prev[1..].iter().map(|s| s.as_str()).collect();
-            return complete_plugin_args(args, &trailing, partial);
+            return complete_args_tree(args, &trailing, partial);
         }
         return Vec::new();
     }
 
-    // 4. 无法识别 → 无补全
+    // 5. 无法识别 → 无补全
     Vec::new()
 }
 
@@ -235,10 +254,27 @@ fn complete_multi_prev(prev: &[String], partial: &str, layout: &PathLayout) -> V
     {
         // trailing 是 prev[1..]，即命令名之后的所有参数
         let trailing: Vec<&str> = prev[1..].iter().map(|s| s.as_str()).collect();
-        return complete_plugin_args(args, &trailing, partial);
+        return complete_args_tree(args, &trailing, partial);
+    }
+
+    // 别名命令多级参数补全（$args 树；执行优先级插件高于别名，故放在插件分支之后）
+    let (merged, _) = aliases::load_merged_aliases(layout);
+    if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
+        && let Some(args) = alias_args(&resolved.value)
+    {
+        let trailing: Vec<&str> = prev[1..].iter().map(|s| s.as_str()).collect();
+        return complete_args_tree(args, &trailing, partial);
     }
 
     Vec::new()
+}
+
+/// 从别名值中提取 `$args` 补全树（仅 Meta 形态可能携带）。
+fn alias_args(value: &aliases::AliasValue) -> Option<&serde_json::Value> {
+    match value {
+        aliases::AliasValue::Meta { args, .. } => args.as_ref(),
+        aliases::AliasValue::Str(_) => None,
+    }
 }
 
 /// 补全文件路径。
@@ -411,17 +447,17 @@ fn complete_nested_alias(prefix: &str, key_partial: &str, layout: &PathLayout) -
         .collect()
 }
 
-/// 根据插件 args 树补全子命令/参数候选。
+/// 根据补全树（插件协议 args / 别名 `$args`）逐层下降，收集目标层级的候选。
 ///
 /// `trailing`：已输入的子命令序列（不含命令名本身）
 /// `partial`：当前正在输入的部分词
 ///
-/// 协议约定：
+/// 协议约定（插件协议 args 与别名 `$args` 同构）：
 /// - `$` 数组：叶子候选（不可重复，选中后无下级）
 /// - `$options` 数组：可重复选项（选中后留在当前层，排除已选）
 /// - 其他 key：子命令（选中后进入该 key 的值继续补全）
 /// - value 可以是 string[] 或 object，支持任意嵌套
-fn complete_plugin_args(
+fn complete_args_tree(
     args: &serde_json::Value,
     trailing: &[&str],
     partial: &str,
@@ -430,7 +466,7 @@ fn complete_plugin_args(
     // consumed_options 记录在当前层已被消费的 $options
     let mut consumed_options: Vec<&str> = Vec::new();
 
-    for (i, t) in trailing.iter().enumerate() {
+    for t in trailing.iter() {
         // 判断 t 是否是当前层的子命令（非 $ 非 $options 的 key）
         if let serde_json::Value::Object(obj) = current
             && obj.contains_key(*t) && *t != "$" && *t != "$options"
@@ -447,11 +483,9 @@ fn complete_plugin_args(
         {
             let is_option = opts.iter().any(|v| v.as_str() == Some(*t));
             if is_option {
+                // trailing 均为已确认输入的词（partial 由调用方单独传入），
+                // 已选项加入 consumed，收集候选时排除
                 consumed_options.push(t);
-                // 最后一个 trailing 是 partial，不加入 consumed
-                if i == trailing.len() - 1 && !t.is_empty() {
-                    consumed_options.pop();
-                }
                 continue;
             }
         }
@@ -971,6 +1005,140 @@ mod tests {
         let prev = vec!["add".to_string()];
         let result = contextual_completions(&prev, "--c", &env.layout);
         assert_eq!(result, vec!["--cdn".to_string()]);
+    }
+
+    // ==================== 别名 $args 补全 ====================
+
+    /// 带 $args 的别名文件（叶子 + 可重复选项 + 嵌套子命令）。
+    fn args_alias_file() -> serde_json::Value {
+        json!({
+            "deploy": {
+                "$cmd": "deploy {env}",
+                "$args": {
+                    "$": ["prod", "staging"],
+                    "$options": ["--dry-run", "--verbose"],
+                    "build": {
+                        "$": ["debug", "release"],
+                        "$options": ["--clean"]
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn alias_args_completes_first_level() {
+        let env = TestEnv::new();
+        env.add_alias_file("args", &args_alias_file());
+        let prev = vec!["deploy".to_string()];
+        let mut result = contextual_completions(&prev, "", &env.layout);
+        result.sort();
+        assert_eq!(
+            result,
+            vec![
+                "--dry-run".to_string(),
+                "--verbose".to_string(),
+                "build".to_string(),
+                "prod".to_string(),
+                "staging".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn alias_args_filters_by_partial() {
+        let env = TestEnv::new();
+        env.add_alias_file("args", &args_alias_file());
+        let prev = vec!["deploy".to_string()];
+        let result = contextual_completions(&prev, "pro", &env.layout);
+        assert_eq!(result, vec!["prod".to_string()]);
+    }
+
+    #[test]
+    fn alias_args_flag_partial_uses_options() {
+        let env = TestEnv::new();
+        env.add_alias_file("args", &args_alias_file());
+        let prev = vec!["deploy".to_string()];
+        let result = contextual_completions(&prev, "--d", &env.layout);
+        assert_eq!(result, vec!["--dry-run".to_string()]);
+    }
+
+    #[test]
+    fn alias_args_descends_into_subcommand() {
+        let env = TestEnv::new();
+        env.add_alias_file("args", &args_alias_file());
+        let prev = vec!["deploy".to_string(), "build".to_string()];
+        let mut result = contextual_completions(&prev, "", &env.layout);
+        result.sort();
+        assert_eq!(
+            result,
+            vec![
+                "--clean".to_string(),
+                "debug".to_string(),
+                "release".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn alias_args_options_exclude_consumed() {
+        let env = TestEnv::new();
+        env.add_alias_file("args", &args_alias_file());
+        // 已输入 --dry-run：候选应排除它，但保留 --verbose 与叶子
+        let prev = vec!["deploy".to_string(), "--dry-run".to_string()];
+        let mut result = contextual_completions(&prev, "", &env.layout);
+        result.sort();
+        assert_eq!(
+            result,
+            vec![
+                "--verbose".to_string(),
+                "build".to_string(),
+                "prod".to_string(),
+                "staging".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn alias_args_takes_priority_over_children() {
+        let env = TestEnv::new();
+        // 同时含 $args 与点号子节点：补全走 $args 树
+        env.add_alias_file(
+            "hybrid",
+            &json!({
+                "deploy": {
+                    "$cmd": "deploy",
+                    "$args": {"$": ["prod"]},
+                    "prod": "deploy-prod.sh"
+                }
+            }),
+        );
+        let prev = vec!["deploy".to_string()];
+        let result = contextual_completions(&prev, "", &env.layout);
+        assert_eq!(result, vec!["prod".to_string()]);
+    }
+
+    #[test]
+    fn alias_without_args_still_completes_children() {
+        let env = TestEnv::new();
+        // 无 $args 的普通分组：点号子节点补全行为不变
+        env.add_alias_file(
+            "plain",
+            &json!({"rust": {"build": "cargo build", "test": "cargo test"}}),
+        );
+        let prev = vec!["rust".to_string()];
+        let mut result = contextual_completions(&prev, "", &env.layout);
+        result.sort();
+        assert_eq!(result, vec!["build".to_string(), "test".to_string()]);
+    }
+
+    #[test]
+    fn alias_leaf_without_args_no_completion() {
+        let env = TestEnv::new();
+        env.add_alias_file("leaf", &json!({"hi": {"$cmd": "echo hi"}}));
+        let prev = vec!["hi".to_string()];
+        let result = contextual_completions(&prev, "", &env.layout);
+        assert!(result.is_empty());
     }
 
     #[test]

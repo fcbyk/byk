@@ -170,7 +170,12 @@ pub(crate) fn to_alias_value(val: &serde_json::Value) -> Option<AliasValue> {
 }
 
 /// 将 AliasValue 转换为 AliasDefinition。
-pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {    match value {
+/// 将 AliasValue 转换为 AliasDefinition。
+///
+/// `$args`（补全树）不参与执行，在此处忽略——补全侧直接从
+/// `ResolvedAlias.value` 读取。
+pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {
+    match value {
         AliasValue::Str(command) => Some(AliasDefinition {
             command: command.clone(),
             cwd: None,
@@ -182,6 +187,7 @@ pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {    m
             cwd,
             interactive,
             description,
+            ..
         } => Some(AliasDefinition {
             command: cmd.clone(),
             cwd: cwd.clone(),
@@ -548,6 +554,7 @@ mod tests {
             cwd: Some("/app".into()),
             interactive: Some(true),
             description: None,
+            args: None,
         };
         let def = to_alias_definition(&av).unwrap();
         assert_eq!(def.command, "build");
@@ -562,9 +569,50 @@ mod tests {
             cwd: None,
             interactive: None,
             description: None,
+            args: None,
         };
         let def = to_alias_definition(&av).unwrap();
         assert!(!def.interactive);
         assert_eq!(def.cwd, None);
+    }
+
+    // ==================== $args 解析 ====================
+
+    #[test]
+    fn to_alias_from_meta_with_args() {
+        let result = to_alias_value(&json!({
+            "$cmd": "deploy {env}",
+            "$args": {"$": ["prod", "staging"], "$options": ["--dry-run"]}
+        }));
+        match result {
+            Some(AliasValue::Meta { cmd, args, .. }) => {
+                assert_eq!(cmd, "deploy {env}");
+                let args = args.expect("$args 应被解析");
+                assert_eq!(args["$"], json!(["prod", "staging"]));
+                assert_eq!(args["$options"], json!(["--dry-run"]));
+            }
+            _ => panic!("Expected Meta"),
+        }
+    }
+
+    #[test]
+    fn to_alias_args_defaults_to_none() {
+        let result = to_alias_value(&json!({"$cmd": "echo hi"})).unwrap();
+        match result {
+            AliasValue::Meta { args, .. } => assert!(args.is_none()),
+            _ => panic!("Expected Meta"),
+        }
+    }
+
+    #[test]
+    fn meta_with_args_still_counts_as_leaf() {
+        // 含 $cmd + $args 的对象仍是别名叶子（而非分组）
+        let data = json!({"deploy": {"$cmd": "x", "$args": {"$": ["a"]}}})
+            .as_object()
+            .unwrap()
+            .clone();
+        let result = filter_invalid_keys(&data);
+        assert_eq!(result.len(), 1);
+        assert!(result["deploy"].as_object().unwrap().contains_key("$args"));
     }
 }

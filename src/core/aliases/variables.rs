@@ -198,15 +198,19 @@ mod tests {
     #[test]
     fn quotes_value_with_whitespace() {
         let dir = tempdir().unwrap();
+        // 在临时目录内构造带空格的 venv 路径，验证自动引号
+        let spaced = dir.path().join("my home");
+        let venv_bin = spaced.join(".byk").join("py-venv").join(".venv").join("bin");
+        let venv_python = venv_bin.join(PYTHON_BIN);
+        std::fs::create_dir_all(&venv_bin).unwrap();
+        std::fs::write(&venv_python, "").unwrap();
         let ctx = VarContext {
-            byk_root: PathBuf::from("/tmp/my home/.byk"),
-            venv_bin: PathBuf::from("/tmp/my home/.byk/py-venv/.venv/bin"),
-            venv_python: PathBuf::from("/tmp/my home/.byk/py-venv/.venv/bin/python"),
+            byk_root: spaced.join(".byk"),
+            venv_bin,
+            venv_python,
         };
-        std::fs::create_dir_all(&ctx.venv_bin).unwrap();
-        std::fs::write(&ctx.venv_python, "").unwrap();
         let result = expand_variables("$python -m x", &ctx).unwrap();
-        assert_eq!(result, "\"/tmp/my home/.byk/py-venv/.venv/bin/python\" -m x");
+        assert_eq!(result, format!("\"{}\" -m x", ctx.venv_python.display()));
     }
 
     #[test]
