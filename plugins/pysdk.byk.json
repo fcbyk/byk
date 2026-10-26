@@ -1,7 +1,0 @@
-{
-  "$plugin": true,
-  "$assets": {
-    "byksdk.py": "pysdk/byksdk.py",
-    "utils.py": "pysdk/utils.py"
-  }
-}

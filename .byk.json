@@ -1,4 +1,10 @@
 {
+  "$ref": {
+    "npm": "plugins/npm/npm.byk.json",
+    "pysdk": "plugins/pysdk/pysdk.byk.json"
+  },
+
+
   "dev": {
     "test": "cargo test && cargo clippy ",
     "运行": "cargo run",

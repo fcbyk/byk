@@ -16,6 +16,7 @@ use colored::Colorize;
 use crate::core::add::alias_file_name;
 use crate::core::aliases;
 use crate::core::assets;
+use crate::core::download;
 use crate::core::paths::PathLayout;
 use crate::core::pip;
 
@@ -159,6 +160,7 @@ fn install_from_file(
 }
 
 /// `byk add <file>`：安装当前目录的 `<file>.byk.json` 到全局目录。
+/// 找不到主文件时回退到 `.byk.json` 的 `$ref` 映射。
 pub fn install(target: Option<&str>, layout: &PathLayout, cdn: bool) {
     let stem = match target {
         Some(t) if !t.is_empty() => t,
@@ -168,19 +170,100 @@ pub fn install(target: Option<&str>, layout: &PathLayout, cdn: bool) {
         }
     };
 
-    // 解析本地文件（当前目录）
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let path = cwd.join(alias_file_name(stem));
-    if !path.is_file() {
+
+    if path.is_file() {
+        // 直接命中
+        install_from_file(&path, &format!("@{}", stem), stem, layout, cdn, None);
+        return;
+    }
+
+    // 回退：当前目录 .byk.json 的 $ref
+    let anon_path = cwd.join(".byk.json");
+    if !anon_path.is_file() {
         eprintln!("{} alias file not found: {}", "Error:".red(), stem.bold());
         eprintln!(
-            "  Expected {} in the current directory.",
-            path.display().to_string().dimmed()
+            "  Expected {} or $ref entry in {}",
+            path.display().to_string().dimmed(),
+            anon_path.display().to_string().dimmed()
         );
         std::process::exit(1);
     }
 
-    install_from_file(&path, &format!("@{}", stem), stem, layout, cdn, None);
+    let anon_content = match fs::read_to_string(&anon_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{} failed to read {}: {}", "Error:".red(), anon_path.display(), e);
+            std::process::exit(1);
+        }
+    };
+    let anon_json: serde_json::Value = match serde_json::from_str(&anon_content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{} invalid JSON in {}: {}", "Error:".red(), anon_path.display(), e);
+            std::process::exit(1);
+        }
+    };
+
+    let ref_value = anon_json
+        .get("$ref")
+        .and_then(|v| v.as_object())
+        .and_then(|m| m.get(stem))
+        .and_then(|v| v.as_str());
+
+    match ref_value {
+        Some(v) if v.starts_with("http://") || v.starts_with("https://") => {
+            // 绝对 URL → 下载到临时文件再安装
+            println!(
+                "{} Resolved {} via $ref → {}",
+                "==>".cyan().bold(),
+                stem.bold(),
+                v.dimmed()
+            );
+            let temp_dir = layout.cache_dir.join("tmp-remote");
+            if let Err(e) = fs::create_dir_all(&temp_dir) {
+                eprintln!("{} failed to create {}: {}", "Error:".red(), temp_dir.display(), e);
+                std::process::exit(1);
+            }
+            let temp_file = temp_dir.join(format!("{}.byk.json", stem));
+            if let Err(e) = download::download_script(v, &temp_file) {
+                eprintln!("{} failed to download {}: {}", "Error:".red(), v, e);
+                std::process::exit(1);
+            }
+            install_from_file(&temp_file, &format!("@@{}", stem), stem, layout, cdn, Some(v));
+        }
+        Some(v) => {
+            // 相对路径 → 相对 .byk.json 所在目录
+            let resolved = cwd.join(v);
+            if !resolved.is_file() {
+                eprintln!(
+                    "{} $ref target not found: {} → {}",
+                    "Error:".red(),
+                    v.bold(),
+                    resolved.display().to_string().dimmed()
+                );
+                std::process::exit(1);
+            }
+            println!(
+                "{} Resolved {} via $ref → {}",
+                "==>".cyan().bold(),
+                stem.bold(),
+                resolved.display().to_string().dimmed()
+            );
+            let file_key = format!("@{}", stem);
+            install_from_file(&resolved, &file_key, stem, layout, cdn, None);
+        }
+        None => {
+            eprintln!("{} alias file not found: {}", "Error:".red(), stem.bold());
+            eprintln!(
+                "  Expected {} or $ref entry in {}",
+                path.display().to_string().dimmed(),
+                anon_path.display().to_string().dimmed()
+            );
+            std::process::exit(1);
+        }
+    }
 }
 
 /// `byk add -f <path>`：安装指定路径的 *.byk.json 文件（本地）。

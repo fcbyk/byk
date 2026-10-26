@@ -2,7 +2,7 @@
   "$plugin": true,
   "$assets": {
     "$to": "$byk/plugins/npm",
-    "npm.js": "npm/npm.js"
+    "npm.js": "npm.js"
   },
   "npm": {
     "$cmd": "node $byk/plugins/npm/npm.js",

@@ -266,10 +266,8 @@ def test_install_alias_from_path(runner):
     assert (runner.byk_dir / "alias" / "x.byk.json").is_file()
 
 
-def test_install_remote_missing_path_errors(runner):
-    """远程 spec 缺 path（user/repo）→ 报错"""
+def test_install_remote_no_path_uses_repo_name(runner):
+    """远程 spec 缺 path（user/repo）→ 默认使用 repo.byk.json，不存在则报下载错误"""
     r = runner.run("add", "user/repo")
     assert r.returncode != 0
-    assert "missing a file path" in r.stderr
-
-
+    assert "missing a file path" not in r.stderr

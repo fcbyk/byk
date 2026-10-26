@@ -32,6 +32,26 @@ pub(crate) fn to_jsdelivr_url(raw_url: &str) -> String {
     raw_url.to_string()
 }
 
+/// 下载 URL 内容到 String（不落地文件），用于解析 JSON（如 $ref）。
+pub(crate) fn download_string(url: &str) -> Result<String, String> {
+    let response = ureq::get(url)
+        .call()
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if response.status() != 200 {
+        return Err(format!(
+            "HTTP {} when downloading {}",
+            response.status(),
+            url
+        ));
+    }
+
+    response
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read response body: {}", e))
+}
+
 /// 下载文件到 dest（进度条写 stderr）。
 pub(crate) fn download_script(url: &str, dest: &Path) -> Result<(), String> {
     let response = ureq::get(url)
