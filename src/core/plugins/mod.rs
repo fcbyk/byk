@@ -27,27 +27,25 @@ const FILE_LEVEL_FIELDS: &[&str] = &[
     "$priority", "$cwd", "$interactive", "$paths", "$pip", "$pip-keep", "$assets", "$var", "$plugin",
 ];
 
-/// 从文件路径安装为全局插件（本地 / 远程共用）。
+/// 从 JSON 内容安装为全局插件（本地 / 远程共用）。
 ///
 /// 只有声明 `$plugin: true` 的文件才能被安装；否则报错，不装依赖、不下载资源。
-fn install_from_file(
-    path: &Path,
+///
+/// `display_label` 用于日志/错误消息中标识来源（本地文件路径或远程 URL）。
+fn install_from_content(
+    content: &str,
+    display_label: &str,
     file_key: &str,
     stem: &str,
     layout: &PathLayout,
     cdn: bool,
     remote_base: Option<&str>,
 ) {
-    // 读原始 JSON
-    let content = fs::read_to_string(path).unwrap_or_else(|e| {
-        eprintln!("{} failed to read {}: {}", "Error:".red(), path.display(), e);
-        std::process::exit(1);
-    });
-    let original: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|e| {
+    let original: serde_json::Value = serde_json::from_str(content).unwrap_or_else(|e| {
         eprintln!(
             "{} invalid JSON in {}: {}",
             "Error:".red(),
-            path.display(),
+            display_label,
             e
         );
         std::process::exit(1);
@@ -62,7 +60,7 @@ fn install_from_file(
         eprintln!(
             "{} {} is not a plugin (missing {}).",
             "Error:".red(),
-            path.display().to_string().bold(),
+            display_label.bold(),
             "$plugin: true".bold()
         );
         eprintln!(
@@ -97,7 +95,7 @@ fn install_from_file(
         println!(
             "{} Installing pip dependencies from {}",
             "==>".cyan().bold(),
-            path.display().to_string().bold()
+            display_label.bold()
         );
         if !packages.is_empty() {
             pip::install_packages(&packages, layout, "byk add");
@@ -112,9 +110,11 @@ fn install_from_file(
         );
     }
 
-    // 下载 assets
+    // 下载 assets：用目标 alias 路径作为 download_block 的上下文路径
+    // （remote_base 存在时仅用于日志/错误消息，不影响远程资源 URL 解析）
+    let assets_ctx_path = layout.alias_dir.join(alias_file_name(stem));
     if let Some(block) = &assets_block {
-        assets::download_block(block, path, file_key, layout, cdn, remote_base);
+        assets::download_block(block, &assets_ctx_path, file_key, layout, cdn, remote_base);
     }
 
     // 组装副本：文件级字段（含 $plugin）+ 全部别名
@@ -157,6 +157,23 @@ fn install_from_file(
         "Successfully".green(),
         dest.display().to_string().dimmed()
     );
+}
+
+/// 从文件路径安装为全局插件。读取文件后委托给 [`install_from_content`]。
+fn install_from_file(
+    path: &Path,
+    file_key: &str,
+    stem: &str,
+    layout: &PathLayout,
+    cdn: bool,
+    remote_base: Option<&str>,
+) {
+    let content = fs::read_to_string(path).unwrap_or_else(|e| {
+        eprintln!("{} failed to read {}: {}", "Error:".red(), path.display(), e);
+        std::process::exit(1);
+    });
+    let display_label = path.display().to_string();
+    install_from_content(&content, &display_label, file_key, stem, layout, cdn, remote_base);
 }
 
 /// `byk add <file>`：安装当前目录的 `<file>.byk.json` 到全局目录。
@@ -214,7 +231,7 @@ pub fn install(target: Option<&str>, layout: &PathLayout, cdn: bool) {
 
     match ref_value {
         Some(v) if v.starts_with("http://") || v.starts_with("https://") => {
-            // 绝对 URL → 按需转 CDN 后下载到临时文件再安装
+            // 绝对 URL → 按需转 CDN 后下载到内存直接安装
             let download_url = if cdn {
                 download::to_jsdelivr_url(v)
             } else {
@@ -226,20 +243,23 @@ pub fn install(target: Option<&str>, layout: &PathLayout, cdn: bool) {
                 stem.bold(),
                 download_url.dimmed()
             );
-            let temp_dir = layout.cache_dir.join("tmp-remote");
-            if let Err(e) = fs::create_dir_all(&temp_dir) {
-                eprintln!("{} failed to create {}: {}", "Error:".red(), temp_dir.display(), e);
-                std::process::exit(1);
-            }
-            let temp_file = temp_dir.join(format!("{}.byk.json", stem));
-            if let Err(e) = download::download_script(&download_url, &temp_file) {
-                eprintln!("{} failed to download {}: {}", "Error:".red(), download_url, e);
-                std::process::exit(1);
-            }
+            let content = match download::download_string(&download_url) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("{} failed to download {}: {}", "Error:".red(), download_url, e);
+                    std::process::exit(1);
+                }
+            };
+            println!(
+                "{} Downloaded {} ({})",
+                "==>".cyan().bold(),
+                format!("{}.byk.json", stem).bold(),
+                format_size(content.len())
+            );
             let remote_base = download_url.rsplit_once('/')
                 .map(|(dir, _)| format!("{}/", dir))
                 .unwrap_or_else(|| download_url.clone());
-            install_from_file(&temp_file, &format!("@@{}", stem), stem, layout, cdn, Some(&remote_base));
+            install_from_content(&content, &download_url, &format!("@@{}", stem), stem, layout, cdn, Some(&remote_base));
         }
         Some(v) => {
             // 相对路径 → 相对 .byk.json 所在目录
@@ -295,4 +315,14 @@ pub fn install_from_path(path_str: &str, layout: &PathLayout, cdn: bool) {
         std::process::exit(1);
     }
     install_from_file(&path, &format!("@{}", stem), stem, layout, cdn, None);
+}
+
+fn format_size(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{}B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1}KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }

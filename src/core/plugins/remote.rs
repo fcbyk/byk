@@ -1,6 +1,5 @@
 //! 远程分发：`byk add user/repo/path` 拉取远程 *.byk.json 并安装。
 
-use std::fs;
 use std::sync::mpsc;
 use std::thread;
 
@@ -8,8 +7,6 @@ use colored::Colorize;
 
 use crate::core::download;
 use crate::core::paths::PathLayout;
-
-use super::install_from_file;
 
 /// 解析远程 spec：`user/repo[@branch]/path/to/file` → (owner, repo, branch, path)。
 /// path 可为多级（`aaa/bbb`），空字符串表示不带 path（由调用方报错）。
@@ -186,15 +183,7 @@ pub fn install_remote(spec: &str, layout: &PathLayout, cdn: bool) {
         branch.dimmed()
     );
 
-    // 确保临时目录存在
-    let temp_dir = layout.cache_dir.join("tmp-remote");
-    if let Err(e) = fs::create_dir_all(&temp_dir) {
-        eprintln!("{} failed to create {}: {}", "Error:".red(), temp_dir.display(), e);
-        std::process::exit(1);
-    }
-    let temp_file = temp_dir.join(format!("{}.byk.json", stem));
-
-    // 并发：同时尝试主 URL 和 $ref 回退，取先成功者
+    // 并发：同时尝试主 URL 和 $ref 回退，取先成功者。内容直接下载到内存。
     let (tx, rx) = mpsc::channel();
 
     // Thread 1: 尝试主 URL
@@ -265,11 +254,7 @@ pub fn install_remote(spec: &str, layout: &PathLayout, cdn: bool) {
         }
     };
 
-    // 写入临时文件
-    if let Err(e) = fs::write(&temp_file, &content) {
-        eprintln!("{} failed to write {}: {}", "Error:".red(), temp_file.display(), e);
-        std::process::exit(1);
-    }
+    // 打印下载确认
     println!(
         "{} Downloaded {} ({})",
         "==>".cyan().bold(),
@@ -292,7 +277,7 @@ pub fn install_remote(spec: &str, layout: &PathLayout, cdn: bool) {
         .map(|(dir, _)| format!("{}/", dir))
         .unwrap_or_else(|| final_url.clone());
     let file_key = format!("@@{}", final_stem);
-    install_from_file(&temp_file, &file_key, &final_stem, layout, cdn, Some(&remote_base));
+    super::install_from_content(&content, &final_url, &file_key, &final_stem, layout, cdn, Some(&remote_base));
 }
 
 /// 字节数 -> 人类可读大小。
