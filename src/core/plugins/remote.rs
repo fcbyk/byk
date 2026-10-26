@@ -60,6 +60,39 @@ fn build_raw_url(owner: &str, repo: &str, branch: &str, file_path: &str) -> Stri
     )
 }
 
+/// 仓库根目录的 raw base URL（末尾带 /）。
+/// 如 `https://raw.githubusercontent.com/u/r/main/`
+fn raw_repo_base(owner: &str, repo: &str, branch: &str) -> String {
+    format!(
+        "https://raw.githubusercontent.com/{}/{}/{}/",
+        owner, repo, branch
+    )
+}
+
+/// 仓库根目录的 CDN base URL（末尾带 /）。
+/// 如 `https://cdn.jsdelivr.net/gh/u/r@main/`
+fn cdn_repo_base(owner: &str, repo: &str, branch: &str) -> String {
+    format!(
+        "https://cdn.jsdelivr.net/gh/{}/{}@{}/",
+        owner, repo, branch
+    )
+}
+
+/// 拼接仓库内目录的 base URL（末尾带 /），按需走 CDN。
+/// parent 为空 → 仓库根目录；否则为 `parent/`
+fn repo_base_url(owner: &str, repo: &str, branch: &str, parent: &str, cdn: bool) -> String {
+    let base = if cdn {
+        cdn_repo_base(owner, repo, branch)
+    } else {
+        raw_repo_base(owner, repo, branch)
+    };
+    if parent.is_empty() {
+        base
+    } else {
+        format!("{}{}/", base, parent)
+    }
+}
+
 /// 将 raw URL 按需转为 CDN URL。
 fn to_cdn_if(raw_url: &str, cdn: bool) -> String {
     if cdn {
@@ -70,8 +103,8 @@ fn to_cdn_if(raw_url: &str, cdn: bool) -> String {
 }
 
 /// 解析 $ref 值，返回最终 URL 和 stem。
-/// - 绝对 URL：直接使用
-/// - 相对路径：相对 `.byk.json` 所在目录拼接 raw URL，再按需转 CDN
+/// - 绝对 URL：若是 raw.githubusercontent.com 则按需转 CDN，否则原样使用
+/// - 相对路径：通过 `repo_base_url` 直接拼出 CDN/raw URL
 fn resolve_ref_url(
     ref_value: &str,
     owner: &str,
@@ -80,20 +113,13 @@ fn resolve_ref_url(
     parent: &str,
     cdn: bool,
 ) -> (String, String) {
-    // stem 取最后一段
     let stem = stem_from_path(ref_value).to_string();
 
     if ref_value.starts_with("http://") || ref_value.starts_with("https://") {
-        // 绝对 URL，直接使用（不转 CDN）
-        (ref_value.to_string(), stem)
+        (to_cdn_if(ref_value, cdn), stem)
     } else {
-        // 相对路径，拼接 raw URL
-        let raw = if parent.is_empty() {
-            build_raw_url(owner, repo, branch, ref_value)
-        } else {
-            build_raw_url(owner, repo, branch, &format!("{}/{}", parent, ref_value))
-        };
-        (to_cdn_if(&raw, cdn), stem)
+        let base = repo_base_url(owner, repo, branch, parent, cdn);
+        (format!("{}{}", base, ref_value), stem)
     }
 }
 
@@ -261,9 +287,12 @@ pub fn install_remote(spec: &str, layout: &PathLayout, cdn: bool) {
         );
     }
 
-    // 安装
+    // 安装：remote_base 取 final_url 的目录部分，供 $assets 相对路径拼 CDN
+    let remote_base = final_url.rsplit_once('/')
+        .map(|(dir, _)| format!("{}/", dir))
+        .unwrap_or_else(|| final_url.clone());
     let file_key = format!("@@{}", final_stem);
-    install_from_file(&temp_file, &file_key, &final_stem, layout, cdn, Some(&final_url));
+    install_from_file(&temp_file, &file_key, &final_stem, layout, cdn, Some(&remote_base));
 }
 
 /// 字节数 -> 人类可读大小。
@@ -420,6 +449,50 @@ mod tests {
         assert_eq!(
             url,
             "https://cdn.jsdelivr.net/gh/u/r@main/aaa/bbb/sub/plugin"
+        );
+    }
+
+    #[test]
+    fn resolve_ref_url_absolute_with_cdn() {
+        let (url, _stem) = resolve_ref_url(
+            "https://raw.githubusercontent.com/u/r/main/x.byk.json",
+            "u", "r", "main", "", true,
+        );
+        assert_eq!(
+            url,
+            "https://cdn.jsdelivr.net/gh/u/r@main/x.byk.json"
+        );
+    }
+
+    #[test]
+    fn raw_repo_base_forms() {
+        assert_eq!(
+            raw_repo_base("u", "r", "main"),
+            "https://raw.githubusercontent.com/u/r/main/"
+        );
+    }
+
+    #[test]
+    fn cdn_repo_base_forms() {
+        assert_eq!(
+            cdn_repo_base("u", "r", "main"),
+            "https://cdn.jsdelivr.net/gh/u/r@main/"
+        );
+    }
+
+    #[test]
+    fn repo_base_url_root_and_subdir() {
+        assert_eq!(
+            repo_base_url("u", "r", "main", "", false),
+            "https://raw.githubusercontent.com/u/r/main/"
+        );
+        assert_eq!(
+            repo_base_url("u", "r", "main", "tools", false),
+            "https://raw.githubusercontent.com/u/r/main/tools/"
+        );
+        assert_eq!(
+            repo_base_url("u", "r", "main", "tools", true),
+            "https://cdn.jsdelivr.net/gh/u/r@main/tools/"
         );
     }
 }

@@ -214,12 +214,17 @@ pub fn install(target: Option<&str>, layout: &PathLayout, cdn: bool) {
 
     match ref_value {
         Some(v) if v.starts_with("http://") || v.starts_with("https://") => {
-            // 绝对 URL → 下载到临时文件再安装
+            // 绝对 URL → 按需转 CDN 后下载到临时文件再安装
+            let download_url = if cdn {
+                download::to_jsdelivr_url(v)
+            } else {
+                v.to_string()
+            };
             println!(
                 "{} Resolved {} via $ref → {}",
                 "==>".cyan().bold(),
                 stem.bold(),
-                v.dimmed()
+                download_url.dimmed()
             );
             let temp_dir = layout.cache_dir.join("tmp-remote");
             if let Err(e) = fs::create_dir_all(&temp_dir) {
@@ -227,11 +232,14 @@ pub fn install(target: Option<&str>, layout: &PathLayout, cdn: bool) {
                 std::process::exit(1);
             }
             let temp_file = temp_dir.join(format!("{}.byk.json", stem));
-            if let Err(e) = download::download_script(v, &temp_file) {
-                eprintln!("{} failed to download {}: {}", "Error:".red(), v, e);
+            if let Err(e) = download::download_script(&download_url, &temp_file) {
+                eprintln!("{} failed to download {}: {}", "Error:".red(), download_url, e);
                 std::process::exit(1);
             }
-            install_from_file(&temp_file, &format!("@@{}", stem), stem, layout, cdn, Some(v));
+            let remote_base = download_url.rsplit_once('/')
+                .map(|(dir, _)| format!("{}/", dir))
+                .unwrap_or_else(|| download_url.clone());
+            install_from_file(&temp_file, &format!("@@{}", stem), stem, layout, cdn, Some(&remote_base));
         }
         Some(v) => {
             // 相对路径 → 相对 .byk.json 所在目录

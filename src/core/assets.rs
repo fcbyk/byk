@@ -177,14 +177,11 @@ fn parse_source(
     Ok((source, action))
 }
 
-/// 相对路径拼接为完整 URL（相对 URL 解析，与 byk.json 的 RefBase 同语义）。
+/// 相对路径拼接为完整 URL。
+/// base_url 应为目录 URL（末尾带 /），rel 直接拼接。
 fn resolve_relative_url(base_url: &str, rel: &str) -> String {
     let rel = rel.strip_prefix("./").unwrap_or(rel);
-    let base = match base_url.rsplit_once('/') {
-        Some((parent, _)) => parent,
-        None => base_url,
-    };
-    format!("{}/{}", base, rel)
+    format!("{}{}", base_url, rel)
 }
 
 /// 解析 `$to` → 显式根目录。None 表示未设置（走缺省根）。
@@ -644,7 +641,7 @@ mod tests {
     #[test]
     fn relative_url_with_remote_base() {
         let mut c = ctx(Path::new("/tmp/demo.byk.json"), "@demo", Path::new("/proj"));
-        c.remote_base = Some("https://raw.githubusercontent.com/u/r/main/demo.byk.json");
+        c.remote_base = Some("https://raw.githubusercontent.com/u/r/main/");
         let block = json!({"tool": "bin/tool"});
         let plan = resolve_assets_plan(&block, &c).unwrap();
         assert_eq!(
@@ -656,7 +653,7 @@ mod tests {
     #[test]
     fn full_url_ignores_remote_base() {
         let mut c = ctx(Path::new("/tmp/demo.byk.json"), "@demo", Path::new("/proj"));
-        c.remote_base = Some("https://raw.githubusercontent.com/u/r/main/demo.byk.json");
+        c.remote_base = Some("https://raw.githubusercontent.com/u/r/main/");
         let block = json!({"tool": "https://other.example/tool"});
         let plan = resolve_assets_plan(&block, &c).unwrap();
         assert_eq!(
