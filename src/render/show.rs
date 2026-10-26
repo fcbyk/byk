@@ -13,7 +13,7 @@ use crate::core::aliases::AliasValue;
 use crate::core::show::{self, InfoEntry, OverviewInfo};
 use crate::core::aliases::ResolvedAlias;
 use crate::core::paths::PathLayout;
-use crate::core::plugins::types::{PYTHON_BIN, VENV_BIN};
+use crate::core::pip::{PYTHON_BIN, VENV_BIN};
 use crate::utils::display;
 
 // ---------------------------------------------------------------------------

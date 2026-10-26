@@ -9,7 +9,22 @@ use colored::Colorize;
 
 use super::download::ensure_dir;
 use super::paths::PathLayout;
-use super::plugins::types::{PYTHON_BIN, VENV_BIN};
+
+// ---------------------------------------------------------------------------
+// venv 平台常量
+// ---------------------------------------------------------------------------
+
+/// venv 内 bin 目录名。
+#[cfg(windows)]
+pub const VENV_BIN: &str = "Scripts";
+#[cfg(not(windows))]
+pub const VENV_BIN: &str = "bin";
+
+/// venv 内 Python 可执行文件名。
+#[cfg(windows)]
+pub const PYTHON_BIN: &str = "python.exe";
+#[cfg(not(windows))]
+pub const PYTHON_BIN: &str = "python";
 
 /// 是否 uv 管理模式（py-venv/pyproject.toml 存在）。
 fn is_uv_mode(layout: &PathLayout) -> bool {
@@ -69,6 +84,21 @@ pub(crate) fn install_python_package(pkg: &str, layout: &PathLayout) {
                 exit(1);
             }
         }
+    }
+}
+
+/// 安装一批 pip 包到 byk 托管 venv（按需创建，含一次性确认）。
+///
+/// `byk add pip` 与插件安装（`byk add <file>` / 远程）共用。
+pub(crate) fn install_packages(packages: &[String], layout: &PathLayout, subject: &str) {
+    ensure_python_env(layout, subject);
+    for pkg in packages {
+        println!(
+            "{}",
+            format!("Installing pip package: {}", pkg).dimmed()
+        );
+        install_python_package(pkg, layout);
+        println!("{} {}", "+".green(), pkg.bold());
     }
 }
 

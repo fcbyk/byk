@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use colored::Colorize;
 
 use crate::core::paths::PathLayout;
-use crate::core::plugins::types::{PYTHON_BIN, VENV_BIN};
+use crate::core::pip::{PYTHON_BIN, VENV_BIN};
 
 /// 变量展开上下文：保留变量的取值来源。
 #[derive(Debug, Clone)]

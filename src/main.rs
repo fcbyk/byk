@@ -12,6 +12,7 @@ use core::aliases;
 use core::completion;
 use core::add;
 use core::paths::PathLayout;
+use core::plugins;
 use core::remove;
 
 fn main() {
@@ -73,10 +74,10 @@ fn main() {
                     eprintln!("  Just run: {}", "byk add <user/repo>".bold());
                 }
                 (Some("pip"), None, target) => {
-                    add::install_alias_pip(target, &layout);
+                    add::install_plugin_pip(target, &layout);
                 }
                 (Some("assets"), None, target) => {
-                    add::install_alias_assets(target, &layout, cdn);
+                    add::install_plugin_assets(target, &layout, cdn);
                 }
                 (Some("pip" | "assets"), Some(_), _) => {
                     eprintln!(
@@ -93,7 +94,7 @@ fn main() {
                 }
                 (None, Some(f), None) => {
                     // -f：本地 *.byk.json 文件路径
-                    add::install_alias_from_path(f, &layout, cdn);
+                    plugins::install_from_path(f, &layout, cdn);
                 }
                 (Some(_), Some(_), None) => {
                     eprintln!(
@@ -105,11 +106,11 @@ fn main() {
                 }
                 (Some(n), None, None) if n.contains('/') => {
                     // 远程：user/repo/path → 拉取 *.byk.json
-                    add::install_remote(n, &layout, cdn);
+                    plugins::install_remote(n, &layout, cdn);
                 }
                 (Some(n), None, None) => {
                     // 本地：当前目录 <n>.byk.json
-                    add::install_alias(Some(n), &layout, cdn);
+                    plugins::install(Some(n), &layout, cdn);
                 }
             }
             return;

@@ -9,7 +9,7 @@ use std::process::Command;
 
 use crate::core::aliases::{self, ResolvedAlias};
 use crate::core::paths::PathLayout;
-use crate::core::plugins::types::{PYTHON_BIN, VENV_BIN};
+use crate::core::pip::{PYTHON_BIN, VENV_BIN};
 
 // ---------------------------------------------------------------------------
 // 命令名查询

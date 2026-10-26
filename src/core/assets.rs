@@ -15,13 +15,16 @@
 //! 源为 URL 或本地路径（相对文件目录解析）；`[tar]` 解压到同名子目录、
 //! `[exe]` 下载后 `chmod +x`；条目值可为平台映射，当前平台不在映射 → 跳过。
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use colored::Colorize;
 use serde_json::Value;
 
 use crate::core::aliases::variables::{VarContext, expand_variables};
-use crate::core::plugins::types::{PYTHON_BIN, VENV_BIN};
+use crate::core::download;
+use crate::core::paths::PathLayout;
+use crate::core::pip::{PYTHON_BIN, VENV_BIN};
 
 /// 当前平台（编译期注入，与 `build.rs` 五值一致）。
 const PLATFORM: &str = env!("PLATFORM");
@@ -308,6 +311,163 @@ pub fn assets_dir_or_warn(block: &Value, ctx: &AssetsCtx) -> Option<PathBuf> {
             None
         }
     }
+}
+
+/// 下载 `$assets` 块（解析 plan + 下载循环）。返回是否实际下载了资源。
+///
+/// `byk add assets` 与插件安装（`byk add <file>` / 远程）共用。
+pub(crate) fn download_block(
+    block: &Value,
+    path: &Path,
+    file_key: &str,
+    layout: &PathLayout,
+    cdn: bool,
+    remote_base: Option<&str>,
+) -> bool {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let ctx = AssetsCtx {
+        file_path: path,
+        file_key,
+        cwd: &cwd,
+        byk_root: &layout.root_dir,
+        venv_dir: &layout.venv_dir,
+        remote_base,
+    };
+    let plan = match resolve_assets_plan(block, &ctx) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "{} invalid $assets in {}: {}",
+                "Error:".red(),
+                path.display(),
+                e
+            );
+            std::process::exit(1);
+        }
+    };
+
+    if plan.entries.is_empty() {
+        let note = if plan.skipped.is_empty() {
+            "no entries".to_string()
+        } else {
+            format!("{} skipped on this platform", plan.skipped.len())
+        };
+        println!("{} nothing to download ({})", "*".dimmed(), note.dimmed());
+        return false;
+    }
+
+    println!(
+        "{} Downloading {} asset(s) from {}",
+        "==>".cyan().bold(),
+        plan.entries.len(),
+        path.display().to_string().bold()
+    );
+    println!(
+        "  {} {}",
+        "target:".dimmed(),
+        plan.assets_dir().display().to_string().dimmed()
+    );
+
+    download::ensure_dir(&plan.assets_dir(), "assets");
+
+    for entry in &plan.entries {
+        let dest = plan.entry_dest(&entry.name);
+        if let Some(parent) = dest.parent() {
+            download::ensure_dir(parent, "asset");
+        }
+
+        let is_tar = entry.action == AssetAction::Tar;
+        let fetch_target = if is_tar {
+            dest.with_extension("byk-tmp")
+        } else {
+            dest.clone()
+        };
+
+        match &entry.source {
+            AssetSource::Url(url) => {
+                let url = if cdn {
+                    download::to_jsdelivr_url(url)
+                } else {
+                    url.clone()
+                };
+                if let Err(e) = download::download_script(&url, &fetch_target) {
+                    eprintln!(
+                        "{} failed to download {}: {}",
+                        "Error:".red(),
+                        entry.name.bold(),
+                        e
+                    );
+                    std::process::exit(1);
+                }
+            }
+            AssetSource::LocalPath(p) => {
+                if !p.is_file() {
+                    eprintln!(
+                        "{} local source not found for '{}': {}",
+                        "Error:".red(),
+                        entry.name.bold(),
+                        p.display()
+                    );
+                    std::process::exit(1);
+                }
+                if let Err(e) = fs::copy(p, &fetch_target) {
+                    eprintln!(
+                        "{} failed to copy {}: {}",
+                        "Error:".red(),
+                        entry.name.bold(),
+                        e
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        match entry.action {
+            AssetAction::Tar => {
+                if let Err(e) = download::extract_archive(&fetch_target, &dest) {
+                    eprintln!(
+                        "{} failed to extract {}: {}",
+                        "Error:".red(),
+                        entry.name.bold(),
+                        e
+                    );
+                    std::process::exit(1);
+                }
+                let _ = fs::remove_file(&fetch_target);
+            }
+            AssetAction::Exec => {
+                #[cfg(not(windows))]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = fs::metadata(&dest) {
+                        let mut perms = metadata.permissions();
+                        perms.set_mode(0o755);
+                        let _ = fs::set_permissions(&dest, perms);
+                    }
+                }
+            }
+            AssetAction::None => {}
+        }
+
+        println!("{} {}", "+".green(), entry.name.bold());
+    }
+
+    for name in &plan.skipped {
+        println!(
+            "{} {} (skipped on this platform)",
+            "*".dimmed(),
+            name.dimmed()
+        );
+    }
+
+    println!(
+        "{} downloaded {} asset(s) for {}",
+        "Successfully".green(),
+        plan.entries.len(),
+        path.display().to_string().dimmed()
+    );
+
+    true
 }
 
 // ---------------------------------------------------------------------------
