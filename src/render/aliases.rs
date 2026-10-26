@@ -9,15 +9,15 @@ use std::path::{Path, PathBuf};
 use crate::core::aliases::{self, MergedConfig};
 use crate::utils::display;
 
-/// 渲染 Aliases 区块到终端。
-pub fn render(merged: &MergedConfig, alias_dir: &Path) {
-    let lines = format_lines(merged, alias_dir);
+/// 渲染 Commands or Aliases 区块（内置命令 + 别名合并，统一对齐）。
+pub fn render(merged: &MergedConfig, builtins: &[(String, String)]) {
+    let lines = format_combined_lines(merged, builtins);
     if lines.is_empty() {
         return;
     }
 
     println!();
-    println!("{}", "Aliases:".green().bold());
+    println!("{}", "Commands or Aliases:".green().bold());
 
     for (name, line) in &lines {
         if name.is_empty() {
@@ -30,12 +30,12 @@ pub fn render(merged: &MergedConfig, alias_dir: &Path) {
     }
 }
 
-/// 将合并后的别名配置格式化为对齐的展示行。
-fn format_lines(merged: &MergedConfig, _alias_dir: &Path) -> Vec<(String, String)> {
+/// 收集别名的展示条目（path, display_text）。
+fn collect_alias_entries(merged: &MergedConfig) -> Vec<(String, String)> {
     let mut paths = aliases::collect_merged_paths(merged, "");
     paths.sort();
 
-    let entries: Vec<(String, String)> = paths
+    paths
         .iter()
         .filter_map(|path| {
             let resolved = aliases::resolve_merged_alias(merged, path)?;
@@ -58,13 +58,16 @@ fn format_lines(merged: &MergedConfig, _alias_dir: &Path) -> Vec<(String, String
             };
             Some((path.clone(), format!("{}{}", display_text, suffix)))
         })
-        .collect();
+        .collect()
+}
 
+/// 对齐 + 终端宽度感知换行。
+fn align_entries(entries: &[(String, String)]) -> Vec<(String, String)> {
     if entries.is_empty() {
         return Vec::new();
     }
 
-    let aligned = display::align_kv_pairs(&entries, "");
+    let aligned = display::align_kv_pairs(entries, "");
 
     let terminal_width = display::get_terminal_width() as usize;
     let indent = 2;
@@ -103,6 +106,22 @@ fn format_lines(merged: &MergedConfig, _alias_dir: &Path) -> Vec<(String, String
     }
 
     lines
+}
+
+/// 将合并后的别名配置格式化为对齐的展示行。
+#[cfg(test)]
+fn format_lines(merged: &MergedConfig, _alias_dir: &Path) -> Vec<(String, String)> {
+    align_entries(&collect_alias_entries(merged))
+}
+
+/// 合并内置命令 + 别名的展示行（内置命令在前，别名按名排序在后）。
+fn format_combined_lines(
+    merged: &MergedConfig,
+    builtins: &[(String, String)],
+) -> Vec<(String, String)> {
+    let mut entries: Vec<(String, String)> = builtins.to_vec();
+    entries.extend(collect_alias_entries(merged));
+    align_entries(&entries)
 }
 
 // ---------------------------------------------------------------------------

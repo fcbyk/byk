@@ -23,7 +23,7 @@ def test_help(runner):
     assert r.stdout
     assert "Usage:" in r.stdout
     assert "Options:" in r.stdout
-    assert "Commands:" in r.stdout
+    assert "Commands or Aliases:" in r.stdout
     assert "add" in r.stdout
     assert "remove" in r.stdout
     assert "show" in r.stdout

@@ -6,9 +6,8 @@ use colored::Colorize;
 
 use crate::core::aliases;
 use crate::core::paths::PathLayout;
-use crate::utils::display;
 
-/// 渲染完整帮助信息（Usage + Options + Commands + Aliases）。
+/// 渲染完整帮助信息（Usage + Options + Commands or Aliases）。
 ///
 /// -h / --help 直接调用，仪表盘在之前叠加 banner。
 pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
@@ -16,35 +15,17 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     println!();
     render_options(options);
 
-    // 内置命令
-    render_commands();
-
-    let (merged, _files) = aliases::load_merged_aliases(layout);
-    super::aliases::render(&merged, &layout.alias_dir);
-
-    println!();
-}
-
-/// 渲染内置命令。
-pub fn render_commands() {
-    let builtin: Vec<(String, String)> = vec![
+    // 内置命令 + 别名合并为一个区块
+    let builtins: Vec<(String, String)> = vec![
         ("add".into(), "Add plugins or features".into()),
         ("remove".into(), "Remove plugins or features".into()),
         ("show".into(), "Show system info, plugins, or command sources".into()),
     ];
 
-    println!();
-    println!("{}", "Commands:".green().bold());
-    print_aligned(&builtin);
-}
+    let (merged, _files) = aliases::load_merged_aliases(layout);
+    super::aliases::render(&merged, &builtins);
 
-/// 打印一段对齐的命令行（缩进前缀 + 彩色命令名 + 描述）。
-fn print_aligned(entries: &[(String, String)]) {
-    for (name, line) in &display::align_kv_pairs(entries, "  ") {
-        let rest = &line[2 + name.len()..];
-        print!("  {}", name.cyan().bold());
-        println!("{}", rest);
-    }
+    println!();
 }
 
 /// 渲染 Usage 说明。
