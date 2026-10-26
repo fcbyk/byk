@@ -1,8 +1,8 @@
 {
+  "$plugin": true,
   "$pip": ["py-module @ file://__WHEEL__"],
   "py-module": {
     "$cmd": "$python -m py_module",
-    "$description": "e2e fixture for the python-m command type",
-    "$install": true
+    "$description": "e2e fixture for the python-m command type"
   }
 }

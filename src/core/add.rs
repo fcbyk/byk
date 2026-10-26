@@ -264,62 +264,13 @@ fn download_assets_block(
 }
 
 // ---------------------------------------------------------------------------
-// $install 筛选
+// $plugin 插件开关
 // ---------------------------------------------------------------------------
 
-/// 副本保留的文件级字段（`$install` 是安装期元数据，刻意排除）。
+/// 副本保留的文件级字段。`$plugin` 是文件持久身份，保留在副本中。
 const FILE_LEVEL_FIELDS: &[&str] = &[
-    "$priority", "$cwd", "$interactive", "$paths", "$pip", "$pip-keep", "$assets", "$var",
+    "$priority", "$cwd", "$interactive", "$paths", "$pip", "$pip-keep", "$assets", "$var", "$plugin",
 ];
-
-/// `$install` 三级继承筛选：保留 install=true 的别名子树，剔除 `$install` 标志本身。
-///
-/// - 当前层有 `$install` → 覆盖继承值（与 `$interactive` 同构）
-/// - 别名叶子（String / 含 `$cmd` 的 Object）→ cur 为 true 才保留
-/// - 分组（无 `$cmd` 的 Object）→ 递归，筛选后为空则整组剔除
-fn filter_install(
-    obj: &serde_json::Map<String, serde_json::Value>,
-    inherited: bool,
-) -> serde_json::Map<String, serde_json::Value> {
-    let cur = obj
-        .get("$install")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(inherited);
-    let mut result = serde_json::Map::new();
-    for (key, val) in obj {
-        if key.starts_with('$') {
-            continue;
-        }
-        if aliases::is_alias_value(val) {
-            // 叶子自己的 $install 覆盖继承值（与 $interactive 同构）
-            let leaf_install = val
-                .as_object()
-                .and_then(|o| o.get("$install"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(cur);
-            if leaf_install {
-                result.insert(key.clone(), strip_install(val));
-            }
-        } else if let serde_json::Value::Object(inner) = val {
-            let sub = filter_install(inner, cur);
-            if !sub.is_empty() {
-                result.insert(key.clone(), serde_json::Value::Object(sub));
-            }
-        }
-    }
-    result
-}
-
-/// 剔除叶子对象里的 `$install` 键（其余原样返回）。
-fn strip_install(val: &serde_json::Value) -> serde_json::Value {
-    if let serde_json::Value::Object(obj) = val {
-        let mut m = obj.clone();
-        m.remove("$install");
-        serde_json::Value::Object(m)
-    } else {
-        val.clone()
-    }
-}
 
 // ---------------------------------------------------------------------------
 // --add pip <target>
@@ -473,14 +424,13 @@ pub fn install_alias_assets(target: Option<&str>, layout: &PathLayout, cdn: bool
 // --add <xxx>（别名安装，本地 / 远程共用核心）
 // ---------------------------------------------------------------------------
 
-/// 从文件路径安装为全局别名文件（本地 / 远程共用）。
+/// 从文件路径安装为全局插件（本地 / 远程共用）。
 ///
-/// 流程：读原始 JSON → `$var` 阶段一替换（下载用）→ 装 `$pip`/`$pip-keep`
-/// → 下载 `$assets`（`remote_base` 非空时相对路径解析成相对 URL）
-/// → `$install` 筛选 → 写副本到 `~/.byk/alias/<stem>.byk.json`。
+/// 流程：读原始 JSON → `$var` 阶段一替换（下载用）→ 校验 `$plugin` 开关
+/// → 装 `$pip`/`$pip-keep` → 下载 `$assets`（`remote_base` 非空时相对路径解析成相对 URL）
+/// → 写副本到 `~/.byk/alias/<stem>.byk.json`（文件级字段 + 全部别名，含 `$plugin`）。
 ///
-/// 无 `$install` 别名时，若文件有 `$pip`/`$assets` 仍写副本（记录已安装内容）；
-/// 三者皆无 → 报错，不写副本。
+/// 只有声明 `$plugin: true` 的文件才能被安装；否则报错，不装依赖、不下载资源。
 fn install_alias_from_file(
     path: &Path,
     file_key: &str,
@@ -504,6 +454,27 @@ fn install_alias_from_file(
         std::process::exit(1);
     });
 
+    // $plugin 开关：只有声明为插件的文件才能被安装
+    let is_plugin = original
+        .get("$plugin")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !is_plugin {
+        eprintln!(
+            "{} {} is not a plugin (missing {}).",
+            "Error:".red(),
+            path.display().to_string().bold(),
+            "$plugin: true".bold()
+        );
+        eprintln!(
+            "  Add {} to install it, or use {} / {} for deps/resources only.",
+            "$plugin: true".dimmed(),
+            "byk add pip".bold(),
+            "byk add assets".bold()
+        );
+        std::process::exit(1);
+    }
+
     // 阶段一变量替换（下载用，副本仍保留原始 $var 声明）
     let mut substituted = original.clone();
     crate::core::vars::preprocess_vars(&mut substituted);
@@ -522,30 +493,8 @@ fn install_alias_from_file(
         .cloned()
         .filter(|v| v.is_object());
 
-    // $install 筛选（对原始 JSON；文件级 $install 作为初始继承值）
-    let obj = original.as_object().cloned().unwrap_or_default();
-    let file_install = obj
-        .get("$install")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let filtered = filter_install(&obj, file_install);
-
-    // 判断是否有可安装内容
-    let has_install_alias = !filtered.is_empty();
-    let has_pip = !packages.is_empty() || !packages_keep.is_empty();
-    let has_assets = assets_block.is_some();
-    if !has_install_alias && !has_pip && !has_assets {
-        eprintln!(
-            "{} nothing to install in {}",
-            "Error:".red(),
-            path.display().to_string().dimmed()
-        );
-        eprintln!("  Mark aliases with $install: true, or declare $pip / $pip-keep / $assets.");
-        std::process::exit(1);
-    }
-
     // 装 pip（$pip + $pip-keep 目前行为一致，均安装到 venv）
-    if has_pip {
+    if !packages.is_empty() || !packages_keep.is_empty() {
         println!(
             "{} Installing pip dependencies from {}",
             "==>".cyan().bold(),
@@ -569,15 +518,18 @@ fn install_alias_from_file(
         download_assets_block(block, path, file_key, layout, cdn, remote_base);
     }
 
-    // 组装副本：文件级字段 + 筛选后别名（$install 排除）
+    // 组装副本：文件级字段（含 $plugin）+ 全部别名
+    let obj = original.as_object().cloned().unwrap_or_default();
     let mut result = serde_json::Map::new();
     for field in FILE_LEVEL_FIELDS {
         if let Some(v) = obj.get(*field) {
             result.insert((*field).to_string(), v.clone());
         }
     }
-    for (k, v) in filtered {
-        result.insert(k, v);
+    for (k, v) in &obj {
+        if !k.starts_with('$') {
+            result.insert(k.clone(), v.clone());
+        }
     }
 
     let dest = layout.alias_dir.join(alias_file_name(stem));
@@ -602,7 +554,7 @@ fn install_alias_from_file(
     });
 
     println!(
-        "{} installed alias file to {}",
+        "{} installed plugin to {}",
         "Successfully".green(),
         dest.display().to_string().dimmed()
     );
@@ -747,7 +699,7 @@ pub fn install_remote(spec: &str, layout: &PathLayout, cdn: bool) {
         );
     }
 
-    // 安装（装 $pip/$assets + 筛选 $install + 写副本）；remote_base = 文件 URL，
+    // 安装（装 $pip/$assets + 校验 $plugin + 写副本）；remote_base = 文件 URL，
     // 使 $assets 的相对路径解析成相对 URL
     let file_key = format!("@@{}", stem);
     install_alias_from_file(&temp_file, &file_key, stem, layout, cdn, Some(&url));
@@ -827,102 +779,6 @@ mod tests {
     fn alias_file_name_forms() {
         assert_eq!(alias_file_name("demo"), "demo.byk.json");
         assert_eq!(alias_file_name(""), ".byk.json");
-    }
-
-    // ==================== filter_install ====================
-
-    #[test]
-    fn filter_install_file_level_keeps_all() {
-        let obj = json!({
-            "$install": true,
-            "a": "echo a",
-            "b": {"$cmd": "echo b"}
-        })
-        .as_object()
-        .unwrap()
-        .clone();
-        let result = filter_install(&obj, false);
-        assert_eq!(result.len(), 2);
-        assert!(result.contains_key("a"));
-        assert!(result.contains_key("b"));
-        assert!(!result.contains_key("$install"));
-    }
-
-    #[test]
-    fn filter_install_default_false_drops_all() {
-        let obj = json!({"a": "echo a", "b": "echo b"}).as_object().unwrap().clone();
-        assert!(filter_install(&obj, false).is_empty());
-    }
-
-    #[test]
-    fn filter_install_group_level() {
-        let obj = json!({
-            "tools": {"$install": true, "lint": "echo lint", "fmt": "echo fmt"},
-            "local": {"dev": "echo dev"}
-        })
-        .as_object()
-        .unwrap()
-        .clone();
-        let result = filter_install(&obj, false);
-        assert_eq!(result.len(), 1);
-        assert!(result.contains_key("tools"));
-        assert!(!result.contains_key("local"));
-        let tools = result["tools"].as_object().unwrap();
-        assert_eq!(tools.len(), 2);
-        assert!(!tools.contains_key("$install"));
-    }
-
-    #[test]
-    fn filter_install_alias_level_strips_flag() {
-        let obj = json!({
-            "a": {"$cmd": "echo a", "$install": true},
-            "b": "echo b"
-        })
-        .as_object()
-        .unwrap()
-        .clone();
-        let result = filter_install(&obj, false);
-        assert_eq!(result.len(), 1);
-        assert!(result.contains_key("a"));
-        let a = result["a"].as_object().unwrap();
-        assert!(a.contains_key("$cmd"));
-        assert!(!a.contains_key("$install"));
-    }
-
-    #[test]
-    fn filter_install_subgroup_false_overrides() {
-        let obj = json!({
-            "tools": {
-                "$install": true,
-                "lint": "echo lint",
-                "nested": {"$install": false, "x": "echo x"}
-            }
-        })
-        .as_object()
-        .unwrap()
-        .clone();
-        let result = filter_install(&obj, false);
-        let tools = result["tools"].as_object().unwrap();
-        assert!(tools.contains_key("lint"));
-        assert!(!tools.contains_key("nested"));
-    }
-
-    #[test]
-    fn filter_install_leaf_false_overrides_group() {
-        let obj = json!({
-            "g": {
-                "$install": true,
-                "a": {"$cmd": "echo a", "$install": false},
-                "b": "echo b"
-            }
-        })
-        .as_object()
-        .unwrap()
-        .clone();
-        let result = filter_install(&obj, false);
-        let g = result["g"].as_object().unwrap();
-        assert!(g.contains_key("b"));
-        assert!(!g.contains_key("a"));
     }
 
     // ==================== parse_remote_spec / build_file_url ====================

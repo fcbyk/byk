@@ -1,11 +1,11 @@
 {
+  "$plugin": true,
   "$assets": {
     "$to": "$byk/plugins/py-script",
     "main.py": "./main.py"
   },
   "py-script": {
     "$cmd": "python3 $byk/plugins/py-script/main.py",
-    "$description": "e2e fixture for the python command type",
-    "$install": true
+    "$description": "e2e fixture for the python command type"
   }
 }

@@ -185,17 +185,17 @@ def test_assets_var_without_declaration_errors(runner):
     assert "$assets" in r.stderr
 
 
-# ==================== byk add <file>（别名安装） ====================
+# ==================== byk add <file>（插件安装） ====================
 
 
-def test_install_alias_filters_and_writes_copy(runner):
-    """$install 三级继承筛选 + 副本写入全局 + 全局可解析"""
+def test_install_plugin_writes_copy(runner):
+    """$plugin: true → 装副本到全局（含 $plugin + 全部别名）+ 全局可解析"""
     work = runner.home / "work"
     work.mkdir(parents=True, exist_ok=True)
     (work / "tool.byk.json").write_text(
-        '{"tools": {"$install": true, "hi": {"$cmd": "echo hi"}},'
-        ' "skip": {"$cmd": "echo skip", "$install": false},'
-        ' "local": {"dev": "vite dev"}}'
+        '{"$plugin": true,'
+        ' "tools": {"hi": {"$cmd": "echo hi"}},'
+        ' "dev": "vite dev"}'
     )
     r = runner.run("add", "tool", cwd=str(work))
     assert r.returncode == 0, r.stderr
@@ -203,45 +203,45 @@ def test_install_alias_filters_and_writes_copy(runner):
     dest = runner.byk_dir / "alias" / "tool.byk.json"
     assert dest.is_file()
     data = json.loads(dest.read_text())
+    assert data["$plugin"] is True
     assert data["tools"]["hi"]["$cmd"] == "echo hi"
-    assert "skip" not in data
-    assert "local" not in data
-    assert "$install" not in data["tools"]
+    assert data["dev"] == "vite dev"
 
     r2 = runner.run("tools.hi")
     assert r2.returncode == 0
     assert "hi" in r2.stdout
 
 
-def test_install_alias_assets_only_still_writes_copy(runner):
-    """只有 $assets（无 $install）：仍写副本记录已安装 + 下载资源"""
+def test_install_plugin_assets_only(runner):
+    """$plugin: true + 只有 $assets（无别名）：仍装 + 下载资源 + 写副本"""
     work = runner.home / "work2"
     work.mkdir(parents=True, exist_ok=True)
     runner.prepare_alias_file("vendor", "{}")  # 先建全局 alias 目录
     src = runner.byk_dir / "alias" / "vendor.sh"
     src.write_text("#!/bin/sh\necho ok\n")
     (work / "asset.byk.json").write_text(
-        '{"$assets": {"$to": "$byk/tools/asset", "tool.sh": "[exe] ' + str(src) + '"}}'
+        '{"$plugin": true, "$assets": {"$to": "$byk/tools/asset", "tool.sh": "[exe] ' + str(src) + '"}}'
     )
     r = runner.run("add", "asset", cwd=str(work))
     assert r.returncode == 0, r.stderr
     # 资源下载到 $to
     assert (runner.byk_dir / "tools" / "asset" / "tool.sh").is_file()
-    # 副本写入（保留 $assets 声明，无别名）
+    # 副本写入（保留 $plugin 与 $assets 声明，无别名）
     dest = runner.byk_dir / "alias" / "asset.byk.json"
     assert dest.is_file()
     data = json.loads(dest.read_text())
+    assert data["$plugin"] is True
     assert "$assets" in data
 
 
-def test_install_alias_nothing_to_install_errors(runner):
-    """既无 $install 别名、也无 $pip/$assets → 报错不写副本"""
+def test_install_plugin_without_flag_errors(runner):
+    """无 $plugin → 报错，不装依赖不写副本"""
     work = runner.home / "work3"
     work.mkdir(parents=True, exist_ok=True)
     (work / "empty.byk.json").write_text('{"x": "echo x"}')
     r = runner.run("add", "empty", cwd=str(work))
     assert r.returncode != 0
-    assert "nothing to install" in r.stderr
+    assert "not a plugin" in r.stderr
     assert not (runner.byk_dir / "alias" / "empty.byk.json").exists()
 
 
@@ -259,7 +259,7 @@ def test_install_alias_from_path(runner):
     sub = work / "sub"
     sub.mkdir(parents=True, exist_ok=True)
     (sub / "x.byk.json").write_text(
-        '{"tools": {"$install": true, "hi": {"$cmd": "echo from-path"}}}'
+        '{"$plugin": true, "hi": {"$cmd": "echo from-path"}}'
     )
     r = runner.run("add", "-f", str(sub / "x.byk.json"), cwd=str(work))
     assert r.returncode == 0, r.stderr

@@ -11,13 +11,13 @@ byk 提供一组内置子命令，用于添加功能、管理插件、生成补�
 
 ## add
 
-安装别名文件（远程 `*.byk.json` / 本地）或初始化内置功能（comp）。
+安装插件（远程 `*.byk.json` / 本地）或初始化内置功能（comp）。
 
 ```bash
 byk add [OPTIONS] <user/repo[/path]> | <file> | FEATURE
 ```
 
-### 别名安装 (Aliases)
+### 插件安装 (Plugins)
 
 | 选项 | 说明 |
 |------|------|
@@ -39,7 +39,7 @@ byk add myfile                 # 安装当前目录 myfile.byk.json
 byk add -f ./path/x.byk.json   # 安装指定路径的本地文件
 ```
 
-安装 = 装 `$pip`/`$pip-keep` + 下载 `$assets` + 保留 `$install` 标记的别名，副本写入 `~/.byk/alias/<file>.byk.json`。
+安装 = 装 `$pip`/`$pip-keep` + 下载 `$assets` + 写副本到 `~/.byk/alias/<file>.byk.json`（文件级字段 + 全部别名）。仅 `$plugin: true` 的文件可被安装。
 
 :::tip
 远程包的 `$assets` 相对路径解析成**相对 URL**（相对仓库内文件目录）；本地文件则解析成相对文件目录的本地路径。详见 [别名配置 - 资源下载](/cli/alias/config)。

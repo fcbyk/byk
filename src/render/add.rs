@@ -116,9 +116,8 @@ pub fn render_alias() {
     print!("{}", "Usage:".green().bold());
     println!("{}", " byk add <file>".bold());
     println!();
-    println!("Install a local *.byk.json file to the global directory (~/.byk/alias/).");
-    println!("Installs its $pip deps, downloads its $assets, and keeps only aliases");
-    println!("marked with $install: true.");
+    println!("Install a local *.byk.json plugin to the global directory (~/.byk/alias/).");
+    println!("Requires $plugin: true. Installs its $pip deps and downloads its $assets.");
     println!();
     println!("{}", "Examples:".green().bold());
     println!("  {}", "byk add demo".dimmed());

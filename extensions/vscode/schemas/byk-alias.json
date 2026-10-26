@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "$priority": {
-      "description": "优先级，默认本地=10 全局=0。设为负数（如 -1）的文件不参与优先级合并，仅可通过 @filename.key 精确语法调用。",
+      "description": "优先级，默认本地=-1（不参与合并，仅 @filename.key 精确调用）全局=0。设为非负数可参与合并。",
       "type": "integer"
     },
     "$cwd": {
@@ -75,8 +75,8 @@
       "description": "文件级资源下载声明，经 `byk add assets <file>` 拉取。目标根由 $to 控制（缺省时本地文件=文件目录、全局文件=当前工作目录，≥2 条目自动进 assets/ 子目录）。条目名即相对路径（可含 /），值可为 URL、本地路径（相对文件目录）或平台映射；[exe] 前缀下载后加执行位，[tar] 前缀解压到同名子目录。",
       "$ref": "#/$defs/AssetsBlock"
     },
-    "$install": {
-      "description": "文件级安装标志，`byk add @file` 时所有子别名默认安装（与 $interactive 同构的三级继承）。布尔，子级可覆盖 false。",
+    "$plugin": {
+      "description": "文件级插件开关。声明 $plugin: true 的文件才能被 `byk add <file>` 安装（装 $pip + 下载 $assets + 写副本）。默认不是插件。",
       "type": "boolean"
     }
   },
@@ -118,10 +118,6 @@
         "$args": {
           "description": "补全候选树（shell 补全）。特殊 key：`$` 叶子候选（选中后无下级）、`$options` 可重复选项（已选自动排除）、其他 key 为子命令（选中后进入其值继续补全）。value 可以是 string[] 或 object，支持任意嵌套。声明 $args 的条目，补全走补全树（优先于点号子节点）。",
           "$ref": "#/$defs/ArgsTree"
-        },
-        "$install": {
-          "description": "安装标志（可选）。`byk add @file` 时标记此别名/分组需要安装到全局。布尔，继承上级，可覆盖 false。",
-          "type": "boolean"
         }
       },
       "additionalProperties": {

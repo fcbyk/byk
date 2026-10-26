@@ -29,6 +29,7 @@ type AliasFileJSON = {
   $pip-keep?: string | string[]; // 文件级 Python 共享依赖（keep 语义，删文件时保留）
   $var?: Record<string, string | Record<string, string>>;  // 文件级变量（阶段一替换）
   $assets?: AssetsBlock;    // 文件级资源下载声明
+  $plugin?: boolean;        // 文件级插件开关，$plugin: true 时 byk add <file> 可安装
   [key: string]: string | AliasObject | number | boolean | undefined;
 };
 ```
@@ -419,37 +420,34 @@ byk add assets --cdn @demo     # GitHub raw 走 jsDelivr CDN 加速
 未声明 `$assets` 的文件执行 `byk add assets` 是友好的 no-op（退出码 0），不会创建任何目录；命令里用了 `$assets` 变量但文件未声明则明确报错。
 :::
 
-### 安装标志 $install
+### 插件开关 $plugin
 
-`$install` 标记哪些别名需要被安装到全局（`byk add <file>`）。它与 `$interactive` 完全同构——三级继承，opt-in（默认不装）：
+`$plugin` 是文件级开关，标记「这个 `*.byk.json` 是一个插件，可以被 `byk add <file>` 安装」。opt-in——默认不是插件：
 
 ```json title=".byk.json"
 {
-  "tools": {
-    "$install": true,                       // 分组级：整组安装
-    "lint": { "$cmd": "$python -m ruff {args}" },
-    "fmt": "prettier --write {args}"
-  },
-  "dev": "vite dev",                        // 未标记 → 不安装，留在本地
-  "one-off": { "$cmd": "echo hi", "$install": true }   // 别名级
+  "$plugin": true,                         // 文件级：这是一个可安装的插件
+  "$pip": ["my-tool"],
+  "$assets": { "$to": "$byk/tools/demo", "tool": "[exe] ..." },
+  "run": { "$cmd": "$python -m my-tool {args}" }
 }
 ```
 
 ```bash
-byk add demo            # 安装当前目录 demo.byk.json
+byk add demo            # 安装当前目录 demo.byk.json（装 $pip + 下载 $assets + 写副本）
 byk add user/repo/pysdk # 拉取远程 pysdk.byk.json 并安装
 ```
 
 | 规则 | 说明 |
 |------|------|
-| 作用域 | 文件级 / 分组级 / 别名级，子级 `false` 可覆盖，未指定继承上级 |
-| opt-in | 默认不装；只有标记 `$install: true` 的别名子树进入全局副本 |
-| 粒度 | 下载（`$pip`/`$assets`）是文件级的，筛选是别名级的——装整份依赖、只留标记别名 |
-| 副本 | 安装后写 `~/.byk/alias/<file>.byk.json`（文件级字段 + 筛选后的别名，`$install` 本身不进入副本） |
-| 无别名时 | 文件有 `$pip`/`$assets` 仍写副本（记录已安装内容，为卸载留钩子）；三者皆无 → 报错 |
+| 作用域 | 仅文件级（一个文件要么是插件整体安装，要么不是） |
+| opt-in | 默认不是插件；只有声明 `$plugin: true` 的文件才能被 `byk add <file>` 安装 |
+| 行为 | 声明后：装 `$pip`/`$pip-keep` + 下载 `$assets` + 写副本（文件级字段 + 全部别名） |
+| 副本 | 安装后写 `~/.byk/alias/<file>.byk.json`，`$plugin` 保留在副本中（文件持久身份） |
+| 无 `$plugin` | `byk add <file>` 报错「not a plugin」，不装依赖、不下载资源、不写副本 |
 
 :::note
-`byk add <file>` 安装当前目录的 `<file>.byk.json`（本地）；`byk add user/repo/path` 拉取远程 `*.byk.json`；`byk add -f <path>` 安装指定路径的本地文件。带 `$assets` 的别名若要装成全局工具，建议显式 `$to` 指向确定位置（如 `$byk/tools/xxx`），否则资源按缺省根规则落在运行时的当前目录。
+`byk add <file>` 安装当前目录的 `<file>.byk.json`（本地）；`byk add user/repo/path` 拉取远程 `*.byk.json`；`byk add -f <path>` 安装指定路径的本地文件。只想单独装依赖或下载资源（不要求是插件），用 `byk add pip @file` / `byk add assets @file`。带 `$assets` 的插件若要装成全局工具，建议显式 `$to` 指向确定位置（如 `$byk/tools/xxx`），否则资源按缺省根规则落在运行时的当前目录。
 :::
 
 ### 调用示例

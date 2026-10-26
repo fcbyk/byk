@@ -113,6 +113,9 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     // 提取文件级 $assets（原始块：$to + 条目；$var 已在上面替换）
     let assets = obj.remove("$assets").filter(|v| v.is_object());
 
+    // $plugin 是文件级插件开关，移除避免泄漏为别名
+    obj.remove("$plugin");
+
     // 过滤非法 key
     let filtered = filter_invalid_keys(obj);
 
