@@ -277,7 +277,7 @@ pub fn install_remote(spec: &str, layout: &PathLayout, cdn: bool) {
         .map(|(dir, _)| format!("{}/", dir))
         .unwrap_or_else(|| final_url.clone());
     let file_key = format!("@@{}", final_stem);
-    super::install_from_content(&content, &final_url, &file_key, &final_stem, layout, cdn, Some(&remote_base));
+    super::install_from_content(&content, &final_url, &file_key, &final_stem, layout, cdn, Some(&remote_base), None);
 }
 
 /// 字节数 -> 人类可读大小。

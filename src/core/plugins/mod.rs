@@ -1,7 +1,7 @@
-//! 插件安装：把声明 `$plugin: true` 的 *.byk.json 装成全局插件。
+//! 插件安装：把声明 `$add` 的 *.byk.json 装成全局插件。
 //!
-//! 流程：读原始 JSON → 校验 `$plugin` 开关 → `$var` 阶段一替换
-//! → 装 `$pip`/`$pip-keep` → 下载 `$assets` → 写副本到 `~/.byk/alias/<stem>.byk.json`。
+//! 流程：读原始 JSON → 校验 `$add` 存在 → `$var` 阶段一替换
+//! → 装 pip 依赖 → 下载 assets 资源 → 写副本到 `~/.byk/alias/<stem>.byk.json`。
 //!
 //! 入口：`install`（本地 `<file>`）、`install_from_path`（`-f`）、
 //! `install_remote`（远程分发，见 remote.rs）。
@@ -22,16 +22,17 @@ use crate::core::pip;
 
 pub use remote::install_remote;
 
-/// 副本保留的文件级字段。`$plugin` 是文件持久身份，保留在副本中。
+/// 副本保留的文件级字段。
 const FILE_LEVEL_FIELDS: &[&str] = &[
-    "$priority", "$cwd", "$interactive", "$paths", "$pip", "$pip-keep", "$assets", "$var", "$plugin",
+    "$priority", "$cwd", "$interactive", "$paths", "$add", "$var",
 ];
 
 /// 从 JSON 内容安装为全局插件（本地 / 远程共用）。
 ///
-/// 只有声明 `$plugin: true` 的文件才能被安装；否则报错，不装依赖、不下载资源。
+/// 只有声明 `$add` 的文件才能被安装；否则报错，不装依赖、不下载资源。
 ///
 /// `display_label` 用于日志/错误消息中标识来源（本地文件路径或远程 URL）。
+/// `source_file_dir` 用于解析本地 assets 相对路径（本地文件时为文件所在目录，远程为 None）。
 fn install_from_content(
     content: &str,
     display_label: &str,
@@ -40,6 +41,7 @@ fn install_from_content(
     layout: &PathLayout,
     cdn: bool,
     remote_base: Option<&str>,
+    source_file_dir: Option<&Path>,
 ) {
     let original: serde_json::Value = serde_json::from_str(content).unwrap_or_else(|e| {
         eprintln!(
@@ -51,23 +53,20 @@ fn install_from_content(
         std::process::exit(1);
     });
 
-    // $plugin 开关：只有声明为插件的文件才能被安装
-    let is_plugin = original
-        .get("$plugin")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    if !is_plugin {
+    // $add 块：只有声明 $add 的文件才能被安装
+    let add_block = original.get("$add").filter(|v| v.is_object());
+    if add_block.is_none() {
         eprintln!(
             "{} {} is not a plugin (missing {}).",
             "Error:".red(),
             display_label.bold(),
-            "$plugin: true".bold()
+            "$add".bold()
         );
         eprintln!(
-            "  Add {} to install it, or use {} / {} for deps/resources only.",
-            "$plugin: true".dimmed(),
-            "byk add pip".bold(),
-            "byk add assets".bold()
+            "  Add {} block with {} and/or {} to make it installable.",
+            "$add".dimmed(),
+            "pip".dimmed(),
+            "assets".dimmed()
         );
         std::process::exit(1);
     }
@@ -76,48 +75,43 @@ fn install_from_content(
     let mut substituted = original.clone();
     crate::core::vars::preprocess_vars(&mut substituted);
 
-    // 提取 pip / pip-keep / assets（替换后）
+    // 提取 pip（从 $add.pip）
     let packages = substituted
-        .get("$pip")
-        .and_then(aliases::parse_pip_field)
-        .unwrap_or_default();
-    let packages_keep = substituted
-        .get("$pip-keep")
+        .get("$add")
+        .and_then(|v| v.get("pip"))
         .and_then(aliases::parse_pip_field)
         .unwrap_or_default();
     let assets_block = substituted
-        .get("$assets")
+        .get("$add")
+        .and_then(|v| v.get("assets"))
         .cloned()
         .filter(|v| v.is_object());
 
-    // 装 pip（$pip + $pip-keep 目前行为一致，均安装到 venv）
-    if !packages.is_empty() || !packages_keep.is_empty() {
+    // 装 pip
+    if !packages.is_empty() {
         println!(
             "{} Installing pip dependencies from {}",
             "==>".cyan().bold(),
             display_label.bold()
         );
-        if !packages.is_empty() {
-            pip::install_packages(&packages, layout, "byk add");
-        }
-        if !packages_keep.is_empty() {
-            pip::install_packages(&packages_keep, layout, "byk add");
-        }
+        pip::install_packages(&packages, layout, "byk add");
         println!(
             "{} installed {} package(s)",
             "Successfully".green(),
-            packages.len() + packages_keep.len()
+            packages.len()
         );
     }
 
-    // 下载 assets：用目标 alias 路径作为 download_block 的上下文路径
-    // （remote_base 存在时仅用于日志/错误消息，不影响远程资源 URL 解析）
-    let assets_ctx_path = layout.alias_dir.join(alias_file_name(stem));
+    // 下载 assets：传递 source_file_path 作为本地文件解析基准
+    // download_block 内部通过 .parent() 获取目录，故传完整路径
+    let assets_ctx_path = source_file_dir
+        .map(|d| d.join(alias_file_name(stem)))
+        .unwrap_or_else(|| layout.alias_dir.join(alias_file_name(stem)));
     if let Some(block) = &assets_block {
         assets::download_block(block, &assets_ctx_path, file_key, layout, cdn, remote_base);
     }
 
-    // 组装副本：文件级字段（含 $plugin）+ 全部别名
+    // 组装副本：文件级字段（含 $add）+ 全部别名
     let obj = original.as_object().cloned().unwrap_or_default();
     let mut result = serde_json::Map::new();
     for field in FILE_LEVEL_FIELDS {
@@ -173,7 +167,8 @@ fn install_from_file(
         std::process::exit(1);
     });
     let display_label = path.display().to_string();
-    install_from_content(&content, &display_label, file_key, stem, layout, cdn, remote_base);
+    let source_dir = path.parent();
+    install_from_content(&content, &display_label, file_key, stem, layout, cdn, remote_base, source_dir);
 }
 
 /// `byk add <file>`：安装当前目录的 `<file>.byk.json` 到全局目录。
@@ -259,7 +254,7 @@ pub fn install(target: Option<&str>, layout: &PathLayout, cdn: bool) {
             let remote_base = download_url.rsplit_once('/')
                 .map(|(dir, _)| format!("{}/", dir))
                 .unwrap_or_else(|| download_url.clone());
-            install_from_content(&content, &download_url, &format!("@@{}", stem), stem, layout, cdn, Some(&remote_base));
+            install_from_content(&content, &download_url, &format!("@@{}", stem), stem, layout, cdn, Some(&remote_base), None);
         }
         Some(v) => {
             // 相对路径 → 相对 .byk.json 所在目录

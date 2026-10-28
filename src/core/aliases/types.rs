@@ -62,18 +62,11 @@ pub struct AliasFile {
     pub inherited_interactive: Option<bool>,
     /// 文件级 $paths，需要前置到 PATH 环境变量的目录列表
     pub inherited_paths: Vec<String>,
-    /// 文件级 $pip，该文件声明的 Python 专属依赖（remove 语义，删文件时卸载）
-    /// 经 `byk add pip <file>` 安装到 byk 托管 venv
-    #[serde(default)]
-    pub inherited_pip: Vec<String>,
-    /// 文件级 $pip-keep，该文件声明的 Python 共享依赖（keep 语义，删文件时保留）
-    /// 经 `byk add pip <file>` 安装到 byk 托管 venv
-    #[serde(default)]
-    pub inherited_pip_keep: Vec<String>,
-    /// 文件级 $assets 原始块（$to + 条目；用户变量已在扫描期替换）。
-    /// 由 `byk add assets <file>` 下载，合并期解析出 `$assets` 变量值
+    /// 文件级 $add 原始块，由 `byk add <file>` 解析。
+    /// 内部结构：`{ "pip"?: string|string[], "assets"?: {...} }`
+    /// 存在即表示文件可安装，不再需要单独的 $plugin 开关。
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub assets: Option<serde_json::Value>,
+    pub add_block: Option<serde_json::Value>,
 }
 
 /// 合并后叶子节点，包含来源信息。

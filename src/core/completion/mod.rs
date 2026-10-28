@@ -226,11 +226,6 @@ fn complete_multi_prev(prev: &[String], partial: &str, layout: &PathLayout) -> V
         return complete_file_path(partial);
     }
 
-    // byk add pip @<TAB> → 补全别名文件 key（@stem / @@stem）
-    if prev.len() == 2 && prev[0] == "add" && (prev[1] == "pip" || prev[1] == "assets") {
-        return complete_at_prefix(partial, layout);
-    }
-
     // 别名命令多级参数补全（$args 树）
     let first = &prev[0];
     let (merged, _) = aliases::load_merged_aliases(layout);

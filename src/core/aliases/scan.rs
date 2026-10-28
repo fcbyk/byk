@@ -5,7 +5,7 @@ use std::path::Path;
 
 use colored::Colorize;
 
-use super::parse::{build_file_key, filter_invalid_keys, parse_pip_field, parse_priority, validate_filename};
+use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
 use super::types::AliasFile;
 
 // ---------------------------------------------------------------------------
@@ -98,23 +98,9 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         })
         .unwrap_or_default();
 
-    // 提取文件级 $pip（Python 专属依赖，remove 语义，宽松解析）
-    let inherited_pip = obj
-        .remove("$pip")
-        .and_then(|v| parse_pip_field(&v))
-        .unwrap_or_default();
-
-    // 提取文件级 $pip-keep（Python 共享依赖，keep 语义，宽松解析）
-    let inherited_pip_keep = obj
-        .remove("$pip-keep")
-        .and_then(|v| parse_pip_field(&v))
-        .unwrap_or_default();
-
-    // 提取文件级 $assets（原始块：$to + 条目；$var 已在上面替换）
-    let assets = obj.remove("$assets").filter(|v| v.is_object());
-
-    // $plugin 是文件级插件开关，移除避免泄漏为别名
-    obj.remove("$plugin");
+    // 提取文件级 $add（由 byk add <file> 解析，内部含 pip/assets）
+    // 存在即表示文件可安装，不再需要单独的 $plugin 开关
+    let add_block = obj.remove("$add").filter(|v| v.is_object());
 
     // 过滤非法 key
     let filtered = filter_invalid_keys(obj);
@@ -127,9 +113,7 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         inherited_cwd,
         inherited_interactive,
         inherited_paths,
-        inherited_pip,
-        inherited_pip_keep,
-        assets,
+        add_block,
     })
 }
 
@@ -169,9 +153,7 @@ mod tests {
             inherited_cwd: None,
             inherited_interactive: None,
             inherited_paths: Vec::new(),
-            inherited_pip: Vec::new(),
-            inherited_pip_keep: Vec::new(),
-            assets: None,
+            add_block: None,
         }
     }
 
@@ -300,96 +282,63 @@ mod tests {
         assert!(!files[0].aliases.contains_key("$paths"));
     }
 
-    // ==================== $pip 提取 ====================
+    // ==================== $add 提取 ====================
 
     #[test]
-    fn pip_extracted_from_json() {
+    fn add_block_extracted_from_json() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(
             &file,
-            r#"{"$pip": ["rich", "click>=8.0"], "build": "make build"}"#,
+            r#"{"$add": {"pip": ["rich", "click>=8.0"], "assets": {"tool.sh": "https://x/tool.sh"}}, "build": "make build"}"#,
         )
         .unwrap();
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].inherited_pip, vec!["rich", "click>=8.0"]);
+        let block = files[0].add_block.as_ref().unwrap();
+        assert_eq!(block["pip"][0], "rich");
+        assert_eq!(block["pip"][1], "click>=8.0");
+        assert_eq!(block["assets"]["tool.sh"], "https://x/tool.sh");
     }
 
     #[test]
-    fn pip_single_string_form() {
+    fn add_block_with_pip_only() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"$pip": "rich", "build": "make build"}"#).unwrap();
+        std::fs::write(&file, r#"{"$add": {"pip": "rich"}, "build": "make build"}"#).unwrap();
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].inherited_pip, vec!["rich"]);
+        let block = files[0].add_block.as_ref().unwrap();
+        assert_eq!(block["pip"], "rich");
     }
 
     #[test]
-    fn pip_empty_when_absent() {
+    fn add_block_empty_when_absent() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"build": "make build"}"#).unwrap();
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
-        assert!(files[0].inherited_pip.is_empty());
+        assert!(files[0].add_block.is_none());
     }
 
     #[test]
-    fn pip_empty_when_not_array_or_string() {
+    fn add_block_ignored_when_not_object() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"$pip": {"a": 1}, "build": "echo"}"#).unwrap();
+        std::fs::write(&file, r#"{"$add": "not-an-object", "build": "echo"}"#).unwrap();
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
-        assert!(files[0].inherited_pip.is_empty());
+        assert!(files[0].add_block.is_none());
     }
 
     #[test]
-    fn pip_not_leaked_into_aliases() {
+    fn add_not_leaked_into_aliases() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"$pip": ["rich"], "build": "make"}"#).unwrap();
+        std::fs::write(&file, r#"{"$add": {"pip": ["rich"]}, "build": "make"}"#).unwrap();
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
-        assert!(!files[0].aliases.contains_key("$pip"));
-    }
-
-    // ==================== $pip-keep 提取 ====================
-
-    #[test]
-    fn pip_keep_extracted_from_json() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.byk.json");
-        std::fs::write(
-            &file,
-            r#"{"$pip": ["mytool"], "$pip-keep": ["rich", "click>=8.0"], "build": "make"}"#,
-        )
-        .unwrap();
-        let files = scan_alias_files(dir.path(), false);
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].inherited_pip, vec!["mytool"]);
-        assert_eq!(files[0].inherited_pip_keep, vec!["rich", "click>=8.0"]);
-    }
-
-    #[test]
-    fn pip_keep_empty_when_absent() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"$pip": ["rich"], "build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
-        assert_eq!(files.len(), 1);
-        assert!(files[0].inherited_pip_keep.is_empty());
-    }
-
-    #[test]
-    fn pip_keep_not_leaked_into_aliases() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"$pip-keep": ["rich"], "build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
-        assert_eq!(files.len(), 1);
-        assert!(!files[0].aliases.contains_key("$pip-keep"));
+        assert!(!files[0].aliases.contains_key("$add"));
     }
 }

@@ -158,9 +158,10 @@ pub(crate) fn apply_inherited(
 // 别名加载（主入口）
 // ---------------------------------------------------------------------------
 
-/// 计算文件的 `$assets` 资产目录（未声明或解析失败返回 None）。
+/// 计算文件的 `$add.assets` 资产目录（未声明或解析失败返回 None）。
 pub(crate) fn file_assets_dir(f: &AliasFile, layout: &PathLayout, cwd: &Path) -> Option<PathBuf> {
-    let block = f.assets.as_ref()?;
+    let add_block = f.add_block.as_ref()?;
+    let block = add_block.get("assets")?;
     let ctx = AssetsCtx {
         file_path: &f.path,
         file_key: &f.key,
@@ -609,9 +610,7 @@ mod tests {
             inherited_cwd: None,
             inherited_interactive: None,
             inherited_paths: vec!["./scripts".into(), "~/tools/bin".into()],
-            inherited_pip: Vec::new(),
-            inherited_pip_keep: Vec::new(),
-            assets: None,
+            add_block: None,
         }];
         let merged = build_merged_aliases(&files, &test_layout(), Path::new("/proj"));
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
@@ -633,9 +632,7 @@ mod tests {
             inherited_cwd: None,
             inherited_interactive: None,
             inherited_paths: Vec::new(),
-            inherited_pip: Vec::new(),
-            inherited_pip_keep: Vec::new(),
-            assets: None,
+            add_block: None,
         }];
         let merged = build_merged_aliases(&files, &test_layout(), Path::new("/proj"));
         let resolved = resolve_merged_alias(&merged, "build").unwrap();

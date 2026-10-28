@@ -27,36 +27,6 @@ def test_python_missing_venv_errors(runner):
     assert "venv" in r.stderr.lower()
 
 
-def test_add_pip_no_target_shows_usage(runner):
-    """byk add pip 无 target → 用法帮助，退出码 0"""
-    r = runner.run("add", "pip")
-    assert r.returncode == 0
-    assert "byk add pip" in r.stdout
-
-
-def test_add_pip_file_not_found(runner):
-    """目标文件不存在 → 报错，退出码非 0"""
-    r = runner.run("add", "pip", "@nope")
-    assert r.returncode != 0
-    assert "not found" in r.stderr
-
-
-def test_add_pip_no_declaration_is_noop(runner):
-    """文件无 $pip → 友好 no-op，且不触发 venv 创建（无交互卡住）"""
-    runner.prepare_alias_file("nodeps", '{"hi": "echo hello"}')
-    r = runner.run("add", "pip", "@@nodeps")
-    assert r.returncode == 0
-    assert "no $pip" in r.stdout
-
-
-def test_add_pip_path_form(runner):
-    """路径形态：任意位置的 .byk.json 都能作为 target"""
-    path = runner.prepare_alias_file("nodeps", '{"hi": "echo hello"}')
-    r = runner.run("add", "pip", str(path))
-    assert r.returncode == 0
-    assert "no $pip" in r.stdout
-
-
 def test_add_unexpected_target_errors(runner):
     """comp 等功能不接受额外位置参数"""
     r = runner.run("add", "comp", "extra")
@@ -113,70 +83,6 @@ def test_var_substitution_in_cmd(runner):
     assert "hello-var" in r.stdout
 
 
-def test_add_assets_single_flat_and_runs(runner):
-    """$assets 单条目（全局文件+cwd 工作目录）：平铺 + $assets 变量执行"""
-    work = runner.home / "work"
-    work.mkdir(parents=True, exist_ok=True)
-    runner.prepare_alias_file("ast", "{}")  # 先建目录
-    src = runner.byk_dir / "alias" / "vendor.sh"
-    src.write_text("#!/bin/sh\necho asset-ok\n")
-    runner.prepare_alias_file(
-        "ast",
-        '{"$assets": {"tool.sh": "[exe] ' + str(src) + '"},'
-        ' "run": {"$cmd": "$assets/tool.sh"}}',
-    )
-    r = runner.run("add", "assets", "@@ast", cwd=str(work))
-    assert r.returncode == 0, r.stderr
-    dest = work / "tool.sh"
-    assert dest.is_file(), "单条目应平铺到工作目录"
-    r2 = runner.run("run", cwd=str(work))
-    assert r2.returncode == 0, r2.stderr
-    assert "asset-ok" in r2.stdout
-
-
-def test_add_assets_multi_container(runner):
-    """$assets 多条目缺省根：自动进 assets/ 容器"""
-    work = runner.home / "work2"
-    work.mkdir(parents=True, exist_ok=True)
-    runner.prepare_alias_file("ast2", "{}")  # 先建目录
-    src = runner.byk_dir / "alias" / "vendor.sh"
-    src.write_text("#!/bin/sh\necho ok\n")
-    runner.prepare_alias_file(
-        "ast2",
-        '{"$assets": {"a.sh": "' + str(src) + '", "b.sh": "' + str(src) + '"}}',
-    )
-    r = runner.run("add", "assets", "@@ast2", cwd=str(work))
-    assert r.returncode == 0, r.stderr
-    assert (work / "assets" / "a.sh").is_file()
-    assert (work / "assets" / "b.sh").is_file()
-
-
-def test_add_assets_no_declaration_is_noop(runner):
-    """文件无 $assets → 友好 no-op，不创建任何目录"""
-    runner.prepare_alias_file("nodeps", '{"hi": "echo hello"}')
-    r = runner.run("add", "assets", "@@nodeps")
-    assert r.returncode == 0
-    assert "no $assets" in r.stdout
-
-
-def test_add_assets_file_not_found(runner):
-    """目标文件不存在 → 报错，退出码非 0"""
-    r = runner.run("add", "assets", "@nope")
-    assert r.returncode != 0
-    assert "not found" in r.stderr
-
-
-def test_add_assets_skips_platform(runner):
-    """条目平台映射不含当前平台 → nothing to download"""
-    runner.prepare_alias_file(
-        "ast3",
-        '{"$assets": {"tool": {"nonexistent-platform": "https://x/tool"}}}',
-    )
-    r = runner.run("add", "assets", "@@ast3")
-    assert r.returncode == 0
-    assert "nothing to download" in r.stdout
-
-
 def test_assets_var_without_declaration_errors(runner):
     """文件未声明 $assets 而命令用了 $assets → 明确报错"""
     runner.prepare_alias_file("noast", '{"run": {"$cmd": "$assets/tool"}}')
@@ -189,11 +95,11 @@ def test_assets_var_without_declaration_errors(runner):
 
 
 def test_install_plugin_writes_copy(runner):
-    """$plugin: true → 装副本到全局（含 $plugin + 全部别名）+ 全局可解析"""
+    """$add → 装副本到全局（含 $add + 全部别名）+ 全局可解析"""
     work = runner.home / "work"
     work.mkdir(parents=True, exist_ok=True)
     (work / "tool.byk.json").write_text(
-        '{"$plugin": true,'
+        '{"$add": {"pip": ["rich"]},'
         ' "tools": {"hi": {"$cmd": "echo hi"}},'
         ' "dev": "vite dev"}'
     )
@@ -203,7 +109,7 @@ def test_install_plugin_writes_copy(runner):
     dest = runner.byk_dir / "alias" / "tool.byk.json"
     assert dest.is_file()
     data = json.loads(dest.read_text())
-    assert data["$plugin"] is True
+    assert "$add" in data
     assert data["tools"]["hi"]["$cmd"] == "echo hi"
     assert data["dev"] == "vite dev"
 
@@ -213,29 +119,28 @@ def test_install_plugin_writes_copy(runner):
 
 
 def test_install_plugin_assets_only(runner):
-    """$plugin: true + 只有 $assets（无别名）：仍装 + 下载资源 + 写副本"""
+    """$add 只有 assets（无别名）：仍装 + 下载资源 + 写副本"""
     work = runner.home / "work2"
     work.mkdir(parents=True, exist_ok=True)
     runner.prepare_alias_file("vendor", "{}")  # 先建全局 alias 目录
     src = runner.byk_dir / "alias" / "vendor.sh"
     src.write_text("#!/bin/sh\necho ok\n")
     (work / "asset.byk.json").write_text(
-        '{"$plugin": true, "$assets": {"$to": "$byk/tools/asset", "tool.sh": "[exe] ' + str(src) + '"}}'
+        '{"$add": {"assets": {"$to": "$byk/tools/asset", "tool.sh": "[exe] ' + str(src) + '"}}}'
     )
     r = runner.run("add", "asset", cwd=str(work))
     assert r.returncode == 0, r.stderr
     # 资源下载到 $to
     assert (runner.byk_dir / "tools" / "asset" / "tool.sh").is_file()
-    # 副本写入（保留 $plugin 与 $assets 声明，无别名）
+    # 副本写入（保留 $add 声明，无别名）
     dest = runner.byk_dir / "alias" / "asset.byk.json"
     assert dest.is_file()
     data = json.loads(dest.read_text())
-    assert data["$plugin"] is True
-    assert "$assets" in data
+    assert "$add" in data
 
 
 def test_install_plugin_without_flag_errors(runner):
-    """无 $plugin → 报错，不装依赖不写副本"""
+    """无 $add → 报错，不装依赖不写副本"""
     work = runner.home / "work3"
     work.mkdir(parents=True, exist_ok=True)
     (work / "empty.byk.json").write_text('{"x": "echo x"}')
@@ -259,7 +164,7 @@ def test_install_alias_from_path(runner):
     sub = work / "sub"
     sub.mkdir(parents=True, exist_ok=True)
     (sub / "x.byk.json").write_text(
-        '{"$plugin": true, "hi": {"$cmd": "echo from-path"}}'
+        '{"$add": {"pip": ["rich"]}, "hi": {"$cmd": "echo from-path"}}'
     )
     r = runner.run("add", "-f", str(sub / "x.byk.json"), cwd=str(work))
     assert r.returncode == 0, r.stderr

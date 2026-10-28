@@ -73,20 +73,6 @@ fn main() {
                     eprintln!("  Python environments are now created automatically when a plugin needs one.");
                     eprintln!("  Just run: {}", "byk add <user/repo>".bold());
                 }
-                (Some("pip"), None, target) => {
-                    add::install_plugin_pip(target, &layout);
-                }
-                (Some("assets"), None, target) => {
-                    add::install_plugin_assets(target, &layout, cdn);
-                }
-                (Some("pip" | "assets"), Some(_), _) => {
-                    eprintln!(
-                        "{} -f/--file is not used with 'byk add {}'; pass the .byk.json path directly.",
-                        "Error:".red(),
-                        name.as_deref().unwrap_or("")
-                    );
-                    exit(1);
-                }
                 (_, _, Some(t)) => {
                     eprintln!("{} unexpected argument '{}'", "Error:".red(), t);
                     eprintln!("  Run {} for usage.", "byk add -h".bold());

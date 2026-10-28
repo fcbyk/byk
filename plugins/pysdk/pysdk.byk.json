@@ -1,7 +1,8 @@
 {
-  "$plugin": true,
-  "$assets": {
-    "byksdk.py": "byksdk.py",
-    "utils.py": "utils.py"
+  "$add": {
+    "assets": {
+      "byksdk.py": "byksdk.py",
+      "utils.py": "utils.py"
+    }
   }
 }

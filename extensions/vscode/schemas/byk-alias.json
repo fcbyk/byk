@@ -24,60 +24,32 @@
         "type": "string"
       }
     },
-    "$pip": {
-      "description": "文件级 Python 专属依赖，经 `byk add pip <file>` 安装到 byk 托管 venv（remove 语义，删文件时卸载）。支持单字符串或字符串数组，语法同 pip：包名、版本约束或 \"name @ url\"。示例：[\"my-tool\", \"click>=8.0\"]",
-      "oneOf": [
-        {
-          "type": "string",
-          "description": "单个包。示例：\"rich\""
+    "$add": {
+      "description": "插件安装声明，由 `byk add <file>` 解析。内含 pip（Python 依赖）和 assets（资源下载）两个可选字段。存在即表示文件可安装。示例：{\"pip\": [\"rich\", \"click>=8.0\"], \"assets\": {\"$to\": \"$byk/tools/demo\", \"tool.sh\": \"[exe] https://x/tool\"}}",
+      "type": "object",
+      "properties": {
+        "pip": {
+          "description": "Python 依赖，安装到 byk 托管 venv。支持单字符串或字符串数组，语法同 pip：包名、版本约束或 \"name @ url\"。示例：[\"my-tool\", \"click>=8.0\"]",
+          "oneOf": [
+            { "type": "string", "description": "单个包。示例：\"rich\"" },
+            { "type": "array", "items": { "type": "string", "description": "包名、版本约束，或 \"name @ url\" 格式" } }
+          ]
         },
-        {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "description": "包名、版本约束，或 \"name @ url\" 格式"
-          }
+        "assets": {
+          "description": "资源下载声明。目标根由 $to 控制。条目名即相对路径（可含 /），值可为 URL、本地路径或平台映射；[exe] 前缀下载后加执行位，[tar] 前缀解压到同名子目录。",
+          "$ref": "#/$defs/AssetsBlock"
         }
-      ]
-    },
-    "$pip-keep": {
-      "description": "文件级 Python 共享依赖，经 `byk add pip <file>` 安装到 byk 托管 venv（keep 语义，删文件时保留）。取值同 $pip：单字符串或字符串数组。示例：[\"rich\", \"click>=8.0\"]",
-      "oneOf": [
-        {
-          "type": "string",
-          "description": "单个包。示例：\"rich\""
-        },
-        {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "description": "包名、版本约束，或 \"name @ url\" 格式"
-          }
-        }
-      ]
+      }
     },
     "$var": {
       "description": "文件级变量，扫描时做阶段一替换（作用于文件内所有字符串值，如长 URL 前缀）。约定全大写命名。值可为字符串或平台映射（当前平台取值）。内置保留变量（$python/$venv/$byk/$assets）声明无效。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"$BASE/mac\"}}",
       "type": "object",
       "additionalProperties": {
         "oneOf": [
-          {
-            "type": "string",
-            "description": "普通字符串值"
-          },
-          {
-            "$ref": "#/$defs/PlatformMap"
-          }
+          { "type": "string", "description": "普通字符串值" },
+          { "$ref": "#/$defs/PlatformMap" }
         ]
       }
-    },
-    "$assets": {
-      "description": "文件级资源下载声明，经 `byk add assets <file>` 拉取。目标根由 $to 控制（缺省时本地文件=文件目录、全局文件=当前工作目录，≥2 条目自动进 assets/ 子目录）。条目名即相对路径（可含 /），值可为 URL、本地路径（相对文件目录）或平台映射；[exe] 前缀下载后加执行位，[tar] 前缀解压到同名子目录。",
-      "$ref": "#/$defs/AssetsBlock"
-    },
-    "$plugin": {
-      "description": "文件级插件开关。声明 $plugin: true 的文件才能被 `byk add <file>` 安装（装 $pip + 下载 $assets + 写副本）。默认不是插件。",
-      "type": "boolean"
     }
   },
   "additionalProperties": {
