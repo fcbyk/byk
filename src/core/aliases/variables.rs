@@ -13,6 +13,8 @@
 //!
 //! 取值全部为纯推导（venv 按约定结构拼接，不读任何状态文件），
 //! 与插件命令使用同一个 venv 约定。
+//!
+//! 如需要资产路径，在 `$var` 中自行定义即可（如 `"TOOLS": "$byk/tools"`）。
 
 use std::path::{Path, PathBuf};
 
@@ -30,26 +32,17 @@ pub struct VarContext {
     pub venv_bin: PathBuf,
     /// venv Python 解释器 → `$python`
     pub venv_python: PathBuf,
-    /// 当前别名文件的资产目录（文件声明了 `$assets` 时非 None）→ `$assets`
-    pub assets_dir: Option<PathBuf>,
 }
 
 impl VarContext {
-    /// 从目录布局构建（`$assets` 未设置——供 `$to` 等无文件上下文场景使用）。
+    /// 从目录布局构建。
     pub fn from_layout(layout: &PathLayout) -> Self {
         let venv_bin = layout.venv_dir.join(VENV_BIN);
         Self {
             byk_root: layout.root_dir.clone(),
             venv_bin: venv_bin.clone(),
             venv_python: venv_bin.join(PYTHON_BIN),
-            assets_dir: None,
         }
-    }
-
-    /// 设置 `$assets` 的取值。
-    pub fn with_assets_dir(mut self, dir: Option<PathBuf>) -> Self {
-        self.assets_dir = dir;
-        self
     }
 }
 
@@ -59,14 +52,6 @@ fn missing_venv_message() -> String {
         "{} '$python' requires the byk Python environment (venv), but it does not exist yet.\n  It is created automatically when you install a Python plugin: {}",
         "Error:".red(),
         "byk add <user/repo>".bold()
-    )
-}
-
-/// 文件未声明 `$assets` 而命令里使用了 `$assets` 时的报错。
-fn missing_assets_message() -> String {
-    format!(
-        "{} '$assets' requires the alias file to declare an $assets block, but this file has none.",
-        "Error:".red(),
     )
 }
 
@@ -109,10 +94,6 @@ pub fn expand_variables(cmd: &str, ctx: &VarContext) -> Result<String, String> {
             }
             "venv" => Some(&ctx.venv_bin),
             "byk" => Some(&ctx.byk_root),
-            "assets" => match &ctx.assets_dir {
-                Some(dir) => Some(dir.as_path()),
-                None => return Err(missing_assets_message()),
-            },
             _ => None,
         };
 
@@ -154,7 +135,6 @@ mod tests {
             byk_root: dir.join("home").join(".byk"),
             venv_bin,
             venv_python,
-            assets_dir: None,
         }
     }
 
@@ -230,7 +210,6 @@ mod tests {
             byk_root: spaced.join(".byk"),
             venv_bin,
             venv_python,
-            assets_dir: None,
         };
         let result = expand_variables("$python -m x", &ctx).unwrap();
         assert_eq!(result, format!("\"{}\" -m x", ctx.venv_python.display()));
@@ -291,32 +270,6 @@ mod tests {
         assert_eq!(
             result,
             format!("echo 中文 {}", ctx.byk_root.display())
-        );
-    }
-
-    // ==================== $assets ====================
-
-    #[test]
-    fn expands_assets_dir() {
-        let dir = tempdir().unwrap();
-        let ctx = make_ctx(dir.path(), false)
-            .with_assets_dir(Some(dir.path().join("assets")));
-        let result = expand_variables("$assets/tool run", &ctx).unwrap();
-        assert_eq!(
-            result,
-            format!("{}/tool run", dir.path().join("assets").display())
-        );
-    }
-
-    #[test]
-    fn assets_without_declaration_errors() {
-        let dir = tempdir().unwrap();
-        let ctx = make_ctx(dir.path(), false);
-        let err = expand_variables("$assets/tool", &ctx).unwrap_err();
-        assert!(
-            err.contains("$assets"),
-            "错误文案应提示 $assets: {}",
-            err
         );
     }
 }

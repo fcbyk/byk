@@ -47,14 +47,13 @@ pub fn lookup_exact_alias(
     files: &[AliasFile],
     file_key: &str,
     alias_key: &str,
-    layout: &crate::core::paths::PathLayout,
+    layout: &crate::core::paths::PathLayout
 ) -> Option<(ResolvedAlias, String)> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let _ = layout;
     for f in files {
         if f.key != file_key {
             continue;
         }
-        let assets_dir = super::merge::file_assets_dir(f, layout, &cwd);
         let parts: Vec<&str> = alias_key.split('.').collect();
         let mut current: &serde_json::Value = &serde_json::Value::Object(f.aliases.clone());
         // 沿路径遍历时累积分组级 $cwd / $interactive，子级覆盖父级
@@ -88,7 +87,6 @@ pub fn lookup_exact_alias(
                     source_path,
                     priority: f.priority,
                     paths: f.inherited_paths.clone(),
-                    assets_dir,
                 },
                 display_source,
             ));

@@ -1,8 +1,6 @@
 //! `$assets` 解析器：把别名文件的资产声明解析为可执行计划。
 //!
-//! 两个消费者共用同一份逻辑，保证“下载落点”与“`$assets` 变量值”永远一致：
-//! - `byk add assets`（下载 / 解压 / chmod）
-//! - 别名合并期（计算 `$assets` 变量的值）
+//! 由 `byk add` 使用（下载 / 解压 / chmod）。
 //!
 //! 目标规则（R1）：
 //! - `$to` 显式设置 → root = 解析值（平台映射 / `~` / 相对文件目录 / 自动创建），
@@ -22,15 +20,15 @@ use colored::Colorize;
 use serde_json::Value;
 
 use crate::core::aliases::variables::{VarContext, expand_variables};
-use crate::core::download;
 use crate::core::paths::PathLayout;
-use crate::core::pip::{PYTHON_BIN, VENV_BIN};
+use super::download;
+use super::pip::{PYTHON_BIN, VENV_BIN};
 
 /// 当前平台（编译期注入，与 `build.rs` 五值一致）。
 const PLATFORM: &str = env!("PLATFORM");
 
 /// 解析上下文：一个别名文件 + 运行环境。
-pub struct AssetsCtx<'a> {
+struct AssetsCtx<'a> {
     /// 别名文件路径（相对路径的解析基准）
     pub file_path: &'a Path,
     /// 文件 key（`@stem` 本地 / `@@stem` 全局，判 Scope）
@@ -213,7 +211,6 @@ fn resolve_explicit_root(block: &Value, ctx: &AssetsCtx) -> Result<Option<PathBu
         byk_root: ctx.byk_root.to_path_buf(),
         venv_bin: ctx.venv_dir.join(VENV_BIN),
         venv_python: ctx.venv_dir.join(VENV_BIN).join(PYTHON_BIN),
-        assets_dir: None,
     };
     let expanded = expand_variables(&raw, &var_ctx)
         .map_err(|e| format!("{} (while expanding $to '{}')", e, raw))?;
@@ -232,7 +229,7 @@ fn resolve_explicit_root(block: &Value, ctx: &AssetsCtx) -> Result<Option<PathBu
 }
 
 /// 解析 `$assets` 块为资产计划。
-pub fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<AssetsPlan, String> {
+fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<AssetsPlan, String> {
     let Some(obj) = block.as_object() else {
         return Err("$assets must be an object".into());
     };
@@ -289,25 +286,6 @@ pub fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<AssetsPlan,
         entries,
         skipped,
     })
-}
-
-/// 供扫描/合并期使用：仅计算 `$assets` 变量值（目录），不做条目校验。
-///
-/// 计划解析失败时返回 None 并打印一次警告——单个文件的坏配置不应
-/// 拖垮整个别名系统（`byk add assets` 会给出硬错误）。
-pub fn assets_dir_or_warn(block: &Value, ctx: &AssetsCtx) -> Option<PathBuf> {
-    match resolve_assets_plan(block, ctx) {
-        Ok(plan) => Some(plan.assets_dir()),
-        Err(e) => {
-            eprintln!(
-                "{} invalid $assets in {}: {}",
-                "Warning:".yellow(),
-                ctx.file_path.display(),
-                e
-            );
-            None
-        }
-    }
 }
 
 /// 下载 `$assets` 块（解析 plan + 下载循环）。返回是否实际下载了资源。

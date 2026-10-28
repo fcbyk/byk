@@ -1,11 +1,9 @@
 pub mod add;
 pub mod aliases;
-pub mod assets;
 pub mod completion;
-pub mod download;
 pub mod show;
 pub mod paths;
-pub mod pip;
-pub mod plugins;
 pub mod remove;
 pub mod vars;
+
+pub(crate) use add::pip;

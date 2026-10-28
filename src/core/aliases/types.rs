@@ -84,10 +84,6 @@ pub struct ResolvedAlias {
     /// 来源文件的 $paths，需要前置到 PATH 环境变量的目录列表
     #[serde(default)]
     pub paths: Vec<String>,
-    /// 来源文件 `$assets` 解析出的资产目录（文件未声明时为 None）。
-    /// 加载期计算并随缓存持久化；全局文件的缺省根与加载期 cwd 绑定
-    #[serde(default)]
-    pub assets_dir: Option<PathBuf>,
 }
 
 /// 合并配置树节点。每个节点可以同时拥有别名和子节点。

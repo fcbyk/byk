@@ -7,8 +7,8 @@ use std::process::{Command, exit};
 
 use colored::Colorize;
 
+use crate::core::paths::PathLayout;
 use super::download::ensure_dir;
-use super::paths::PathLayout;
 
 // ---------------------------------------------------------------------------
 // venv 平台常量
@@ -220,7 +220,7 @@ fn venv_is_ready(layout: &PathLayout) -> bool {
 /// venv 已就绪时直接返回。`subject` 为触发原因的描述，
 /// 如 `plugin "hello"` / `byk add pip`。
 ///
-/// 用户不需要理解“虚拟环境管理器选型”这个概念——
+/// 用户不需要理解"虚拟环境管理器选型"这个概念——
 /// 探测到 uv 就用 uv（快、不依赖系统 Python），否则用系统 Python。
 pub(crate) fn ensure_python_env(layout: &PathLayout, subject: &str) {
     if venv_is_ready(layout) {

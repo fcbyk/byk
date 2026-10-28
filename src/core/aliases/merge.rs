@@ -10,7 +10,6 @@ use super::cache::load_alias_cache;
 use super::parse::{is_alias_value, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, ResolvedAlias};
-use crate::core::assets::{AssetsCtx, assets_dir_or_warn};
 use crate::core::paths::PathLayout;
 
 // ---------------------------------------------------------------------------
@@ -26,8 +25,6 @@ struct MergeContext<'a> {
     inherited_cwd: Option<&'a str>,
     inherited_interactive: Option<bool>,
     inherited_paths: &'a [String],
-    /// 文件 `$assets` 解析出的资产目录（每文件计算一次）
-    assets_dir: Option<&'a Path>,
 }
 
 /// 将 source 深度合并到 target。
@@ -73,7 +70,6 @@ fn deep_merge_dict(
                     source_path: ctx.source_path.map(|p| p.to_path_buf()),
                     priority: ctx.priority,
                     paths: ctx.inherited_paths.to_vec(),
-                    assets_dir: ctx.assets_dir.map(|p| p.to_path_buf()),
                 });
 
                 if let serde_json::Value::Object(inner) = val {
@@ -158,31 +154,16 @@ pub(crate) fn apply_inherited(
 // 别名加载（主入口）
 // ---------------------------------------------------------------------------
 
-/// 计算文件的 `$add.assets` 资产目录（未声明或解析失败返回 None）。
-pub(crate) fn file_assets_dir(f: &AliasFile, layout: &PathLayout, cwd: &Path) -> Option<PathBuf> {
-    let add_block = f.add_block.as_ref()?;
-    let block = add_block.get("assets")?;
-    let ctx = AssetsCtx {
-        file_path: &f.path,
-        file_key: &f.key,
-        cwd,
-        byk_root: &layout.root_dir,
-        venv_dir: &layout.venv_dir,
-        remote_base: None,
-    };
-    assets_dir_or_warn(block, &ctx)
-}
-
 /// 从已排序的 AliasFile 列表构建合并配置树。
 ///
 /// 负数 priority 的文件不参与合并（仅可通过精确语法 @file.key 访问）。
 pub(crate) fn build_merged_aliases(files: &[AliasFile], layout: &PathLayout, cwd: &Path) -> MergedConfig {
+    let _ = (layout, cwd);
     let mut merged: MergedConfig = HashMap::new();
     for f in files {
         if f.priority < 0 {
             continue;
         }
-        let assets_dir = file_assets_dir(f, layout, cwd);
         deep_merge_dict(
             &mut merged,
             &f.aliases,
@@ -193,7 +174,6 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile], layout: &PathLayout, cwd
                 inherited_cwd: f.inherited_cwd.as_deref(),
                 inherited_interactive: f.inherited_interactive,
                 inherited_paths: &f.inherited_paths,
-                assets_dir: assets_dir.as_deref(),
             },
         );
     }
@@ -276,12 +256,11 @@ pub fn resolve_merged_alias<'a>(
 pub fn lookup_all_aliases(files: &[AliasFile], name: &str, layout: &PathLayout) -> Vec<ResolvedAlias> {
     let parts: Vec<&str> = name.split('.').collect();
     let mut results: Vec<ResolvedAlias> = Vec::new();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let _ = layout;
 
     for f in files {
         // 负数优先级文件不参与普通合并，但 --info 仍应展示
         let mut current: &serde_json::Map<String, serde_json::Value> = &f.aliases;
-        let assets_dir = file_assets_dir(f, layout, &cwd);
 
         // 沿路径遍历到倒数第二级
         let mut group_cwd = f.inherited_cwd.as_deref();
@@ -303,7 +282,6 @@ pub fn lookup_all_aliases(files: &[AliasFile], name: &str, layout: &PathLayout) 
                         source_path: Some(f.path.clone()),
                         priority: f.priority,
                         paths: f.inherited_paths.clone(),
-                        assets_dir: assets_dir.clone(),
                     });
                 }
                 break;
@@ -359,7 +337,6 @@ mod tests {
             source_path: None,
             priority: 0,
             paths: Vec::new(),
-        assets_dir: None,
         }
     }
 

@@ -186,7 +186,6 @@ mod tests {
             source_path: None,
             priority: 0,
             paths: Vec::new(),
-        assets_dir: None,
         }
     }
 
@@ -203,7 +202,6 @@ mod tests {
             source_path: None,
             priority: 0,
             paths: Vec::new(),
-        assets_dir: None,
         }
     }
 
@@ -306,7 +304,6 @@ mod tests {
             source_path: None,
             priority: 0,
             paths: Vec::new(),
-        assets_dir: None,
         });
         merged.insert("greet".into(), node);
         let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
