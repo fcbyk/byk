@@ -180,7 +180,7 @@ pub(crate) fn alias_file_name(stem: &str) -> String {
 
 /// 副本保留的文件级字段。
 const FILE_LEVEL_FIELDS: &[&str] = &[
-    "$priority", "$cwd", "$interactive", "$paths", "$add", "$var",
+    "$priority", "$cwd", "$interactive", "$paths", "$add", "$remove", "$var",
 ];
 
 /// 从 JSON 内容安装为全局插件。

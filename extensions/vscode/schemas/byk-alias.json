@@ -41,6 +41,20 @@
         }
       }
     },
+    "$remove": {
+      "description": "卸载声明，由 `byk remove <file>` 解析。内含 pip（卸载 Python 依赖）和 assets（删除下载的资源）两个可选布尔字段。示例：{\"pip\": true, \"assets\": true}",
+      "type": "object",
+      "properties": {
+        "pip": {
+          "description": "是否卸载 $add.pip 声明的 Python 依赖。",
+          "type": "boolean"
+        },
+        "assets": {
+          "description": "是否删除 $add.assets 下载的资源。",
+          "type": "boolean"
+        }
+      }
+    },
     "$var": {
       "description": "文件级变量，扫描时做阶段一替换（作用于文件内所有字符串值，如长 URL 前缀）。约定全大写命名。值可为字符串或平台映射（当前平台取值）。内置保留变量（$python/$venv/$byk/$assets）声明无效。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"$BASE/mac\"}}",
       "type": "object",

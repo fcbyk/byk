@@ -8,7 +8,10 @@ use crate::utils::display;
 pub fn render() {
     println!();
     print!("{}", "Usage:".green().bold());
-    println!("{}", " byk remove <FEATURE | PLUGIN_KEY>".bold());
+    println!(
+        "{}",
+        " byk remove <comp | all | @<file> | @@<file>>".bold()
+    );
     println!();
     println!("{}", "Features:".green().bold());
     println!(
@@ -20,17 +23,30 @@ pub fn render() {
         "all".cyan().bold()
     );
     println!();
-    println!("{}", "Plugins:".green().bold());
+    println!("{}", "Uninstall from alias files:".green().bold());
     println!(
-        "  {:<15} Uninstall a plugin by its key",
-        "<plugin-key>".cyan().bold()
+        "  {:<31} Uninstall from {}.byk.json in current directory",
+        "@<file>".cyan().bold(),
+        "<file>".dimmed()
+    );
+    println!(
+        "  {:<31} Uninstall from {}.byk.json in global alias directory",
+        "@@<file>".cyan().bold(),
+        "<file>".dimmed()
     );
     println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
         ("byk remove comp".into(), "Remove shell completion".into()),
         ("byk remove all".into(), "Remove everything".into()),
-        ("byk remove hello".into(), "Uninstall plugin by key".into()),
+        (
+            "byk remove @demo".into(),
+            "Uninstall demo.byk.json from current directory".into(),
+        ),
+        (
+            "byk remove @@demo".into(),
+            "Uninstall demo.byk.json from ~/.byk/alias/".into(),
+        ),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {

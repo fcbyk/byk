@@ -102,6 +102,74 @@ pub(crate) fn install_packages(packages: &[String], layout: &PathLayout, subject
     }
 }
 
+/// 卸载单个 Python 包。
+pub(crate) fn uninstall_python_package(pkg: &str, layout: &PathLayout) {
+    if is_uv_mode(layout) {
+        if !tool_exists("uv") {
+            eprintln!(
+                "{} this environment is managed by uv, but uv was not found.",
+                "Error:".red(),
+            );
+            std::process::exit(1);
+        }
+        let args = vec!["remove", pkg];
+        let status = Command::new("uv")
+            .args(&args)
+            .current_dir(&layout.py_venv_dir)
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                eprintln!(
+                    "{} uv remove failed with exit code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1),
+                );
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("{} Failed to run uv: {}", "Error:".red(), e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        let pip = layout.venv_dir.join(VENV_BIN).join("pip");
+        let args = vec!["uninstall", "-y", pkg];
+        let status = Command::new(&pip).args(&args).status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                eprintln!(
+                    "{} pip uninstall failed with exit code {}",
+                    "Error:".red(),
+                    s.code().unwrap_or(1),
+                );
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("{} Failed to run pip: {}", "Error:".red(), e);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+/// 卸载一批 pip 包。
+pub(crate) fn uninstall_packages(packages: &[String], layout: &PathLayout, subject: &str) {
+    if packages.is_empty() {
+        return;
+    }
+    ensure_python_env(layout, subject);
+    for pkg in packages {
+        println!(
+            "{}",
+            format!("Uninstalling pip package: {}", pkg).dimmed()
+        );
+        uninstall_python_package(pkg, layout);
+        println!("{} {}", "-".red(), pkg.bold());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Python venv 初始化
 // ---------------------------------------------------------------------------

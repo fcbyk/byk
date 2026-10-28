@@ -28,20 +28,20 @@ use super::pip::{PYTHON_BIN, VENV_BIN};
 const PLATFORM: &str = env!("PLATFORM");
 
 /// 解析上下文：一个别名文件 + 运行环境。
-struct AssetsCtx<'a> {
+pub(crate) struct AssetsCtx<'a> {
     /// 别名文件路径（相对路径的解析基准）
-    pub file_path: &'a Path,
+    pub(crate) file_path: &'a Path,
     /// 文件 key（`@stem` 本地 / `@@stem` 全局，判 Scope）
-    pub file_key: &'a str,
+    pub(crate) file_key: &'a str,
     /// 当前工作目录（全局文件缺省根）
-    pub cwd: &'a Path,
+    pub(crate) cwd: &'a Path,
     /// byk 根目录（`$byk`）
-    pub byk_root: &'a Path,
+    pub(crate) byk_root: &'a Path,
     /// venv 目录（`$venv`/`$python` 展开用）
-    pub venv_dir: &'a Path,
+    pub(crate) venv_dir: &'a Path,
     /// 远程文件的 base URL（远程分发时传入，相对路径据此解析成相对 URL；
     /// 本地文件为 None，相对路径按本地文件目录解析）
-    pub remote_base: Option<&'a str>,
+    pub(crate) remote_base: Option<&'a str>,
 }
 
 /// 资产来源。
@@ -229,7 +229,7 @@ fn resolve_explicit_root(block: &Value, ctx: &AssetsCtx) -> Result<Option<PathBu
 }
 
 /// 解析 `$assets` 块为资产计划。
-fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<AssetsPlan, String> {
+pub(crate) fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<AssetsPlan, String> {
     let Some(obj) = block.as_object() else {
         return Err("$assets must be an object".into());
     };
@@ -431,6 +431,114 @@ pub(crate) fn download_block(
 
     println!(
         "{} downloaded {} asset(s) for {}",
+        "Successfully".green(),
+        plan.entries.len(),
+        path.display().to_string().dimmed()
+    );
+
+    true
+}
+
+/// 删除 `$assets` 块对应的资产文件/目录。
+///
+/// 解析 `$add.assets` 的 plan，遍历条目删除目标路径。
+/// 目录则递归删除，文件则直接删除。
+pub(crate) fn delete_assets_block(
+    block: &Value,
+    path: &Path,
+    file_key: &str,
+    layout: &PathLayout,
+) -> bool {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let ctx = AssetsCtx {
+        file_path: path,
+        file_key,
+        cwd: &cwd,
+        byk_root: &layout.root_dir,
+        venv_dir: &layout.venv_dir,
+        remote_base: None,
+    };
+    let plan = match resolve_assets_plan(block, &ctx) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "{} invalid $assets in {}: {}",
+                "Error:".red(),
+                path.display(),
+                e
+            );
+            std::process::exit(1);
+        }
+    };
+
+    if plan.entries.is_empty() {
+        println!("{} nothing to remove (no assets)", "*".dimmed());
+        return false;
+    }
+
+    println!(
+        "{} Removing {} asset(s) from {}",
+        "==>".cyan().bold(),
+        plan.entries.len(),
+        plan.assets_dir().display().to_string().bold()
+    );
+
+    for entry in &plan.entries {
+        let dest = plan.entry_dest(&entry.name);
+        if dest.is_dir() {
+            match fs::remove_dir_all(&dest) {
+                Ok(_) => println!("{} {} (dir removed)", "-".red(), entry.name.bold()),
+                Err(e) => eprintln!(
+                    "{} failed to remove {}: {}",
+                    "Warning:".yellow(),
+                    entry.name.bold(),
+                    e
+                ),
+            }
+        } else if dest.is_file() {
+            match fs::remove_file(&dest) {
+                Ok(_) => println!("{} {} (file removed)", "-".red(), entry.name.bold()),
+                Err(e) => eprintln!(
+                    "{} failed to remove {}: {}",
+                    "Warning:".yellow(),
+                    entry.name.bold(),
+                    e
+                ),
+            }
+        } else if dest.is_symlink() {
+            match fs::remove_file(&dest) {
+                Ok(_) => println!("{} {} (symlink removed)", "-".red(), entry.name.bold()),
+                Err(e) => eprintln!(
+                    "{} failed to remove {}: {}",
+                    "Warning:".yellow(),
+                    entry.name.bold(),
+                    e
+                ),
+            }
+        } else {
+            println!(
+                "{} {} (not found, skip)",
+                "*".dimmed(),
+                entry.name.dimmed()
+            );
+        }
+    }
+
+    // 如果使用了容器目录（assets/），尝试删除空容器
+    if plan.container {
+        let container = plan.root.join("assets");
+        if container.is_dir() {
+            let is_empty = fs::read_dir(&container)
+                .map(|mut d| d.next().is_none())
+                .unwrap_or(false);
+            if is_empty {
+                let _ = fs::remove_dir(&container);
+            }
+        }
+    }
+
+    println!(
+        "{} removed {} asset(s) for {}",
         "Successfully".green(),
         plan.entries.len(),
         path.display().to_string().dimmed()

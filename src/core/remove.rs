@@ -4,8 +4,14 @@
 
 use colored::Colorize;
 use std::fs;
+use std::path::{Path, PathBuf};
 
+use super::add;
+use super::add::assets;
+use super::add::pip as add_pip;
+use super::aliases;
 use super::paths::PathLayout;
+use super::vars;
 use crate::utils::shell;
 
 // ---------------------------------------------------------------------------
@@ -262,4 +268,199 @@ pub fn rm_all(layout: &PathLayout) {
         println!();
         println!("{}", "Everything removed.".green());
     }
+}
+
+// ---------------------------------------------------------------------------
+// remove @xxx（当前目录）
+// ---------------------------------------------------------------------------
+
+/// `byk remove @xxx`：读取当前目录 `xxx.byk.json` 的 `$remove` 字段并执行卸载。
+pub fn uninstall_from_local(name: &str, layout: &PathLayout) {
+    let stem = &name[1..]; // strip '@'
+    if stem.is_empty() {
+        eprintln!(
+            "{} invalid argument: {} (expected @<name>)",
+            "Error:".red(),
+            name.bold()
+        );
+        std::process::exit(1);
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let path = cwd.join(add::alias_file_name(stem));
+
+    if !path.is_file() {
+        eprintln!(
+            "{} alias file not found: {}",
+            "Error:".red(),
+            path.display().to_string().bold()
+        );
+        std::process::exit(1);
+    }
+
+    let file_key = format!("@{}", stem);
+    uninstall_from_file(&path, &file_key, stem, layout);
+}
+
+// ---------------------------------------------------------------------------
+// remove @@xxx（全局别名目录）
+// ---------------------------------------------------------------------------
+
+/// `byk remove @@xxx`：读取 `~/.byk/alias/xxx.byk.json` 的 `$remove` 字段并执行卸载。
+pub fn uninstall_from_global(name: &str, layout: &PathLayout) {
+    let stem = &name[2..]; // strip '@@'
+    if stem.is_empty() {
+        eprintln!(
+            "{} invalid argument: {} (expected @@<name>)",
+            "Error:".red(),
+            name.bold()
+        );
+        std::process::exit(1);
+    }
+
+    let path = layout.alias_dir.join(add::alias_file_name(stem));
+
+    if !path.is_file() {
+        eprintln!(
+            "{} alias file not found: {}",
+            "Error:".red(),
+            path.display().to_string().bold()
+        );
+        std::process::exit(1);
+    }
+
+    let file_key = format!("@@{}", stem);
+    uninstall_from_file(&path, &file_key, stem, layout);
+}
+
+// ---------------------------------------------------------------------------
+// 插件卸载核心逻辑
+// ---------------------------------------------------------------------------
+
+/// 从文件路径执行卸载。
+pub(crate) fn uninstall_from_file(
+    path: &Path,
+    file_key: &str,
+    stem: &str,
+    layout: &PathLayout,
+) {
+    let content = fs::read_to_string(path).unwrap_or_else(|e| {
+        eprintln!("{} failed to read {}: {}", "Error:".red(), path.display(), e);
+        std::process::exit(1);
+    });
+    let display_label = path.display().to_string();
+    let source_dir = path.parent();
+    uninstall_from_content(&content, &display_label, file_key, stem, layout, source_dir);
+}
+
+/// 从 JSON 内容执行卸载。
+///
+/// 读取 `$remove` 块的 `pip` / `assets` 布尔标志，为 true 的字段从
+/// `$add` 块获取对应数据并卸载/删除。
+///
+/// `display_label` 用于日志/错误消息中标识来源。
+/// `source_file_dir` 用于解析本地 assets 相对路径（文件所在目录）。
+fn uninstall_from_content(
+    content: &str,
+    display_label: &str,
+    file_key: &str,
+    stem: &str,
+    layout: &PathLayout,
+    source_file_dir: Option<&Path>,
+) {
+    let original: serde_json::Value = serde_json::from_str(content).unwrap_or_else(|e| {
+        eprintln!(
+            "{} invalid JSON in {}: {}",
+            "Error:".red(),
+            display_label,
+            e
+        );
+        std::process::exit(1);
+    });
+
+    // $remove 块：只有声明 $remove 的文件才能被卸载
+    let remove_block = original.get("$remove").filter(|v| v.is_object());
+    if remove_block.is_none() {
+        eprintln!(
+            "{} {} has no {} block, nothing to remove.",
+            "Note:".yellow(),
+            display_label.bold(),
+            "$remove".bold()
+        );
+        return;
+    }
+
+    let remove_obj = remove_block.unwrap().as_object().unwrap();
+
+    // 阶段一变量替换（assets 路径可能含变量）
+    let mut substituted = original.clone();
+    vars::preprocess_vars(&mut substituted);
+
+    let has_pip = remove_obj
+        .get("pip")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let has_assets = remove_obj
+        .get("assets")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if !has_pip && !has_assets {
+        println!(
+            "{} {} has no active {} flags, nothing to remove.",
+            "Note:".yellow(),
+            display_label.bold(),
+            "$remove".bold()
+        );
+        return;
+    }
+
+    // 卸载 pip
+    if has_pip {
+        let packages = substituted
+            .get("$add")
+            .and_then(|v| v.get("pip"))
+            .and_then(aliases::parse_pip_field)
+            .unwrap_or_default();
+
+        if packages.is_empty() {
+            println!("{} no pip packages to remove", "*".dimmed());
+        } else {
+            println!(
+                "{} Uninstalling pip dependencies from {}",
+                "==>".cyan().bold(),
+                display_label.bold()
+            );
+            add_pip::uninstall_packages(&packages, layout, "byk remove");
+            println!(
+                "{} uninstalled {} package(s)",
+                "Successfully".green(),
+                packages.len()
+            );
+        }
+    }
+
+    // 删除 assets
+    if has_assets {
+        let assets_block = substituted
+            .get("$add")
+            .and_then(|v| v.get("assets"))
+            .cloned()
+            .filter(|v| v.is_object());
+
+        if let Some(block) = &assets_block {
+            let assets_ctx_path = source_file_dir
+                .map(|d| d.join(add::alias_file_name(stem)))
+                .unwrap_or_else(|| layout.alias_dir.join(add::alias_file_name(stem)));
+            assets::delete_assets_block(block, &assets_ctx_path, file_key, layout);
+        } else {
+            println!("{} no assets to remove", "*".dimmed());
+        }
+    }
+
+    println!(
+        "{} uninstalled {}",
+        "Successfully".green(),
+        display_label.dimmed()
+    );
 }

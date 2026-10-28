@@ -44,15 +44,16 @@ fn main() {
                 }
                 Some("all") => remove::rm_all(&layout),
                 Some("-h") | Some("--help") => render::remove::render(),
+                Some(n) if n.starts_with("@@") => remove::uninstall_from_global(n, &layout),
+                Some(n) if n.starts_with("@") => remove::uninstall_from_local(n, &layout),
                 Some(key) => {
                     eprintln!(
-                        "{} 'byk remove <plugin>' has been removed.",
-                        "Note:".yellow()
+                        "{} unknown argument: {}",
+                        "Error:".red(),
+                        key.bold()
                     );
-                    eprintln!(
-                        "  Plugins are now *.byk.json files; delete {} to uninstall.",
-                        format!("~/.byk/alias/{}.byk.json", key).bold()
-                    );
+                    eprintln!("  Expected: comp, all, @<file>, or @@<file>");
+                    eprintln!("  Run {} for usage.", "byk remove -h".bold());
                 }
                 None => render::remove::render(),
             }
