@@ -10,7 +10,7 @@ mod at_prefix;
 
 use args_tree::{collect_args_candidates, complete_args_tree};
 use at_prefix::{
-    complete_at_prefix, complete_file_path, complete_nested_alias, complete_show_topic,
+    complete_at_prefix, complete_nested_alias, complete_show_topic,
 };
 
 #[cfg(test)]
@@ -71,8 +71,8 @@ const GLOBAL_FLAGS: &[&str] = &[
     "-h",
 ];
 
-/// `add` 命令特有选项。
-const ADD_FLAGS: &[&str] = &["--file", "-f", "--cdn", "--help", "-h"];
+/// `add` 命令没有额外选项。
+const ADD_FLAGS: &[&str] = &["--help", "-h"];
 
 /// 仅 `--help` / `-h`（内置于命令无额外选项时使用）。
 const HELP_FLAGS: &[&str] = &["--help", "-h"];
@@ -219,12 +219,8 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 /// 多前缀词场景的补全。
 ///
 /// 当前支持：
-/// - `byk add --file ` / `byk add -f ` → 补全文件路径
 /// - 插件命令多级参数补全
 fn complete_multi_prev(prev: &[String], partial: &str, layout: &PathLayout) -> Vec<String> {
-    if prev.len() == 2 && prev[0] == "add" && (prev[1] == "--file" || prev[1] == "-f") {
-        return complete_file_path(partial);
-    }
 
     // 别名命令多级参数补全（$args 树）
     let first = &prev[0];
@@ -545,38 +541,6 @@ mod tests {
     }
 
     #[test]
-    fn contextual_add_file_completes_paths() {
-        let env = TestEnv::new();
-        let prev = vec!["add".to_string(), "--file".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        // 当前目录下至少应有文件/目录
-        assert!(!result.is_empty());
-    }
-
-    #[test]
-    fn contextual_add_f_short_completes_paths() {
-        let env = TestEnv::new();
-        let prev = vec!["add".to_string(), "-f".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(!result.is_empty());
-    }
-
-    #[test]
-    fn contextual_add_file_filters_by_prefix() {
-        let env = TestEnv::new();
-        // 在当前 tempdir 下创建一个已知文件，然后过滤
-        let known_file = env.temp.path().join("byk_test_completion_42.txt");
-        std::fs::write(&known_file, "test").unwrap();
-
-        let prev = vec!["add".to_string(), "--file".to_string()];
-        // partial 使用 temp dir 的完整路径前缀
-        let partial = format!("{}/byk_test", env.temp.path().display());
-        let result = contextual_completions(&prev, &partial, &env.layout);
-        // 应只匹配到我们刚创建的文件
-        assert!(result.iter().any(|c| c.ends_with("byk_test_completion_42.txt")));
-    }
-
-    #[test]
     fn contextual_flag_prefix_returns_global_flags() {
         let env = TestEnv::new();
         let prev = vec!["some-command".to_string()];
@@ -617,15 +581,12 @@ mod tests {
     }
 
     #[test]
-    fn contextual_add_flag_returns_add_specific_flags() {
+    fn contextual_add_flag_returns_help_flags() {
         let env = TestEnv::new();
         let prev = vec!["add".to_string()];
         let result = contextual_completions(&prev, "-", &env.layout);
-        // add 命令应有 --file, -f, --cdn
-        assert!(result.contains(&"--file".to_string()));
-        assert!(result.contains(&"-f".to_string()));
-        assert!(result.contains(&"--cdn".to_string()));
-        // 不应包含 --version / -v（这是全局选项）
+        assert!(result.contains(&"--help".to_string()));
+        assert!(result.contains(&"-h".to_string()));
         assert!(!result.contains(&"--version".to_string()));
         assert!(!result.contains(&"-v".to_string()));
     }
@@ -634,8 +595,8 @@ mod tests {
     fn contextual_add_flag_filters_by_partial() {
         let env = TestEnv::new();
         let prev = vec!["add".to_string()];
-        let result = contextual_completions(&prev, "--c", &env.layout);
-        assert_eq!(result, vec!["--cdn".to_string()]);
+        let result = contextual_completions(&prev, "--h", &env.layout);
+        assert_eq!(result, vec!["--help".to_string()]);
     }
 
     // ==================== 别名 $args 补全 ====================
@@ -884,44 +845,6 @@ mod tests {
     fn expand_tilde_relative_path_unchanged() {
         let result = expand_tilde("./foo");
         assert_eq!(result, "./foo".to_string());
-    }
-
-    // ==================== complete_file_path ====================
-
-    #[test]
-    fn complete_file_path_lists_current_dir() {
-        let result = complete_file_path("");
-        assert!(!result.is_empty(), "当前目录应至少包含一些文件");
-    }
-
-    #[test]
-    fn complete_file_path_filters_by_prefix() {
-        // 创建一个临时文件来验证过滤
-        let tmp_dir = std::env::temp_dir().join("fcbyk_test_path");
-        let _ = std::fs::create_dir_all(&tmp_dir);
-        std::fs::write(tmp_dir.join("abc.txt"), "test").unwrap();
-        std::fs::write(tmp_dir.join("xyz.txt"), "test").unwrap();
-
-        let result = complete_file_path(&format!("{}/a", tmp_dir.display()));
-        // 应该只匹配 abc.txt
-        assert!(result.iter().any(|c| c.ends_with("abc.txt")));
-        assert!(!result.iter().any(|c| c.ends_with("xyz.txt")));
-    }
-
-    #[test]
-    fn complete_file_path_hidden_files_only_with_dot_prefix() {
-        let tmp_dir = std::env::temp_dir().join("fcbyk_test_hidden");
-        let _ = std::fs::create_dir_all(&tmp_dir);
-        std::fs::write(tmp_dir.join(".hidden"), "test").unwrap();
-        std::fs::write(tmp_dir.join("normal"), "test").unwrap();
-
-        // 不输入 '.' 不应看到隐藏文件
-        let result = complete_file_path(&format!("{}/", tmp_dir.display()));
-        assert!(!result.iter().any(|c| c.ends_with(".hidden/") || c.ends_with(".hidden")));
-
-        // 输入 '.' 应能看到隐藏文件
-        let result = complete_file_path(&format!("{}/.", tmp_dir.display()));
-        assert!(result.iter().any(|c| c.contains(".hidden")));
     }
 }
 

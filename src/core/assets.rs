@@ -312,14 +312,12 @@ pub fn assets_dir_or_warn(block: &Value, ctx: &AssetsCtx) -> Option<PathBuf> {
 
 /// 下载 `$assets` 块（解析 plan + 下载循环）。返回是否实际下载了资源。
 ///
-/// `byk add assets` 与插件安装（`byk add <file>` / 远程）共用。
+/// 插件安装（`byk add @xxx` / `byk add @@xxx`）共用。
 pub(crate) fn download_block(
     block: &Value,
     path: &Path,
     file_key: &str,
     layout: &PathLayout,
-    cdn: bool,
-    remote_base: Option<&str>,
 ) -> bool {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let ctx = AssetsCtx {
@@ -328,7 +326,7 @@ pub(crate) fn download_block(
         cwd: &cwd,
         byk_root: &layout.root_dir,
         venv_dir: &layout.venv_dir,
-        remote_base,
+        remote_base: None,
     };
     let plan = match resolve_assets_plan(block, &ctx) {
         Ok(p) => p,
@@ -382,11 +380,7 @@ pub(crate) fn download_block(
 
         match &entry.source {
             AssetSource::Url(url) => {
-                let url = if cdn {
-                    download::to_jsdelivr_url(url)
-                } else {
-                    url.clone()
-                };
+                let url = url.clone();
                 if let Err(e) = download::download_script(&url, &fetch_target) {
                     eprintln!(
                         "{} failed to download {}: {}",

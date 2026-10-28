@@ -12,7 +12,6 @@ use core::aliases;
 use core::completion;
 use core::add;
 use core::paths::PathLayout;
-use core::plugins;
 use core::remove;
 
 fn main() {
@@ -59,44 +58,17 @@ fn main() {
             }
             return;
         }
-        Some(Commands::Add { file, name, cdn, target }) => {
-            match (name.as_deref(), file.as_deref(), target.as_deref()) {
-                (None | Some("-h") | Some("--help"), None, None) => {
-                    render::add::render();
-                }
-                (Some("comp"), None, None) => add::init_completion(),
-                (Some("py-v") | Some("uv"), None, None) => {
-                    eprintln!(
-                        "{} 'byk add py-v' / 'byk add uv' have been removed.",
-                        "Note:".yellow()
-                    );
-                    eprintln!("  Python environments are now created automatically when a plugin needs one.");
-                    eprintln!("  Just run: {}", "byk add <user/repo>".bold());
-                }
-                (_, _, Some(t)) => {
-                    eprintln!("{} unexpected argument '{}'", "Error:".red(), t);
+        Some(Commands::Add { name }) => {
+            match name.as_deref() {
+                None | Some("-h") | Some("--help") => render::add::render(),
+                Some("comp") => add::init_completion(),
+                Some(n) if n.starts_with("@@") => add::install_from_global(n, &layout),
+                Some(n) if n.starts_with("@") => add::install_from_local(n, &layout),
+                Some(n) => {
+                    eprintln!("{} unknown argument: {}", "Error:".red(), n);
+                    eprintln!("  Expected: comp, @<file>, or @@<file>");
                     eprintln!("  Run {} for usage.", "byk add -h".bold());
                     exit(1);
-                }
-                (None, Some(f), None) => {
-                    // -f：本地 *.byk.json 文件路径
-                    plugins::install_from_path(f, &layout, cdn);
-                }
-                (Some(_), Some(_), None) => {
-                    eprintln!(
-                        "{} -f/--file takes a single .byk.json path; unexpected argument '{}'",
-                        "Error:".red(),
-                        name.as_deref().unwrap_or("")
-                    );
-                    exit(1);
-                }
-                (Some(n), None, None) if n.contains('/') => {
-                    // 远程：user/repo/path → 拉取 *.byk.json
-                    plugins::install_remote(n, &layout, cdn);
-                }
-                (Some(n), None, None) => {
-                    // 本地：当前目录 <n>.byk.json
-                    plugins::install(Some(n), &layout, cdn);
                 }
             }
             return;

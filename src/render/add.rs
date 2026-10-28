@@ -8,17 +8,7 @@ use crate::utils::display;
 pub fn render() {
     println!();
     print!("{}", "Usage:".green().bold());
-    println!("{}", " byk add [OPTIONS] <user/repo[/path]> | <file> | FEATURE".bold());
-    println!();
-    println!("{}", "Options:".green().bold());
-    println!(
-        "  {:<22} Install a local .byk.json file by path",
-        "-f, --file <PATH>".cyan().bold(),
-    );
-    println!(
-        "  {:<22} Access GitHub repo via jsDelivr CDN",
-        "--cdn".cyan().bold(),
-    );
+    println!("{}", " byk add <comp | @<file> | @@<file>>".bold());
     println!();
     println!("{}", "Features:".green().bold());
     println!(
@@ -26,14 +16,23 @@ pub fn render() {
         "comp".cyan().bold()
     );
     println!();
+    println!("{}", "Install from alias files:".green().bold());
+    println!(
+        "  {:<31} Install from {}.byk.json in current directory",
+        "@<file>".cyan().bold(),
+        "<file>".dimmed()
+    );
+    println!(
+        "  {:<31} Install from {}.byk.json in global alias directory",
+        "@@<file>".cyan().bold(),
+        "<file>".dimmed()
+    );
+    println!();
     println!("{}", "Examples:".green().bold());
     let examples: Vec<(String, String)> = vec![
-        ("byk add user/repo/pysdk".into(), "Fetch pysdk.byk.json from a GitHub repo".into()),
-        ("byk add user/repo/tools/lint".into(), "Fetch lint.byk.json from a repo subdirectory".into()),
-        ("byk add user/repo@dev/hello".into(), "Fetch hello.byk.json from the dev branch".into()),
-        ("byk add --cdn user/repo/hello".into(), "Fetch via jsDelivr CDN".into()),
-        ("byk add myfile".into(), "Install myfile.byk.json from the current directory".into()),
-        ("byk add -f ./path/to/x.byk.json".into(), "Install a local .byk.json file by path".into()),
+        ("byk add comp".into(), "Configure shell completion".into()),
+        ("byk add @demo".into(), "Install demo.byk.json from current directory".into()),
+        ("byk add @@demo".into(), "Install demo.byk.json from ~/.byk/alias/".into()),
     ];
     let aligned = display::align_kv_pairs(&examples, "  ");
     for (name, line) in &aligned {
@@ -41,21 +40,6 @@ pub fn render() {
         print!("  {}", name.dimmed());
         println!("{}", rest);
     }
-    println!();
-}
-
-/// 渲染 `byk add <file>` 用法信息。
-pub fn render_alias() {
-    println!();
-    print!("{}", "Usage:".green().bold());
-    println!("{}", " byk add <file>".bold());
-    println!();
-    println!("Install a local *.byk.json plugin to the global directory (~/.byk/alias/).");
-    println!("Requires a $add block. Installs its pip deps and downloads its assets.");
-    println!();
-    println!("{}", "Examples:".green().bold());
-    println!("  {}", "byk add demo".dimmed());
-    println!("  {}", "byk add user/repo/pysdk".dimmed());
     println!();
 }
 
@@ -71,10 +55,5 @@ mod tests {
     fn render_runs_without_panic() {
         // render() only prints to stdout; verify it doesn't panic
         render();
-    }
-
-    #[test]
-    fn render_alias_runs_without_panic() {
-        render_alias();
     }
 }

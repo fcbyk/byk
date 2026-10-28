@@ -35,20 +35,11 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         feature: Option<String>,
     },
-    /// 添加插件或功能（远程仓库 / 本地文件 / 内置功能）
+    /// 添加功能（comp）或从别名文件安装（@xxx / @@xxx）
     Add {
-        /// Use byk.json file path or URL instead of remote registry
-        #[arg(short = 'f', long)]
-        file: Option<String>,
-        /// 通过 jsDelivr CDN 访问 GitHub 仓库（仅对 GitHub 仓库生效）
-        #[arg(long)]
-        cdn: bool,
-        /// 远程 spec(user/repo[/path]) 或 本地文件名(<file>) 或 功能名(comp | pip | assets)
+        /// 功能名(comp) 或别名文件(@xxx / @@xxx)
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,
-        /// pip 功能的目标文件：@file | @@file | .byk.json 路径（仅 name=pip 时使用）
-        #[arg(allow_hyphen_values = true)]
-        target: Option<String>,
     },
     /// 查看系统信息、插件、命令来源
     Show {

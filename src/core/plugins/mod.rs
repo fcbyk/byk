@@ -3,44 +3,36 @@
 //! 流程：读原始 JSON → 校验 `$add` 存在 → `$var` 阶段一替换
 //! → 装 pip 依赖 → 下载 assets 资源 → 写副本到 `~/.byk/alias/<stem>.byk.json`。
 //!
-//! 入口：`install`（本地 `<file>`）、`install_from_path`（`-f`）、
-//! `install_remote`（远程分发，见 remote.rs）。
-
-mod remote;
+//! 入口：`install_from_file`（由 `byk add @xxx` / `byk add @@xxx` 调用）。
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use colored::Colorize;
 
 use crate::core::add::alias_file_name;
 use crate::core::aliases;
 use crate::core::assets;
-use crate::core::download;
 use crate::core::paths::PathLayout;
 use crate::core::pip;
-
-pub use remote::install_remote;
 
 /// 副本保留的文件级字段。
 const FILE_LEVEL_FIELDS: &[&str] = &[
     "$priority", "$cwd", "$interactive", "$paths", "$add", "$var",
 ];
 
-/// 从 JSON 内容安装为全局插件（本地 / 远程共用）。
+/// 从 JSON 内容安装为全局插件。
 ///
 /// 只有声明 `$add` 的文件才能被安装；否则报错，不装依赖、不下载资源。
 ///
-/// `display_label` 用于日志/错误消息中标识来源（本地文件路径或远程 URL）。
-/// `source_file_dir` 用于解析本地 assets 相对路径（本地文件时为文件所在目录，远程为 None）。
+/// `display_label` 用于日志/错误消息中标识来源（文件路径）。
+/// `source_file_dir` 用于解析本地 assets 相对路径（文件所在目录）。
 fn install_from_content(
     content: &str,
     display_label: &str,
     file_key: &str,
     stem: &str,
     layout: &PathLayout,
-    cdn: bool,
-    remote_base: Option<&str>,
     source_file_dir: Option<&Path>,
 ) {
     let original: serde_json::Value = serde_json::from_str(content).unwrap_or_else(|e| {
@@ -108,7 +100,7 @@ fn install_from_content(
         .map(|d| d.join(alias_file_name(stem)))
         .unwrap_or_else(|| layout.alias_dir.join(alias_file_name(stem)));
     if let Some(block) = &assets_block {
-        assets::download_block(block, &assets_ctx_path, file_key, layout, cdn, remote_base);
+        assets::download_block(block, &assets_ctx_path, file_key, layout);
     }
 
     // 组装副本：文件级字段（含 $add）+ 全部别名
@@ -154,13 +146,11 @@ fn install_from_content(
 }
 
 /// 从文件路径安装为全局插件。读取文件后委托给 [`install_from_content`]。
-fn install_from_file(
+pub(crate) fn install_from_file(
     path: &Path,
     file_key: &str,
     stem: &str,
     layout: &PathLayout,
-    cdn: bool,
-    remote_base: Option<&str>,
 ) {
     let content = fs::read_to_string(path).unwrap_or_else(|e| {
         eprintln!("{} failed to read {}: {}", "Error:".red(), path.display(), e);
@@ -168,156 +158,5 @@ fn install_from_file(
     });
     let display_label = path.display().to_string();
     let source_dir = path.parent();
-    install_from_content(&content, &display_label, file_key, stem, layout, cdn, remote_base, source_dir);
-}
-
-/// `byk add <file>`：安装当前目录的 `<file>.byk.json` 到全局目录。
-/// 找不到主文件时回退到 `.byk.json` 的 `$ref` 映射。
-pub fn install(target: Option<&str>, layout: &PathLayout, cdn: bool) {
-    let stem = match target {
-        Some(t) if !t.is_empty() => t,
-        _ => {
-            crate::render::add::render_alias();
-            return;
-        }
-    };
-
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let path = cwd.join(alias_file_name(stem));
-
-    if path.is_file() {
-        // 直接命中
-        install_from_file(&path, &format!("@{}", stem), stem, layout, cdn, None);
-        return;
-    }
-
-    // 回退：当前目录 .byk.json 的 $ref
-    let anon_path = cwd.join(".byk.json");
-    if !anon_path.is_file() {
-        eprintln!("{} alias file not found: {}", "Error:".red(), stem.bold());
-        eprintln!(
-            "  Expected {} or $ref entry in {}",
-            path.display().to_string().dimmed(),
-            anon_path.display().to_string().dimmed()
-        );
-        std::process::exit(1);
-    }
-
-    let anon_content = match fs::read_to_string(&anon_path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("{} failed to read {}: {}", "Error:".red(), anon_path.display(), e);
-            std::process::exit(1);
-        }
-    };
-    let anon_json: serde_json::Value = match serde_json::from_str(&anon_content) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("{} invalid JSON in {}: {}", "Error:".red(), anon_path.display(), e);
-            std::process::exit(1);
-        }
-    };
-
-    let ref_value = anon_json
-        .get("$ref")
-        .and_then(|v| v.as_object())
-        .and_then(|m| m.get(stem))
-        .and_then(|v| v.as_str());
-
-    match ref_value {
-        Some(v) if v.starts_with("http://") || v.starts_with("https://") => {
-            // 绝对 URL → 按需转 CDN 后下载到内存直接安装
-            let download_url = if cdn {
-                download::to_jsdelivr_url(v)
-            } else {
-                v.to_string()
-            };
-            println!(
-                "{} Resolved {} via $ref → {}",
-                "==>".cyan().bold(),
-                stem.bold(),
-                download_url.dimmed()
-            );
-            let content = match download::download_string(&download_url) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("{} failed to download {}: {}", "Error:".red(), download_url, e);
-                    std::process::exit(1);
-                }
-            };
-            println!(
-                "{} Downloaded {} ({})",
-                "==>".cyan().bold(),
-                format!("{}.byk.json", stem).bold(),
-                format_size(content.len())
-            );
-            let remote_base = download_url.rsplit_once('/')
-                .map(|(dir, _)| format!("{}/", dir))
-                .unwrap_or_else(|| download_url.clone());
-            install_from_content(&content, &download_url, &format!("@@{}", stem), stem, layout, cdn, Some(&remote_base), None);
-        }
-        Some(v) => {
-            // 相对路径 → 相对 .byk.json 所在目录
-            let resolved = cwd.join(v);
-            if !resolved.is_file() {
-                eprintln!(
-                    "{} $ref target not found: {} → {}",
-                    "Error:".red(),
-                    v.bold(),
-                    resolved.display().to_string().dimmed()
-                );
-                std::process::exit(1);
-            }
-            println!(
-                "{} Resolved {} via $ref → {}",
-                "==>".cyan().bold(),
-                stem.bold(),
-                resolved.display().to_string().dimmed()
-            );
-            let file_key = format!("@{}", stem);
-            install_from_file(&resolved, &file_key, stem, layout, cdn, None);
-        }
-        None => {
-            eprintln!("{} alias file not found: {}", "Error:".red(), stem.bold());
-            eprintln!(
-                "  Expected {} or $ref entry in {}",
-                path.display().to_string().dimmed(),
-                anon_path.display().to_string().dimmed()
-            );
-            std::process::exit(1);
-        }
-    }
-}
-
-/// `byk add -f <path>`：安装指定路径的 *.byk.json 文件（本地）。
-pub fn install_from_path(path_str: &str, layout: &PathLayout, cdn: bool) {
-    let path = PathBuf::from(path_str);
-    if !path.is_file() {
-        eprintln!(
-            "{} alias file not found: {}",
-            "Error:".red(),
-            path.display().to_string().bold()
-        );
-        std::process::exit(1);
-    }
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-    let stem = file_name.strip_suffix(".byk.json").unwrap_or(file_name);
-    if stem.is_empty() {
-        eprintln!("{} invalid alias file: {}", "Error:".red(), path_str.bold());
-        std::process::exit(1);
-    }
-    install_from_file(&path, &format!("@{}", stem), stem, layout, cdn, None);
-}
-
-fn format_size(bytes: usize) -> String {
-    if bytes < 1024 {
-        format!("{}B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1}KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1}MB", bytes as f64 / (1024.0 * 1024.0))
-    }
+    install_from_content(&content, &display_label, file_key, stem, layout, source_dir);
 }

@@ -1,56 +1,12 @@
 //! 下载 / 解压 / 建目录 共享原语。
 //!
-//! 由 `$assets` 下载（`byk add assets` / `byk add <file>` / 远程分发）复用。
+//! 由 `$assets` 下载共用。
 
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Command;
 
 use colored::Colorize;
-
-/// 将 raw.githubusercontent.com URL 转换为 jsDelivr CDN URL。
-///
-/// raw:  https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}
-/// cdn:  https://cdn.jsdelivr.net/gh/{owner}/{repo}@{branch}/{path}
-pub(crate) fn to_jsdelivr_url(raw_url: &str) -> String {
-    let prefix = "https://raw.githubusercontent.com/";
-    if let Some(rest) = raw_url.strip_prefix(prefix) {
-        let parts: Vec<&str> = rest.splitn(3, '/').collect();
-        if parts.len() >= 3 {
-            let owner = parts[0];
-            let repo = parts[1];
-            let branch_and_path = parts[2];
-            let (branch, path) = branch_and_path
-                .split_once('/')
-                .unwrap_or((branch_and_path, ""));
-            return format!(
-                "https://cdn.jsdelivr.net/gh/{}/{}@{}/{}",
-                owner, repo, branch, path
-            );
-        }
-    }
-    raw_url.to_string()
-}
-
-/// 下载 URL 内容到 String（不落地文件），用于解析 JSON（如 $ref）。
-pub(crate) fn download_string(url: &str) -> Result<String, String> {
-    let response = ureq::get(url)
-        .call()
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-    if response.status() != 200 {
-        return Err(format!(
-            "HTTP {} when downloading {}",
-            response.status(),
-            url
-        ));
-    }
-
-    response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| format!("Failed to read response body: {}", e))
-}
 
 /// 下载文件到 dest（进度条写 stderr）。
 pub(crate) fn download_script(url: &str, dest: &Path) -> Result<(), String> {

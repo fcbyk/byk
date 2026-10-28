@@ -2,14 +2,19 @@
 //!
 //! 包含：
 //! - 内置功能初始化（comp）
+//! - 从本地别名文件安装（@xxx）
+//! - 从全局别名文件安装（@@xxx）
 
 use colored::Colorize;
 use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
+use crate::core::paths::PathLayout;
+use crate::core::plugins;
 use crate::utils::shell;
 
 // ---------------------------------------------------------------------------
-// --add comp（原 --init comp）
+// --add comp
 // ---------------------------------------------------------------------------
 
 /// 初始化 shell 补全。
@@ -82,6 +87,69 @@ pub fn init_completion() {
         "source".dimmed(),
         rc_path.display().to_string().dimmed()
     );
+}
+
+// ---------------------------------------------------------------------------
+// --add @xxx（当前目录）
+// ---------------------------------------------------------------------------
+
+/// `byk add @xxx`：读取当前目录 `xxx.byk.json` 的 `$add` 字段并安装。
+pub fn install_from_local(name: &str, layout: &PathLayout) {
+    let stem = &name[1..]; // strip '@'
+    if stem.is_empty() {
+        eprintln!(
+            "{} invalid argument: {} (expected @<name>)",
+            "Error:".red(),
+            name.bold()
+        );
+        std::process::exit(1);
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let path = cwd.join(alias_file_name(stem));
+
+    if !path.is_file() {
+        eprintln!(
+            "{} alias file not found: {}",
+            "Error:".red(),
+            path.display().to_string().bold()
+        );
+        std::process::exit(1);
+    }
+
+    let file_key = format!("@{}", stem);
+    plugins::install_from_file(&path, &file_key, stem, layout);
+}
+
+// ---------------------------------------------------------------------------
+// --add @@xxx（全局别名目录）
+// ---------------------------------------------------------------------------
+
+/// `byk add @@xxx`：读取 `~/.byk/alias/xxx.byk.json` 的 `$add` 字段并安装。
+pub fn install_from_global(name: &str, layout: &PathLayout) {
+    let stem = &name[2..]; // strip '@@'
+    if stem.is_empty() {
+        eprintln!(
+            "{} invalid argument: {} (expected @@<name>)",
+            "Error:".red(),
+            name.bold()
+        );
+        std::process::exit(1);
+    }
+
+    let path = layout.alias_dir.join(alias_file_name(stem));
+
+    if !path.is_file() {
+        eprintln!(
+            "{} alias file not found: {}",
+            "Error:".red(),
+            path.display().to_string().bold()
+        );
+        std::process::exit(1);
+    }
+
+    let file_key = format!("@@{}", stem);
+    plugins::install_from_file(&path, &file_key, stem, layout);
 }
 
 // ---------------------------------------------------------------------------

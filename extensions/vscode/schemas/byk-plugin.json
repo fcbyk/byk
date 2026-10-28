@@ -51,13 +51,7 @@
     }
   },
   "additionalProperties": {
-    "oneOf": [
-      {
-        "type": "string",
-        "description": "Ref 引用：URL 或相对路径，指向另一个 byk.json。\n- URL: \"https://...\"\n- 相对路径: \"./xxx\" 或 \"xxx\"（相对于当前 byk.json 所在目录）\n- 不允许: \"../\"、\"/xxx\"、\"~\""
-      },
-      { "$ref": "#/$defs/PluginEntry" }
-    ]
+    "$ref": "#/$defs/PluginEntry"
   },
   "$defs": {
     "PluginEntry": {
