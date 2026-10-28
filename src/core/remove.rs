@@ -298,8 +298,7 @@ pub fn uninstall_from_local(name: &str, layout: &PathLayout) {
         std::process::exit(1);
     }
 
-    let file_key = format!("@{}", stem);
-    uninstall_from_file(&path, &file_key, stem, layout);
+    uninstall_from_file(&path, stem, layout);
 }
 
 // ---------------------------------------------------------------------------
@@ -329,8 +328,7 @@ pub fn uninstall_from_global(name: &str, layout: &PathLayout) {
         std::process::exit(1);
     }
 
-    let file_key = format!("@@{}", stem);
-    uninstall_from_file(&path, &file_key, stem, layout);
+    uninstall_from_file(&path, stem, layout);
 }
 
 // ---------------------------------------------------------------------------
@@ -340,7 +338,6 @@ pub fn uninstall_from_global(name: &str, layout: &PathLayout) {
 /// 从文件路径执行卸载。
 pub(crate) fn uninstall_from_file(
     path: &Path,
-    file_key: &str,
     stem: &str,
     layout: &PathLayout,
 ) {
@@ -350,7 +347,7 @@ pub(crate) fn uninstall_from_file(
     });
     let display_label = path.display().to_string();
     let source_dir = path.parent();
-    uninstall_from_content(&content, &display_label, file_key, stem, layout, source_dir);
+    uninstall_from_content(&content, &display_label, stem, layout, source_dir);
 }
 
 /// 从 JSON 内容执行卸载。
@@ -363,7 +360,6 @@ pub(crate) fn uninstall_from_file(
 fn uninstall_from_content(
     content: &str,
     display_label: &str,
-    file_key: &str,
     stem: &str,
     layout: &PathLayout,
     source_file_dir: Option<&Path>,
@@ -452,7 +448,7 @@ fn uninstall_from_content(
             let assets_ctx_path = source_file_dir
                 .map(|d| d.join(add::alias_file_name(stem)))
                 .unwrap_or_else(|| layout.alias_dir.join(add::alias_file_name(stem)));
-            assets::delete_assets_block(block, &assets_ctx_path, file_key, layout);
+            assets::delete_assets_block(block, &assets_ctx_path, layout);
         } else {
             println!("{} no assets to remove", "*".dimmed());
         }

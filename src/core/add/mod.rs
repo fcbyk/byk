@@ -126,8 +126,7 @@ pub fn install_from_local(name: &str, layout: &PathLayout) {
         std::process::exit(1);
     }
 
-    let file_key = format!("@{}", stem);
-    install_from_file(&path, &file_key, stem, layout);
+    install_from_file(&path, stem, layout);
 }
 
 // ---------------------------------------------------------------------------
@@ -157,12 +156,8 @@ pub fn install_from_global(name: &str, layout: &PathLayout) {
         std::process::exit(1);
     }
 
-    let file_key = format!("@@{}", stem);
-    install_from_file(&path, &file_key, stem, layout);
+    install_from_file(&path, stem, layout);
 }
-
-// ---------------------------------------------------------------------------
-// 工具函数
 // ---------------------------------------------------------------------------
 
 /// stem → 文件名。空 stem（匿名 `@` / `@@`）→ `.byk.json`。
@@ -192,7 +187,6 @@ const FILE_LEVEL_FIELDS: &[&str] = &[
 fn install_from_content(
     content: &str,
     display_label: &str,
-    file_key: &str,
     stem: &str,
     layout: &PathLayout,
     source_file_dir: Option<&Path>,
@@ -262,7 +256,7 @@ fn install_from_content(
         .map(|d| d.join(alias_file_name(stem)))
         .unwrap_or_else(|| layout.alias_dir.join(alias_file_name(stem)));
     if let Some(block) = &assets_block {
-        assets::download_block(block, &assets_ctx_path, file_key, layout);
+        assets::download_block(block, &assets_ctx_path, layout);
     }
 
     // 组装副本：文件级字段（含 $add）+ 全部别名
@@ -310,7 +304,6 @@ fn install_from_content(
 /// 从文件路径安装为全局插件。读取文件后委托给 [`install_from_content`]。
 pub(crate) fn install_from_file(
     path: &Path,
-    file_key: &str,
     stem: &str,
     layout: &PathLayout,
 ) {
@@ -320,7 +313,7 @@ pub(crate) fn install_from_file(
     });
     let display_label = path.display().to_string();
     let source_dir = path.parent();
-    install_from_content(&content, &display_label, file_key, stem, layout, source_dir);
+    install_from_content(&content, &display_label, stem, layout, source_dir);
 }
 
 // ---------------------------------------------------------------------------

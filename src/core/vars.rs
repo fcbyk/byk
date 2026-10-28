@@ -19,7 +19,7 @@
 use serde_json::Value;
 
 /// 内置变量名（在 `$var` 中声明无效）。
-pub const RESERVED_VARS: &[&str] = &["python", "venv", "byk", "assets"];
+pub const RESERVED_VARS: &[&str] = &["python", "venv", "byk", "assets", "downloads", "workdir"];
 
 /// 当前平台（编译期注入，对齐 GitHub Release 命名）。
 const PLATFORM: &str = env!("PLATFORM");

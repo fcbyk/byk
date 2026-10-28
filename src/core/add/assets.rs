@@ -2,12 +2,15 @@
 //!
 //! 由 `byk add` 使用（下载 / 解压 / chmod）。
 //!
-//! 目标规则（R1）：
-//! - `$to` 显式设置 → root = 解析值（平台映射 / `~` / 相对文件目录 / 自动创建），
+//! 目标规则：
+//! - `$to` 显式设置 → root = 解析值，仅允许 `$byk` / `$workdir` / `$downloads` 开头；
 //!   条目直接落 `<root>/<名字>`；
-//! - `$to` 缺省 → root = 本地文件用文件目录、全局文件用当前工作目录；此时
-//!   声明 1 条目平铺，≥2 条目进 `<root>/assets/`（容器）；计数按声明总数
-//!   （平台跳过只影响下载内容，不影响落点形状，保证跨平台一致）。
+//! - `$to` 缺省 → root = `$downloads`（系统下载目录），条目平铺到该目录；
+//! - 不再使用 `assets/` 容器目录，`$to` 怎么写就怎么下。
+//!
+//! 安全校验（双层）：
+//! - L1：`$to` 原始字符串必须以 `$byk` / `$workdir` / `$downloads` 开头；
+//! - L2：展开后 canonicalize 最长已存在前缀，确保未逃逸到基准目录外。
 //!
 //! 条目规则：名字即 root 下的相对路径（拒绝 `..` / 绝对路径）；
 //! 源为 URL 或本地路径（相对文件目录解析）；`[tar]` 解压到同名子目录、
@@ -27,18 +30,21 @@ use super::pip::{PYTHON_BIN, VENV_BIN};
 /// 当前平台（编译期注入，与 `build.rs` 五值一致）。
 const PLATFORM: &str = env!("PLATFORM");
 
+/// `$to` 允许的变量前缀。
+const ALLOWED_TO_PREFIXES: &[&str] = &["$byk", "$workdir", "$downloads"];
+
 /// 解析上下文：一个别名文件 + 运行环境。
 pub(crate) struct AssetsCtx<'a> {
     /// 别名文件路径（相对路径的解析基准）
     pub(crate) file_path: &'a Path,
-    /// 文件 key（`@stem` 本地 / `@@stem` 全局，判 Scope）
-    pub(crate) file_key: &'a str,
-    /// 当前工作目录（全局文件缺省根）
+    /// 当前工作目录（`$workdir`）
     pub(crate) cwd: &'a Path,
     /// byk 根目录（`$byk`）
     pub(crate) byk_root: &'a Path,
     /// venv 目录（`$venv`/`$python` 展开用）
     pub(crate) venv_dir: &'a Path,
+    /// 系统下载目录（`$downloads`）
+    pub(crate) downloads_dir: &'a Path,
     /// 远程文件的 base URL（远程分发时传入，相对路径据此解析成相对 URL；
     /// 本地文件为 None，相对路径按本地文件目录解析）
     pub(crate) remote_base: Option<&'a str>,
@@ -76,8 +82,6 @@ pub struct AssetEntry {
 pub struct AssetsPlan {
     /// 生效根目录（`$to` 或缺省根）
     pub root: PathBuf,
-    /// 是否套 `assets/` 容器（仅缺省根 + 多条目时）
-    pub container: bool,
     /// 适用于当前平台的条目
     pub entries: Vec<AssetEntry>,
     /// 平台不适用被跳过的条目名
@@ -87,11 +91,7 @@ pub struct AssetsPlan {
 impl AssetsPlan {
     /// 条目实际所在目录——`$assets` 变量的值。
     pub fn assets_dir(&self) -> PathBuf {
-        if self.container {
-            self.root.join("assets")
-        } else {
-            self.root.clone()
-        }
+        self.root.clone()
     }
 
     /// 条目目标路径。
@@ -182,6 +182,104 @@ fn resolve_relative_url(base_url: &str, rel: &str) -> String {
     format!("{}{}", base_url, rel)
 }
 
+/// L2 安全校验：判断 path 是否在 base 的子目录内（防符号链接和 `..` 逃逸）。
+///
+/// 逐级向上找最长已存在前缀，canonicalize 后做 `starts_with` 比对。
+/// base 通常为 `$byk` / `$workdir` / `$downloads` 展开后的路径。
+fn is_under_dir(path: &Path, base: &Path) -> bool {
+    let Ok(base_real) = base.canonicalize() else {
+        // base 不存在 → canonicalize 失败，做纯前缀比对 + 防 `..`
+        // 这种情况说明 base 尚未创建，我们在下载时会创建它
+        return check_no_parent_escape(path, base);
+    };
+
+    // 逐级向上找最长已存在前缀
+    let mut current = path.to_path_buf();
+    loop {
+        if let Ok(real) = current.canonicalize() {
+            return real.starts_with(&base_real);
+        }
+        match current.parent() {
+            Some(p) => current = p.to_path_buf(),
+            None => return false,
+        }
+    }
+}
+
+/// 纯前缀比对 + 防 `..` 逃逸（用于 base 不存在的场景）。
+fn check_no_parent_escape(path: &Path, base: &Path) -> bool {
+    // 先 normalize 去掉 `..`
+    let normalized = normalize_path(path);
+    normalized.starts_with(base) && !has_parent_escape(&normalized, base)
+}
+
+/// 简单的路径规范化：去掉 `.` 和 `..`，不访问文件系统。
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => {
+                result.push(c.as_os_str());
+            }
+        }
+    }
+    result
+}
+
+/// 检查路径组件中是否有相对于 base 的 `..` 逃逸。
+fn has_parent_escape(path: &Path, base: &Path) -> bool {
+    let base_depth = base.components().count();
+    let path_depth = path.components().count();
+    // 路径组件数少于 base → 逃逸了
+    path_depth < base_depth
+}
+
+/// L1 安全校验：`$to` 原始字符串必须以 `$byk` / `$workdir` / `$downloads` 开头。
+fn check_to_prefix(raw: &str) -> Result<(), String> {
+    for prefix in ALLOWED_TO_PREFIXES {
+        if raw == *prefix || raw.starts_with(&format!("{}/", prefix)) || raw.starts_with(&format!("{}\\", prefix)) {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "$to must start with $byk, $workdir, or $downloads (got '{}')",
+        raw
+    ))
+}
+
+/// L1+L2 校验：展开后的 `$to` 路径是否在对应基准目录内。
+///
+/// 根据原始前缀确定基准目录：
+/// - `$byk/...`    → 基准 = ctx.byk_root
+/// - `$workdir/...`  → 基准 = ctx.cwd
+/// - `$downloads/...` → 基准 = ctx.downloads_dir
+fn verify_to_within_base(expanded: &Path, raw: &str, ctx: &AssetsCtx) -> Result<(), String> {
+    let (prefix_name, base) = if raw == "$byk" || raw.starts_with("$byk/") || raw.starts_with("$byk\\") {
+        ("$byk", ctx.byk_root)
+    } else if raw == "$workdir" || raw.starts_with("$workdir/") || raw.starts_with("$workdir\\") {
+        ("$workdir", ctx.cwd)
+    } else if raw == "$downloads" || raw.starts_with("$downloads/") || raw.starts_with("$downloads\\") {
+        ("$downloads", ctx.downloads_dir)
+    } else {
+        return Err(format!("$to must start with $byk, $workdir, or $downloads (got '{}')", raw));
+    };
+
+    if !is_under_dir(expanded, base) {
+        return Err(format!(
+            "$to '{}' expands to '{}' which escapes its base directory '{}' ({})",
+            raw,
+            expanded.display(),
+            prefix_name,
+            base.display()
+        ));
+    }
+    Ok(())
+}
+
 /// 解析 `$to` → 显式根目录。None 表示未设置（走缺省根）。
 fn resolve_explicit_root(block: &Value, ctx: &AssetsCtx) -> Result<Option<PathBuf>, String> {
     let Some(to_val) = block.get("$to") else {
@@ -206,25 +304,24 @@ fn resolve_explicit_root(block: &Value, ctx: &AssetsCtx) -> Result<Option<PathBu
         return Err("$to cannot reference $assets (self-reference)".into());
     }
 
-    // 阶段二：展开内置变量（$byk/$venv/$python）
+    // L1：原始字符串必须以合法变量开头
+    check_to_prefix(&raw)?;
+
+    // 阶段二：展开内置变量（$byk / $workdir / $downloads）
     let var_ctx = VarContext {
         byk_root: ctx.byk_root.to_path_buf(),
         venv_bin: ctx.venv_dir.join(VENV_BIN),
         venv_python: ctx.venv_dir.join(VENV_BIN).join(PYTHON_BIN),
+        downloads_dir: ctx.downloads_dir.to_path_buf(),
+        workdir: ctx.cwd.to_path_buf(),
     };
     let expanded = expand_variables(&raw, &var_ctx)
         .map_err(|e| format!("{} (while expanding $to '{}')", e, raw))?;
+    let path = PathBuf::from(&expanded);
 
-    let path = expand_tilde(&expanded);
-    let path = if path.is_absolute() {
-        path
-    } else {
-        // 相对路径相对文件目录解析（确定性，不随运行 cwd 漂移）
-        ctx.file_path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join(path)
-    };
+    // L2：展开后路径不能逃逸到基准目录外
+    verify_to_within_base(&path, &raw, ctx)?;
+
     Ok(Some(path))
 }
 
@@ -243,23 +340,10 @@ pub(crate) fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<Asse
         .cloned()
         .collect();
 
-    // 容器：仅缺省根 + 多条目；计数按声明总数（平台跳过不改变形状）
-    let container = explicit_root.is_none() && entry_names.len() >= 2;
-
+    // 无 `$to` → root = `$downloads`（系统下载目录），多文件平铺不套容器
     let root = match explicit_root {
         Some(r) => r,
-        None => {
-            if ctx.file_key.starts_with("@@") {
-                // 全局文件：清单语义，资源落在当前工作目录
-                ctx.cwd.to_path_buf()
-            } else {
-                // 本地文件：资源属于文件所在项目
-                ctx.file_path
-                    .parent()
-                    .unwrap_or(Path::new("."))
-                    .to_path_buf()
-            }
-        }
+        None => ctx.downloads_dir.to_path_buf(),
     };
 
     let file_dir = ctx.file_path.parent().unwrap_or(Path::new("."));
@@ -282,7 +366,6 @@ pub(crate) fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<Asse
 
     Ok(AssetsPlan {
         root,
-        container,
         entries,
         skipped,
     })
@@ -294,16 +377,16 @@ pub(crate) fn resolve_assets_plan(block: &Value, ctx: &AssetsCtx) -> Result<Asse
 pub(crate) fn download_block(
     block: &Value,
     path: &Path,
-    file_key: &str,
     layout: &PathLayout,
 ) -> bool {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let downloads_dir = crate::core::aliases::variables::system_downloads_dir();
     let ctx = AssetsCtx {
         file_path: path,
-        file_key,
         cwd: &cwd,
         byk_root: &layout.root_dir,
         venv_dir: &layout.venv_dir,
+        downloads_dir: &downloads_dir,
         remote_base: None,
     };
     let plan = match resolve_assets_plan(block, &ctx) {
@@ -446,16 +529,16 @@ pub(crate) fn download_block(
 pub(crate) fn delete_assets_block(
     block: &Value,
     path: &Path,
-    file_key: &str,
     layout: &PathLayout,
 ) -> bool {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let downloads_dir = crate::core::aliases::variables::system_downloads_dir();
     let ctx = AssetsCtx {
         file_path: path,
-        file_key,
         cwd: &cwd,
         byk_root: &layout.root_dir,
         venv_dir: &layout.venv_dir,
+        downloads_dir: &downloads_dir,
         remote_base: None,
     };
     let plan = match resolve_assets_plan(block, &ctx) {
@@ -524,19 +607,6 @@ pub(crate) fn delete_assets_block(
         }
     }
 
-    // 如果使用了容器目录（assets/），尝试删除空容器
-    if plan.container {
-        let container = plan.root.join("assets");
-        if container.is_dir() {
-            let is_empty = fs::read_dir(&container)
-                .map(|mut d| d.next().is_none())
-                .unwrap_or(false);
-            if is_empty {
-                let _ = fs::remove_dir(&container);
-            }
-        }
-    }
-
     println!(
         "{} removed {} asset(s) for {}",
         "Successfully".green(),
@@ -556,67 +626,98 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn ctx<'a>(file_path: &'a Path, file_key: &'a str, cwd: &'a Path) -> AssetsCtx<'a> {
+    fn ctx<'a>(file_path: &'a Path, _file_key: &'a str, cwd: &'a Path) -> AssetsCtx<'a> {
         AssetsCtx {
             file_path,
-            file_key,
             cwd,
             byk_root: Path::new("/home/u/.byk"),
             venv_dir: Path::new("/home/u/.byk/py-venv/.venv"),
+            downloads_dir: Path::new("/home/u/Downloads"),
             remote_base: None,
         }
     }
 
     #[test]
-    fn single_entry_local_flat() {
+    fn single_entry_goes_to_downloads() {
         let block = json!({"tool": "https://x/tool"});
         let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap();
-        assert_eq!(plan.root, PathBuf::from("/proj"));
-        assert!(!plan.container);
-        assert_eq!(plan.assets_dir(), PathBuf::from("/proj"));
-        assert_eq!(plan.entry_dest("tool"), PathBuf::from("/proj/tool"));
+        assert_eq!(plan.root, PathBuf::from("/home/u/Downloads"));
+        assert_eq!(plan.assets_dir(), PathBuf::from("/home/u/Downloads"));
+        assert_eq!(plan.entry_dest("tool"), PathBuf::from("/home/u/Downloads/tool"));
     }
 
     #[test]
-    fn multi_entry_local_container() {
+    fn multi_entry_goes_to_downloads_flat() {
         let block = json!({"tool": "https://x/tool", "lint": "https://x/lint"});
         let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap();
-        assert!(plan.container);
-        assert_eq!(plan.assets_dir(), PathBuf::from("/proj/assets"));
-        assert_eq!(plan.entry_dest("lint"), PathBuf::from("/proj/assets/lint"));
+        assert_eq!(plan.root, PathBuf::from("/home/u/Downloads"));
+        assert_eq!(plan.assets_dir(), PathBuf::from("/home/u/Downloads"));
+        assert_eq!(plan.entry_dest("lint"), PathBuf::from("/home/u/Downloads/lint"));
     }
 
     #[test]
-    fn multi_entry_global_uses_cwd() {
+    fn global_file_defaults_to_downloads() {
         let block = json!({"tool": "https://x/tool", "lint": "https://x/lint"});
         let plan = resolve_assets_plan(&block, &ctx(Path::new("/home/u/.byk/alias/demo.byk.json"), "@@demo", Path::new("/proj"))).unwrap();
-        assert_eq!(plan.root, PathBuf::from("/proj"));
-        assert!(plan.container);
-        assert_eq!(plan.assets_dir(), PathBuf::from("/proj/assets"));
+        assert_eq!(plan.root, PathBuf::from("/home/u/Downloads"));
+        assert_eq!(plan.assets_dir(), PathBuf::from("/home/u/Downloads"));
     }
 
     #[test]
-    fn explicit_to_skips_container() {
+    fn explicit_to_byk_works() {
         let block = json!({"$to": "$byk/tools/demo", "tool": "https://x/tool", "lint": "https://x/lint"});
         let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap();
-        assert!(!plan.container);
         assert_eq!(plan.root, PathBuf::from("/home/u/.byk/tools/demo"));
         assert_eq!(plan.entry_dest("tool"), PathBuf::from("/home/u/.byk/tools/demo/tool"));
     }
 
     #[test]
-    fn to_relative_resolves_against_file_dir() {
-        let block = json!({"$to": "./out", "tool": "https://x/tool"});
-        let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/cfg/demo.byk.json"), "@demo", Path::new("/elsewhere"))).unwrap();
-        assert_eq!(plan.root, PathBuf::from("/proj/cfg/out"));
+    fn explicit_to_workdir_works() {
+        let block = json!({"$to": "$workdir/out", "tool": "https://x/tool"});
+        let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap();
+        assert_eq!(plan.root, PathBuf::from("/proj/out"));
     }
 
     #[test]
-    fn to_tilde_expands() {
-        let block = json!({"$to": "~/tools/x", "tool": "https://x/tool"});
+    fn explicit_to_downloads_works() {
+        let block = json!({"$to": "$downloads/my-tool", "tool": "https://x/tool"});
         let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap();
-        let home = dirs::home_dir().unwrap();
-        assert_eq!(plan.root, home.join("tools/x"));
+        assert_eq!(plan.root, PathBuf::from("/home/u/Downloads/my-tool"));
+    }
+
+    #[test]
+    fn to_relative_rejected() {
+        let block = json!({"$to": "./out", "tool": "https://x/tool"});
+        let err = resolve_assets_plan(&block, &ctx(Path::new("/proj/cfg/demo.byk.json"), "@demo", Path::new("/elsewhere"))).unwrap_err();
+        assert!(err.contains("must start with $byk, $workdir, or $downloads"), "got: {}", err);
+    }
+
+    #[test]
+    fn to_tilde_rejected() {
+        let block = json!({"$to": "~/tools/x", "tool": "https://x/tool"});
+        let err = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap_err();
+        assert!(err.contains("must start with $byk, $workdir, or $downloads"), "got: {}", err);
+    }
+
+    #[test]
+    fn to_absolute_rejected() {
+        let block = json!({"$to": "/opt/linux", "tool": "https://x/tool"});
+        let err = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap_err();
+        assert!(err.contains("must start with $byk, $workdir, or $downloads"), "got: {}", err);
+    }
+
+    #[test]
+    fn to_dotdot_escape_rejected() {
+        let block = json!({"$to": "$byk/../../etc", "tool": "https://x/tool"});
+        let err = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap_err();
+        assert!(err.contains("escapes"), "got: {}", err);
+    }
+
+    #[test]
+    fn to_dotdot_escape_workdir_rejected() {
+        let block = json!({"$to": "$workdir/../..", "tool": "https://x/tool"});
+        let err = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap_err();
+        assert!(err.contains("escapes"), "got: {}", err);
     }
 
     #[test]
@@ -624,6 +725,13 @@ mod tests {
         let block = json!({"$to": "$assets", "tool": "https://x/tool"});
         let err = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap_err();
         assert!(err.contains("self-reference"));
+    }
+
+    #[test]
+    fn to_venv_rejected() {
+        let block = json!({"$to": "$venv/tools", "tool": "https://x/tool"});
+        let err = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap_err();
+        assert!(err.contains("must start with $byk, $workdir, or $downloads"), "got: {}", err);
     }
 
     #[test]
@@ -638,16 +746,16 @@ mod tests {
     }
 
     #[test]
-    fn entry_count_includes_skipped_for_container() {
-        // 声明 2 条，1 条被平台跳过 → 容器判定仍按声明总数（形状稳定）
+    fn entry_count_includes_skipped() {
         let block = json!({
             "tool": {"nonexistent-platform": "https://x/other"},
             "lint": "https://x/lint"
         });
         let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap();
-        assert!(plan.container);
         assert_eq!(plan.entries.len(), 1);
         assert_eq!(plan.skipped.len(), 1);
+        // 默认 root = $downloads
+        assert_eq!(plan.root, PathBuf::from("/home/u/Downloads"));
     }
 
     #[test]
@@ -689,7 +797,7 @@ mod tests {
     fn name_with_slash_creates_subdir_dest() {
         let block = json!({"bin/lint": "https://x/lint"});
         let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap();
-        assert_eq!(plan.entry_dest("bin/lint"), PathBuf::from("/proj/bin/lint"));
+        assert_eq!(plan.entry_dest("bin/lint"), PathBuf::from("/home/u/Downloads/bin/lint"));
     }
 
     #[test]
@@ -708,12 +816,12 @@ mod tests {
 
     #[test]
     fn to_platform_map_resolved() {
-        let block = json!({"$to": {"linux-x86_64": "/opt/linux", "darwin-arm64": "/opt/mac"}, "tool": "https://x/tool"});
+        let block = json!({"$to": {"linux-x86_64": "$byk/tools/linux", "darwin-arm64": "$byk/tools/mac"}, "tool": "https://x/tool"});
         let plan = resolve_assets_plan(&block, &ctx(Path::new("/proj/demo.byk.json"), "@demo", Path::new("/proj"))).unwrap();
         let expected = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-            PathBuf::from("/opt/mac")
+            PathBuf::from("/home/u/.byk/tools/mac")
         } else {
-            PathBuf::from("/opt/linux")
+            PathBuf::from("/home/u/.byk/tools/linux")
         };
         assert_eq!(plan.root, expected);
     }

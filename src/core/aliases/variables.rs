@@ -1,11 +1,11 @@
-//! 保留变量展开：`$python` / `$venv` / `$byk`。
+//! 保留变量展开：`$python` / `$venv` / `$byk` / `$downloads` / `$workdir`。
 //!
 //! 别名 `$cmd` / `$cwd` / `$paths` 中的保留变量由 byk 在执行前展开为
 //! 具体路径——shell 永远看不到 `$` 变量（`$python` 直接进终端在 sh 中是
 //! 空变量、在 cmd 中是普通字符，必败，故必须由 byk 代为展开）。
 //!
 //! 展开规则：
-//! - 仅 `$python` / `$venv` / `$byk` 三个整词命中，替换为对应路径；
+//! - 仅 `$python` / `$venv` / `$byk` / `$downloads` / `$workdir` 整词命中，替换为对应路径；
 //! - 未命中的 `$` token（`$HOME`、`$pythonfoo`、`${args}` 等）原样保留，
 //!   交由 shell 自行处理，不破坏既有用法；
 //! - 替换值含空白时自动包双引号，避免被 shell 拆分；
@@ -32,18 +32,35 @@ pub struct VarContext {
     pub venv_bin: PathBuf,
     /// venv Python 解释器 → `$python`
     pub venv_python: PathBuf,
+    /// 系统下载目录 → `$downloads`
+    pub downloads_dir: PathBuf,
+    /// 执行命令时的工作目录 → `$workdir`
+    pub workdir: PathBuf,
 }
 
 impl VarContext {
-    /// 从目录布局构建。
+    /// 从目录布局构建（downloads_dir / workdir 从环境获取）。
     pub fn from_layout(layout: &PathLayout) -> Self {
         let venv_bin = layout.venv_dir.join(VENV_BIN);
+        let downloads_dir = system_downloads_dir();
+        let workdir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         Self {
             byk_root: layout.root_dir.clone(),
             venv_bin: venv_bin.clone(),
             venv_python: venv_bin.join(PYTHON_BIN),
+            downloads_dir,
+            workdir,
         }
     }
+}
+
+/// 获取系统默认下载目录，内置接口失败则回退到 `~/Downloads`。
+pub fn system_downloads_dir() -> PathBuf {
+    dirs::download_dir().unwrap_or_else(|| {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Downloads")
+    })
 }
 
 /// venv 缺失时的友好报错（替代 shell 的 "command not found" 乱码）。
@@ -94,6 +111,8 @@ pub fn expand_variables(cmd: &str, ctx: &VarContext) -> Result<String, String> {
             }
             "venv" => Some(&ctx.venv_bin),
             "byk" => Some(&ctx.byk_root),
+            "downloads" => Some(&ctx.downloads_dir),
+            "workdir" => Some(&ctx.workdir),
             _ => None,
         };
 
@@ -135,6 +154,8 @@ mod tests {
             byk_root: dir.join("home").join(".byk"),
             venv_bin,
             venv_python,
+            downloads_dir: dir.join("Downloads"),
+            workdir: dir.join("work"),
         }
     }
 
@@ -210,6 +231,8 @@ mod tests {
             byk_root: spaced.join(".byk"),
             venv_bin,
             venv_python,
+            downloads_dir: spaced.join("Downloads"),
+            workdir: spaced.join("work"),
         };
         let result = expand_variables("$python -m x", &ctx).unwrap();
         assert_eq!(result, format!("\"{}\" -m x", ctx.venv_python.display()));
@@ -271,5 +294,40 @@ mod tests {
             result,
             format!("echo 中文 {}", ctx.byk_root.display())
         );
+    }
+
+    #[test]
+    fn expands_downloads_dir() {
+        let dir = tempdir().unwrap();
+        let ctx = make_ctx(dir.path(), false);
+        let result = expand_variables("ls $downloads", &ctx).unwrap();
+        assert_eq!(result, format!("ls {}", ctx.downloads_dir.display()));
+    }
+
+    #[test]
+    fn expands_workdir() {
+        let dir = tempdir().unwrap();
+        let ctx = make_ctx(dir.path(), false);
+        let result = expand_variables("pwd $workdir", &ctx).unwrap();
+        assert_eq!(result, format!("pwd {}", ctx.workdir.display()));
+    }
+
+    #[test]
+    fn downloads_combined_path_expands() {
+        let dir = tempdir().unwrap();
+        let ctx = make_ctx(dir.path(), false);
+        let result = expand_variables("ls $downloads/my-tool", &ctx).unwrap();
+        assert_eq!(
+            result,
+            format!("ls {}/my-tool", ctx.downloads_dir.display())
+        );
+    }
+
+    #[test]
+    fn workdir_combined_path_expands() {
+        let dir = tempdir().unwrap();
+        let ctx = make_ctx(dir.path(), false);
+        let result = expand_variables("ls $workdir/out", &ctx).unwrap();
+        assert_eq!(result, format!("ls {}/out", ctx.workdir.display()));
     }
 }
