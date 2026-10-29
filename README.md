@@ -2,8 +2,7 @@
 
 > An alias runner. Commands live in `*.byk.json`, you call them by short names.
 
-byk does two things — **find an alias, run it**. One binary, one config format,
-and it never writes to disk.
+byk does two things — **find an alias, run it**. One binary, one config format.
 
 ## Use
 
@@ -48,8 +47,7 @@ names just work, overriding same-named global aliases. Write
 | `__api__ <request>` | read-only interface for shells and editors (hidden) |
 
 `byk __api__ completion zsh` prints the shell registration script;
-`byk __api__ complete <words...>` powers Tab completion. Neither ever writes
-to disk.
+`byk __api__ complete <words...>` powers Tab completion.
 
 ## Installation
 

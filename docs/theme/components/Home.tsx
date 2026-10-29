@@ -309,7 +309,7 @@ export function BykHome() {
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
           <span className="b-head__label">为什么选 byk</span>
-          <h2 className="b-head__title">只把命令收进一个入口</h2>
+          <h2 className="b-head__title">命令只收进一个入口</h2>
         </div>
 
         <div className="b-why">
@@ -345,30 +345,13 @@ export function BykHome() {
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">04</span>
-              <strong>零依赖</strong>
+              <strong>编辑器直连</strong>
             </div>
             <p>
-              装的就只有 byk 本体。别名执行的是你 shell 里本来就能跑的命令。
-            </p>
-          </div>
-          <div className="b-why__item">
-            <div className="b-why__term">
-              <span className="b-idx">05</span>
-              <strong>只有一种配置</strong>
-            </div>
-            <p>
-              <span className="b-ic">*.byk.json</span> 里五个 <span className="b-ic">$</span> 字段就够用：
-              别名、工作目录、交互模式、PATH、变量。
-            </p>
-          </div>
-          <div className="b-why__item">
-            <div className="b-why__term">
-              <span className="b-idx">06</span>
-              <strong>状态只有别名</strong>
-            </div>
-            <p>
-              <span className="b-ic">~/.byk/</span> 里只有你自己放的别名文件。
-              byk 只读不写，删掉这个目录就等于清零。
+              装上 byk 的 VS Code 插件，在{' '}
+              <span className="b-ic">*.byk.json</span>{' '}
+              里右键就能运行光标处的别名，体验与 package.json scripts
+              一致；也能在命令面板里检索全部别名。
             </p>
           </div>
         </div>
