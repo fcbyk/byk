@@ -24,11 +24,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// 生成 shell 补全脚本（输出到 stdout）
-    Completion {
-        /// 目标 shell: zsh | bash | fish
-        shell: String,
-    },
     /// 移除插件或已初始化的功能
     Remove {
         /// 插件 key 或功能名: comp | all
@@ -46,13 +41,6 @@ pub enum Commands {
         /// 子命令或命令名: overview | plugins | <command-name>
         #[arg(allow_hyphen_values = true)]
         topic: Option<String>,
-    },
-    /// 内部：查询补全候选
-    #[command(hide = true, name = "__complete")]
-    Complete {
-        /// 当前已输入的命令行（不含 byk 本身）
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        words: Vec<String>,
     },
     /// 内部：面向程序的只读接口，返回结构化信息
     #[command(hide = true, name = "__api__")]

@@ -9,7 +9,6 @@ use std::process::exit;
 
 use cli::{Cli, Commands, extract_options};
 use core::aliases;
-use core::completion;
 use core::add;
 use core::paths::PathLayout;
 use core::remove;
@@ -23,14 +22,6 @@ fn main() {
 
     // Step 0: 内置子命令（优先级最高）
     match cli.command {
-        Some(Commands::Completion { shell }) => {
-            completion::generate(&shell);
-            return;
-        }
-        Some(Commands::Complete { words }) => {
-            completion::complete(&words, &layout);
-            return;
-        }
         Some(Commands::Api { request }) => {
             core::api::dispatch(&request, &layout);
             return;

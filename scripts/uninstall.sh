@@ -16,12 +16,12 @@ fi
 # Remove PATH and completion entries from shell configs
 for RC in "${HOME}/.zshrc" "${HOME}/.bashrc"; do
   if [[ -f "$RC" ]]; then
-    if grep -qF 'byk completion' "$RC" 2>/dev/null; then
+    if grep -qE 'byk (__api__ )?completion' "$RC" 2>/dev/null; then
       echo "Removing byk completion from ${RC} ..."
       if [[ "$(uname -s)" == "Darwin" ]]; then
-        sed -i '' '/byk completion/d' "$RC"
+        sed -i '' -E '/byk (__api__ )?completion/d' "$RC"
       else
-        sed -i '/byk completion/d' "$RC"
+        sed -i -E '/byk (__api__ )?completion/d' "$RC"
       fi
     fi
 
