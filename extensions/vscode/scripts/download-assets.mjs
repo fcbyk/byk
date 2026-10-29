@@ -16,7 +16,7 @@ const REPO = process.env.BYK_REPO || 'fcbyk/byk';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = join(__dirname, '..', 'assets');
 
-const BASE_URL = `https://github.com/${REPO}/releases/download/assets`;
+const BASE_URL = `https://github.com/${REPO}/releases/download/v0.1.0`;
 
 const ASSETS = [
   'logo.png',
