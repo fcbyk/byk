@@ -180,12 +180,41 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile], layout: &PathLayout, cwd
 /// 不值得为此维护一份缓存状态。
 pub fn load_merged_aliases(layout: &PathLayout) -> (MergedConfig, Vec<AliasFile>) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    load_merged_aliases_at(layout, &cwd)
+}
 
-    let mut files = scan_alias_files(&cwd, false);
+/// 指定工作目录加载（测试与需要显式 cwd 的调用方使用）。
+pub(crate) fn load_merged_aliases_at(
+    layout: &PathLayout,
+    cwd: &Path,
+) -> (MergedConfig, Vec<AliasFile>) {
+    let mut files = scan_alias_files(cwd, false);
     files.extend(scan_alias_files(&layout.alias_dir, true));
     sort_alias_files(&mut files);
-    let merged = build_merged_aliases(&files, layout, &cwd);
+
+    // cwd 恰好是全局目录时，同一批文件会被扫两次（@f 与 @@f）。
+    // 两个身份都保留——这个文件确实同时可通过两种前缀访问；
+    // 但合并只做一次，按全局身份参与，避免同一份声明被合并两遍。
+    let merged = if same_dir(cwd, &layout.alias_dir) {
+        let global_only: Vec<AliasFile> = files
+            .iter()
+            .filter(|f| f.key.starts_with("@@"))
+            .cloned()
+            .collect();
+        build_merged_aliases(&global_only, layout, cwd)
+    } else {
+        build_merged_aliases(&files, layout, cwd)
+    };
+
     (merged, files)
+}
+
+/// 两个路径是否指向同一目录（规范化后比较，符号链接也视作相同）。
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(pa), Ok(pb)) => pa == pb,
+        _ => a == b,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +271,21 @@ pub fn resolve_merged_alias<'a>(
 mod tests {
     use super::*;
     use crate::core::aliases::types::MergedNode;
+    use std::fs;
+
+    /// 构造一个 root/alias 布局，返回 (临时目录, 布局, 工作目录)
+    fn project() -> (tempfile::TempDir, PathLayout, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let alias_dir = tmp.path().join("alias");
+        let cwd = tmp.path().join("proj");
+        fs::create_dir_all(&alias_dir).unwrap();
+        fs::create_dir_all(&cwd).unwrap();
+        let layout = PathLayout {
+            root_dir: tmp.path().to_path_buf(),
+            alias_dir,
+        };
+        (tmp, layout, cwd)
+    }
 
     /// 测试用目录布局
     fn test_layout() -> PathLayout {
@@ -529,5 +573,57 @@ mod tests {
         let merged = build_merged_aliases(&files, &test_layout(), Path::new("/proj"));
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
         assert!(resolved.paths.is_empty());
+    }
+
+    // ==================== 默认优先级与目录重叠 ====================
+
+    #[test]
+    fn local_file_overrides_global_by_default() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(layout.alias_dir.join("g.byk.json"), r#"{"dev": "echo global"}"#).unwrap();
+        fs::write(cwd.join("p.byk.json"), r#"{"dev": "echo local"}"#).unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        let resolved = resolve_merged_alias(&merged, "dev").unwrap();
+        assert_eq!(resolved.source, "@p", "本地文件应覆盖全局同名别名");
+    }
+
+    #[test]
+    fn negative_priority_opts_out_of_merge() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(layout.alias_dir.join("g.byk.json"), r#"{"dev": "echo global"}"#).unwrap();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{"$priority": -1, "dev": "echo local"}"#,
+        )
+        .unwrap();
+
+        let (merged, files) = load_merged_aliases_at(&layout, &cwd);
+        let resolved = resolve_merged_alias(&merged, "dev").unwrap();
+        assert_eq!(resolved.source, "@@g", "-1 的文件不应参与合并");
+        // 但文件本身仍被扫描到，@p.dev 可精确调用
+        assert!(files.iter().any(|f| f.key == "@p"));
+    }
+
+    #[test]
+    fn global_dir_as_cwd_merges_once_via_global_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let alias_dir = tmp.path().to_path_buf();
+        fs::write(alias_dir.join("f.byk.json"), r#"{"hi": "echo hi"}"#).unwrap();
+
+        let layout = PathLayout {
+            root_dir: tmp.path().to_path_buf(),
+            alias_dir: alias_dir.clone(),
+        };
+        let (merged, files) = load_merged_aliases_at(&layout, &alias_dir);
+
+        // 两个身份都保留：@f 与 @@f 都能精确调用同一个文件
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|f| f.key == "@f"));
+        assert!(files.iter().any(|f| f.key == "@@f"));
+
+        // 合并只发生一次，来源是全局身份
+        let resolved = resolve_merged_alias(&merged, "hi").unwrap();
+        assert_eq!(resolved.source, "@@f");
     }
 }

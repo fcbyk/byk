@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "$priority": {
-      "description": "优先级，默认本地=-1（不参与合并，仅 @filename.key 精确调用）全局=0。设为非负数可参与合并。",
+      "description": "优先级，默认当前目录=1、全局目录=0（数字大的覆盖小的，即就近优先）。写 -1 表示不参与合并，只能用 @filename.key 精确调用。",
       "type": "integer"
     },
     "$cwd": {

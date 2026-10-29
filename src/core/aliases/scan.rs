@@ -14,9 +14,9 @@ use super::types::AliasFile;
 
 /// 扫描目录下所有 *.byk.json，返回 AliasFile 列表。
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool) -> Vec<AliasFile> {
-    // 本地文件默认不参与合并（-1），仅可通过 @file.key 精确调用；
-    // 要参与全局合并需显式声明 $priority >= 0。全局文件默认 0。
-    let default_priority = if is_global { 0 } else { -1 };
+    // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
+    // 只想给本文件用（仅 @file.key 可达）时显式写 `$priority: -1`。
+    let default_priority = if is_global { 0 } else { 1 };
     let mut files: Vec<AliasFile> = Vec::new();
 
     let entries = match fs::read_dir(dir) {

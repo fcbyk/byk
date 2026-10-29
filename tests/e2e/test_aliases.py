@@ -38,3 +38,47 @@ def test_install_blocks_ignored(runner):
     r = runner.run("build")
     assert r.returncode == 0
     assert "built" in r.stdout
+
+
+def test_local_file_is_callable_without_scope(runner):
+    """当前目录的文件默认参与合并，直接 byk <key> 可调用"""
+    work = runner.home / "proj"
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "p.byk.json").write_text('{"hello": "echo local-hi"}', encoding="utf-8")
+
+    r = runner.run("hello", cwd=str(work))
+    assert r.returncode == 0, r.stderr
+    assert "local-hi" in r.stdout
+
+
+def test_local_overrides_global(runner):
+    """同名时项目文件（优先级 1）覆盖全局（0）"""
+    runner.prepare_alias_file("g", '{"hello": "echo global-hi"}')
+    work = runner.home / "proj2"
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "p.byk.json").write_text('{"hello": "echo local-hi"}', encoding="utf-8")
+
+    r = runner.run("hello", cwd=str(work))
+    assert r.returncode == 0, r.stderr
+    assert "local-hi" in r.stdout
+
+    # 离开该目录后回到全局那份
+    r2 = runner.run("hello")
+    assert r2.returncode == 0, r2.stderr
+    assert "global-hi" in r2.stdout
+
+
+def test_negative_priority_needs_scope(runner):
+    """$priority: -1 的文件不参与合并，只能 @file.key 精确调用"""
+    work = runner.home / "proj3"
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "p.byk.json").write_text(
+        '{"$priority": -1, "hidden": "echo hidden"}', encoding="utf-8"
+    )
+
+    r = runner.run("hidden", cwd=str(work))
+    assert r.returncode != 0
+
+    r2 = runner.run("@p.hidden", cwd=str(work))
+    assert r2.returncode == 0, r2.stderr
+    assert "hidden" in r2.stdout

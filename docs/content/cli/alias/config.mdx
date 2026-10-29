@@ -21,7 +21,7 @@ type AliasObject = {
 
 // 一个 *.byk.json 文件
 type AliasFileJSON = {
-  $priority?: number;      // 优先级，默认本地 = -1（不参与合并）、全局 = 0
+  $priority?: number;      // 优先级，默认当前目录 = 1、全局 = 0
   $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
   $interactive?: boolean;  // 文件级 / 分组级交互模式，子别名自动继承
   $paths?: string[];       // 文件级 PATH 目录列表，子别名自动继承
@@ -126,7 +126,7 @@ type AliasFileJSON = {
 ```
 
 ```bash
-byk @run.deploy
+byk deploy
 # ~ deploy --env {env} --tag {version}
 #   env: staging
 #   version: v2.0
@@ -285,7 +285,7 @@ Aliases:
 ```
 
 ```bash
-byk @run.install     # 在 /Users/me/project/web 下运行 npm i
+byk install          # 在 /Users/me/project/web 下运行 npm i
 ```
 
 </Tab>
@@ -306,10 +306,10 @@ byk @run.install     # 在 /Users/me/project/web 下运行 npm i
 ```
 
 ```bash
-byk @run.开发.测试          # pytest -q
-byk @run.开发.构建          # pnpm run build
-byk @run.开发.构建.前端     # pnpm run build:web
-byk @run.清理               # find ...
+byk 开发.测试          # pytest -q
+byk 开发.构建          # pnpm run build
+byk 开发.构建.前端     # pnpm run build:web
+byk 清理               # find ...
 ```
 
 </Tab>
@@ -360,25 +360,43 @@ byk 读取两个位置：**全局目录** `~/.byk/alias/` 与**当前工作目�
 
 | 文件位置 | 默认优先级 |
 |---------|-----------|
-| 当前目录 `[name].byk.json` | -1（不参与合并，仅 `@file.key` 可用） |
-| 当前目录 `.byk.json` | -1（不参与合并） |
+| 当前目录 `[name].byk.json` | 1 |
+| 当前目录 `.byk.json` | 1（排序靠后） |
 | 全局 `[name].byk.json` | 0 |
 | 全局 `.byk.json` | 0（排序靠后） |
 
-本地文件默认不进全局 key 空间——它们是项目级脚本，避免「进入某个目录后 `byk build` 的含义变了」。同优先级文件按文件名字母序加载，后者覆盖前者，行为确定。
+所以「就近优先」：项目里的文件自动覆盖全局同名别名，进目录就能 `byk <key>`，不用写任何声明。
+
+同优先级文件按文件名字母序加载，后者覆盖前者，行为确定。
+
+:::note 在全局目录里运行
+当 cwd 恰好是 `~/.byk/alias/` 时，那里的文件同时属于「当前目录」和「全局目录」。它会以两个身份被扫描（`@f` 与 `@@f` 都能精确调用），但**只按全局身份参与一次合并**，不会被合并两遍。
+:::
 
 #### 自定义
+
+只想给本文件用、不想进公共空间，写 `-1`：
+
+```json title="run.byk.json"
+{
+  "$priority": -1,
+  "deploy": "deploy --env {env}"
+}
+```
+
+这时 `byk deploy` 找不到它，只能 `byk @run.deploy`。
+
+需要压过同目录的其他文件时，才需要写数字：
 
 ```json title="任意 .byk.json"
 {
   "$priority": 20,
-  "build": "vite build",
-  "dev": "vite"
+  "build": "vite build"
 }
 ```
 
 :::note
-`$priority` 是保留字段，不会被当成别名 key。设为负数（如 `-1`）即退出合并，只能通过精确语法调用。
+`$priority` 是保留字段，不会被当成别名 key。日常只需要记住两个取值：**不写（1 / 0，就近优先）** 和 **-1（只用精确语法）**。
 :::
 
 ### 精确执行语法

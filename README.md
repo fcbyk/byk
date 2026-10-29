@@ -21,17 +21,19 @@ no shell-profile surgery.
 ```
 
 ```bash
-byk @run.dev        # exact: dev from ./run.byk.json
-byk @run.build      # pnpm build, run in ~/project/web
-byk @run.deploy     # asks for {env}, then runs
+byk dev             # pnpm dev, run in ~/project/web
+byk build           # pnpm build
+byk deploy          # asks for {env}, then runs
 ```
 
 `{env}` is a placeholder, `$cwd` / `$interactive` / `$description` are
-inheritable metadata, `@file.key` routes to one exact file.
+inheritable metadata, `@file.key` / `@@file.key` route to one exact file.
 
-Local files default to `$priority: -1`, so they stay out of the merged key
-space — `byk build` never changes meaning because of which directory you are
-in. Put a file in `~/.byk/alias/` (or set `"$priority": 0`) to make it global.
+Alias files in the current directory join the merged namespace with priority
+1, global ones in `~/.byk/alias/` with 0 — so `cd` into a project and its
+names just work, overriding same-named global aliases. Write
+`"$priority": -1` to keep a file out of the namespace, reachable only through
+`@file.key`.
 
 ## CLI
 

@@ -123,13 +123,13 @@ export function BykHome() {
             <pre className="b-term__body">
               <code>
                 <span className="t-p">$ </span>
-                <span className="t-c">byk @run.dev</span>
+                <span className="t-c">byk dev</span>
                 {'\n'}
                 <span className="t-o">pnpm dev</span>
                 <span className="t-x"> ← in ~/project/web</span>
                 {'\n\n'}
                 <span className="t-p">$ </span>
-                <span className="t-c">byk @run.deploy</span>
+                <span className="t-c">byk deploy</span>
                 {'\n'}
                 <span className="t-x">? env › </span>
                 <span className="t-a">staging</span>
@@ -141,11 +141,11 @@ export function BykHome() {
                 {'\n'}
                 <span className="t-x">Aliases:</span>
                 {'\n'}
-                <span className="t-x">  run.dev    </span>
-                <span className="t-o">pnpm dev</span>
-                {'\n'}
-                <span className="t-x">  run.build  </span>
+                <span className="t-x">  build  </span>
                 <span className="t-o">pnpm build</span>
+                {'\n'}
+                <span className="t-x">  dev    </span>
+                <span className="t-o">pnpm dev</span>
               </code>
             </pre>
           </div>
@@ -181,9 +181,9 @@ export function BykHome() {
             <span className="b-feature__mark">byk @run.build</span>
             <h3 className="b-feature__title">精确执行</h3>
             <p className="b-feature__desc">
-              本地文件默认不参与合并且
-              <span className="b-ic">@文件.key</span>
-              直接路由到那个文件，进入任何目录都不会撞名。
+              需要指定具体文件时用
+              <span className="b-ic">@文件.key</span>，
+              绕过合并直接路由过去，同名也不会互相干扰。
             </p>
             <span className="b-feature__more">
               选项与命令 <Arrow />
@@ -243,17 +243,17 @@ export function BykHome() {
               <pre className="b-term__body b-term__body--sm">
                 <code>
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk @run.dev</span>
+                  <span className="t-c">byk dev</span>
                   {'\n'}
                   <span className="t-x"># running pnpm dev in ~/project/web</span>
                   {'\n\n'}
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk @run.deploy</span>
+                  <span className="t-c">byk deploy</span>
                   {'\n'}
                   <span className="t-x"># prompts for env, then executes</span>
                   {'\n\n'}
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk @run.build</span> <span className="t-a">--mode prod</span>
+                  <span className="t-c">byk build</span> <span className="t-a">--mode prod</span>
                   {'\n'}
                   <span className="t-x"># args are appended to the command</span>
                 </code>
@@ -329,8 +329,8 @@ export function BykHome() {
               <strong>作用域清晰</strong>
             </div>
             <p>
-              本地文件默认 <span className="b-ic">$priority: -1</span>，不参与合并；
-              要全局可用就放进 <span className="b-ic">~/.byk/alias/</span>。
+              就近优先：项目文件（1）覆盖全局文件（0），进目录就能用短名字；
+              只想给单个文件用，写 <span className="b-ic">$priority: -1</span>。
             </p>
           </div>
           <div className="b-why__item">
