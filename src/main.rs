@@ -90,7 +90,6 @@ fn main() {
 
     // Step 1: 全局选项（优先级最高，直接返回）
     if cli.help {
-        println!();
         render::help::render_all(&layout, &options);
         return;
     }
@@ -110,7 +109,6 @@ fn main() {
         return;
     }
     if cli.trailing.is_empty() {
-        println!();
         render::help::render_all(&layout, &options);
         return;
     }

@@ -7,10 +7,12 @@ use colored::Colorize;
 use crate::core::aliases;
 use crate::core::paths::PathLayout;
 
-/// 渲染完整帮助信息（Usage + Options + Commands or Aliases）。
+/// 渲染完整帮助信息（Banner + Usage + Options + Commands or Aliases）。
 ///
-/// -h / --help 直接调用，仪表盘在之前叠加 banner。
+/// `byk`、`byk -h`、`byk --help` 三条入口输出完全一致，banner 在最上方。
 pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
+    super::banner::render();
+    println!();
     render_usage();
     println!();
     render_options(options);
