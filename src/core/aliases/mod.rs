@@ -19,7 +19,6 @@ pub(crate) mod variables;
 pub use types::*;
 pub use parse::to_alias_definition;
 pub(crate) use parse::parse_pip_field;
-pub use merge::{collect_merged_paths, load_merged_aliases, lookup_all_aliases, resolve_merged_alias};
+pub use merge::{collect_merged_paths, load_merged_aliases, resolve_merged_alias};
 pub use exact::{lookup_exact_alias, parse_exact_syntax};
-pub use placeholder::collect_placeholders;
 pub use execution::execute_alias;

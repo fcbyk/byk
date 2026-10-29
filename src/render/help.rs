@@ -21,7 +21,6 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     let builtins: Vec<(String, String)> = vec![
         ("add".into(), "Add plugins or features".into()),
         ("remove".into(), "Remove plugins or features".into()),
-        ("show".into(), "Show system info, plugins, or command sources".into()),
     ];
 
     let (merged, _files) = aliases::load_merged_aliases(layout);

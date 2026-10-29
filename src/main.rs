@@ -84,22 +84,6 @@ fn main() {
             }
             return;
         }
-        Some(Commands::Show { topic }) => {
-            match topic.as_deref() {
-                None | Some("-h") | Some("--help") => render::show::render_help(),
-                Some("overview") => render::show::render_overview(&layout),
-                Some("plugins") => {
-                    eprintln!("{} 'byk show plugins' has been removed.", "Note:".yellow());
-                    eprintln!(
-                        "  Plugins are now *.byk.json files; run {} to list commands.",
-                        "byk -h".bold()
-                    );
-                }
-                Some("paths") => render::show::render_paths(&layout),
-                Some(name) => render::show::render_command(name, &layout),
-            }
-            return;
-        }
         None => {}
     }
 
@@ -109,22 +93,11 @@ fn main() {
         return;
     }
     if cli.paths {
-        render::show::render_paths(&layout);
+        render::paths::render(&layout);
         return;
     }
     if cli.version {
-        println!(
-            "byk {} ({} {}) [{}]",
-            env!("CARGO_PKG_VERSION"),
-            env!("GIT_HASH"),
-            env!("BUILD_DATE"),
-            env!("PLATFORM"),
-        );
-        if let Ok(exe_path) = std::env::current_exe() { println!(
-            "{} {}",
-            "installed at".dimmed(),
-            exe_path.display().to_string().dimmed(),
-        ) }
+        render::version::render(&layout);
         return;
     }
     if cli.trailing.is_empty() {

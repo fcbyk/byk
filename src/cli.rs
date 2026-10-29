@@ -21,7 +21,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
-    /// 捕获命令名及参数（后续匹配插件命令 / 别名）
+    /// 捕获命令名及参数（后续匹配别名）
     #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
     pub trailing: Vec<String>,
 }
@@ -39,12 +39,6 @@ pub enum Commands {
         /// 功能名(comp) 或别名文件(@xxx / @@xxx)
         #[arg(allow_hyphen_values = true)]
         name: Option<String>,
-    },
-    /// 查看系统信息、插件、命令来源
-    Show {
-        /// 子命令或命令名: overview | plugins | <command-name>
-        #[arg(allow_hyphen_values = true)]
-        topic: Option<String>,
     },
     /// 内部：面向程序的只读接口，返回结构化信息
     #[command(hide = true, name = "__api__")]
