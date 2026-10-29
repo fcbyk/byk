@@ -8,7 +8,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-
 /// 收集模板中所有唯一占位符，保持首次出现顺序。
 ///
 /// 通过括号计数处理嵌套占位符（如 `{a?{b?x:y}:z}`），
@@ -205,7 +204,6 @@ fn resolve_placeholder(
     resolved.insert(ph.to_string(), String::new());
 }
 
-
 /// 解析占位符，返回最终命令与「占位符 → 值」映射（交互模式回显用）。
 ///
 /// 命令里没有占位符时自动追加所有参数，等价于隐式 `${args}`。
@@ -263,19 +261,14 @@ pub fn parse_alias_arguments_with_mapping(
         result = result.replace(*ph, &resolved[*ph]);
     }
 
-    let final_command = result
-        .split_whitespace()
-        .collect::<Vec<&str>>()
-        .join(" ");
+    let final_command = result.split_whitespace().collect::<Vec<&str>>().join(" ");
 
     (final_command, resolved)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn collect_named_placeholder() {
@@ -359,7 +352,6 @@ mod tests {
         assert!(collect_placeholders("").is_empty());
     }
 
-
     #[test]
     fn split_no_question_mark() {
         let (key, t, f) = split_ternary("simple");
@@ -408,10 +400,10 @@ mod tests {
         assert!(f.is_empty());
     }
 
-
     #[test]
     fn parse_no_placeholders_appends_args() {
-        let (cmd, map) = parse_alias_arguments_with_mapping("echo", &["hello".into(), "world".into()], &[]);
+        let (cmd, map) =
+            parse_alias_arguments_with_mapping("echo", &["hello".into(), "world".into()], &[]);
         assert_eq!(cmd, "echo hello world");
         assert!(map.is_empty());
     }
@@ -436,11 +428,8 @@ mod tests {
 
     #[test]
     fn parse_positional() {
-        let (cmd, _) = parse_alias_arguments_with_mapping(
-            "cp ${0} ${1}",
-            &["src".into(), "dst".into()],
-            &[],
-        );
+        let (cmd, _) =
+            parse_alias_arguments_with_mapping("cp ${0} ${1}", &["src".into(), "dst".into()], &[]);
         assert_eq!(cmd, "cp src dst");
     }
 
@@ -452,31 +441,21 @@ mod tests {
 
     #[test]
     fn parse_named_placeholder() {
-        let (cmd, _) = parse_alias_arguments_with_mapping(
-            "{cmd}",
-            &["cmd".into(), "build".into()],
-            &[],
-        );
+        let (cmd, _) =
+            parse_alias_arguments_with_mapping("{cmd}", &["cmd".into(), "build".into()], &[]);
         assert_eq!(cmd, "build");
     }
 
     #[test]
     fn parse_named_placeholder_not_matched() {
-        let (cmd, _) = parse_alias_arguments_with_mapping(
-            "{missing}",
-            &["other".into()],
-            &[],
-        );
+        let (cmd, _) = parse_alias_arguments_with_mapping("{missing}", &["other".into()], &[]);
         assert_eq!(cmd, "");
     }
 
     #[test]
     fn parse_conditional_true() {
-        let (cmd, _) = parse_alias_arguments_with_mapping(
-            "{debug?--verbose:--quiet}",
-            &["debug".into()],
-            &[],
-        );
+        let (cmd, _) =
+            parse_alias_arguments_with_mapping("{debug?--verbose:--quiet}", &["debug".into()], &[]);
         assert_eq!(cmd, "--verbose");
     }
 
@@ -512,11 +491,7 @@ mod tests {
 
     #[test]
     fn parse_optional_placeholder_not_matched() {
-        let (cmd, _) = parse_alias_arguments_with_mapping(
-            "echo {{name}}",
-            &[],
-            &[],
-        );
+        let (cmd, _) = parse_alias_arguments_with_mapping("echo {{name}}", &[], &[]);
         assert_eq!(cmd, "echo");
     }
 }

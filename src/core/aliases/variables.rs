@@ -85,7 +85,6 @@ pub fn expand_variables(cmd: &str, ctx: &VarContext) -> String {
     out
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +200,4 @@ mod tests {
             format!("echo 中文 {}", ctx.byk_root.display())
         );
     }
-
 }

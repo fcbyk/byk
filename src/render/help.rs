@@ -63,7 +63,6 @@ fn format_options_lines(options: &[(String, String)]) -> Vec<String> {
         .collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,9 +143,7 @@ mod tests {
 
     #[test]
     fn format_options_single_option_no_extra_lines() {
-        let options = vec![
-            ("--cdn".into(), "Use CDN".into()),
-        ];
+        let options = vec![("--cdn".into(), "Use CDN".into())];
         let result = format_options_lines(&options);
         assert_eq!(result.len(), 1);
         let plain = strip_ansi(&result[0]);

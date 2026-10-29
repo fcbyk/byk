@@ -1,7 +1,7 @@
 //! 别名执行：环境构建、交互模式、执行入口。
 
-use std::collections::{HashMap, HashSet};
 use rustyline::DefaultEditor;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, exit};
 
@@ -10,7 +10,6 @@ use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mappin
 use super::types::ResolvedAlias;
 use super::variables::{VarContext, expand_variables};
 use crate::core::paths::PathLayout;
-
 
 /// 构造别名执行环境，将自定义路径和 node_modules/.bin 前置到 PATH。
 ///
@@ -56,7 +55,6 @@ pub fn build_alias_env(working_dir: &Path, custom_paths: &[String]) -> HashMap<S
     env_map
 }
 
-
 /// 判断占位符是否为具名占位符 `{xxx}`（单层花括号，不含 ?）。
 fn is_named_placeholder(ph: &str) -> bool {
     if ph.len() < 3 {
@@ -71,10 +69,7 @@ fn is_named_placeholder(ph: &str) -> bool {
         return false;
     }
     let inner = &ph[1..ph.len() - 1];
-    !inner.contains('?')
-        && !inner.starts_with('$')
-        && !inner.contains('{')
-        && !inner.contains('}')
+    !inner.contains('?') && !inner.starts_with('$') && !inner.contains('{') && !inner.contains('}')
 }
 
 /// 判断占位符是否为可选透传 `{{xxx}}`（双层花括号）。
@@ -132,7 +127,10 @@ fn pre_fill_from_cli(
 
     for ph in positional {
         let n = &ph[2..ph.len() - 1];
-        if let Ok(idx) = n.parse::<usize>() && idx < cli_args.len() && !consumed.contains(&idx) {
+        if let Ok(idx) = n.parse::<usize>()
+            && idx < cli_args.len()
+            && !consumed.contains(&idx)
+        {
             pre_filled.insert((*ph).clone(), cli_args[idx].clone());
             consumed.insert(idx);
         }
@@ -180,7 +178,6 @@ fn pre_fill_from_cli(
 
     (pre_filled, remaining)
 }
-
 
 /// 显示带高亮占位符的命令模板。
 fn display_interactive_template(command: &str, placeholders: &[String]) {
@@ -239,7 +236,6 @@ fn convert_unix_path_for_cmd(command: &str) -> String {
     command.to_string()
 }
 
-
 /// 执行别名命令。
 ///
 /// 先展开保留变量（`$byk` / `$workdir`，先于占位符解析），
@@ -289,7 +285,6 @@ pub fn execute_alias(
     }
 }
 
-
 fn execute_direct_impl(
     command: &str,
     args: &[String],
@@ -301,7 +296,6 @@ fn execute_direct_impl(
     println!("> {}\n", final_command);
     run_command(&final_command, working_dir, custom_paths);
 }
-
 
 fn execute_interactive_impl(
     command: &str,
@@ -349,7 +343,6 @@ fn execute_interactive_impl(
         run_command(&final_command, working_dir, custom_paths);
     }
 
-
     let positional: Vec<&String> = placeholders
         .iter()
         .filter(|ph| is_positional_placeholder(ph))
@@ -370,7 +363,6 @@ fn execute_interactive_impl(
     let mut cmd = command.to_string();
     let mut interactive_args: Vec<String> = Vec::new();
     let mut resolved_map: HashMap<String, String> = HashMap::new();
-
 
     // Step 1: ${N} 位置占位符
     for ph in &positional {
@@ -413,10 +405,7 @@ fn execute_interactive_impl(
             &false_branch
         };
 
-        let input = match rl.readline(&format!(
-            "  [{}/{}] (y/N): ",
-            true_branch, false_label
-        )) {
+        let input = match rl.readline(&format!("  [{}/{}] (y/N): ", true_branch, false_label)) {
             Ok(line) => line,
             Err(_) => {
                 println!("\nCancelled");
@@ -517,7 +506,9 @@ fn execute_interactive_impl(
     let mut all_args: Vec<String> = Vec::new();
     let mut pre_consumed: Vec<usize> = Vec::new();
     for (i, ph) in positional.iter().enumerate() {
-        if let Some(val) = resolved_map.get(ph.as_str()) && !val.is_empty() {
+        if let Some(val) = resolved_map.get(ph.as_str())
+            && !val.is_empty()
+        {
             pre_consumed.push(i);
             all_args.push(val.clone());
         }
@@ -571,7 +562,9 @@ fn resolve_working_dir(cwd: Option<&str>, base_dir: Option<&Path>) -> PathBuf {
     let path = expand_home(raw);
 
     // 相对路径以配置文件所在目录为基准解析
-    if path.is_relative() && let Some(base) = base_dir {
+    if path.is_relative()
+        && let Some(base) = base_dir
+    {
         let joined = base.join(&path);
         // 规范化路径（消除 .. 等），失败时回退到拼接结果
         if let Ok(canonical) = joined.canonicalize() {
@@ -595,11 +588,9 @@ fn strip_extended_path_prefix(path: PathBuf) -> PathBuf {
     path
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn named_placeholder_valid() {
@@ -634,7 +625,6 @@ mod tests {
         assert!(!is_named_placeholder("{a{b}}"));
     }
 
-
     #[test]
     fn optional_placeholder_valid() {
         assert!(is_optional_placeholder("{{name}}"));
@@ -652,7 +642,6 @@ mod tests {
     fn optional_placeholder_rejects_ternary() {
         assert!(!is_optional_placeholder("{{debug?yes:no}}"));
     }
-
 
     #[test]
     fn positional_placeholder_valid() {
@@ -675,7 +664,6 @@ mod tests {
     fn positional_placeholder_rejects_non_numeric() {
         assert!(!is_positional_placeholder("${name}"));
     }
-
 
     #[test]
     fn conditional_placeholder_valid() {
@@ -700,7 +688,6 @@ mod tests {
     fn conditional_placeholder_rejects_no_question() {
         assert!(!is_conditional_placeholder("{name}"));
     }
-
 
     #[test]
     fn pre_fill_empty_all() {
@@ -893,11 +880,11 @@ mod tests {
     #[test]
     fn pre_fill_mixed_all_types() {
         let args = vec![
-            "first".to_string(),   // idx 0 → ${0}
-            "name".to_string(),    // idx 1 → key "name"
-            "Alice".to_string(),   // idx 2 → value for {name}
-            "debug".to_string(),   // idx 3 → key "debug"
-            "leftover".to_string(),// idx 4 → remaining
+            "first".to_string(),    // idx 0 → ${0}
+            "name".to_string(),     // idx 1 → key "name"
+            "Alice".to_string(),    // idx 2 → value for {name}
+            "debug".to_string(),    // idx 3 → key "debug"
+            "leftover".to_string(), // idx 4 → remaining
         ];
         let p0 = "${0}".to_string();
         let named_str = "{name}".to_string();
@@ -922,7 +909,6 @@ mod tests {
         assert!(filled.is_empty());
         assert_eq!(remaining, vec!["x", "y", "z"]);
     }
-
 
     #[test]
     fn resolve_cwd_none_returns_current_dir() {
@@ -966,7 +952,6 @@ mod tests {
         assert_eq!(result, PathBuf::from("relative/path"));
     }
 
-
     #[test]
     fn env_no_custom_paths_preserves_existing() {
         let dir = tempfile::tempdir().unwrap();
@@ -982,10 +967,7 @@ mod tests {
         let bin_dir = dir.path().join("bin");
         std::fs::create_dir(&bin_dir).unwrap();
 
-        let env = build_alias_env(
-            dir.path(),
-            &[bin_dir.to_string_lossy().into_owned()],
-        );
+        let env = build_alias_env(dir.path(), &[bin_dir.to_string_lossy().into_owned()]);
         let path = env.get("PATH").unwrap();
         assert!(path.starts_with(&bin_dir.to_string_lossy().into_owned()));
     }
@@ -1041,10 +1023,7 @@ mod tests {
         let custom = dir.path().join("custom");
         std::fs::create_dir(&custom).unwrap();
 
-        let env = build_alias_env(
-            dir.path(),
-            &[custom.to_string_lossy().into_owned()],
-        );
+        let env = build_alias_env(dir.path(), &[custom.to_string_lossy().into_owned()]);
         let path = env.get("PATH").unwrap();
         let custom_pos = path.find(&custom.to_string_lossy().into_owned()).unwrap();
         let nm_pos = path.find(&nm_bin.to_string_lossy().into_owned()).unwrap();

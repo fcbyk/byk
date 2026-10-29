@@ -14,7 +14,6 @@ pub fn render(layout: &PathLayout) {
     println!();
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

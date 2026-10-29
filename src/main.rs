@@ -75,10 +75,7 @@ fn main() {
             None => {
                 let file_exists = files.iter().any(|f| f.key == file_key);
                 if file_exists {
-                    eprintln!(
-                        "Alias key not found in file {}: {}",
-                        file_key, alias_key
-                    );
+                    eprintln!("Alias key not found in file {}: {}", file_key, alias_key);
                 } else {
                     eprintln!("Alias file not found: {}", file_key);
                 }

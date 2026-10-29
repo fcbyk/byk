@@ -25,7 +25,9 @@ fn resolve_platform_value(val: &Value, platform: &str) -> Option<String> {
     if let Some(s) = val.as_str() {
         Some(s.to_string())
     } else if let Some(obj) = val.as_object() {
-        obj.get(platform).and_then(|v| v.as_str()).map(|s| s.to_string())
+        obj.get(platform)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     } else {
         None
     }
@@ -116,7 +118,6 @@ pub fn preprocess_vars(root: &mut Value) -> Vec<String> {
     }
     shadowed
 }
-
 
 #[cfg(test)]
 mod tests {

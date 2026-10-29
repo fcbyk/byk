@@ -4,7 +4,6 @@ use super::merge::apply_inherited;
 use super::parse::{is_alias_value, to_alias_value};
 use super::types::{AliasFile, ResolvedAlias};
 
-
 /// 解析 `@file.key` / `@@file.key`，返回 (file_key, alias_key)。
 ///
 /// `@.build` 的 file_key 是 `@`（匿名文件）；无点号或 key 为空时返回 None，走普通查找。
@@ -49,7 +48,9 @@ pub fn lookup_exact_alias(
             if let Some(c) = obj.get("$cwd").and_then(|v| v.as_str()) {
                 group_cwd = Some(c);
             }
-            if let Some(v) = obj.get("$interactive") && let Some(b) = v.as_bool() {
+            if let Some(v) = obj.get("$interactive")
+                && let Some(b) = v.as_bool()
+            {
                 group_interactive = Some(b);
             }
             current = obj.get(*part)?;
@@ -78,11 +79,9 @@ pub fn lookup_exact_alias(
     None
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn parse_at_file_dot_key() {

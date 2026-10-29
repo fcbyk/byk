@@ -22,10 +22,12 @@ impl PathLayout {
         let root_dir = home.join(format!(".{}", app_name));
         let alias_dir = root_dir.join("alias");
 
-        PathLayout { root_dir, alias_dir }
+        PathLayout {
+            root_dir,
+            alias_dir,
+        }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

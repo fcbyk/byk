@@ -39,10 +39,7 @@ fn collect_alias_entries(merged: &MergedConfig) -> Vec<(String, String)> {
             let definition = aliases::to_alias_definition(&resolved.value)?;
             // cwd 相对路径以别名来源文件所在目录为基准解析，
             // 无 source_path 时回退到 ~/.byk/alias/
-            let base_dir = resolved
-                .source_path
-                .as_deref()
-                .and_then(|p| p.parent());
+            let base_dir = resolved.source_path.as_deref().and_then(|p| p.parent());
             let suffix = definition
                 .cwd
                 .as_ref()
@@ -110,7 +107,6 @@ fn format_lines(merged: &MergedConfig, _alias_dir: &Path) -> Vec<(String, String
     align_entries(&collect_alias_entries(merged))
 }
 
-
 /// 将 alias 文件中存储的 cwd 路径解析为直观的显示路径。
 ///
 /// 相对路径以 `base_dir`（来源文件所在目录）为基准 resolve，
@@ -126,9 +122,10 @@ pub(crate) fn resolve_cwd_display(cwd: &str, base_dir: Option<&Path>) -> String 
         normalize(cwd_path)
     };
     if let Some(home) = dirs::home_dir()
-        && let Ok(rest) = resolved.strip_prefix(&home) {
-            return format!("~/{}", rest.display().to_string().replace('\\', "/"));
-        }
+        && let Ok(rest) = resolved.strip_prefix(&home)
+    {
+        return format!("~/{}", rest.display().to_string().replace('\\', "/"));
+    }
     resolved.display().to_string().replace('\\', "/")
 }
 
@@ -148,13 +145,12 @@ fn normalize(path: &Path) -> PathBuf {
     result
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::aliases::{MergedNode, ResolvedAlias};
     use std::collections::HashMap;
     use std::path::Path;
-    use crate::core::aliases::{ResolvedAlias, MergedNode};
 
     /// 测试用的虚拟 alias 目录。
     const TEST_ALIAS_DIR: &str = "/tmp";
@@ -241,7 +237,10 @@ mod tests {
     fn alias_format_lines_with_cwd_suffix() {
         let mut merged: MergedConfig = HashMap::new();
         let mut node = MergedNode::default();
-        node.alias = Some(make_resolved_alias_with_cwd("npm run build", "/path/to/project"));
+        node.alias = Some(make_resolved_alias_with_cwd(
+            "npm run build",
+            "/path/to/project",
+        ));
         merged.insert("build".into(), node);
         let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         assert_eq!(result.len(), 1);
@@ -286,7 +285,6 @@ mod tests {
         assert!(result[0].1.contains("Say hello"));
     }
 
-
     #[test]
     fn resolve_cwd_absolute_path() {
         let result = resolve_cwd_display("/usr/local/bin", None);
@@ -312,7 +310,6 @@ mod tests {
         let result = resolve_cwd_display("../lib", Some(base));
         assert_eq!(result, "/home/user/project/lib");
     }
-
 
     #[test]
     fn normalize_simple_path() {

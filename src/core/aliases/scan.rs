@@ -8,7 +8,6 @@ use colored::Colorize;
 use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
 use super::types::AliasFile;
 
-
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool) -> Vec<AliasFile> {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
     // 只想给本文件用（仅 @file.key 可达）时显式写 `$priority: -1`。
@@ -64,10 +63,9 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     let obj = data.as_object_mut()?;
 
     let priority_raw = obj.remove("$priority");
-    let priority =
-        priority_raw
-            .as_ref()
-            .map_or(default_priority, |v| parse_priority(v, default_priority));
+    let priority = priority_raw
+        .as_ref()
+        .map_or(default_priority, |v| parse_priority(v, default_priority));
 
     // $var 为文件级变量声明（已在阶段一替换生效），移除避免泄漏为别名
     obj.remove("$var");
@@ -101,7 +99,6 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     })
 }
 
-
 /// 原地排序 AliasFile 列表：低优先级在前，高优先级在后。
 ///
 /// 同优先级时匿名文件（@ 或 @@）排在前，非匿名按 key 字母序。
@@ -115,7 +112,6 @@ pub(crate) fn sort_alias_files(files: &mut [AliasFile]) {
             .then_with(|| a.key.cmp(&b.key))
     });
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -133,7 +129,6 @@ mod tests {
             inherited_paths: Vec::new(),
         }
     }
-
 
     #[test]
     fn sort_by_priority_low_first() {
@@ -190,7 +185,6 @@ mod tests {
         assert_eq!(files[0].key, "@only");
     }
 
-
     #[test]
     fn paths_extracted_from_json() {
         let dir = tempfile::tempdir().unwrap();
@@ -233,11 +227,7 @@ mod tests {
     fn paths_empty_when_not_array() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
-        std::fs::write(
-            &file,
-            r#"{"$paths": "not-an-array", "build": "echo"}"#,
-        )
-        .unwrap();
+        std::fs::write(&file, r#"{"$paths": "not-an-array", "build": "echo"}"#).unwrap();
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_paths.is_empty());
@@ -247,14 +237,9 @@ mod tests {
     fn paths_not_leaked_into_aliases() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
-        std::fs::write(
-            &file,
-            r#"{"$paths": ["./bin"], "build": "make"}"#,
-        )
-        .unwrap();
+        std::fs::write(&file, r#"{"$paths": ["./bin"], "build": "make"}"#).unwrap();
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
         assert!(!files[0].aliases.contains_key("$paths"));
     }
-
 }

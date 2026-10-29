@@ -2,7 +2,6 @@
 
 use super::types::{AliasDefinition, AliasValue};
 
-
 /// 文件名 stem 是否合法：空串（匿名文件）或仅含字母、数字、`-`、`_`、中文。
 pub(crate) fn validate_filename(stem: &str) -> bool {
     if stem.is_empty() {
@@ -30,7 +29,6 @@ pub(crate) fn build_file_key(stem: &str, is_global: bool) -> String {
     }
 }
 
-
 /// 解析 $priority 字段，失败时返回默认值。
 ///
 /// 规则：
@@ -51,7 +49,6 @@ pub(crate) fn parse_priority(raw: &serde_json::Value, default: i32) -> i32 {
         _ => default,
     }
 }
-
 
 /// 递归过滤：丢掉 key 含 `@`/`.` 的条目与非法的值类型。
 ///
@@ -89,7 +86,6 @@ pub(crate) fn filter_invalid_keys(
 fn has_meta_key(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
     obj.contains_key("$cmd")
 }
-
 
 /// string 或含 `$` 前缀 key 的 object 都是叶子。
 pub(crate) fn is_alias_value(val: &serde_json::Value) -> bool {
@@ -131,12 +127,10 @@ pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
 
     #[test]
     fn validate_empty_stem() {
@@ -183,11 +177,10 @@ mod tests {
         assert!(!validate_filename("name space"));
     }
 
-
     #[test]
     fn cjk_char_in_range() {
-        assert!(is_cjk_char('中'));  // U+4E2D
-        assert!(is_cjk_char('文'));  // U+6587
+        assert!(is_cjk_char('中')); // U+4E2D
+        assert!(is_cjk_char('文')); // U+6587
     }
 
     #[test]
@@ -203,7 +196,6 @@ mod tests {
         assert!(!is_cjk_char('-'));
         assert!(!is_cjk_char('\u{3fff}')); // CJK 扩展前
     }
-
 
     #[test]
     fn build_key_local_empty_stem() {
@@ -224,7 +216,6 @@ mod tests {
     fn build_key_global_with_stem() {
         assert_eq!(build_file_key("release", true), "@@release");
     }
-
 
     #[test]
     fn priority_integer() {
@@ -264,7 +255,6 @@ mod tests {
         assert!(!has_meta_key(&obj));
     }
 
-
     #[test]
     fn filter_empty_object() {
         let input = serde_json::Map::new();
@@ -273,7 +263,10 @@ mod tests {
 
     #[test]
     fn filter_rejects_at_in_key() {
-        let data = json!({"k@ey": "val", "ok": "yes"}).as_object().unwrap().clone();
+        let data = json!({"k@ey": "val", "ok": "yes"})
+            .as_object()
+            .unwrap()
+            .clone();
         let result = filter_invalid_keys(&data);
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("ok"));
@@ -281,7 +274,10 @@ mod tests {
 
     #[test]
     fn filter_rejects_dot_in_key() {
-        let data = json!({"k.ey": "val", "ok": "yes"}).as_object().unwrap().clone();
+        let data = json!({"k.ey": "val", "ok": "yes"})
+            .as_object()
+            .unwrap()
+            .clone();
         let result = filter_invalid_keys(&data);
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("ok"));
@@ -347,13 +343,9 @@ mod tests {
     #[test]
     fn filter_drops_empty_nested_after_filtering() {
         // 嵌套对象中所有值都被过滤掉 → 整个节点消失
-        let data = json!({"group": {"count": 42}})
-            .as_object()
-            .unwrap()
-            .clone();
+        let data = json!({"group": {"count": 42}}).as_object().unwrap().clone();
         assert!(filter_invalid_keys(&data).is_empty());
     }
-
 
     #[test]
     fn alias_value_string() {
@@ -380,7 +372,6 @@ mod tests {
         assert!(!is_alias_value(&json!(null)));
     }
 
-
     #[test]
     fn to_alias_from_string() {
         let result = to_alias_value(&json!("echo hi"));
@@ -404,7 +395,6 @@ mod tests {
         assert!(to_alias_value(&json!(42)).is_none());
         assert!(to_alias_value(&json!(null)).is_none());
     }
-
 
     #[test]
     fn definition_from_str() {

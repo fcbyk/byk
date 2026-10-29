@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use crate::core::aliases::{self, MergedNode};
 
 /// 补全 `@` / `@@`：先补文件 key，输入点号后补该文件内的别名路径。
-pub(crate) fn complete_at_prefix(partial: &str, layout: &crate::core::paths::PathLayout) -> Vec<String> {
+pub(crate) fn complete_at_prefix(
+    partial: &str,
+    layout: &crate::core::paths::PathLayout,
+) -> Vec<String> {
     let (_, files) = aliases::load_merged_aliases(layout);
 
     // 查找 partial 中是否包含 '.' — 如果有，补全文件内的 key

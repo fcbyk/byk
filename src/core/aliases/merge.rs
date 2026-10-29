@@ -8,7 +8,6 @@ use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, ResolvedAlias};
 use crate::core::paths::PathLayout;
 
-
 /// 深度合并上下文，打包所有跨递归传递的参数。
 #[derive(Copy, Clone)]
 struct MergeContext<'a> {
@@ -47,9 +46,7 @@ fn deep_merge_dict(
             let alias_val = to_alias_value(val);
             if let Some(av) = alias_val {
                 let av = apply_inherited(av, group_cwd, group_interactive);
-                let entry = target
-                    .entry(key.clone())
-                    .or_default();
+                let entry = target.entry(key.clone()).or_default();
                 entry.alias = Some(ResolvedAlias {
                     value: av,
                     source: ctx.file_key.to_string(),
@@ -70,9 +67,7 @@ fn deep_merge_dict(
                 }
             }
         } else if let serde_json::Value::Object(inner) = val {
-            let entry = target
-                .entry(key.clone())
-                .or_default();
+            let entry = target.entry(key.clone()).or_default();
             deep_merge_dict(
                 &mut entry.children,
                 inner,
@@ -129,7 +124,6 @@ pub(crate) fn apply_inherited(
         }
     }
 }
-
 
 /// 负数 priority 的文件不参与合并（只能 `@file.key` 精确调用）。
 pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
@@ -195,7 +189,6 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
-
 /// 收集合并配置中所有可执行别名路径。
 pub fn collect_merged_paths(merged: &MergedConfig, prefix: &str) -> Vec<String> {
     let mut result: Vec<String> = Vec::new();
@@ -215,12 +208,8 @@ pub fn collect_merged_paths(merged: &MergedConfig, prefix: &str) -> Vec<String> 
     result
 }
 
-
 /// 沿点号路径遍历合并树，最后一级节点有 alias 则返回。
-pub fn resolve_merged_alias<'a>(
-    merged: &'a MergedConfig,
-    name: &str,
-) -> Option<&'a ResolvedAlias> {
+pub fn resolve_merged_alias<'a>(merged: &'a MergedConfig, name: &str) -> Option<&'a ResolvedAlias> {
     let parts: Vec<&str> = name.split('.').collect();
     let mut current: &MergedConfig = merged;
     for (i, part) in parts.iter().enumerate() {
@@ -232,7 +221,6 @@ pub fn resolve_merged_alias<'a>(
     }
     None
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -263,7 +251,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn inherit_str_no_inherited_stays_str() {
         let av = AliasValue::Str("echo hi".into());
@@ -276,7 +263,12 @@ mod tests {
         let av = AliasValue::Str("build".into());
         let result = apply_inherited(av, Some("/app"), None);
         match result {
-            AliasValue::Meta { cmd, cwd, interactive, .. } => {
+            AliasValue::Meta {
+                cmd,
+                cwd,
+                interactive,
+                ..
+            } => {
                 assert_eq!(cmd, "build");
                 assert_eq!(cwd, Some("/app".into()));
                 assert_eq!(interactive, None);
@@ -290,7 +282,9 @@ mod tests {
         let av = AliasValue::Str("run".into());
         let result = apply_inherited(av, None, Some(true));
         match result {
-            AliasValue::Meta { cmd, interactive, .. } => {
+            AliasValue::Meta {
+                cmd, interactive, ..
+            } => {
                 assert_eq!(cmd, "run");
                 assert_eq!(interactive, Some(true));
             }
@@ -366,7 +360,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn paths_empty_config() {
         let merged: MergedConfig = HashMap::new();
@@ -439,7 +432,6 @@ mod tests {
         assert_eq!(result, vec!["group.leaf"]);
     }
 
-
     #[test]
     fn resolve_found() {
         let mut merged: MergedConfig = HashMap::new();
@@ -486,7 +478,6 @@ mod tests {
         assert!(resolve_merged_alias(&merged, "ns.sub").is_none());
     }
 
-
     #[test]
     fn inherited_paths_flows_to_resolved_alias() {
         let mut aliases = serde_json::Map::new();
@@ -529,11 +520,14 @@ mod tests {
         assert!(resolved.paths.is_empty());
     }
 
-
     #[test]
     fn local_file_overrides_global_by_default() {
         let (_tmp, layout, cwd) = project();
-        fs::write(layout.alias_dir.join("g.byk.json"), r#"{"dev": "echo global"}"#).unwrap();
+        fs::write(
+            layout.alias_dir.join("g.byk.json"),
+            r#"{"dev": "echo global"}"#,
+        )
+        .unwrap();
         fs::write(cwd.join("p.byk.json"), r#"{"dev": "echo local"}"#).unwrap();
 
         let (merged, _) = load_merged_aliases_at(&layout, &cwd);
@@ -544,7 +538,11 @@ mod tests {
     #[test]
     fn negative_priority_opts_out_of_merge() {
         let (_tmp, layout, cwd) = project();
-        fs::write(layout.alias_dir.join("g.byk.json"), r#"{"dev": "echo global"}"#).unwrap();
+        fs::write(
+            layout.alias_dir.join("g.byk.json"),
+            r#"{"dev": "echo global"}"#,
+        )
+        .unwrap();
         fs::write(
             cwd.join("p.byk.json"),
             r#"{"$priority": -1, "dev": "echo local"}"#,

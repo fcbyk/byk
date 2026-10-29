@@ -10,7 +10,6 @@ use at_prefix::collect_object_keys;
 use super::aliases;
 use super::paths::PathLayout;
 
-
 pub fn generate(shell: &str) {
     match shell {
         "zsh" => print_zsh(),
@@ -46,14 +45,7 @@ pub fn complete(args: &[String], layout: &PathLayout) {
     }
 }
 
-
-const GLOBAL_FLAGS: &[&str] = &[
-    "--version",
-    "-v",
-    "--help",
-    "-h",
-    "--paths",
-];
+const GLOBAL_FLAGS: &[&str] = &["--version", "-v", "--help", "-h", "--paths"];
 
 fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     if partial.starts_with('-') {
@@ -126,7 +118,6 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
     Vec::new()
 }
 
-
 /// 补全顶级命令：全部别名文件的命名空间 + 合并树里的顶层 key。
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
@@ -150,13 +141,11 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
         .collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
     use std::fs;
-
 
     /// 创建临时目录布局，写入待测别名文件。
     struct TestEnv {
@@ -178,7 +167,10 @@ mod tests {
                 alias_dir,
             };
 
-            TestEnv { _temp: temp, layout }
+            TestEnv {
+                _temp: temp,
+                layout,
+            }
         }
 
         /// 在 alias_dir 中创建一个 .byk.json 文件。
@@ -187,7 +179,6 @@ mod tests {
             fs::write(&path, serde_json::to_string_pretty(content).unwrap()).unwrap();
         }
     }
-
 
     #[test]
     fn collect_empty_object() {
@@ -277,7 +268,6 @@ mod tests {
         assert!(result.contains(&"obj_val.nested".to_string()));
     }
 
-
     #[test]
     fn top_level_includes_alias_files() {
         let env = TestEnv::new();
@@ -296,15 +286,11 @@ mod tests {
     #[test]
     fn top_level_filter_by_prefix() {
         let env = TestEnv::new();
-        env.add_alias_file(
-            "tools",
-            &json!({"test": "echo test", "task": "echo task"}),
-        );
+        env.add_alias_file("tools", &json!({"test": "echo test", "task": "echo task"}));
         let completions = get_top_level_completions("te", &env.layout);
         assert!(completions.contains(&"test".to_string()));
         assert!(!completions.contains(&"task".to_string()));
     }
-
 
     #[test]
     fn at_prefix_completes_file_keys() {
@@ -319,7 +305,10 @@ mod tests {
     #[test]
     fn at_prefix_completes_file_inner_keys() {
         let env = TestEnv::new();
-        env.add_alias_file("release", &json!({"deploy": "echo deploy", "build": "echo build"}));
+        env.add_alias_file(
+            "release",
+            &json!({"deploy": "echo deploy", "build": "echo build"}),
+        );
         let mut completions = complete_at_prefix("@@release.d", &env.layout);
         completions.sort();
         assert_eq!(completions, vec!["@@release.deploy".to_string()]);
@@ -331,7 +320,6 @@ mod tests {
         let completions = complete_at_prefix("@@nope.x", &env.layout);
         assert!(completions.is_empty());
     }
-
 
     #[test]
     fn nested_alias_completes_children() {
@@ -368,7 +356,10 @@ mod tests {
         );
         let mut completions = complete_nested_alias("deploy.", "pr", &env.layout);
         completions.sort();
-        assert_eq!(completions, vec!["deploy.preview".to_string(), "deploy.prod".to_string()]);
+        assert_eq!(
+            completions,
+            vec!["deploy.preview".to_string(), "deploy.prod".to_string()]
+        );
     }
 
     #[test]
@@ -377,7 +368,6 @@ mod tests {
         let completions = complete_nested_alias("nonexistent.", "x", &env.layout);
         assert!(completions.is_empty());
     }
-
 
     #[test]
     fn contextual_empty_prev_returns_empty() {
@@ -426,10 +416,7 @@ mod tests {
     #[test]
     fn contextual_alias_leaf_returns_empty() {
         let env = TestEnv::new();
-        env.add_alias_file(
-            "default",
-            &json!({"hello": "echo hello"}),
-        );
+        env.add_alias_file("default", &json!({"hello": "echo hello"}));
         let prev = vec!["hello".to_string()];
         let result = contextual_completions(&prev, "", &env.layout);
         assert!(result.is_empty());
@@ -453,7 +440,6 @@ mod tests {
         let result = contextual_completions(&prev, "", &env.layout);
         assert!(result.is_empty());
     }
-
 
     #[test]
     fn get_completions_flag_prefix() {
@@ -504,7 +490,6 @@ mod tests {
         assert_eq!(completions, vec!["deploy.prod".to_string()]);
     }
 
-
     #[test]
     fn generate_zsh_does_not_panic() {
         // print! 宏输出到 stdout，在测试中由 test runner 自动捕获。
@@ -515,9 +500,7 @@ mod tests {
     fn generate_unsupported_shell_does_not_panic() {
         // generate("invalid") 向 stderr 输出错误信息，不应 panic
     }
-
 }
-
 
 fn print_zsh() {
     print!(

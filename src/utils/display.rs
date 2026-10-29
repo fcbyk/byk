@@ -26,10 +26,7 @@ pub fn pad_to_width(text: &str, target_width: usize) -> String {
 /// 行格式: "{prefix}{key}{padding}  {value}"
 ///
 /// prefix 通常为空字符串或两个空格缩进。
-pub fn align_kv_pairs(
-    entries: &[(String, String)],
-    prefix: &str,
-) -> Vec<(String, String)> {
+pub fn align_kv_pairs(entries: &[(String, String)], prefix: &str) -> Vec<(String, String)> {
     if entries.is_empty() {
         return Vec::new();
     }
@@ -52,7 +49,7 @@ pub fn align_kv_pairs(
 
 /// 获取终端宽度，无法获取时返回 80。
 pub fn get_terminal_width() -> u16 {
-    use terminal_size::{terminal_size, Width};
+    use terminal_size::{Width, terminal_size};
     if let Some((Width(w), _)) = terminal_size() {
         w
     } else {
@@ -109,11 +106,9 @@ pub fn escape_for_display(s: &str) -> String {
         .replace('\t', "\\t")
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn display_width_ascii() {
@@ -144,7 +139,6 @@ mod tests {
         // emoji 宽度通常为 2
         assert_eq!(get_display_width("🚀"), 2);
     }
-
 
     #[test]
     fn pad_shorter_text() {
@@ -178,7 +172,6 @@ mod tests {
         // "你好" 宽度 4，目标 6，补 2 空格
         assert_eq!(pad_to_width("你好", 6), "你好  ");
     }
-
 
     #[test]
     fn align_empty_entries() {
@@ -228,13 +221,11 @@ mod tests {
         assert_eq!(result[1].1, "用户名  user");
     }
 
-
     #[test]
     fn terminal_width_is_positive() {
         // 无论是否检测到终端，返回值都应该 > 0
         assert!(get_terminal_width() > 0);
     }
-
 
     #[test]
     fn wrap_zero_max_width_returns_original() {
@@ -274,7 +265,10 @@ mod tests {
     #[test]
     fn wrap_splits_across_lines() {
         // "hello world rust": hello(5) + 空格 + world(5) = 11, 再加 rust(4) 超出 10
-        assert_eq!(wrap_text("hello world rust", 10), vec!["hello", "world rust"]);
+        assert_eq!(
+            wrap_text("hello world rust", 10),
+            vec!["hello", "world rust"]
+        );
     }
 
     #[test]
@@ -299,7 +293,6 @@ mod tests {
         let result = wrap_text("你好世界", 2);
         assert_eq!(result, vec!["你好世界"]);
     }
-
 
     #[test]
     fn escape_no_special_chars() {
