@@ -218,7 +218,7 @@ fn resolve_placeholder(
 // 公开入口
 // ---------------------------------------------------------------------------
 
-/// 处理别名占位符，返回最终可执行命令字符串。
+/// 处理别名占位符，返回最终可执行命令字符串 + 占位符→值的映射。
 ///
 /// 支持四类占位符：
 /// - `{xxx}`    — 具名占位符，匹配 argv 中 xxx 后面的值
@@ -227,13 +227,7 @@ fn resolve_placeholder(
 /// - `${args}` / `${N}` / `${...args}` — 系统占位符
 ///
 /// 无占位符时自动追加所有参数（等价于隐式 ${args}）。
-#[allow(dead_code)]
-pub fn parse_alias_arguments(command: &str, args: &[String]) -> String {
-    let (result, _) = parse_alias_arguments_with_mapping(command, args, &[]);
-    result
-}
-
-/// 解析别名占位符，同时返回占位符→值的映射（用于显示）。
+/// 映射用于交互模式回显用户填了哪些值。
 pub fn parse_alias_arguments_with_mapping(
     command: &str,
     args: &[String],

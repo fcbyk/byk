@@ -188,10 +188,10 @@ mod tests {
 
     // ==================== 测试辅助 ====================
 
-    /// 创建临时目录布局，设置 alias 文件与插件缓存。
-    #[allow(dead_code)]
+    /// 创建临时目录布局，写入待测别名文件。
     struct TestEnv {
-        temp: tempfile::TempDir,
+        /// 持有临时目录，Drop 时整棵删除
+        _temp: tempfile::TempDir,
         layout: PathLayout,
     }
 
@@ -208,7 +208,7 @@ mod tests {
                 alias_dir,
             };
 
-            TestEnv { temp, layout }
+            TestEnv { _temp: temp, layout }
         }
 
         /// 在 alias_dir 中创建一个 .byk.json 文件。

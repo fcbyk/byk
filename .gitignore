@@ -8,19 +8,14 @@ __pycache__
 .pytest_cache
 
 .obsidian
-*/.vitepress/cache
 node_modules
 .DS_Store
 
 dist
-.output
 docs/pnpm-lock.yaml
-.nuxt
 
 .workbuddy/
 target
 .pnpm-store/
 .data
-book
 doc_build
-website

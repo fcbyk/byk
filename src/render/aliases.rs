@@ -174,7 +174,6 @@ mod tests {
             value: aliases::AliasValue::Str(cmd.into()),
             source: "@test".into(),
             source_path: None,
-            priority: 0,
             paths: Vec::new(),
         }
     }
@@ -189,7 +188,6 @@ mod tests {
             },
             source: "@test".into(),
             source_path: None,
-            priority: 0,
             paths: Vec::new(),
         }
     }
@@ -290,7 +288,6 @@ mod tests {
             },
             source: "@test".into(),
             source_path: None,
-            priority: 0,
             paths: Vec::new(),
         });
         merged.insert("greet".into(), node);

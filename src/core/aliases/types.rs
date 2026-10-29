@@ -6,10 +6,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::Deserialize;
-use serde::Serialize;
 
 /// 别名值类型（叶子节点）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum AliasValue {
     Str(String),
@@ -31,7 +30,6 @@ pub enum AliasValue {
 
 /// 别名定义（解析后的可执行形式）。
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct AliasDefinition {
     pub command: String,
     pub cwd: Option<String>,
@@ -40,7 +38,7 @@ pub struct AliasDefinition {
 }
 
 /// 单个别名文件的数据结构。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct AliasFile {
     /// 文件 key: "@release" | "@@release" | "@" | "@@"
     pub key: String,
@@ -59,24 +57,19 @@ pub struct AliasFile {
 }
 
 /// 合并后叶子节点，包含来源信息。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub struct ResolvedAlias {
     pub value: AliasValue,
     /// 来源文件 key，如 "@release"
     pub source: String,
     /// 来源配置文件路径（文件本身，非目录）
     pub source_path: Option<PathBuf>,
-    /// 来源文件的优先级
-    #[serde(default)]
-    pub priority: i32,
     /// 来源文件的 $paths，需要前置到 PATH 环境变量的目录列表
-    #[serde(default)]
     pub paths: Vec<String>,
 }
 
 /// 合并配置树节点。每个节点可以同时拥有别名和子节点。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct MergedNode {
     pub alias: Option<ResolvedAlias>,
     pub children: HashMap<String, MergedNode>,

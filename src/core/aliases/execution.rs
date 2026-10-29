@@ -262,7 +262,7 @@ fn convert_unix_path_for_cmd(command: &str) -> String {
 
 /// 执行别名命令。
 ///
-/// 先展开保留变量（`$python` / `$venv` / `$byk`，先于占位符解析），
+/// 先展开保留变量（`$byk` / `$workdir`，先于占位符解析），
 /// 再根据别名定义中的 `$interactive` 字段决定行为：
 /// - `false`（默认）：从 CLI 参数自动解析占位符，显示映射关系后直接执行。
 /// - `true`：逐项提示用户输入占位符值，显示最终命令后按 Enter 确认执行。

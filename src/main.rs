@@ -67,7 +67,7 @@ fn main() {
 
     // Step 4a: 检查精确执行语法（@file.key 或 @@file.key）
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(command_name) {
-        match aliases::lookup_exact_alias(&files, &file_key, &alias_key, &layout) {
+        match aliases::lookup_exact_alias(&files, &file_key, &alias_key) {
             Some((resolved, display_source)) => {
                 aliases::execute_alias(&resolved, command_args, &display_source, &layout);
                 return;

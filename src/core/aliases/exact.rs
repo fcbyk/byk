@@ -17,7 +17,6 @@ use super::types::{AliasFile, ResolvedAlias};
 /// @.build         → ("@", "build")
 /// @@.build        → ("@@", "build")
 /// 无 . 或 alias_key 为空 → None（走普通查找）
-#[allow(dead_code)]
 pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
     let (prefix, rest) = if let Some(rest) = input.strip_prefix("@@") {
         ("@@", rest)
@@ -42,14 +41,11 @@ pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
 ///
 /// Returns (ResolvedAlias, display_source) 或 None。
 /// display_source 如 "@release.group.sub"。
-#[allow(dead_code)]
 pub fn lookup_exact_alias(
     files: &[AliasFile],
     file_key: &str,
     alias_key: &str,
-    layout: &crate::core::paths::PathLayout
 ) -> Option<(ResolvedAlias, String)> {
-    let _ = layout;
     for f in files {
         if f.key != file_key {
             continue;
@@ -85,7 +81,6 @@ pub fn lookup_exact_alias(
                     value,
                     source: file_key.to_string(),
                     source_path,
-                    priority: f.priority,
                     paths: f.inherited_paths.clone(),
                 },
                 display_source,

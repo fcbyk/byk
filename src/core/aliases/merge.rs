@@ -20,7 +20,6 @@ use crate::core::paths::PathLayout;
 struct MergeContext<'a> {
     file_key: &'a str,
     source_path: Option<&'a Path>,
-    priority: i32,
     inherited_cwd: Option<&'a str>,
     inherited_interactive: Option<bool>,
     inherited_paths: &'a [String],
@@ -67,7 +66,6 @@ fn deep_merge_dict(
                     value: av,
                     source: ctx.file_key.to_string(),
                     source_path: ctx.source_path.map(|p| p.to_path_buf()),
-                    priority: ctx.priority,
                     paths: ctx.inherited_paths.to_vec(),
                 });
 
@@ -151,8 +149,7 @@ pub(crate) fn apply_inherited(
 /// 从已排序的 AliasFile 列表构建合并配置树。
 ///
 /// 负数 priority 的文件不参与合并（仅可通过精确语法 @file.key 访问）。
-pub(crate) fn build_merged_aliases(files: &[AliasFile], layout: &PathLayout, cwd: &Path) -> MergedConfig {
-    let _ = (layout, cwd);
+pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
     let mut merged: MergedConfig = HashMap::new();
     for f in files {
         if f.priority < 0 {
@@ -164,7 +161,6 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile], layout: &PathLayout, cwd
             &MergeContext {
                 file_key: &f.key,
                 source_path: Some(f.path.as_path()),
-                priority: f.priority,
                 inherited_cwd: f.inherited_cwd.as_deref(),
                 inherited_interactive: f.inherited_interactive,
                 inherited_paths: &f.inherited_paths,
@@ -201,9 +197,9 @@ pub(crate) fn load_merged_aliases_at(
             .filter(|f| f.key.starts_with("@@"))
             .cloned()
             .collect();
-        build_merged_aliases(&global_only, layout, cwd)
+        build_merged_aliases(&global_only)
     } else {
-        build_merged_aliases(&files, layout, cwd)
+        build_merged_aliases(&files)
     };
 
     (merged, files)
@@ -287,20 +283,11 @@ mod tests {
         (tmp, layout, cwd)
     }
 
-    /// 测试用目录布局
-    fn test_layout() -> PathLayout {
-        PathLayout {
-            root_dir: PathBuf::from("/home/u/.byk"),
-            alias_dir: PathBuf::from("/home/u/.byk/alias"),
-        }
-    }
-
     fn make_alias(cmd: &str) -> ResolvedAlias {
         ResolvedAlias {
             value: AliasValue::Str(cmd.into()),
             source: "@test".into(),
             source_path: None,
-            priority: 0,
             paths: Vec::new(),
         }
     }
@@ -549,7 +536,7 @@ mod tests {
             inherited_interactive: None,
             inherited_paths: vec!["./scripts".into(), "~/tools/bin".into()],
         }];
-        let merged = build_merged_aliases(&files, &test_layout(), Path::new("/proj"));
+        let merged = build_merged_aliases(&files);
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
         assert_eq!(resolved.paths, vec!["./scripts", "~/tools/bin"]);
     }
@@ -570,7 +557,7 @@ mod tests {
             inherited_interactive: None,
             inherited_paths: Vec::new(),
         }];
-        let merged = build_merged_aliases(&files, &test_layout(), Path::new("/proj"));
+        let merged = build_merged_aliases(&files);
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
         assert!(resolved.paths.is_empty());
     }

@@ -16,7 +16,7 @@ export default defineConfig({
   markdown: {
     link: {
       checkDeadLinks: {
-        excludes: ['/llms-full.txt', '/basics/'],
+        excludes: ['/llms-full.txt'],
       },
     },
   },

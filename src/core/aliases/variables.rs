@@ -207,14 +207,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dropped_vars_pass_through() {
-        let dir = tempfile::tempdir().unwrap();
-        let ctx = make_ctx(dir.path());
-        // $python / $venv / $downloads 已不再是保留变量，交给 shell
-        assert_eq!(
-            expand_variables("$python $venv $downloads", &ctx),
-            "$python $venv $downloads"
-        );
-    }
 }

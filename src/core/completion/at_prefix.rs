@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use crate::core::aliases::{self, MergedNode};
 
-/// 展开路径开头的 `~` 为用户 HOME 目录。
-#[allow(dead_code)]
+/// 展开路径开头的 `~` 为用户 HOME 目录（仅测试使用）。
+#[cfg(test)]
 pub(crate) fn expand_tilde(path: &str) -> String {
     if let Some(rest) = path.strip_prefix('~')
         && let Ok(home) = std::env::var("HOME")
