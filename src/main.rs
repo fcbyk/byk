@@ -97,7 +97,7 @@ fn main() {
         return;
     }
     if cli.version {
-        render::version::render(&layout);
+        render::version::render();
         return;
     }
     if cli.trailing.is_empty() {
