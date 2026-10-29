@@ -42,7 +42,7 @@ in. Put a file in `~/.byk/alias/` (or set `"$priority": 0`) to make it global.
 | `byk @@file.key [args...]` | exact call in `~/.byk/alias/` |
 | `-h, --help` | usage, options and the full alias list |
 | `-v, --version` | version, commit, platform, install path |
-| `--paths` | directories byk reads and writes |
+| `--paths` | the two directories byk uses: home and alias |
 | `__api__ <request>` | read-only interface for shells and editors (hidden) |
 
 `byk __api__ completion zsh` prints the shell registration script;

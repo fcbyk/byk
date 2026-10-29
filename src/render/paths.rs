@@ -1,22 +1,15 @@
-//! `--paths` 输出：CLI 用到的目录与解释器位置。
+//! `--paths` 输出：byk 实际使用的两个目录。
 
 use colored::Colorize;
 
-use crate::core::paths::{PathLayout, PYTHON_BIN, VENV_BIN};
+use crate::core::paths::PathLayout;
 
-/// 渲染 CLI 路径和文件位置。
+/// 渲染 CLI 目录位置。
 pub fn render(layout: &PathLayout) {
     println!();
 
-    let python_exe = layout.venv_dir.join(VENV_BIN).join(PYTHON_BIN);
-
-    println!("{}: {}", "Python".yellow(), python_exe.display());
-    println!("{}", "-".repeat(29).dimmed());
     println!("{}: {}", "CLI Home".yellow(), layout.root_dir.display());
-    println!("{}: {}", "Cache".yellow(), layout.cache_dir.display());
     println!("{}: {}", "Alias".yellow(), layout.alias_dir.display());
-    println!("{}: {}", "Plugins".yellow(), layout.plugins_dir.display());
-    println!("{}: {}", "Python Venv".yellow(), layout.py_venv_dir.display());
 
     println!();
 }

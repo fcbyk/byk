@@ -257,15 +257,12 @@ mod tests {
     use super::*;
     use crate::core::aliases::types::MergedNode;
 
-    /// 测试用目录布局（这些用例不涉及 $assets，路径仅为占位）
+    /// 测试用目录布局
     fn test_layout() -> PathLayout {
         PathLayout {
             root_dir: PathBuf::from("/home/u/.byk"),
             alias_dir: PathBuf::from("/home/u/.byk/alias"),
-            py_venv_dir: PathBuf::from("/home/u/.byk/py-venv"),
-            venv_dir: PathBuf::from("/home/u/.byk/py-venv/.venv"),
             cache_dir: PathBuf::from("/home/u/.byk/cache"),
-            plugins_dir: PathBuf::from("/home/u/.byk/plugins"),
             home_exists: true,
         }
     }

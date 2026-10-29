@@ -292,7 +292,7 @@ export function BykHome() {
             <span className="b-tile__label">路径</span>
             <p className="b-tile__cmd">byk --paths</p>
             <p className="b-tile__desc">
-              CLI 家目录、别名目录、缓存目录的实际位置
+              CLI 家目录与全局别名目录的实际位置
             </p>
           </div>
           <div className="b-tile">

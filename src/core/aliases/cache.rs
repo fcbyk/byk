@@ -140,15 +140,12 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    /// 构造测试用目录布局（这些测试不涉及 $assets，路径仅为占位）
+    /// 构造测试用目录布局
     fn test_layout(root: &Path, global_dir: &Path, cache_dir: &Path) -> PathLayout {
         PathLayout {
             root_dir: root.to_path_buf(),
             alias_dir: global_dir.to_path_buf(),
-            py_venv_dir: root.join("py-venv"),
-            venv_dir: root.join("py-venv").join(".venv"),
             cache_dir: cache_dir.to_path_buf(),
-            plugins_dir: root.join("plugins"),
             home_exists: true,
         }
     }

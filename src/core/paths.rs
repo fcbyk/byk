@@ -1,25 +1,10 @@
 use std::path::PathBuf;
 
-/// venv 内可执行文件目录名。
-#[cfg(windows)]
-pub const VENV_BIN: &str = "Scripts";
-#[cfg(not(windows))]
-pub const VENV_BIN: &str = "bin";
-
-/// venv 内 Python 可执行文件名。
-#[cfg(windows)]
-pub const PYTHON_BIN: &str = "python.exe";
-#[cfg(not(windows))]
-pub const PYTHON_BIN: &str = "python";
-
 /// CLI 持久化目录布局。
 pub struct PathLayout {
     pub root_dir: PathBuf,
     pub alias_dir: PathBuf,
-    pub py_venv_dir: PathBuf,
-    pub venv_dir: PathBuf,
     pub cache_dir: PathBuf,
-    pub plugins_dir: PathBuf,
     /// ~/.byk/ 目录是否已存在（用于零配置分叉）
     pub home_exists: bool,
 }
@@ -41,10 +26,7 @@ impl PathLayout {
         let home_exists = root_dir.is_dir();
 
         let alias_dir = root_dir.join("alias");
-        let py_venv_dir = root_dir.join("py-venv");
-        let venv_dir = py_venv_dir.join(".venv");
         let cache_dir = root_dir.join("cache");
-        let plugins_dir = root_dir.join("plugins");
 
         // 子目录不在此处创建，由各子系统按需创建：
         // - cache/  → json_io::write_json 内部 create_dir_all
@@ -53,10 +35,7 @@ impl PathLayout {
         PathLayout {
             root_dir,
             alias_dir,
-            py_venv_dir,
-            venv_dir,
             cache_dir,
-            plugins_dir,
             home_exists,
         }
     }
@@ -81,20 +60,8 @@ mod tests {
             home.join(".fcbyk_test_paths").join("alias")
         );
         assert_eq!(
-            layout.venv_dir,
-            home.join(".fcbyk_test_paths").join("py-venv").join(".venv")
-        );
-        assert_eq!(
-            layout.py_venv_dir,
-            home.join(".fcbyk_test_paths").join("py-venv")
-        );
-        assert_eq!(
             layout.cache_dir,
             home.join(".fcbyk_test_paths").join("cache")
-        );
-        assert_eq!(
-            layout.plugins_dir,
-            home.join(".fcbyk_test_paths").join("plugins")
         );
     }
 
@@ -106,8 +73,6 @@ mod tests {
         assert!(!layout.root_dir.exists());
         assert!(!layout.alias_dir.exists());
         assert!(!layout.cache_dir.exists());
-        assert!(!layout.plugins_dir.exists());
-        assert!(!layout.venv_dir.exists());
         assert!(!layout.home_exists);
     }
 }

@@ -30,18 +30,11 @@ installed at /opt/homebrew/bin/byk
 ```bash title="--paths"
 $ byk --paths
 
-Python: /Users/coke/.byk/py-venv/.venv/bin/python
------------------------------
 CLI Home: /Users/coke/.byk
-Cache: /Users/coke/.byk/cache
 Alias: /Users/coke/.byk/alias
-Plugins: /Users/coke/.byk/plugins
-Python Venv: /Users/coke/.byk/py-venv
 ```
 
-:::note
-`Python` / `Plugins` / `Python Venv` 三行是旧版本留下的目录，byk 现在既不创建也不读取它们，输出暂时保持原样。
-:::
+`CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录——把 `*.byk.json` 放进去，它就会进入 `byk <key>` 的查找空间。
 
 ## 执行别名
 

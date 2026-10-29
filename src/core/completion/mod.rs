@@ -246,22 +246,16 @@ mod tests {
             let temp = tempfile::tempdir().unwrap();
             let alias_dir = temp.path().join("alias");
             let cache_dir = temp.path().join("cache");
-            let plugins_dir = temp.path().join("plugins");
-            let py_venv_dir = temp.path().join("py-venv");
-            let venv_dir = py_venv_dir.join(".venv");
             let root_dir = temp.path().to_path_buf();
 
-            for d in [&alias_dir, &cache_dir, &plugins_dir, &py_venv_dir, &venv_dir] {
+            for d in [&alias_dir, &cache_dir] {
                 fs::create_dir_all(d).unwrap();
             }
 
             let layout = PathLayout {
                 root_dir: root_dir.clone(),
                 alias_dir,
-                py_venv_dir,
-                venv_dir,
                 cache_dir: cache_dir.clone(),
-                plugins_dir: plugins_dir.clone(),
                 home_exists: true,
             };
 
