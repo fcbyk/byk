@@ -11,7 +11,6 @@ use cli::{Cli, Commands, extract_options};
 use core::aliases;
 use core::add;
 use core::paths::PathLayout;
-use core::remove;
 
 /// 管道下游提前关闭时（如 `byk -h | head`），按 Unix 惯例静默退出，
 /// 而不是让 `println!` 抛出 `Broken pipe` 再 panic。
@@ -39,34 +38,6 @@ fn main() {
     match cli.command {
         Some(Commands::Api { request }) => {
             core::api::dispatch(&request, &layout);
-            return;
-        }
-        Some(Commands::Remove { feature }) => {
-            match feature.as_deref() {
-                Some("comp") => remove::rm_comp(),
-                Some("py") => {
-                    eprintln!("{} 'byk remove py' has been removed.", "Note:".yellow());
-                    eprintln!("  The Python environment is now created automatically when a plugin needs one.");
-                    eprintln!(
-                        "  To remove everything including it: {}",
-                        "byk remove all".bold()
-                    );
-                }
-                Some("all") => remove::rm_all(&layout),
-                Some("-h") | Some("--help") => render::remove::render(),
-                Some(n) if n.starts_with("@@") => remove::uninstall_from_global(n, &layout),
-                Some(n) if n.starts_with("@") => remove::uninstall_from_local(n, &layout),
-                Some(key) => {
-                    eprintln!(
-                        "{} unknown argument: {}",
-                        "Error:".red(),
-                        key.bold()
-                    );
-                    eprintln!("  Expected: comp, all, @<file>, or @@<file>");
-                    eprintln!("  Run {} for usage.", "byk remove -h".bold());
-                }
-                None => render::remove::render(),
-            }
             return;
         }
         Some(Commands::Add { name }) => {

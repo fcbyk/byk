@@ -102,6 +102,9 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     // 存在即表示文件可安装，不再需要单独的 $plugin 开关
     let add_block = obj.remove("$add").filter(|v| v.is_object());
 
+    // $remove 描述卸载步骤，运行期不参与执行；剥离以免被当成别名分组
+    obj.remove("$remove");
+
     // 过滤非法 key
     let filtered = filter_invalid_keys(obj);
 

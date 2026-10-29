@@ -28,12 +28,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// 移除插件或已初始化的功能
-    Remove {
-        /// 插件 key 或功能名: comp | all
-        #[arg(allow_hyphen_values = true)]
-        feature: Option<String>,
-    },
     /// 添加功能（comp）或从别名文件安装（@xxx / @@xxx）
     Add {
         /// 功能名(comp) 或别名文件(@xxx / @@xxx)

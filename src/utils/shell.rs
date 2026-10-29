@@ -1,11 +1,8 @@
 //! Shell 检测与 RC 文件操作工具。
 //!
-//! 供 `init`、`rm`、`completion` 模块共用，避免重复代码。
+//! 供 `add comp` 读写补全配置使用。
 
-use colored::Colorize;
 use std::env;
-use std::fs;
-use std::io::{self, Write};
 use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------
@@ -78,44 +75,6 @@ pub fn strip_completion_lines(content: &str) -> String {
         i += 1;
     }
     new_lines.join("\n") + "\n"
-}
-
-// ---------------------------------------------------------------------------
-// 交互确认
-// ---------------------------------------------------------------------------
-
-/// 提示用户输入确认文本，匹配返回 `true`，不匹配打印取消信息返回 `false`。
-pub fn prompt_confirm(text: &str) -> bool {
-    print!("  {} {}: ", "Type".dimmed(), text.yellow());
-    let _ = io::stdout().flush();
-
-    let mut input = String::new();
-    if io::stdin().read_line(&mut input).is_err() {
-        println!();
-        println!("  {}", "Cancelled.".dimmed());
-        return false;
-    }
-    if input.trim() != text {
-        println!();
-        println!(
-            "{}",
-            "Confirmation does not match. Cancelled.".dimmed()
-        );
-        return false;
-    }
-    true
-}
-
-// ---------------------------------------------------------------------------
-// RC 写入安全封装
-// ---------------------------------------------------------------------------
-
-/// 安全写入 RC 文件，失败时 eprintln 并 exit(1)。
-pub fn write_rc(path: &PathBuf, content: &str) {
-    fs::write(path, content).unwrap_or_else(|e| {
-        eprintln!("Failed to write {}: {}", path.display(), e);
-        std::process::exit(1);
-    });
 }
 
 // ---------------------------------------------------------------------------
