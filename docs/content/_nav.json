@@ -4,7 +4,7 @@
     "link": "/cli"
   },
   {
-    "text": "插件",
-    "link": "/plugins/pysdk"
+    "text": "别名",
+    "link": "/cli/alias/start"
   }
 ]

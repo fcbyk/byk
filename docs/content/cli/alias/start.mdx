@@ -1,8 +1,8 @@
 import { Steps, Tab, Tabs } from '@rspress/core/theme';
 
-# 命令别名
+# 快速开始
 
-通过别名快速运行终端命令
+三分钟写出第一个别名文件。
 
 ## 快速入门
 
@@ -10,23 +10,62 @@ import { Steps, Tab, Tabs } from '@rspress/core/theme';
 
 ### 创建配置文件
 
-在当前目录下创建任意 `hello.byk.json`：
+在项目根目录创建 `run.byk.json`：
 
 ```json
 {
-  "hello": "echo hello world"
+  "dev": "pnpm dev",
+  "build": "pnpm build",
+  "deploy": {
+    "$cmd": "deploy --env {env}",
+    "$interactive": true
+  }
 }
 ```
 
-### 通过别名运行
+### 精确执行
 
 ```bash
-byk hello
+byk @run.dev
+byk @run.build
+byk @run.deploy            # 交互：先问 env，确认后再执行
 ```
 
-### 进阶使用
+本地文件的默认优先级是 `-1`，**不参与合并**——它只属于这个项目，所以用 `@文件.key` 指定。这样 `byk build` 不会因为你在某个目录下而突然变成别的意思。
 
-- [别名配置](./config.mdx) — 了解别名的配置格式
-- [参数处理](./placeholders.mdx) — 别名的占位符设计
+### 想让它全局可用
+
+两种方式，按需选择：
+
+<Tabs>
+<Tab label="放进全局目录">
+
+```bash
+cp run.byk.json ~/.byk/alias/
+byk dev
+```
+
+`~/.byk/alias/` 下的文件默认优先级 `0`，直接进合并空间。
+
+</Tab>
+<Tab label="声明优先级">
+
+```json title="run.byk.json"
+{
+  "$priority": 0,
+  "dev": "pnpm dev"
+}
+```
+
+`$priority >= 0` 的文件会参与合并，`byk dev` 直接可用，同时保留「文件就在项目里」的组织方式。
+
+</Tab>
+</Tabs>
+
+### 进阶
+
+- [别名配置](./config.mdx) — 字段、继承、优先级、精确执行
+- [参数处理](./placeholders.mdx) — 占位符与参数消耗规则
+- [选项与命令](/cli/commands) — `-h` / `-v` / `--paths`
 
 </Steps>

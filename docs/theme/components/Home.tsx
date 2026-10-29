@@ -6,7 +6,7 @@ import './home.css';
  * byk docs — 自定义首页
  *
  * 设计方向：terminal-native。
- * byk 是终端工具，只有两个概念：插件与别名。
+ * byk 是终端工具，只有一个概念：别名。
  * 所以页面克制——等宽字体扛个性，颜色只活在终端里，
  * 其余是 ink-on-paper + 发丝线。
  *
@@ -46,7 +46,7 @@ export function BykHome() {
       <header className="b-shell b-hero b-reveal">
         <div className="b-hero__eyebrow">
           <span className="b-dot" />
-          <span>v0.5.0</span>
+          <span>v0.5.1</span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span>MIT</span>
           <span style={{ opacity: 0.4 }}>·</span>
@@ -57,9 +57,9 @@ export function BykHome() {
           byk<span className="b-caret" aria-hidden="true" />
         </h1>
 
-        <p className="b-hero__lede">轻量级、可扩展的命令行工具集</p>
+        <p className="b-hero__lede">一个只会执行别名的 CLI</p>
         <p className="b-hero__sub">
-          通过插件扩展能力，通过别名简化命令
+          命令写进 <span className="b-ic">*.byk.json</span>，短名字调用
         </p>
 
         <div className="b-install-row">
@@ -123,21 +123,29 @@ export function BykHome() {
             <pre className="b-term__body">
               <code>
                 <span className="t-p">$ </span>
-                <span className="t-c">byk add</span> <span className="t-a">fcbyk/hello</span>
-                {'\n'}
-                <span className="t-s">✓</span> <span className="t-o">plugin installed · ~/.byk/plugins/hello</span>
-                {'\n\n'}
-                <span className="t-p">$ </span>
-                <span className="t-c">byk hello</span>
-                {'\n'}
-                <span className="t-o">hello world</span>
-                <span className="t-x"> ← from plugin</span>
-                {'\n\n'}
-                <span className="t-p">$ </span>
-                <span className="t-c">byk dev</span>
+                <span className="t-c">byk @run.dev</span>
                 {'\n'}
                 <span className="t-o">pnpm dev</span>
-                <span className="t-x"> ← from alias · ~/project/web</span>
+                <span className="t-x"> ← in ~/project/web</span>
+                {'\n\n'}
+                <span className="t-p">$ </span>
+                <span className="t-c">byk @run.deploy</span>
+                {'\n'}
+                <span className="t-x">? env › </span>
+                <span className="t-a">staging</span>
+                {'\n'}
+                <span className="t-s">✓</span> <span className="t-o">deploy --env staging</span>
+                {'\n\n'}
+                <span className="t-p">$ </span>
+                <span className="t-c">byk -h</span>
+                {'\n'}
+                <span className="t-x">Aliases:</span>
+                {'\n'}
+                <span className="t-x">  run.dev    </span>
+                <span className="t-o">pnpm dev</span>
+                {'\n'}
+                <span className="t-x">  run.build  </span>
+                <span className="t-o">pnpm build</span>
               </code>
             </pre>
           </div>
@@ -147,36 +155,38 @@ export function BykHome() {
       {/* ============ Features ============ */}
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
-          <span className="b-head__label">核心能力</span>
-          <h2 className="b-head__title">两个来源，一个入口</h2>
+          <span className="b-head__label">核心</span>
+          <h2 className="b-head__title">写 JSON，敲短命令</h2>
           <p className="b-head__sub">
-            从 GitHub 安装插件，别名把长命令收成短名字
+            一个文件说清项目里所有命令，调用时不用记完整路径和参数
           </p>
         </div>
 
         <div className="b-features">
-          <Link href="/cli/alias/start" className="b-feature">
-            <span className="b-feature__mark">byk ssh.prod</span>
+          <Link href="/cli/alias/config" className="b-feature">
+            <span className="b-feature__mark">run.byk.json</span>
             <h3 className="b-feature__title">命令别名</h3>
             <p className="b-feature__desc">
-              把冗长命令集中到 <span className="b-ic">*.byk.json</span>。支持
-              <span className="b-ic">{'{xxx}'}</span> 占位符、<span className="b-ic">$cwd</span>、
-              <span className="b-ic">$interactive</span> 三级继承。
+              <span className="b-ic">{'{xxx}'}</span> 占位符、
+              <span className="b-ic">$cwd</span>、
+              <span className="b-ic">$interactive</span> 三级继承，
+              <span className="b-ic">$var</span> 变量与平台映射。
             </p>
             <span className="b-feature__more">
-              开始使用别名 <Arrow />
+              别名配置 <Arrow />
             </span>
           </Link>
 
-          <Link href="/cli/plugins" className="b-feature">
-            <span className="b-feature__mark">byk add</span>
-            <h3 className="b-feature__title">插件系统</h3>
+          <Link href="/cli/commands" className="b-feature">
+            <span className="b-feature__mark">byk @run.build</span>
+            <h3 className="b-feature__title">精确执行</h3>
             <p className="b-feature__desc">
-              从 GitHub 一键安装插件， Python插件在隔离 venv 中运行。支持
-              py-script、py-module、pip-bin、bin 四种类型。
+              本地文件默认不参与合并且
+              <span className="b-ic">@文件.key</span>
+              直接路由到那个文件，进入任何目录都不会撞名。
             </p>
             <span className="b-feature__more">
-              插件协议 <Arrow />
+              选项与命令 <Arrow />
             </span>
           </Link>
         </div>
@@ -205,7 +215,7 @@ export function BykHome() {
                 <span className="b-term__title">run.byk.json</span>
               </div>
               <pre className="b-term__body b-term__body--sm">
-                <code>{`{`}<br />
+                <code>{'{'}<br />
 {`  `}<span className="t-k">{`"$cwd"`}</span>{`: `}<span className="t-v">{`"~/project/web"`}</span>{`,`}<br />
 {`  `}<span className="t-k">{`"dev"`}</span>{`:   `}<span className="t-v">{`"pnpm dev"`}</span>{`,`}<br />
 {`  `}<span className="t-k">{`"build"`}</span>{`: `}<span className="t-v">{`"pnpm build"`}</span>{`,`}<br />
@@ -233,19 +243,19 @@ export function BykHome() {
               <pre className="b-term__body b-term__body--sm">
                 <code>
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk dev</span>
+                  <span className="t-c">byk @run.dev</span>
                   {'\n'}
                   <span className="t-x"># running pnpm dev in ~/project/web</span>
                   {'\n\n'}
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk deploy</span>
+                  <span className="t-c">byk @run.deploy</span>
                   {'\n'}
                   <span className="t-x"># prompts for env, then executes</span>
                   {'\n\n'}
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk @release.bump</span> <span className="t-a">patch</span>
+                  <span className="t-c">byk @run.build</span> <span className="t-a">--mode prod</span>
                   {'\n'}
-                  <span className="t-x"># precise: release.byk.json → bump</span>
+                  <span className="t-x"># args are appended to the command</span>
                 </code>
               </pre>
             </div>
@@ -253,41 +263,43 @@ export function BykHome() {
         </div>
       </section>
 
-      {/* ============ Plugins ============ */}
+      {/* ============ CLI surface ============ */}
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
-          <span className="b-head__label">插件</span>
-          <h2 className="b-head__title">任何 GitHub 仓库都能成为插件源</h2>
+          <span className="b-head__label">命令行</span>
+          <h2 className="b-head__title">三个选项，一个接口</h2>
           <p className="b-head__sub">
-            根目录放一个 <span className="b-ic">byk.json</span> 即可。四种安装方式：
+            没有子命令。除了别名，byk 只有这些。
           </p>
         </div>
 
-        <div className="b-plugins">
-          <div className="b-plugin">
-            <span className="b-plugin__label">远程仓库</span>
-            <p className="b-plugin__cmd">byk add user/repo</p>
-            <p className="b-plugin__desc">
-              安装 byk.json 中的 $default（或唯一）key
+        <div className="b-tiles">
+          <div className="b-tile">
+            <span className="b-tile__label">帮助</span>
+            <p className="b-tile__cmd">byk -h</p>
+            <p className="b-tile__desc">
+              banner、用法、选项和全部别名一览；不带参数等价
             </p>
           </div>
-          <div className="b-plugin">
-            <span className="b-plugin__label">指定 key</span>
-            <p className="b-plugin__cmd">byk add user/repo/my-key</p>
-            <p className="b-plugin__desc">
-              当 byk.json 含多个插件时精确指定
+          <div className="b-tile">
+            <span className="b-tile__label">版本</span>
+            <p className="b-tile__cmd">byk -v</p>
+            <p className="b-tile__desc">
+              版本、commit、构建日期、平台与安装位置
             </p>
           </div>
-          <div className="b-plugin">
-            <span className="b-plugin__label">指定版本</span>
-            <p className="b-plugin__cmd">byk add user/repo@v1.0/hello</p>
-            <p className="b-plugin__desc">@ 语法指定 branch / tag / commit</p>
+          <div className="b-tile">
+            <span className="b-tile__label">路径</span>
+            <p className="b-tile__cmd">byk --paths</p>
+            <p className="b-tile__desc">
+              CLI 家目录、别名目录、缓存目录的实际位置
+            </p>
           </div>
-          <div className="b-plugin">
-            <span className="b-plugin__label">CDN 加速</span>
-            <p className="b-plugin__cmd">byk add --cdn user/repo</p>
-            <p className="b-plugin__desc">
-              raw.githubusercontent.com → jsDelivr
+          <div className="b-tile">
+            <span className="b-tile__label">程序接口</span>
+            <p className="b-tile__cmd">byk __api__</p>
+            <p className="b-tile__desc">
+              只读、不写盘：给 shell 补全和编辑器插件取数据
             </p>
           </div>
         </div>
@@ -297,7 +309,7 @@ export function BykHome() {
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
           <span className="b-head__label">为什么选 byk</span>
-          <h2 className="b-head__title">把零散命令收进一个入口</h2>
+          <h2 className="b-head__title">只把命令收进一个入口</h2>
         </div>
 
         <div className="b-why">
@@ -307,17 +319,18 @@ export function BykHome() {
               <strong>来源可预期</strong>
             </div>
             <p>
-              命令按 内置 → 插件 → <span className="b-ic">@file.key</span> → 别名 顺序匹配，
-              第一个命中即执行；<span className="b-ic">byk show &lt;name&gt;</span> 可查任意命令的来源。
+              选项 → 隐藏接口 → <span className="b-ic">@file.key</span> → 别名，第一个命中即执行；
+              未命中时列出候选并退出 1。
             </p>
           </div>
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">02</span>
-              <strong>隔离环境</strong>
+              <strong>作用域清晰</strong>
             </div>
             <p>
-              Python件运行在专属 venv（<span className="b-ic">~/.byk/py-venv</span>），与系统 pip 隔离；别名按文件独立作用域。
+              本地文件默认 <span className="b-ic">$priority: -1</span>，不参与合并；
+              要全局可用就放进 <span className="b-ic">~/.byk/alias/</span>。
             </p>
           </div>
           <div className="b-why__item">
@@ -326,7 +339,7 @@ export function BykHome() {
               <strong>跨平台</strong>
             </div>
             <p>
-              Rust 编译产物，原生支持 macOS / Linux / Windows（x86_64 / arm64）。
+              Rust 编译的单个二进制，原生支持 macOS / Linux / Windows（x86_64 / arm64）。
             </p>
           </div>
           <div className="b-why__item">
@@ -335,26 +348,27 @@ export function BykHome() {
               <strong>零依赖</strong>
             </div>
             <p>
-              Shell 脚本一键安装即可使用 byk 本体；插件按需启用隔离环境。
+              装的就只有 byk 本体。别名执行的是你 shell 里本来就能跑的命令。
             </p>
           </div>
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">05</span>
-              <strong>生态开放</strong>
+              <strong>只有一种配置</strong>
             </div>
             <p>
-              byk.json 协议简洁；支持 Ref 引用、$var 变量替换、$default 默认 key、跨仓库拆分。
+              <span className="b-ic">*.byk.json</span> 里五个 <span className="b-ic">$</span> 字段，
+              没有插件协议，没有安装清单，没有环境目录。
             </p>
           </div>
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">06</span>
-              <strong>按需落盘</strong>
+              <strong>状态只有别名</strong>
             </div>
             <p>
-              <span className="b-ic">~/.byk/</span> 只在首次安装插件或写入别名缓存时出现，
-              在此之前不产生任何文件。
+              <span className="b-ic">~/.byk/</span> 里除了别名文件和一个扫描缓存，
+              不产生别的东西。
             </p>
           </div>
         </div>
@@ -365,7 +379,7 @@ export function BykHome() {
         <div className="b-close__wordmark">
           byk<span className="b-caret" aria-hidden="true" />
         </div>
-        <p className="b-close__sub">几秒钟安装，立刻提升你的终端效率</p>
+        <p className="b-close__sub">几秒钟安装，把常用命令收成短名字</p>
         <div className="b-close__actions">
           <Link href="/cli/index" className="b-btn b-btn--solid">
             查看 CLI 文档

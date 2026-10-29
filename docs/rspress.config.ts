@@ -10,7 +10,7 @@ export default defineConfig({
   root: 'content',
   lang: 'zh',
   title: 'BYK',
-  description: '轻量级、可扩展的 CLI 命令行工具集',
+  description: '一个只会执行别名的 CLI：命令写进 *.byk.json，短名字调用',
   globalStyles: path.join(__dirname, 'styles', 'custom.css'),
   plugins: [pluginLlms(), pluginFileTree()],
   markdown: {

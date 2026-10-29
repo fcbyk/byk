@@ -474,7 +474,7 @@
 
 .b-features {
   display: grid;
-  /* 两个核心能力（插件 / 别名）等分；新增卡片时改为 repeat(3, 1fr) */
+  /* 两个核心能力等分 */
   grid-template-columns: repeat(2, 1fr);
   gap: 0;
   border: 1px solid var(--b-rule);
@@ -575,14 +575,14 @@
   color: var(--b-accent-ink);
 }
 
-/* ============ plugin patterns ============ */
+/* ============ tile grid ============ */
 
-.b-plugins {
+.b-tiles {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 14px;
 }
-.b-plugin {
+.b-tile {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -593,11 +593,11 @@
   transition: border-color var(--b-ease), transform var(--b-ease);
   min-width: 0;
 }
-.b-plugin:hover {
+.b-tile:hover {
   border-color: color-mix(in srgb, var(--b-accent) 35%, transparent);
   transform: translateY(-2px);
 }
-.b-plugin__label {
+.b-tile__label {
   font-family: var(--b-mono);
   font-size: 11.5px;
   font-weight: 600;
@@ -605,7 +605,7 @@
   text-transform: uppercase;
   color: var(--b-accent);
 }
-.b-plugin__cmd {
+.b-tile__cmd {
   margin: 0;
   padding: 0;
   font-family: var(--b-mono);
@@ -615,11 +615,11 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
-.b-plugin__cmd::before {
+.b-tile__cmd::before {
   content: '$ ';
   color: var(--b-accent);
 }
-.b-plugin__desc {
+.b-tile__desc {
   margin: 0;
   font-size: 13.5px;
   line-height: 1.55;
@@ -805,7 +805,7 @@ html.dark .b-ic {
   .b-duo {
     grid-template-columns: 1fr;
   }
-  .b-plugins {
+  .b-tiles {
     grid-template-columns: 1fr;
   }
   .b-why {
@@ -831,7 +831,7 @@ html.dark .b-ic {
   }
   .b-btn,
   .b-feature,
-  .b-plugin,
+  .b-tile,
   .b-link,
   .b-copy {
     transition: none;

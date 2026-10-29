@@ -1,30 +1,58 @@
-import { SourceCode } from '@rspress/core/theme';
+---
+title: 概述
+description: byk 是什么、装在哪、一条命令从输入到执行经过哪些步骤
+---
 
 # byk
 
-轻量级、可扩展的 CLI 命令行工具集。命令只有两个来源：**插件**与**别名**。
+byk 是一个**别名执行器**：把常用命令写进 `*.byk.json`，用短名字调用它们。
 
-| 来源 | 做什么 | 怎么用 |
-|------|--------|--------|
-| 插件 | 安装别人写好的命令 | `byk add user/repo` |
-| 别名 | 把长命令收成短名字 | 写一个 `*.byk.json` |
+它只做两件事——**找到别名，执行命令**。不做包管理，不装依赖，不改你的 shell 配置。
+
+## 安装
+
+```bash
+# PyPI
+pip install byk
+
+# 或安装脚本（macOS / Linux）
+curl -fsSL https://cli.fcbyk.com/install.sh | bash
+```
+
+安装脚本会顺带把 byk 加入 `PATH`，并写入一行 shell 补全。
 
 ## 快速开始
 
-```bash
-# 安装
-pip install byk
+写一个别名文件：
 
-# 创建配置文件 run.byk.json
-echo '{"hello":"echo hello world"}' > run.byk.json
-
-# 运行
-byk hello
+```json title="hello.byk.json"
+{
+  "hello": "echo hello world"
+}
 ```
 
-安装一个插件也是一条命令：
+执行：
 
 ```bash
-byk add user/repo            # 从 GitHub 安装
-byk show plugins             # 查看已安装插件
+byk @hello.hello
 ```
+
+`@文件.key` 是精确执行语法，指定「哪个文件里的哪个别名」，与文件优先级无关——项目里随手写的文件可以直接这样调用，不需要安装到任何地方。
+
+如果你希望直接敲 `byk hello`，把这个文件放进全局目录 `~/.byk/alias/`，或者在文件里显式声明 `"$priority": 0`。详见 [别名配置 - 优先级](/cli/alias/config)。
+
+## 一个命令是怎么执行的
+
+1. `byk` 解析参数，识别选项与隐藏接口 `__api__`
+2. 剩下第一个词作为别名名，其余作为参数
+3. 命中 `@文件.key` 精确语法 → 直接读该文件
+4. 否则在合并后的别名空间里查找（全局 `~/.byk/alias/` + 当前目录）
+5. 展开保留变量（`$byk` / `$workdir`），解析占位符
+6. 在 `$cwd` 下执行命令；未命中则列出候选并退出 1
+
+## 接下来的阅读顺序
+
+- [选项与命令](/cli/commands) — `-h` / `-v` / `--paths` 与程序接口 `__api__`
+- [快速开始](/cli/alias/start) — 三分钟写出第一个别名文件
+- [别名配置](/cli/alias/config) — 字段、继承、优先级、精确执行
+- [参数处理](/cli/alias/placeholders) — 占位符与参数消耗规则
