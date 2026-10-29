@@ -112,26 +112,22 @@ pub(crate) fn apply_inherited(
             cwd: None,
             interactive,
             description,
-            args,
         } => AliasValue::Meta {
             cmd,
             cwd: inherited_cwd.map(String::from),
             interactive: interactive.or(inherited_interactive),
             description, // $description 不继承，直接透传
-            args,       // $args 不继承，直接透传
         },
         AliasValue::Meta {
             cmd,
             cwd: Some(c),
             interactive,
             description,
-            args,
         } => AliasValue::Meta {
             cmd,
             cwd: Some(c), // 别名自己的 $cwd 优先
             interactive: interactive.or(inherited_interactive),
             description, // $description 不继承，直接透传
-            args,       // $args 不继承，直接透传
         },
         AliasValue::Str(cmd) => {
             if inherited_cwd.is_some() || inherited_interactive.is_some() {
@@ -140,7 +136,6 @@ pub(crate) fn apply_inherited(
                     cwd: inherited_cwd.map(String::from),
                     interactive: inherited_interactive,
                     description: None,
-                    args: None,
                 }
             } else {
                 AliasValue::Str(cmd)
@@ -309,7 +304,6 @@ mod tests {
             cwd: Some("/own".into()),
             interactive: None,
             description: None,
-            args: None,
         };
         let result = apply_inherited(av, Some("/inherit"), None);
         match result {
@@ -327,7 +321,6 @@ mod tests {
             cwd: None,
             interactive: None,
             description: None,
-            args: None,
         };
         let result = apply_inherited(av, Some("/inherit"), None);
         match result {
@@ -345,7 +338,6 @@ mod tests {
             cwd: None,
             interactive: None,
             description: None,
-            args: None,
         };
         let result = apply_inherited(av, None, Some(true));
         match result {
@@ -363,7 +355,6 @@ mod tests {
             cwd: None,
             interactive: Some(false),
             description: None,
-            args: None,
         };
         let result = apply_inherited(av, None, Some(true));
         match result {

@@ -13,7 +13,7 @@ use serde::Serialize;
 #[serde(untagged)]
 pub enum AliasValue {
     Str(String),
-    /// 对象格式：{ "$cmd": "...", "$cwd": "...", "$interactive": true, "$description": "...", "$args": {...} }
+    /// 对象格式：{ "$cmd": "...", "$cwd": "...", "$interactive": true, "$description": "..." }
     Meta {
         #[serde(rename = "$cmd")]
         cmd: String,
@@ -26,12 +26,6 @@ pub enum AliasValue {
         #[serde(rename = "$description")]
         #[serde(default)]
         description: Option<String>,
-        /// 补全候选树，结构同插件协议 args：
-        /// `$` 叶子候选 / `$options` 可重复选项 / 其他 key 嵌套子命令。
-        /// 不可继承，仅对当前条目生效。
-        #[serde(rename = "$args")]
-        #[serde(default)]
-        args: Option<serde_json::Value>,
     },
 }
 

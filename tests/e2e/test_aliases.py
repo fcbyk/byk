@@ -17,43 +17,6 @@ def test_shell_dollar_passthrough(runner):
     assert str(runner.home) in r.stdout
 
 
-def test_args_tree_completion(runner):
-    """$args 补全树：__api__ complete 全链路（扫描→合并→补全）"""
-    runner.prepare_alias_file(
-        "args",
-        '{"deploy": {"$cmd": "deploy {env}", "$args": {"$": ["prod", "staging"], "$options": ["--dry-run"]}}}',
-    )
-    r = runner.run("__api__", "complete", "deploy", "")
-    assert r.returncode == 0
-    assert "prod" in r.stdout
-    assert "staging" in r.stdout
-    assert "--dry-run" in r.stdout
-
-
-def test_args_tree_nested_completion(runner):
-    """$args 嵌套子命令：下降一层后补全子层候选"""
-    runner.prepare_alias_file(
-        "args",
-        '{"deploy": {"$cmd": "deploy", "$args": {"build": {"$": ["debug", "release"]}}}}',
-    )
-    r = runner.run("__api__", "complete", "deploy", "build", "")
-    assert r.returncode == 0
-    assert "debug" in r.stdout
-    assert "release" in r.stdout
-
-
-def test_args_tree_excludes_consumed_option(runner):
-    """$options 已选过的选项在后续补全中排除"""
-    runner.prepare_alias_file(
-        "args",
-        '{"deploy": {"$cmd": "deploy", "$args": {"$options": ["--dry-run", "--verbose"], "$": ["prod"]}}}',
-    )
-    r = runner.run("__api__", "complete", "deploy", "--dry-run", "")
-    assert r.returncode == 0
-    assert "--verbose" in r.stdout
-    assert "prod" in r.stdout
-    assert "--dry-run" not in r.stdout
-
 
 def test_var_substitution_in_cmd(runner):
     """$var 文件级变量：阶段一替换后命令直接生效"""

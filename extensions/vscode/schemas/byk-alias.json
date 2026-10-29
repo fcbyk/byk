@@ -69,10 +69,6 @@
         "$description": {
           "description": "描述文本，在帮助页中替代命令映射显示。仅对当前别名生效，不可继承。",
           "type": "string"
-        },
-        "$args": {
-          "description": "补全候选树（shell 补全）。特殊 key：`$` 叶子候选（选中后无下级）、`$options` 可重复选项（已选自动排除）、其他 key 为子命令（选中后进入其值继续补全）。value 可以是 string[] 或 object，支持任意嵌套。声明 $args 的条目，补全走补全树（优先于点号子节点）。",
-          "$ref": "#/$defs/ArgsTree"
         }
       },
       "additionalProperties": {
@@ -82,34 +78,6 @@
           { "type": "boolean" }
         ]
       }
-    },
-    "ArgsTree": {
-      "title": "补全候选树",
-      "description": "string[]（扁平候选）或嵌套 object（子命令树），支持任意嵌套。",
-      "oneOf": [
-        {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "扁平候选列表（全部为叶子候选）"
-        },
-        {
-          "type": "object",
-          "description": "嵌套子命令树",
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              { "$ref": "#/$defs/ArgsTree" }
-            ]
-          }
-        }
-      ]
     },
     "PlatformMap": {
       "title": "平台映射",

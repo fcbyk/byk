@@ -5,10 +5,8 @@
 //!
 //! 支持 zsh、bash、fish。
 
-mod args_tree;
 mod at_prefix;
 
-use args_tree::{collect_args_candidates, complete_args_tree};
 use at_prefix::{complete_at_prefix, complete_nested_alias};
 
 #[cfg(test)]
@@ -112,28 +110,18 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
         return Vec::new();
     }
 
-    // 多前缀词场景
+    // 多前缀词场景：别名没有参数级补全，无法继续
     if prev.len() > 1 {
-        return complete_multi_prev(prev, partial, layout);
+        return Vec::new();
     }
 
     let first = &prev[0];
 
-    // 别名合并配置（$args 补全与嵌套别名节点共用一次加载）
+    // 别名合并配置（嵌套别名节点使用）
     let (merged, _) = aliases::load_merged_aliases(layout);
 
     // 上下文标志：别名没有自己的选项，一律给全局选项
     if partial.starts_with('-') {
-        // 别名 $args 的 $options 也可能包含 flag
-        if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
-            && let Some(args) = alias_args(&resolved.value)
-        {
-            let candidates = collect_args_candidates(args, partial, &[]);
-            if !candidates.is_empty() {
-                return candidates;
-            }
-        }
-
         return GLOBAL_FLAGS
             .iter()
             .filter(|f| f.starts_with(partial))
@@ -143,14 +131,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 
     // 1. @ 文件引用补全通过 complete_at_prefix 处理（@file. 语法），此处不处理
 
-    // 2. 别名条目带 $args → 按补全树补全（优先于点号子节点）
-    if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
-        && let Some(args) = alias_args(&resolved.value)
-    {
-        return complete_args_tree(args, &[], partial);
-    }
-
-    // 3. 检查嵌套别名：`byk rust ` → 补全子节点
+    // 2. 检查嵌套别名：`byk rust ` → 补全子节点
     if let Some(node) = merged.get(first.as_str()) {
         if !node.children.is_empty() {
             return node
@@ -164,35 +145,8 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
         return Vec::new();
     }
 
-    // 4. 无法识别 → 无补全
+    // 3. 无法识别 → 无补全
     Vec::new()
-}
-
-/// 多前缀词场景的补全。
-///
-/// 当前支持：
-/// - 插件命令多级参数补全
-fn complete_multi_prev(prev: &[String], partial: &str, layout: &PathLayout) -> Vec<String> {
-
-    // 别名命令多级参数补全（$args 树）
-    let first = &prev[0];
-    let (merged, _) = aliases::load_merged_aliases(layout);
-    if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
-        && let Some(args) = alias_args(&resolved.value)
-    {
-        let trailing: Vec<&str> = prev[1..].iter().map(|s| s.as_str()).collect();
-        return complete_args_tree(args, &trailing, partial);
-    }
-
-    Vec::new()
-}
-
-/// 从别名值中提取 `$args` 补全树（仅 Meta 形态可能携带）。
-fn alias_args(value: &aliases::AliasValue) -> Option<&serde_json::Value> {
-    match value {
-        aliases::AliasValue::Meta { args, .. } => args.as_ref(),
-        aliases::AliasValue::Str(_) => None,
-    }
 }
 
 
@@ -512,140 +466,6 @@ mod tests {
             &json!({"hello": "echo hello"}),
         );
         let prev = vec!["hello".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.is_empty());
-    }
-
-    // ==================== 别名 $args 补全 ====================
-
-    /// 带 $args 的别名文件（叶子 + 可重复选项 + 嵌套子命令）。
-    fn args_alias_file() -> serde_json::Value {
-        json!({
-            "deploy": {
-                "$cmd": "deploy {env}",
-                "$args": {
-                    "$": ["prod", "staging"],
-                    "$options": ["--dry-run", "--verbose"],
-                    "build": {
-                        "$": ["debug", "release"],
-                        "$options": ["--clean"]
-                    }
-                }
-            }
-        })
-    }
-
-    #[test]
-    fn alias_args_completes_first_level() {
-        let env = TestEnv::new();
-        env.add_alias_file("args", &args_alias_file());
-        let prev = vec!["deploy".to_string()];
-        let mut result = contextual_completions(&prev, "", &env.layout);
-        result.sort();
-        assert_eq!(
-            result,
-            vec![
-                "--dry-run".to_string(),
-                "--verbose".to_string(),
-                "build".to_string(),
-                "prod".to_string(),
-                "staging".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn alias_args_filters_by_partial() {
-        let env = TestEnv::new();
-        env.add_alias_file("args", &args_alias_file());
-        let prev = vec!["deploy".to_string()];
-        let result = contextual_completions(&prev, "pro", &env.layout);
-        assert_eq!(result, vec!["prod".to_string()]);
-    }
-
-    #[test]
-    fn alias_args_flag_partial_uses_options() {
-        let env = TestEnv::new();
-        env.add_alias_file("args", &args_alias_file());
-        let prev = vec!["deploy".to_string()];
-        let result = contextual_completions(&prev, "--d", &env.layout);
-        assert_eq!(result, vec!["--dry-run".to_string()]);
-    }
-
-    #[test]
-    fn alias_args_descends_into_subcommand() {
-        let env = TestEnv::new();
-        env.add_alias_file("args", &args_alias_file());
-        let prev = vec!["deploy".to_string(), "build".to_string()];
-        let mut result = contextual_completions(&prev, "", &env.layout);
-        result.sort();
-        assert_eq!(
-            result,
-            vec![
-                "--clean".to_string(),
-                "debug".to_string(),
-                "release".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn alias_args_options_exclude_consumed() {
-        let env = TestEnv::new();
-        env.add_alias_file("args", &args_alias_file());
-        // 已输入 --dry-run：候选应排除它，但保留 --verbose 与叶子
-        let prev = vec!["deploy".to_string(), "--dry-run".to_string()];
-        let mut result = contextual_completions(&prev, "", &env.layout);
-        result.sort();
-        assert_eq!(
-            result,
-            vec![
-                "--verbose".to_string(),
-                "build".to_string(),
-                "prod".to_string(),
-                "staging".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn alias_args_takes_priority_over_children() {
-        let env = TestEnv::new();
-        // 同时含 $args 与点号子节点：补全走 $args 树
-        env.add_alias_file(
-            "hybrid",
-            &json!({
-                "deploy": {
-                    "$cmd": "deploy",
-                    "$args": {"$": ["prod"]},
-                    "prod": "deploy-prod.sh"
-                }
-            }),
-        );
-        let prev = vec!["deploy".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert_eq!(result, vec!["prod".to_string()]);
-    }
-
-    #[test]
-    fn alias_without_args_still_completes_children() {
-        let env = TestEnv::new();
-        // 无 $args 的普通分组：点号子节点补全行为不变
-        env.add_alias_file(
-            "plain",
-            &json!({"rust": {"build": "cargo build", "test": "cargo test"}}),
-        );
-        let prev = vec!["rust".to_string()];
-        let mut result = contextual_completions(&prev, "", &env.layout);
-        result.sort();
-        assert_eq!(result, vec!["build".to_string(), "test".to_string()]);
-    }
-
-    #[test]
-    fn alias_leaf_without_args_no_completion() {
-        let env = TestEnv::new();
-        env.add_alias_file("leaf", &json!({"hi": {"$cmd": "echo hi"}}));
-        let prev = vec!["hi".to_string()];
         let result = contextual_completions(&prev, "", &env.layout);
         assert!(result.is_empty());
     }

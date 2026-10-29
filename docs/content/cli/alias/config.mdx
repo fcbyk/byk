@@ -16,7 +16,6 @@ type AliasObject = {
   $cwd?: string;
   $interactive?: boolean;
   $description?: string;
-  $args?: ArgsTree;
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
@@ -49,7 +48,6 @@ type AliasFileJSON = {
 | `$cwd` | string | 工作目录（可继承） |
 | `$interactive` | boolean | 是否交互执行（可继承） |
 | `$description` | string | 帮助页描述文本（不可继承） |
-| `$args` | ArgsTree | shell 补全候选树（不可继承） |
 
 :::note
 含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$interactive` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
@@ -213,43 +211,6 @@ Aliases:
 
 - 相对路径以配置文件所在目录为基准解析
 - 不存在的目录静默跳过
-
-### 补全候选 $args
-
-`$args` 为别名声明 shell 补全树：
-
-```json title="run.byk.json"
-{
-  "deploy": {
-    "$cmd": "deploy --env {env}",
-    "$args": {
-      "$": ["prod", "staging"],
-      "$options": ["--dry-run", "--verbose"],
-      "build": {
-        "$": ["debug", "release"]
-      }
-    }
-  }
-}
-```
-
-```bash
-byk @run.deploy <TAB>            # prod  staging  --dry-run  --verbose  build
-byk @run.deploy build <TAB>      # debug  release
-byk @run.deploy --dry-run <TAB>  # 已选过的选项被排除
-```
-
-| 特殊 key | 语义 |
-|---------|------|
-| `$` | 叶子候选数组，选中后无下级 |
-| `$options` | 可重复选项数组，选中后留在当前层，已选过的自动排除 |
-| 其他 key | 子命令，选中后进入其值继续补全 |
-
-**规则**：
-
-- 仅对当前条目生效，不继承
-- 声明了 `$args` 的条目，补全走补全树（优先于点号子节点）；执行仍走 `$cmd`，两者互不影响
-- 值可以是 `string[]`（全部是叶子候选）或嵌套 object，层数不限
 
 ### 文件级变量 $var
 
