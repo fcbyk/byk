@@ -2,8 +2,8 @@
 
 > An alias runner. Commands live in `*.byk.json`, you call them by short names.
 
-byk does two things — **find an alias, run it**. No plugins, no package manager,
-no shell-profile surgery.
+byk does two things — **find an alias, run it**. One binary, one config format,
+and it never writes to disk.
 
 ## Use
 

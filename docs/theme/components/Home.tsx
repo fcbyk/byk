@@ -269,7 +269,7 @@ export function BykHome() {
           <span className="b-head__label">命令行</span>
           <h2 className="b-head__title">三个选项，一个接口</h2>
           <p className="b-head__sub">
-            没有子命令。除了别名，byk 只有这些。
+            除了别名，byk 只有这些。
           </p>
         </div>
 
@@ -357,8 +357,8 @@ export function BykHome() {
               <strong>只有一种配置</strong>
             </div>
             <p>
-              <span className="b-ic">*.byk.json</span> 里五个 <span className="b-ic">$</span> 字段，
-              没有插件协议，没有安装清单，没有环境目录。
+              <span className="b-ic">*.byk.json</span> 里五个 <span className="b-ic">$</span> 字段就够用：
+              别名、工作目录、交互模式、PATH、变量。
             </p>
           </div>
           <div className="b-why__item">
@@ -367,8 +367,8 @@ export function BykHome() {
               <strong>状态只有别名</strong>
             </div>
             <p>
-              <span className="b-ic">~/.byk/</span> 里只有你自己放的别名文件——
-              byk 从不写盘，没有缓存、没有状态库。
+              <span className="b-ic">~/.byk/</span> 里只有你自己放的别名文件。
+              byk 只读不写，删掉这个目录就等于清零。
             </p>
           </div>
         </div>
