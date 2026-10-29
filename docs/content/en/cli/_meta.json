@@ -1,0 +1,18 @@
+[
+  {
+    "type": "file",
+    "name": "index",
+    "label": "Overview"
+  },
+  {
+    "type": "file",
+    "name": "commands",
+    "label": "Options & Commands"
+  },
+  {
+    "type": "dir",
+    "name": "alias",
+    "label": "Command Aliases",
+    "collapsible": false
+  }
+]

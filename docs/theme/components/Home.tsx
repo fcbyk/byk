@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@rspress/core/theme';
+import { useI18n } from '@rspress/core/runtime';
 import './home.css';
 
 /**
@@ -11,6 +12,9 @@ import './home.css';
  * 其余是 ink-on-paper + 发丝线。
  *
  * signature：Hero 的终端块，带真实 ANSI 风格语法着色与闪烁光标。
+ *
+ * i18n：所有文案通过 useI18n() 从 rspress.config.ts 的 i18nSource 读取，
+ * 含行内代码片的句子拆成 A/B 两个 key，中间保留 <span className="b-ic">。
  */
 type InstallTab = 'pip' | 'curl' | 'ps';
 
@@ -30,6 +34,7 @@ const INSTALLS: Record<InstallTab, { label: string; cmd: string }> = {
 };
 
 export function BykHome() {
+  const t = useI18n();
   const [activeTab, setActiveTab] = useState<InstallTab>('pip');
   const [copied, setCopied] = useState(false);
 
@@ -57,9 +62,10 @@ export function BykHome() {
           byk<span className="b-caret" aria-hidden="true" />
         </h1>
 
-        <p className="b-hero__lede">一个只会执行别名的 CLI</p>
+        <p className="b-hero__lede">{t('homeLede')}</p>
         <p className="b-hero__sub">
-          命令写进 <span className="b-ic">*.byk.json</span>，短名字调用
+          {t('homeSub')} <span className="b-ic">*.byk.json</span>
+          {t('homeSubTail')}
         </p>
 
         <div className="b-install-row">
@@ -90,14 +96,14 @@ export function BykHome() {
                 'b-copy__btn' + (copied ? ' b-copy__btn--done' : '')
               }
               onClick={copyInstall}
-              aria-label="复制安装命令"
+              aria-label={t('homeCopyAria')}
             >
               {copied ? 'copied ✓' : 'copy'}
             </button>
           </div>
           <div className="b-links">
             <Link href="/cli/index" className="b-link">
-              查看文档
+              {t('homeViewDocs')}
               <Arrow />
             </Link>
             <a
@@ -155,38 +161,40 @@ export function BykHome() {
       {/* ============ Features ============ */}
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
-          <span className="b-head__label">核心</span>
-          <h2 className="b-head__title">写 JSON，敲短命令</h2>
-          <p className="b-head__sub">
-            一个文件说清项目里所有命令，调用时不用记完整路径和参数
-          </p>
+          <span className="b-head__label">{t('homeFeatLabel')}</span>
+          <h2 className="b-head__title">{t('homeFeatTitle')}</h2>
+          <p className="b-head__sub">{t('homeFeatSub')}</p>
         </div>
 
         <div className="b-features">
           <Link href="/cli/alias/config" className="b-feature">
             <span className="b-feature__mark">run.byk.json</span>
-            <h3 className="b-feature__title">命令别名</h3>
+            <h3 className="b-feature__title">{t('homeFeat1Title')}</h3>
             <p className="b-feature__desc">
-              <span className="b-ic">{'{xxx}'}</span> 占位符、
-              <span className="b-ic">$cwd</span>、
-              <span className="b-ic">$interactive</span> 三级继承，
-              <span className="b-ic">$var</span> 变量与平台映射。
+              <span className="b-ic">{'{xxx}'}</span>{' '}
+              {t('homeFeat1DescA')}
+              <span className="b-ic">$cwd</span>
+              {t('homeFeat1Sep')}
+              <span className="b-ic">$interactive</span>{' '}
+              {t('homeFeat1DescB')}
+              <span className="b-ic">$var</span>{' '}
+              {t('homeFeat1DescC')}
             </p>
             <span className="b-feature__more">
-              别名配置 <Arrow />
+              {t('homeFeat1More')} <Arrow />
             </span>
           </Link>
 
           <Link href="/cli/commands" className="b-feature">
             <span className="b-feature__mark">byk @run.build</span>
-            <h3 className="b-feature__title">精确执行</h3>
+            <h3 className="b-feature__title">{t('homeFeat2Title')}</h3>
             <p className="b-feature__desc">
-              需要指定具体文件时用
-              <span className="b-ic">@文件.key</span>，
-              绕过合并直接路由过去，同名也不会互相干扰。
+              {t('homeFeat2DescA')}{' '}
+              <span className="b-ic">{t('homeFeat2Token')}</span>
+              {t('homeFeat2DescB')}
             </p>
             <span className="b-feature__more">
-              选项与命令 <Arrow />
+              {t('homeFeat2More')} <Arrow />
             </span>
           </Link>
         </div>
@@ -195,11 +203,9 @@ export function BykHome() {
       {/* ============ Alias showcase ============ */}
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
-          <span className="b-head__label">命令别名</span>
-          <h2 className="b-head__title">用 JSON 描述你的命令集合</h2>
-          <p className="b-head__sub">
-            一个文件管完项目里所有命令——占位符、交互式输入、精确执行语法都在这里。
-          </p>
+          <span className="b-head__label">{t('homeShowLabel')}</span>
+          <h2 className="b-head__title">{t('homeShowTitle')}</h2>
+          <p className="b-head__sub">{t('homeShowSub')}</p>
         </div>
 
         <div className="b-duo">
@@ -231,7 +237,7 @@ export function BykHome() {
 
           <div className="b-duo__col">
             <p className="b-duo__caption">
-              <span className="b-tag">terminal</span> · 执行效果
+              <span className="b-tag">terminal</span> · {t('homeShowOutput')}
             </p>
             <div className="b-term">
               <div className="b-term__bar">
@@ -266,41 +272,31 @@ export function BykHome() {
       {/* ============ CLI surface ============ */}
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
-          <span className="b-head__label">命令行</span>
-          <h2 className="b-head__title">三个选项，一个接口</h2>
-          <p className="b-head__sub">
-            除了别名，byk 只有这些。
-          </p>
+          <span className="b-head__label">{t('homeCliLabel')}</span>
+          <h2 className="b-head__title">{t('homeCliTitle')}</h2>
+          <p className="b-head__sub">{t('homeCliSub')}</p>
         </div>
 
         <div className="b-tiles">
           <div className="b-tile">
-            <span className="b-tile__label">帮助</span>
+            <span className="b-tile__label">{t('homeTile1Label')}</span>
             <p className="b-tile__cmd">byk -h</p>
-            <p className="b-tile__desc">
-              banner、用法、选项和全部别名一览；不带参数等价
-            </p>
+            <p className="b-tile__desc">{t('homeTile1Desc')}</p>
           </div>
           <div className="b-tile">
-            <span className="b-tile__label">版本</span>
+            <span className="b-tile__label">{t('homeTile2Label')}</span>
             <p className="b-tile__cmd">byk -v</p>
-            <p className="b-tile__desc">
-              版本、commit、构建日期、平台与安装位置
-            </p>
+            <p className="b-tile__desc">{t('homeTile2Desc')}</p>
           </div>
           <div className="b-tile">
-            <span className="b-tile__label">路径</span>
+            <span className="b-tile__label">{t('homeTile3Label')}</span>
             <p className="b-tile__cmd">byk --paths</p>
-            <p className="b-tile__desc">
-              CLI 家目录与全局别名目录的实际位置
-            </p>
+            <p className="b-tile__desc">{t('homeTile3Desc')}</p>
           </div>
           <div className="b-tile">
-            <span className="b-tile__label">程序接口</span>
+            <span className="b-tile__label">{t('homeTile4Label')}</span>
             <p className="b-tile__cmd">byk __api__</p>
-            <p className="b-tile__desc">
-              只读、不写盘：给 shell 补全和编辑器插件取数据
-            </p>
+            <p className="b-tile__desc">{t('homeTile4Desc')}</p>
           </div>
         </div>
       </section>
@@ -308,50 +304,49 @@ export function BykHome() {
       {/* ============ Why byk ============ */}
       <section className="b-shell b-section b-reveal">
         <div className="b-head">
-          <span className="b-head__label">为什么选 byk</span>
-          <h2 className="b-head__title">命令只收进一个入口</h2>
+          <span className="b-head__label">{t('homeWhyLabel')}</span>
+          <h2 className="b-head__title">{t('homeWhyTitle')}</h2>
         </div>
 
         <div className="b-why">
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">01</span>
-              <strong>来源可预期</strong>
+              <strong>{t('homeWhy1Term')}</strong>
             </div>
             <p>
-              选项 → 隐藏接口 → <span className="b-ic">@file.key</span> → 别名，第一个命中即执行；
-              未命中时列出候选并退出 1。
+              {t('homeWhy1BodyA')}{' '}
+              <span className="b-ic">@file.key</span>{' '}
+              {t('homeWhy1BodyB')}
             </p>
           </div>
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">02</span>
-              <strong>作用域清晰</strong>
+              <strong>{t('homeWhy2Term')}</strong>
             </div>
             <p>
-              就近优先：项目文件（1）覆盖全局文件（0），进目录就能用短名字；
-              只想给单个文件用，写 <span className="b-ic">$priority: -1</span>。
+              {t('homeWhy2BodyA')}{' '}
+              <span className="b-ic">$priority: -1</span>
+              {t('homeWhy2BodyB')}
             </p>
           </div>
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">03</span>
-              <strong>跨平台</strong>
+              <strong>{t('homeWhy3Term')}</strong>
             </div>
-            <p>
-              Rust 编译的单个二进制，原生支持 macOS / Linux / Windows（x86_64 / arm64）。
-            </p>
+            <p>{t('homeWhy3Body')}</p>
           </div>
           <div className="b-why__item">
             <div className="b-why__term">
               <span className="b-idx">04</span>
-              <strong>编辑器直连</strong>
+              <strong>{t('homeWhy4Term')}</strong>
             </div>
             <p>
-              装上 byk 的 VS Code 插件，在{' '}
+              {t('homeWhy4BodyA')}{' '}
               <span className="b-ic">*.byk.json</span>{' '}
-              里右键就能运行光标处的别名，体验与 package.json scripts
-              一致；也能在命令面板里检索全部别名。
+              {t('homeWhy4BodyB')}
             </p>
           </div>
         </div>
@@ -362,10 +357,10 @@ export function BykHome() {
         <div className="b-close__wordmark">
           byk<span className="b-caret" aria-hidden="true" />
         </div>
-        <p className="b-close__sub">几秒钟安装，把常用命令收成短名字</p>
+        <p className="b-close__sub">{t('homeCloseSub')}</p>
         <div className="b-close__actions">
           <Link href="/cli/index" className="b-btn b-btn--solid">
-            查看 CLI 文档
+            {t('homeCloseCta')}
             <Arrow />
           </Link>
           <a

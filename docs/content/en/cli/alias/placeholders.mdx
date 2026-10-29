@@ -1,0 +1,149 @@
+---
+title: Placeholders
+description: Placeholder namespaces, the full placeholder reference, consumption rules, and usage examples
+---
+
+import { Tab, Tabs } from '@rspress/core/theme';
+
+# Placeholders
+
+## Placeholder Namespaces
+
+The three namespaces are fully isolated:
+
+| Namespace | Syntax | Description |
+|-----------|--------|-------------|
+| Named placeholders | `{xxx}` | Matches the value that directly follows `xxx` in the input |
+| Optional pass-through | `{{xxx}}` | Rendered as-is when `xxx` is present; disappears otherwise |
+| System placeholders | `${...}` | Fixed semantics provided by the system |
+
+:::note Reserved variables (expanded first)
+`$byk` / `$workdir` are byk's reserved variables, expanded to concrete paths **before** placeholder resolution. They are not part of the argument namespaces above — they consume no argument positions and accept no input values. See [Reserved Variables](/cli/alias/config).
+:::
+
+## Placeholder Reference
+
+| Placeholder | Description | Positions consumed |
+|-------------|-------------|--------------------|
+| `{xxx}` | Matches the value directly following `xxx` in the input | 2 (xxx + value) |
+| `{{xxx}}` | Optional pass-through; renders as `xxx value` when present, disappears otherwise | 2 (when present) |
+| `{xxx?}` | Conditional rendering (simplest); renders as `xxx` when present, disappears otherwise | 1 |
+| `{xxx?render1:render2}` | Conditional rendering (ternary) | 1 |
+| `${N}` | The Nth raw argument (0-based) | 1 (position N) |
+| `${args}` | All raw arguments | None |
+| `${...args}` | Remaining arguments (excluding those already consumed by other placeholders) | None |
+
+## Consumption Rules
+
+- `{xxx}` / `{{xxx}}` consume `xxx` and the value directly following it (2 positions in total)
+- `{xxx?}` / `{xxx?render1}` / `{xxx?render1:render2}` consume only `xxx` itself (1 position)
+- `${N}` consumes position N
+- A placeholder that appears multiple times is consumed only once; its value is reused
+- The remainder for `${...args}` = all raw arguments − already-consumed positions, joined in original order
+
+## Missing Values / No Placeholders
+
+:::tip No placeholders
+When an alias contains no placeholders, all raw arguments are appended automatically — equivalent to an implicit `${args}` at the end. Bare `{}` in commands like find (e.g. `find . -exec ... {} +`) stays compatible: it is never parsed or substituted.
+:::
+
+:::note Missing values
+When a placeholder finds no corresponding value, it **silently disappears** — no error is raised. Errors caused by missing arguments are handled at runtime by the underlying command.
+:::
+
+## Named Placeholder Examples
+
+<Tabs>
+<Tab label="Long options">
+
+```bash
+# "copy": "cp {--src} {--dest}"
+byk copy --src foo.txt --dest bar.txt
+# runs: cp foo.txt bar.txt
+```
+
+</Tab>
+<Tab label="Short options">
+
+```bash
+# "copy": "cp {-s} {-d}"
+byk copy -s foo.txt -d bar.txt
+# runs: cp foo.txt bar.txt
+```
+
+</Tab>
+</Tabs>
+
+## Optional Pass-Through Examples
+
+```bash
+# "build": "vite build {{--mode}}"
+byk build --mode production
+# runs: vite build --mode production
+
+byk build
+# runs: vite build
+```
+
+## Conditional Rendering Examples
+
+<Tabs>
+<Tab label="Simplest form">
+
+```bash
+# "dev": "vite {--open?--open}"
+byk dev --open
+# runs: vite --open
+
+byk dev
+# runs: vite
+```
+
+</Tab>
+<Tab label="Ternary form">
+
+```bash
+# "test": "jest {--coverage?--coverage:--no-coverage}"
+byk test --coverage
+# runs: jest --coverage
+
+byk test
+# runs: jest --no-coverage
+```
+
+</Tab>
+</Tabs>
+
+## Positional Argument Examples
+
+<Tabs>
+<Tab label="Absolute position">
+
+```bash
+# "echo": "echo ${0} ${2}"
+byk echo aaa bbb ccc
+# runs: echo aaa ccc
+```
+
+</Tab>
+<Tab label="Repeated use">
+
+```bash
+# "repeat": "echo ${0} ${0} ${0}"
+byk repeat Hello
+# runs: echo Hello Hello Hello
+```
+
+</Tab>
+<Tab label="Remaining arguments">
+
+```bash
+# "cmd": "run {--src} ${...args}"
+byk cmd --src foo aaa bbb
+# {--src} consumes --src and foo
+# ${...args} → aaa bbb
+# runs: run foo aaa bbb
+```
+
+</Tab>
+</Tabs>

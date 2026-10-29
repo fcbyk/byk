@@ -1,0 +1,64 @@
+---
+title: Overview
+description: What byk is, where it installs, and the path a command takes from input to execution
+---
+
+# byk
+
+byk is an **alias executor**: write the commands you use often into `*.byk.json`, then call them by short names.
+
+It does exactly two things — **find the alias, run the command**.
+
+## Installation
+
+```bash
+# PyPI
+pip install byk
+
+# or the install script (macOS / Linux)
+curl -fsSL https://cli.fcbyk.com/install.sh | bash
+```
+
+The install script also adds byk to your `PATH` and writes a single line of shell completion.
+
+## Quick Start
+
+Write an alias file:
+
+```json title="hello.byk.json"
+{
+  "hello": "echo hello world"
+}
+```
+
+Run it:
+
+```bash
+byk hello
+```
+
+`*.byk.json` files in the current directory are merged in by default, with higher priority than the global directory — `cd` into a project and its aliases just work, no declaration required.
+
+When you need to target "which alias in which file" precisely, use `@file.key` (local) or `@@file.key` (global):
+
+```bash
+byk @hello.hello
+```
+
+If a file should only ever be invoked explicitly and never appear under `byk <key>`, add `"$priority": -1` inside it. See [Alias Configuration - Priority](/cli/alias/config).
+
+## How a Command Runs
+
+1. `byk` parses the arguments, recognizing options and the hidden `__api__` interface
+2. The first remaining word is the alias name; everything after it is passed as arguments
+3. A `@file.key` exact match reads that file directly
+4. Otherwise the alias is looked up in the merged alias space (global `~/.byk/alias/` + current directory)
+5. Reserved variables (`$byk` / `$workdir`) are expanded and placeholders are resolved
+6. The command executes under `$cwd`; on a miss, candidates are listed and byk exits 1
+
+## Where to Read Next
+
+- [Options & Commands](/cli/commands) — `-h` / `-v` / `--paths` and the `__api__` program interface
+- [Quick Start](/cli/alias/start) — write your first alias file in three minutes
+- [Alias Configuration](/cli/alias/config) — fields, inheritance, priority, exact execution
+- [Placeholders](/cli/alias/placeholders) — placeholder syntax and argument consumption rules

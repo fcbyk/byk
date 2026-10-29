@@ -1,0 +1,67 @@
+import { Steps } from '@rspress/core/theme';
+
+# Quick Start
+
+Write your first alias file in three minutes.
+
+## Getting Started
+
+<Steps>
+
+### Create a Config File
+
+Create `run.byk.json` in your project root:
+
+```json
+{
+  "dev": "pnpm dev",
+  "build": "pnpm build",
+  "deploy": {
+    "$cmd": "deploy --env {env}",
+    "$interactive": true
+  }
+}
+```
+
+### Run It Directly
+
+```bash
+byk dev
+byk build
+byk deploy            # interactive: asks for env first, confirms, then runs
+```
+
+`*.byk.json` files in the current directory are merged in by default at priority 1 (the global directory is 0). So short names work the moment you enter the directory, and project aliases override global ones with the same name — that is "near-first".
+
+### Keep It Out of the Directory
+
+Some files belong to a single script and shouldn't show up under `byk <key>`. Write one line of `-1`:
+
+```json title="run.byk.json"
+{
+  "$priority": -1,
+  "dev": "pnpm dev"
+}
+```
+
+```bash
+byk dev            # not found
+byk @run.dev       # exact invocation — the only way to call it
+```
+
+### Make It Available in Your Home Directory
+
+```bash
+cp run.byk.json ~/.byk/alias/
+byk dev
+```
+
+Files under `~/.byk/alias/` default to priority `0` and are available in any directory; when you enter a project with a same-named alias, the project's copy overrides it.
+
+### Going Further
+
+- [Alias Configuration](./config.mdx) — fields, inheritance, priority, exact execution
+- [Placeholders](./placeholders.mdx) — placeholder syntax and argument consumption rules
+- [Options & Commands](/cli/commands) — `-h` / `-v` / `--paths`
+
+</Steps>

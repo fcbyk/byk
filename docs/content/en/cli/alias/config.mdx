@@ -1,0 +1,429 @@
+---
+title: Alias Configuration
+description: Field definitions, inheritance rules, file organization, priority, and exact-execution syntax for aliases
+---
+
+import { Tab, Tabs } from '@rspress/core/theme';
+
+# Alias Configuration
+
+## Type Definitions
+
+```ts title="alias.types.ts"
+// Alias object (the metadata-carrying form)
+type AliasObject = {
+  $cmd?: string;
+  $cwd?: string;
+  $interactive?: boolean;
+  $description?: string;
+  [key: string]: string | AliasObject | boolean | undefined;
+}
+
+// A single *.byk.json file
+type AliasFileJSON = {
+  $priority?: number;      // priority; defaults to 1 in the current directory, 0 globally
+  $cwd?: string;           // file- or group-level working directory, inherited by child aliases
+  $interactive?: boolean;  // file- or group-level interactive mode, inherited by child aliases
+  $paths?: string[];       // file-level PATH directories, inherited by child aliases
+  $var?: Record<string, string | Record<string, string>>;  // file-level variables
+  [key: string]: string | AliasObject | number | boolean | undefined;
+};
+```
+
+Only these five `$`-prefixed keys are recognized; any other `$xxx` is passed through to the shell verbatim (or expanded by the [reserved variables](#reserved-variables)).
+
+## Alias Objects
+
+### Key Naming Rules
+
+- A key **cannot contain** `@` or `.`; violating entries are silently ignored
+- Chinese key names are supported
+- Nested groups (objects) are supported and accessed with the `.` separator
+
+```json title="chinese-keys.byk.json"
+{
+  "开发": {
+    "测试": "pytest -q",
+    "构建": "pnpm run build"
+  }
+}
+```
+
+```bash
+byk 开发.测试
+```
+
+### System Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `$cmd` | string | The command to execute |
+| `$cwd` | string | Working directory (inheritable) |
+| `$interactive` | boolean | Whether to run interactively (inheritable) |
+| `$description` | string | Help-page description text (not inheritable) |
+
+:::note
+An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$interactive` but no `$cmd` is a **group with inherited properties** and is not executable itself.
+:::
+
+### Working Directory (cwd)
+
+Three levels of inheritance: file → group → alias, with the level closer to the alias winning.
+
+<Tabs>
+<Tab label="Alias level">
+
+```json
+{
+  "install": {
+    "$cmd": "npm i",
+    "$cwd": "/project/web"
+  }
+}
+```
+
+</Tab>
+<Tab label="Group level">
+
+```json
+{
+  "services": {
+    "$cwd": "/project",
+    "install": "npm i",
+    "web": {
+      "$cwd": "/project/web",
+      "dev": "pnpm dev",
+      "build": "pnpm build"
+    }
+  }
+}
+```
+
+`install` inherits `/project` from `services`, while `web.dev` and `web.build` use the `/project/web` override from the `web` group.
+
+</Tab>
+<Tab label="File level">
+
+```json
+{
+  "$cwd": "/project/web",
+  "install": "npm i",
+  "start": {
+    "$cmd": "pnpm dev",
+    "$cwd": "/project/web/frontend"
+  }
+}
+```
+
+`install` inherits the file-level `/project/web`, while `start` uses its own `/project/web/frontend`.
+
+</Tab>
+</Tabs>
+
+### Interactive Mode
+
+When enabled, byk prompts for each placeholder value in turn and asks for final confirmation before executing — a good fit for commands with side effects.
+
+`$interactive` supports the same three levels of inheritance.
+
+<Tabs>
+<Tab label="Alias level">
+
+```json
+{
+  "deploy": {
+    "$cmd": "deploy --env {env} --tag {version}",
+    "$interactive": true
+  }
+}
+```
+
+```bash
+byk deploy
+# ~ deploy --env {env} --tag {version}
+#   env: staging
+#   version: v2.0
+# ~ deploy --env staging --tag v2.0     ← bold green
+#    Press Enter to execute...
+```
+
+</Tab>
+<Tab label="Group level">
+
+```json
+{
+  "danger": {
+    "$interactive": true,
+    "delete": "rm -rf {path}",
+    "migrate": {
+      "$cmd": "db migrate --env {env}",
+      "$interactive": false
+    }
+  }
+}
+```
+
+`delete` inherits the interactive mode from `danger`, while `migrate` explicitly overrides it back to non-interactive.
+
+</Tab>
+<Tab label="File level">
+
+```json
+{
+  "$interactive": true,
+  "deploy": "deploy --env {env}",
+  "build": {
+    "$cmd": "pnpm build",
+    "$interactive": false
+  }
+}
+```
+
+</Tab>
+</Tabs>
+
+### Description Text
+
+`$description` replaces the command text shown by default in the help page. It applies to the current alias only and is not inherited.
+
+```json
+{
+  "release": {
+    "$interactive": true,
+    "$cmd": "cz bump {version}",
+    "$description": "Bump the version interactively"
+  }
+}
+```
+
+```text title="byk -h excerpt"
+Aliases:
+  release    Bump the version interactively
+```
+
+When unset, the command itself is shown:
+
+```text
+Aliases:
+  release    cz bump {version}
+```
+
+### PATH Directories
+
+`$paths` prepends directories to `PATH` before an alias runs, letting the alias call executables in those directories directly.
+
+**File level only** — all child aliases inherit it.
+
+```json title="run.byk.json"
+{
+  "$paths": ["./scripts", "~/tools/bin"],
+  "deploy": "deploy.sh",
+  "check": "lint.sh"
+}
+```
+
+- Relative paths are resolved against the directory containing the config file
+- Nonexistent directories are silently skipped
+
+### File-Level Variables ($var)
+
+`$var` declares file-scoped variables that are substituted across all string values in the file during the **scan phase** — handy for long URL prefixes or version numbers reused in many places:
+
+```json title="run.byk.json"
+{
+  "$var": {
+    "BASE": "https://github.com/owner/repo/releases/download",
+    "VER": {
+      "darwin-arm64": "tool-mac",
+      "linux-x86_64": "tool-linux"
+    }
+  },
+  "fetch": "curl -fsSL $BASE/$VER -o /tmp/tool"
+}
+```
+
+| Rule | Description |
+|------|-------------|
+| Syntax | `$NAME`, conventionally uppercase; substitution happens at scan time |
+| Scope | File-level global — applies to all string values including `$cmd` / `$cwd` / `$paths` |
+| Platform mapping | A value can be a platform map (`linux-x86_64` / `linux-arm64` / `darwin-x86_64` / `darwin-arm64` / `windows-x64`); the current platform's value is used |
+| Cross-references | A variable's value may reference other variables, expanded for at most 8 rounds; circular references cannot loop forever |
+| Reserved names | Built-in variable names (`byk` / `workdir`) are invalid here; built-ins take precedence |
+| Unknown variables | Undefined `$xxx` values are kept as-is and handed to the shell |
+
+User variables are substituted at scan time, while built-in variables are expanded at execution time. So user variables can compose built-in ones: `{"TOOLS": "$byk/tools"}` first becomes the literal `$byk/tools`, and `$byk` is expanded just before execution.
+
+### Reserved Variables
+
+Expanded by byk just before execution — the shell never sees these two `$` signs:
+
+| Variable | Expands to | Description |
+|----------|-----------|-------------|
+| `$byk` | `~/.byk` | The alias home directory; keep your own scripts and tools here |
+| `$workdir` | The working directory at execution time | Use it when you need an absolute path |
+
+**Rules**:
+
+- Expansion happens **before** placeholder resolution and applies consistently to `$cmd` / `$cwd` / `$paths`
+- Only these two words are recognized; `$HOME`, `$PATH`, `$bykfoo`, etc. are passed through to the shell verbatim
+- Expanded values containing whitespace are automatically wrapped in double quotes — no need to do it by hand
+- System placeholders such as `${args}` are unaffected
+
+```json title="run.byk.json"
+{
+  "log": "tail -f $byk/logs/app.log",
+  "where": "echo $workdir"
+}
+```
+
+### Usage Examples
+
+<Tabs>
+<Tab label="System fields">
+
+```json
+{
+  "dev": "vite",
+
+  "install": {
+    "$cmd": "npm i",
+    "$cwd": "/Users/me/project/web"
+  },
+
+  "deploy": {
+    "$cmd": "deploy --env {env}",
+    "$interactive": true
+  }
+}
+```
+
+```bash
+byk install          # runs npm i in /Users/me/project/web
+```
+
+</Tab>
+<Tab label="Nested groups">
+
+```json
+{
+  "dev": {
+    "test": "pytest -q",
+    "build": {
+      "$cmd": "pnpm run build",
+      "web": "pnpm run build:web",
+      "api": "python -m build"
+    }
+  },
+  "clean": "find . -type d -name __pycache__ -exec rm -rf {} +"
+}
+```
+
+```bash
+byk dev.test          # pytest -q
+byk dev.build         # pnpm run build
+byk dev.build.web     # pnpm run build:web
+byk clean             # find ...
+```
+
+</Tab>
+</Tabs>
+
+## Alias Files
+
+byk reads two locations: the **global directory** `~/.byk/alias/` and the **current working directory** (non-recursive).
+
+### File Naming
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| `[name].byk.json` | `run.byk.json` | Recommended form; the name is the file key |
+| `.byk.json` | `.byk.json` | Anonymous form; the key is an empty string |
+
+:::warning
+**Legal characters**: letters, digits, `-`, `_`, and Chinese characters.
+
+**Forbidden characters**: `.`, `@`, `/`, and spaces.
+
+Illegally named files (such as `aaa.bbb.byk.json`) are **silently skipped** — no error is raised.
+:::
+
+### Directory Layout
+
+```tree
+# global
+~/.byk/alias/
+├── alias.byk.json
+├── work.byk.json
+└── .byk.json
+```
+
+```tree
+# current directory
+./
+├── run.byk.json
+├── release.byk.json
+└── .byk.json
+```
+
+### Priority
+
+All merged files share a single key space, and higher-priority files override lower-priority ones.
+
+#### Defaults
+
+| File location | Default priority |
+|---------------|------------------|
+| Current directory `[name].byk.json` | 1 |
+| Current directory `.byk.json` | 1 (sorted last) |
+| Global `[name].byk.json` | 0 |
+| Global `.byk.json` | 0 (sorted last) |
+
+Hence "near-first": project files automatically override same-named global aliases, so `byk <key>` works the moment you enter a directory — no declaration needed.
+
+Files at the same priority load in alphabetical order by filename, with later files overriding earlier ones — the behavior is deterministic.
+
+:::note Running inside the global directory
+When the cwd happens to be `~/.byk/alias/`, the files there belong to both the "current directory" and the "global directory". They are scanned in both roles (`@f` and `@@f` both work), but they participate in the merge **only once, as the global role** — they are never merged twice.
+:::
+
+#### Custom Priority
+
+To keep a file for its own use only, out of the shared space, write `-1`:
+
+```json title="run.byk.json"
+{
+  "$priority": -1,
+  "deploy": "deploy --env {env}"
+}
+```
+
+Now `byk deploy` won't find it; only `byk @run.deploy` will.
+
+Only write a number when you need to outrank other files in the same directory:
+
+```json title="any .byk.json"
+{
+  "$priority": 20,
+  "build": "vite build"
+}
+```
+
+:::note
+`$priority` is a reserved field and is never treated as an alias key. Day to day you only need two values: **omitted (1 / 0, near-first)** and **-1 (exact syntax only)**.
+:::
+
+### Exact Execution Syntax
+
+| Syntax | Description |
+|--------|-------------|
+| `byk @release.build` | `build` from `release.byk.json` in the current directory |
+| `byk @@release.build` | `build` from `~/.byk/alias/release.byk.json` |
+| `byk @.build` | `build` from the anonymous `.byk.json` in the current directory |
+| `byk @@.build` | `build` from the anonymous `.byk.json` globally |
+
+Conventions:
+
+- Pure file routing, no fallback
+- File not found → `Alias file not found: release`
+- File exists but key not found → `Alias key not found in file @release: build`
+- Both cases exit with code 1

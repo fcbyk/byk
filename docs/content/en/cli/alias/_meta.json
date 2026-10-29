@@ -1,0 +1,17 @@
+[
+  {
+    "type": "file",
+    "name": "start",
+    "label": "Quick Start"
+  },
+  {
+    "type": "file",
+    "name": "config",
+    "label": "Alias Configuration"
+  },
+  {
+    "type": "file",
+    "name": "placeholders",
+    "label": "Placeholders"
+  }
+]

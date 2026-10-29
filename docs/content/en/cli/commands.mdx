@@ -1,0 +1,114 @@
+---
+title: Options & Commands
+description: The full command-line surface of byk — three options, three execution forms, and one hidden program interface
+---
+
+# Options & Commands
+
+byk's command line has only three layers: **options**, **aliases**, and the **program interface**. Apart from these three options and the hidden interface, every other word is treated as an alias to look up — so you'll never hit a reserved word, and you can name aliases whatever you like.
+
+```
+Usage: byk [OPTIONS] [ALIAS] [ARGS]...
+```
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `-h, --help` | Help: banner + Usage + Options + all aliases |
+| `-v, --version` | Version, build info, and install path |
+| `--paths` | Print the directories the CLI uses |
+
+Running `byk` with no arguments produces exactly the same output as `byk -h`. The first line is always `byk <version> (<commit> <build date>) [<platform>]`, so you can safely grab the version with `byk -v | head -1`.
+
+```bash title="-v"
+$ byk -v
+byk 0.5.1 (51ba30b32 2026-10-29) [darwin-arm64]
+installed at /opt/homebrew/bin/byk
+```
+
+```bash title="--paths"
+$ byk --paths
+
+CLI Home: /Users/coke/.byk
+Alias: /Users/coke/.byk/alias
+```
+
+`CLI Home` is byk's home directory and `Alias` is where global alias files live — drop `*.byk.json` files there and they join the `byk <key>` lookup space.
+
+## Running Aliases
+
+| Form | Description |
+|------|-------------|
+| `byk <key> [args...]` | Look up and run from the merged alias space |
+| `byk @file.key [args...]` | Run an alias from a specific file in the **current directory** |
+| `byk @@file.key [args...]` | Run an alias from a specific file in the **global directory** `~/.byk/alias/` |
+
+The merged space consists of the global directory `~/.byk/alias/` (priority 0) and the current directory (priority 1); on name collisions, the project's alias wins.
+
+```bash
+byk dev                  # merged-space lookup (project takes priority)
+byk @run.build           # build from ./run.byk.json
+byk @@work.deploy        # deploy from ~/.byk/alias/work.byk.json
+```
+
+The exact syntax is pure file routing with no fallback: a missing file reports `Alias file not found: <file>`, a missing key reports `Alias key not found in file @<file>: <key>`, and both exit with code 1.
+
+## The `__api__` Program Interface
+
+`byk __api__` is a read-only interface for programs and editor plugins: it **never executes aliases and never writes to disk**, so you can call it as often as you like. It does not appear in `-h`.
+
+| Request | Output |
+|---------|--------|
+| `__api__ completion <shell>` | Shell registration script (zsh / bash / fish) |
+| `__api__ complete <words...>` | Completion candidates, one per line |
+| `__api__` (no args) | Interface manifest, JSON |
+
+```bash
+# let your shell know about byk completion
+source <(byk __api__ completion zsh)
+
+# view the interface manifest
+byk __api__
+```
+
+```json title="byk __api__"
+{
+  "requests": [
+    {
+      "name": "completion",
+      "args": "<shell>",
+      "description": "print the shell registration script (zsh|bash|fish)"
+    },
+    {
+      "name": "complete",
+      "args": "<words...>",
+      "description": "print completion candidates, one per line"
+    }
+  ]
+}
+```
+
+There are no other argument slots beyond these three requests: unknown requests, missing arguments, and unsupported shells all exit with code 1.
+
+### How Completion Hooks Up
+
+`install.sh` writes one line to `~/.zshrc` (or `~/.bashrc`):
+
+```bash
+# byk shell completion
+if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
+```
+
+This line forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same.
+
+## Match Order
+
+When you run `byk <word> ...`, the following order applies — the first match wins:
+
+1. Options such as `-h` / `-v` / `--paths`
+2. The `__api__` hidden interface
+3. `@file.key` / `@@file.key` exact execution
+4. Aliases in the merged space
+
+When nothing matches, byk prints `Unrecognized command or alias: <word>` along with candidate suggestions and exits with code 1.
