@@ -13,6 +13,10 @@ pub struct Cli {
     #[arg(short = 'h', long = "help", action = clap::ArgAction::SetTrue)]
     pub help: bool,
 
+    /// Print CLI paths and file locations
+    #[arg(long = "paths")]
+    pub paths: bool,
+
     /// 内置子命令
     #[command(subcommand)]
     pub command: Option<Commands>,

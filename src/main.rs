@@ -93,6 +93,10 @@ fn main() {
         render::help::render_all(&layout, &options);
         return;
     }
+    if cli.paths {
+        render::show::render_paths(&layout);
+        return;
+    }
     if cli.version {
         println!(
             "byk {} ({} {}) [{}]",
