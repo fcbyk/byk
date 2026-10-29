@@ -23,7 +23,7 @@ use crate::utils::json_io;
 /// 别名缓存（持久化到 alias.json）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AliasCache {
-    /// 所有被扫描 .byk.json 文件的路径 → mtime (秒级)，用于失效检测。
+    /// 所有被扫描 .byk.json 文件的路径 → mtime (纳秒级)，用于失效检测。
     /// 本地 + 全局文件混合存储，CWD 变化自然导致快照不匹配。
     pub watched_mtimes: HashMap<String, u64>,
     /// 缓存时间戳
@@ -58,9 +58,10 @@ pub(crate) fn get_watched_mtimes(dir: &Path) -> HashMap<String, u64> {
             && let Ok(modified) = meta.modified()
             && let Ok(duration) = modified.duration_since(UNIX_EPOCH)
         {
+            // 纳秒级：秒级时间戳会让「同一秒内改两次」读到旧缓存
             mtimes.insert(
                 path.to_string_lossy().to_string(),
-                duration.as_secs(),
+                duration.as_nanos() as u64,
             );
         }
     }
