@@ -4,19 +4,10 @@ use super::merge::apply_inherited;
 use super::parse::{is_alias_value, to_alias_value};
 use super::types::{AliasFile, ResolvedAlias};
 
-// ---------------------------------------------------------------------------
-// 精确执行语法
-// ---------------------------------------------------------------------------
 
-/// 解析精确执行语法。
+/// 解析 `@file.key` / `@@file.key`，返回 (file_key, alias_key)。
 ///
-/// Returns (file_key, alias_key) 或 None。
-///
-/// @release.build  → ("@release", "build")
-/// @@release.build → ("@@release", "build")
-/// @.build         → ("@", "build")
-/// @@.build        → ("@@", "build")
-/// 无 . 或 alias_key 为空 → None（走普通查找）
+/// `@.build` 的 file_key 是 `@`（匿名文件）；无点号或 key 为空时返回 None，走普通查找。
 pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
     let (prefix, rest) = if let Some(rest) = input.strip_prefix("@@") {
         ("@@", rest)
@@ -37,10 +28,7 @@ pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
     Some((format!("{}{}", prefix, file_name), alias_key.to_string()))
 }
 
-/// 在 files 数组中按 file_key 精确查找别名。
-///
-/// Returns (ResolvedAlias, display_source) 或 None。
-/// display_source 如 "@release.group.sub"。
+/// 按 file_key 在文件列表里查找别名，返回 (别名, 展示用来源串)。
 pub fn lookup_exact_alias(
     files: &[AliasFile],
     file_key: &str,
@@ -90,15 +78,11 @@ pub fn lookup_exact_alias(
     None
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ==================== parse_exact_syntax ====================
 
     #[test]
     fn parse_at_file_dot_key() {

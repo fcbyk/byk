@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::core::aliases::{self, MergedNode};
 
-/// 补全 @ 和 @@ 语法：文件引用和文件内 key。
+/// 补全 `@` / `@@`：先补文件 key，输入点号后补该文件内的别名路径。
 pub(crate) fn complete_at_prefix(partial: &str, layout: &crate::core::paths::PathLayout) -> Vec<String> {
     let (_, files) = aliases::load_merged_aliases(layout);
 
@@ -64,8 +64,7 @@ pub(crate) fn complete_nested_alias(
         .collect()
 }
 
-/// 递归收集 JSON Object 中所有可补全的 key 路径。
-/// $ 前缀的 key 为系统元数据，不参与补全。
+/// 递归收集可补全的 key 路径；`$` 前缀的系统字段跳过。
 pub(crate) fn collect_object_keys(
     obj: &serde_json::Map<String, serde_json::Value>,
     prefix: &str,

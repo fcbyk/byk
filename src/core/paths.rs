@@ -9,14 +9,11 @@ pub struct PathLayout {
 }
 
 impl PathLayout {
-    /// 使用默认 app_name "byk" 构建。
     pub fn new() -> Self {
         Self::with_name("byk")
     }
 
-    /// 使用自定义 app_name 构建目录布局。
-    ///
-    /// 不创建任何目录：别名目录由用户自己放文件，缺失时扫描结果天然为空。
+    /// 不创建任何目录：别名目录缺失时扫描结果天然为空。
     pub fn with_name(app_name: &str) -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| {
             eprintln!("无法获取用户主目录，回退到当前目录");
@@ -29,9 +26,6 @@ impl PathLayout {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

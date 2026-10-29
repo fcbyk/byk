@@ -31,9 +31,7 @@ fn resolve_platform_value(val: &Value, platform: &str) -> Option<String> {
     }
 }
 
-/// 从文件根对象提取 `$var`，构建变量表。
-///
-/// 返回 `(变量表, 被忽略的保留字声明名列表)`。
+/// 从文件根对象构建变量表，返回 (变量表, 被忽略的保留字声明名列表)。
 fn collect_vars(root: &serde_json::Map<String, Value>) -> (Vec<(String, String)>, Vec<String>) {
     let mut pairs = Vec::new();
     let mut shadowed = Vec::new();
@@ -107,8 +105,7 @@ fn substitute_value(v: &mut Value, vars: &[(String, String)]) {
 
 /// 阶段一入口：提取 `$var` 并对整个文件做字符串值替换（原地修改）。
 ///
-/// 返回被忽略的保留字声明名列表——调用方（扫描期）在缓存重建时警告一次，
-/// 缓存命中路径不调用本函数，不会重复刷屏。
+/// 返回被忽略的保留字声明名列表，供调用方警告。
 pub fn preprocess_vars(root: &mut Value) -> Vec<String> {
     let Some(obj) = root.as_object() else {
         return Vec::new();
@@ -120,9 +117,6 @@ pub fn preprocess_vars(root: &mut Value) -> Vec<String> {
     shadowed
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

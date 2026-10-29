@@ -23,7 +23,6 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     println!();
 }
 
-/// 渲染 Usage 说明。
 pub fn render_usage() {
     println!(
         "{} byk [OPTIONS] [ALIAS] [ARGS]...",
@@ -31,7 +30,6 @@ pub fn render_usage() {
     );
 }
 
-/// 渲染全局选项列表。
 pub fn render_options(options: &[(String, String)]) {
     let lines = format_options_lines(options);
     if lines.is_empty() {
@@ -44,7 +42,7 @@ pub fn render_options(options: &[(String, String)]) {
     }
 }
 
-/// 将选项格式化为对齐的展示行列表（不含标题）。
+/// 选项的展示行（不含标题）。
 fn format_options_lines(options: &[(String, String)]) -> Vec<String> {
     if options.is_empty() {
         return Vec::new();
@@ -65,9 +63,6 @@ fn format_options_lines(options: &[(String, String)]) -> Vec<String> {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

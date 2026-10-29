@@ -1,9 +1,4 @@
-//! Shell 补全脚本生成与动态补全查询。
-//!
-//! 通过 `byk __api__ completion <shell>` 输出对应 shell 的补全包装脚本（到 stdout），
-//! 通过 `byk __api__ complete <words...>` 查询补全候选（供补全脚本回调）。
-//!
-//! 支持 zsh、bash、fish。
+//! Shell 补全：生成 zsh / bash / fish 的注册脚本，并回答 `complete` 查询。
 
 mod at_prefix;
 
@@ -15,11 +10,7 @@ use at_prefix::collect_object_keys;
 use super::aliases;
 use super::paths::PathLayout;
 
-// ---------------------------------------------------------------------------
-// 公开入口
-// ---------------------------------------------------------------------------
 
-/// 生成指定 shell 的补全脚本并输出到 stdout。
 pub fn generate(shell: &str) {
     match shell {
         "zsh" => print_zsh(),
@@ -33,11 +24,9 @@ pub fn generate(shell: &str) {
     }
 }
 
-/// 根据已输入的命令行返回补全候选，每行一个输出到 stdout。
+/// 输出补全候选，一行一个。
 ///
-/// 将 args 拆分为"已确定的前缀词"和"正在输入的当前词"两部分：
-/// - 无前缀词：按顶级补全逻辑（当前词可能为空，表示用户刚开始输入第一个命令）
-/// - 有前缀词：检查前缀词是否构成一个已知命令，再决定补全策略
+/// 最后一个词是正在输入的部分，前面的词用于判断上下文。
 pub fn complete(args: &[String], layout: &PathLayout) {
     let partial = args.last().map(|s| s.as_str()).unwrap_or("");
     let prev = if args.len() > 1 {
@@ -47,10 +36,8 @@ pub fn complete(args: &[String], layout: &PathLayout) {
     };
 
     let candidates = if prev.is_empty() {
-        // 没有前缀词：用户正在输入第一个命令，按原逻辑补全
         get_completions(partial, layout)
     } else {
-        // 有前缀词：检查这些词是否构成一个已知命令，再决定补全
         contextual_completions(prev, partial, layout)
     };
 
@@ -59,11 +46,7 @@ pub fn complete(args: &[String], layout: &PathLayout) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 补全逻辑
-// ---------------------------------------------------------------------------
 
-/// 全局选项列表。
 const GLOBAL_FLAGS: &[&str] = &[
     "--version",
     "-v",
@@ -72,7 +55,6 @@ const GLOBAL_FLAGS: &[&str] = &[
     "--paths",
 ];
 
-/// 根据当前输入的部分词，从所有命令源收集匹配的补全候选。
 fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     if partial.starts_with('-') {
         return GLOBAL_FLAGS
@@ -99,12 +81,7 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     get_top_level_completions(partial, layout)
 }
 
-/// 根据前缀词（已确定输入的命令词）和当前部分词，返回上下文相关的补全候选。
-///
-/// 前缀词可能是：
-/// - 别名节点（如 `rust`）→ 补全其子节点
-/// - 别名叶子 → 无子命令，返回空
-/// - 无法识别的词 → 返回空
+/// 根据前缀词决定补什么：分组补子节点，叶子与未知词返回空。
 fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -> Vec<String> {
     if prev.is_empty() {
         return Vec::new();
@@ -154,7 +131,6 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
-    // 顶级别名（叶子节点 + 中间 dict 节点，dict 加 . 后缀提示可展开）
     let (merged, files) = aliases::load_merged_aliases(layout);
 
     // 按前缀 @ 的文件命名空间（匿名文件 .byk.json 的顶 key 不通过 @ 展示）
@@ -163,7 +139,6 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
 
     // 合并树中的顶 key
     for key in merged.keys() {
-        // 有 alias 或有 children 的节点都可补全
         candidates.push(key.clone());
     }
 
@@ -176,17 +151,12 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
 }
 
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
     use std::fs;
 
-    // ==================== 测试辅助 ====================
 
     /// 创建临时目录布局，写入待测别名文件。
     struct TestEnv {
@@ -218,7 +188,6 @@ mod tests {
         }
     }
 
-    // ==================== collect_object_keys ====================
 
     #[test]
     fn collect_empty_object() {
@@ -308,7 +277,6 @@ mod tests {
         assert!(result.contains(&"obj_val.nested".to_string()));
     }
 
-    // ==================== get_top_level_completions ====================
 
     #[test]
     fn top_level_includes_alias_files() {
@@ -337,7 +305,6 @@ mod tests {
         assert!(!completions.contains(&"task".to_string()));
     }
 
-    // ==================== complete_at_prefix ====================
 
     #[test]
     fn at_prefix_completes_file_keys() {
@@ -365,7 +332,6 @@ mod tests {
         assert!(completions.is_empty());
     }
 
-    // ==================== complete_nested_alias ====================
 
     #[test]
     fn nested_alias_completes_children() {
@@ -412,7 +378,6 @@ mod tests {
         assert!(completions.is_empty());
     }
 
-    // ==================== contextual_completions ====================
 
     #[test]
     fn contextual_empty_prev_returns_empty() {
@@ -489,7 +454,6 @@ mod tests {
         assert!(result.is_empty());
     }
 
-    // ==================== get_completions ====================
 
     #[test]
     fn get_completions_flag_prefix() {
@@ -540,7 +504,6 @@ mod tests {
         assert_eq!(completions, vec!["deploy.prod".to_string()]);
     }
 
-    // ==================== generate (shell scripts) ====================
 
     #[test]
     fn generate_zsh_does_not_panic() {
@@ -555,9 +518,6 @@ mod tests {
 
 }
 
-// ---------------------------------------------------------------------------
-// Shell 脚本模板
-// ---------------------------------------------------------------------------
 
 fn print_zsh() {
     print!(

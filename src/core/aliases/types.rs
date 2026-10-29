@@ -42,11 +42,10 @@ pub struct AliasDefinition {
 pub struct AliasFile {
     /// 文件 key: "@release" | "@@release" | "@" | "@@"
     pub key: String,
-    /// 优先级
     pub priority: i32,
     /// 过滤后的原始 JSON（已去除 $priority/$cwd/$interactive/$paths，已过滤非法 key）
     pub aliases: serde_json::Map<String, serde_json::Value>,
-    /// 配置文件完整路径
+    /// 文件路径
     pub path: PathBuf,
     /// 文件级 $cwd，所有子别名自动继承（除非自行指定）
     pub inherited_cwd: Option<String>,

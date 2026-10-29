@@ -8,9 +8,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-// ---------------------------------------------------------------------------
-// 占位符收集
-// ---------------------------------------------------------------------------
 
 /// 收集模板中所有唯一占位符，保持首次出现顺序。
 ///
@@ -72,7 +69,6 @@ pub fn collect_placeholders(template: &str) -> Vec<String> {
     result
 }
 
-/// 分割条件渲染表达式为 (key, true_branch, false_branch)。
 pub(crate) fn split_ternary(s: &str) -> (String, String, String) {
     let q_idx = match s.find('?') {
         Some(i) => i,
@@ -105,7 +101,7 @@ pub(crate) fn split_ternary(s: &str) -> (String, String, String) {
     (key, branches.to_string(), String::new())
 }
 
-/// 递归替换 value 中引用的其他已解析占位符，带循环检测。
+/// 展开占位符值里引用的其他占位符，带循环检测。
 fn resolve_nested(value: &str, resolved: &HashMap<String, String>) -> String {
     let mut visited = HashSet::new();
     resolve_nested_impl(value, resolved, &mut visited)
@@ -131,7 +127,7 @@ fn resolve_nested_impl(
     result
 }
 
-/// 解析单个占位符（${...args} 除外），结果写入 resolved。
+/// 解析单个占位符（`${...args}` 除外），结果写入 resolved。
 fn resolve_placeholder(
     ph: &str,
     args: &[String],
@@ -143,13 +139,11 @@ fn resolve_placeholder(
         return;
     }
 
-    // ${args} — 全部原始参数
     if ph == "${args}" {
         resolved.insert(ph.to_string(), args.join(" "));
         return;
     }
 
-    // ${N} — 绝对位置索引
     if ph.starts_with("${") && ph.ends_with('}') {
         let inner = &ph[2..ph.len() - 1];
         if let Ok(idx) = inner.parse::<usize>() {
@@ -163,7 +157,6 @@ fn resolve_placeholder(
         }
     }
 
-    // {{xxx}} — 可选透传
     if ph.starts_with("{{") && ph.ends_with("}}") {
         let key = &ph[2..ph.len() - 2];
         for (i, arg) in args.iter().enumerate() {
@@ -182,7 +175,6 @@ fn resolve_placeholder(
         return;
     }
 
-    // {xxx?...} — 条件渲染
     if ph.contains('?') {
         let inner = &ph[1..ph.len() - 1];
         let (key, true_branch, false_branch) = split_ternary(inner);
@@ -197,7 +189,6 @@ fn resolve_placeholder(
         return;
     }
 
-    // {xxx} — 具名占位符
     let key = &ph[1..ph.len() - 1];
     for (i, arg) in args.iter().enumerate() {
         if arg == key {
@@ -214,20 +205,10 @@ fn resolve_placeholder(
     resolved.insert(ph.to_string(), String::new());
 }
 
-// ---------------------------------------------------------------------------
-// 公开入口
-// ---------------------------------------------------------------------------
 
-/// 处理别名占位符，返回最终可执行命令字符串 + 占位符→值的映射。
+/// 解析占位符，返回最终命令与「占位符 → 值」映射（交互模式回显用）。
 ///
-/// 支持四类占位符：
-/// - `{xxx}`    — 具名占位符，匹配 argv 中 xxx 后面的值
-/// - `{{xxx}}`  — 可选透传，有值则渲染 "xxx value"，无则消失
-/// - `{xxx?}`   — 条件渲染，匹配时渲染真分支
-/// - `${args}` / `${N}` / `${...args}` — 系统占位符
-///
-/// 无占位符时自动追加所有参数（等价于隐式 ${args}）。
-/// 映射用于交互模式回显用户填了哪些值。
+/// 命令里没有占位符时自动追加所有参数，等价于隐式 `${args}`。
 pub fn parse_alias_arguments_with_mapping(
     command: &str,
     args: &[String],
@@ -290,15 +271,11 @@ pub fn parse_alias_arguments_with_mapping(
     (final_command, resolved)
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ==================== collect_placeholders ====================
 
     #[test]
     fn collect_named_placeholder() {
@@ -382,7 +359,6 @@ mod tests {
         assert!(collect_placeholders("").is_empty());
     }
 
-    // ==================== split_ternary ====================
 
     #[test]
     fn split_no_question_mark() {
@@ -432,7 +408,6 @@ mod tests {
         assert!(f.is_empty());
     }
 
-    // ==================== parse_alias_arguments_with_mapping ====================
 
     #[test]
     fn parse_no_placeholders_appends_args() {

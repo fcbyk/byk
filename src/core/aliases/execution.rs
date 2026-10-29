@@ -11,9 +11,6 @@ use super::types::ResolvedAlias;
 use super::variables::{VarContext, expand_variables};
 use crate::core::paths::PathLayout;
 
-// ---------------------------------------------------------------------------
-// 别名执行环境构建
-// ---------------------------------------------------------------------------
 
 /// 构造别名执行环境，将自定义路径和 node_modules/.bin 前置到 PATH。
 ///
@@ -59,9 +56,6 @@ pub fn build_alias_env(working_dir: &Path, custom_paths: &[String]) -> HashMap<S
     env_map
 }
 
-// ---------------------------------------------------------------------------
-// 交互模式辅助函数
-// ---------------------------------------------------------------------------
 
 /// 判断占位符是否为具名占位符 `{xxx}`（单层花括号，不含 ?）。
 fn is_named_placeholder(ph: &str) -> bool {
@@ -136,7 +130,6 @@ fn pre_fill_from_cli(
     let mut pre_filled: HashMap<String, String> = HashMap::new();
     let mut consumed: HashSet<usize> = HashSet::new();
 
-    // 位置占位符 ${N}
     for ph in positional {
         let n = &ph[2..ph.len() - 1];
         if let Ok(idx) = n.parse::<usize>() && idx < cli_args.len() && !consumed.contains(&idx) {
@@ -145,7 +138,6 @@ fn pre_fill_from_cli(
         }
     }
 
-    // 具名占位符 {xxx} / {{xxx}}
     for ph in named {
         let key = if is_named_placeholder(ph) {
             &ph[1..ph.len() - 1]
@@ -166,7 +158,6 @@ fn pre_fill_from_cli(
         }
     }
 
-    // 条件占位符 {xxx?...}
     for ph in conditional {
         let inner = &ph[1..ph.len() - 1];
         let (key, true_branch, _) = split_ternary(inner);
@@ -190,9 +181,6 @@ fn pre_fill_from_cli(
     (pre_filled, remaining)
 }
 
-// ---------------------------------------------------------------------------
-// 共享输出辅助
-// ---------------------------------------------------------------------------
 
 /// 显示带高亮占位符的命令模板。
 fn display_interactive_template(command: &str, placeholders: &[String]) {
@@ -251,9 +239,6 @@ fn convert_unix_path_for_cmd(command: &str) -> String {
     command.to_string()
 }
 
-// ---------------------------------------------------------------------------
-// 别名执行（统一入口）
-// ---------------------------------------------------------------------------
 
 /// 执行别名命令。
 ///
@@ -295,7 +280,6 @@ pub fn execute_alias(
     );
     let placeholders = collect_placeholders(&command);
 
-    // --- 公共输出: header ---
     println!("\n> {} {}", display_source, working_dir.display());
 
     if definition.interactive {
@@ -305,9 +289,6 @@ pub fn execute_alias(
     }
 }
 
-// ---------------------------------------------------------------------------
-// 非交互执行
-// ---------------------------------------------------------------------------
 
 fn execute_direct_impl(
     command: &str,
@@ -321,9 +302,6 @@ fn execute_direct_impl(
     run_command(&final_command, working_dir, custom_paths);
 }
 
-// ---------------------------------------------------------------------------
-// 交互执行
-// ---------------------------------------------------------------------------
 
 fn execute_interactive_impl(
     command: &str,
@@ -349,10 +327,8 @@ fn execute_interactive_impl(
         (command.to_string(), placeholders.to_vec())
     };
 
-    // --- ② 模板行 ---
     display_interactive_template(&display_cmd, &display_placeholders);
 
-    // --- 零占位符快捷路径 ---
     if no_placeholders {
         let args_str = if cli_args.is_empty() {
             "none".to_string()
@@ -373,9 +349,7 @@ fn execute_interactive_impl(
         run_command(&final_command, working_dir, custom_paths);
     }
 
-    // --- 有占位符: 逐项收集 ---
 
-    // 分离占位符类型
     let positional: Vec<&String> = placeholders
         .iter()
         .filter(|ph| is_positional_placeholder(ph))
@@ -390,7 +364,6 @@ fn execute_interactive_impl(
         .collect();
     let has_rest_args = placeholders.iter().any(|ph| ph == "${...args}");
 
-    // 从 CLI 参数预填充
     let (pre_filled, remaining_cli) =
         pre_fill_from_cli(&positional, &conditional, &named, cli_args);
 
@@ -398,7 +371,6 @@ fn execute_interactive_impl(
     let mut interactive_args: Vec<String> = Vec::new();
     let mut resolved_map: HashMap<String, String> = HashMap::new();
 
-    // --- ③ 输入区 ---
 
     // Step 1: ${N} 位置占位符
     for ph in &positional {
@@ -552,7 +524,6 @@ fn execute_interactive_impl(
     }
     all_args.extend(interactive_args.clone());
 
-    // --- args: 信息行 ---
     if show_args_info {
         let args_str = if all_args.is_empty() {
             "none".to_string()
@@ -562,7 +533,6 @@ fn execute_interactive_impl(
         println!("  \x1b[33margs\x1b[0m: {}", args_str);
     }
 
-    // 构建最终命令：若 cmd 已无占位符则直接使用，否则通过 parse_alias_arguments_with_mapping 解析
     let remaining_placeholders = collect_placeholders(&cmd);
     let final_command = if remaining_placeholders.is_empty() {
         cmd.clone()
@@ -570,7 +540,6 @@ fn execute_interactive_impl(
         parse_alias_arguments_with_mapping(&cmd, &all_args, &pre_consumed).0
     };
 
-    // --- ④ 最终命令 + 确认 ---
     println!("~ \x1b[1;32m{}\x1b[0m", final_command);
     if rl.readline("  Press Enter to execute...").is_err() {
         println!("\nCancelled");
@@ -626,15 +595,11 @@ fn strip_extended_path_prefix(path: PathBuf) -> PathBuf {
     path
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ==================== is_named_placeholder ====================
 
     #[test]
     fn named_placeholder_valid() {
@@ -669,7 +634,6 @@ mod tests {
         assert!(!is_named_placeholder("{a{b}}"));
     }
 
-    // ==================== is_optional_placeholder ====================
 
     #[test]
     fn optional_placeholder_valid() {
@@ -689,7 +653,6 @@ mod tests {
         assert!(!is_optional_placeholder("{{debug?yes:no}}"));
     }
 
-    // ==================== is_positional_placeholder ====================
 
     #[test]
     fn positional_placeholder_valid() {
@@ -713,7 +676,6 @@ mod tests {
         assert!(!is_positional_placeholder("${name}"));
     }
 
-    // ==================== is_conditional_placeholder ====================
 
     #[test]
     fn conditional_placeholder_valid() {
@@ -739,7 +701,6 @@ mod tests {
         assert!(!is_conditional_placeholder("{name}"));
     }
 
-    // ==================== pre_fill_from_cli ====================
 
     #[test]
     fn pre_fill_empty_all() {
@@ -818,7 +779,6 @@ mod tests {
         let (filled, remaining) = pre_fill_from_cli(&positional, &conditional, &named, &args);
         // 第一个 ${0} 消费了索引 0，第二个 ${0} 被 consumed 挡住了
         assert_eq!(filled.get("${0}").unwrap(), "a");
-        // 只有一个 ${0} 被填
         assert_eq!(filled.len(), 1);
         assert!(remaining.is_empty());
     }
@@ -857,7 +817,6 @@ mod tests {
         let conditional: Vec<&String> = vec![];
         let (filled, remaining) = pre_fill_from_cli(&positional, &conditional, &named, &args);
         assert!(filled.is_empty());
-        // remaining 包含所有未被消费的 args
         assert_eq!(remaining, vec!["other", "value"]);
     }
 
@@ -964,12 +923,10 @@ mod tests {
         assert_eq!(remaining, vec!["x", "y", "z"]);
     }
 
-    // ==================== resolve_working_dir ====================
 
     #[test]
     fn resolve_cwd_none_returns_current_dir() {
         let result = resolve_working_dir(None, None);
-        // 返回当前工作目录
         assert!(result.is_absolute());
     }
 
@@ -1009,7 +966,6 @@ mod tests {
         assert_eq!(result, PathBuf::from("relative/path"));
     }
 
-    // ==================== build_alias_env ====================
 
     #[test]
     fn env_no_custom_paths_preserves_existing() {

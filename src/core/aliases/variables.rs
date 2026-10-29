@@ -47,8 +47,6 @@ fn push_quoted(out: &mut String, path: &Path) {
     }
 }
 
-/// 展开 `cmd` 中的保留变量，返回展开后的命令字符串。
-///
 /// 单遍扫描：`$` 后跟标识符整词匹配保留集，命中则替换；
 /// 未命中（含 `${...}` 占位符——`$` 后是 `{`，标识符为空）原样保留。
 pub fn expand_variables(cmd: &str, ctx: &VarContext) -> String {
@@ -87,9 +85,6 @@ pub fn expand_variables(cmd: &str, ctx: &VarContext) -> String {
     out
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

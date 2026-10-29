@@ -1,7 +1,4 @@
-//! 深度合并、别名加载、路径收集与解析。
-//!
-//! 将多个 AliasFile 按优先级合并为一棵 MergedConfig 树，
-//! 并提供路径遍历和别名查找能力。
+//! 按优先级把多个 AliasFile 合并成一棵 MergedConfig 树，并支持路径收集与查找。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -11,9 +8,6 @@ use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, ResolvedAlias};
 use crate::core::paths::PathLayout;
 
-// ---------------------------------------------------------------------------
-// 深度合并
-// ---------------------------------------------------------------------------
 
 /// 深度合并上下文，打包所有跨递归传递的参数。
 #[derive(Copy, Clone)]
@@ -25,16 +19,10 @@ struct MergeContext<'a> {
     inherited_paths: &'a [String],
 }
 
-/// 将 source 深度合并到 target。
+/// 将 source 深度合并进 target。
 ///
-/// 每个 MergedNode 可以同时拥有 alias（$cmd 等元数据定义的叶子命令）
-/// 和 children（非 $ 前缀的嵌套分组）。
-///
-/// - String / 含 $ 前缀的 Object → 设置 target[key].alias
-/// - 不含 $ 前缀的 Object → 递归合并到 target[key].children
-///
-/// inherited_cwd 为文件级 $cwd，子别名未指定 $cwd 时自动继承。
-/// inherited_interactive 为文件级 $interactive，子别名未指定时自动继承。
+/// 同一层可以同时有 alias（`$cmd` 叶子命令）和 children（嵌套分组）：
+/// string 或含 `$` 前缀的 object 落到 alias，其余 object 递归进 children。
 fn deep_merge_dict(
     target: &mut MergedConfig,
     source: &serde_json::Map<String, serde_json::Value>,
@@ -142,13 +130,8 @@ pub(crate) fn apply_inherited(
     }
 }
 
-// ---------------------------------------------------------------------------
-// 别名加载（主入口）
-// ---------------------------------------------------------------------------
 
-/// 从已排序的 AliasFile 列表构建合并配置树。
-///
-/// 负数 priority 的文件不参与合并（仅可通过精确语法 @file.key 访问）。
+/// 负数 priority 的文件不参与合并（只能 `@file.key` 精确调用）。
 pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
     let mut merged: MergedConfig = HashMap::new();
     for f in files {
@@ -170,10 +153,9 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
     merged
 }
 
-/// 扫描本地和全局别名文件，返回 (合并配置, 文件列表)。
+/// 扫描当前目录与全局目录，返回合并配置和文件列表。
 ///
-/// 每次调用都重新扫描：别名文件通常只有几十个，扫描耗时以毫秒计，
-/// 不值得为此维护一份缓存状态。
+/// 每次调用都重新扫描：几十个文件的扫描以毫秒计，不值得为此维护缓存状态。
 pub fn load_merged_aliases(layout: &PathLayout) -> (MergedConfig, Vec<AliasFile>) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     load_merged_aliases_at(layout, &cwd)
@@ -213,9 +195,6 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 路径收集
-// ---------------------------------------------------------------------------
 
 /// 收集合并配置中所有可执行别名路径。
 pub fn collect_merged_paths(merged: &MergedConfig, prefix: &str) -> Vec<String> {
@@ -236,13 +215,8 @@ pub fn collect_merged_paths(merged: &MergedConfig, prefix: &str) -> Vec<String> 
     result
 }
 
-// ---------------------------------------------------------------------------
-// 别名解析
-// ---------------------------------------------------------------------------
 
-/// 在合并配置中按 key 路径查找，返回 ResolvedAlias 或 None。
-///
-/// 查找规则：沿点号路径遍历 MergedNode 树，最后一级节点有 alias 则返回。
+/// 沿点号路径遍历合并树，最后一级节点有 alias 则返回。
 pub fn resolve_merged_alias<'a>(
     merged: &'a MergedConfig,
     name: &str,
@@ -259,9 +233,6 @@ pub fn resolve_merged_alias<'a>(
     None
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -292,7 +263,6 @@ mod tests {
         }
     }
 
-    // ==================== apply_inherited ====================
 
     #[test]
     fn inherit_str_no_inherited_stays_str() {
@@ -396,7 +366,6 @@ mod tests {
         }
     }
 
-    // ==================== collect_merged_paths ====================
 
     #[test]
     fn paths_empty_config() {
@@ -470,7 +439,6 @@ mod tests {
         assert_eq!(result, vec!["group.leaf"]);
     }
 
-    // ==================== resolve_merged_alias ====================
 
     #[test]
     fn resolve_found() {
@@ -518,7 +486,6 @@ mod tests {
         assert!(resolve_merged_alias(&merged, "ns.sub").is_none());
     }
 
-    // ==================== inherited_paths ====================
 
     #[test]
     fn inherited_paths_flows_to_resolved_alias() {
@@ -562,7 +529,6 @@ mod tests {
         assert!(resolved.paths.is_empty());
     }
 
-    // ==================== 默认优先级与目录重叠 ====================
 
     #[test]
     fn local_file_overrides_global_by_default() {

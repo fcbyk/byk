@@ -32,7 +32,7 @@ fn main() {
 
     let cli = Cli::parse();
 
-    // Step 0: 内置子命令（优先级最高）
+    // 隐藏接口 __api__
     match cli.command {
         Some(Commands::Api { request }) => {
             core::api::dispatch(&request, &layout);
@@ -41,7 +41,7 @@ fn main() {
         None => {}
     }
 
-    // Step 1: 全局选项（优先级最高，直接返回）
+    // 全局选项
     if cli.help {
         render::help::render_all(&layout, &options);
         return;
@@ -62,10 +62,10 @@ fn main() {
     let command_name = &cli.trailing[0];
     let command_args = &cli.trailing[1..];
 
-    // 提前加载别名数据（精确执行和普通查找共用）
+    // 别名数据只加载一次，精确执行与普通查找共用
     let (merged, files) = aliases::load_merged_aliases(&layout);
 
-    // Step 4a: 检查精确执行语法（@file.key 或 @@file.key）
+    // 精确执行：@file.key / @@file.key
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(command_name) {
         match aliases::lookup_exact_alias(&files, &file_key, &alias_key) {
             Some((resolved, display_source)) => {
@@ -87,7 +87,7 @@ fn main() {
         }
     }
 
-    // Step 4b: 检查普通别名（在合并 key 空间中查找）
+    // 普通别名：在合并后的 key 空间里找
     match aliases::resolve_merged_alias(&merged, command_name) {
         Some(resolved) => {
             let display_source = format!("{}.{}", resolved.source, command_name);

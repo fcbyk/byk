@@ -10,7 +10,6 @@ const SEPARATOR_WIDTH: usize = 29;
 /// 文档地址。
 const DOCS_URL: &str = "https://cli.fcbyk.com";
 
-/// 一条虚线。
 fn separator() -> String {
     "-".repeat(SEPARATOR_WIDTH)
 }
@@ -39,9 +38,6 @@ fn lines() -> Vec<String> {
     ]
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

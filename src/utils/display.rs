@@ -109,15 +109,11 @@ pub fn escape_for_display(s: &str) -> String {
         .replace('\t', "\\t")
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ==================== get_display_width ====================
 
     #[test]
     fn display_width_ascii() {
@@ -149,7 +145,6 @@ mod tests {
         assert_eq!(get_display_width("🚀"), 2);
     }
 
-    // ==================== pad_to_width ====================
 
     #[test]
     fn pad_shorter_text() {
@@ -184,7 +179,6 @@ mod tests {
         assert_eq!(pad_to_width("你好", 6), "你好  ");
     }
 
-    // ==================== align_kv_pairs ====================
 
     #[test]
     fn align_empty_entries() {
@@ -234,7 +228,6 @@ mod tests {
         assert_eq!(result[1].1, "用户名  user");
     }
 
-    // ==================== get_terminal_width ====================
 
     #[test]
     fn terminal_width_is_positive() {
@@ -242,7 +235,6 @@ mod tests {
         assert!(get_terminal_width() > 0);
     }
 
-    // ==================== wrap_text ====================
 
     #[test]
     fn wrap_zero_max_width_returns_original() {
@@ -271,7 +263,6 @@ mod tests {
 
     #[test]
     fn wrap_single_word_longer_than_width() {
-        // 单个词超过宽度，保持完整不切分
         assert_eq!(wrap_text("hello world", 4), vec!["hello", "world"]);
     }
 
@@ -304,13 +295,11 @@ mod tests {
 
     #[test]
     fn wrap_cjk_words() {
-        // 中文字符之间无空格，每个字符视为一个 "词"（但 split_whitespace 不切中文）
-        // 实际上 split_whitespace 按空白分割，所以纯中文无空格会作为整体
+        // 纯中文没有空白，会被当成一个整体，不切分
         let result = wrap_text("你好世界", 2);
         assert_eq!(result, vec!["你好世界"]);
     }
 
-    // ==================== escape_for_display ====================
 
     #[test]
     fn escape_no_special_chars() {

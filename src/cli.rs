@@ -17,7 +17,7 @@ pub struct Cli {
     #[arg(long = "paths")]
     pub paths: bool,
 
-    /// 内置子命令
+    /// 隐藏接口
     #[command(subcommand)]
     pub command: Option<Commands>,
 
@@ -37,7 +37,7 @@ pub enum Commands {
     },
 }
 
-/// 从 clap Command 中提取选项信息。
+/// 供帮助页输出：只取非位置参数。
 pub fn extract_options(cmd: &clap::Command) -> Vec<(String, String)> {
     cmd.get_arguments()
         .filter(|a| !a.is_positional())

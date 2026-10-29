@@ -1,21 +1,9 @@
-//! 别名解析：校验、过滤、类型转换。
-//!
-//! 处理原始 JSON → 结构化数据的转换链路，
-//! 包括文件名校验、优先级解析、非法 key 过滤、值类型判断与转换。
+//! 原始 JSON → 结构化别名数据的转换：文件名校验、优先级解析、key 过滤、值类型转换。
 
 use super::types::{AliasDefinition, AliasValue};
 
-// ---------------------------------------------------------------------------
-// 文件名与 key 校验
-// ---------------------------------------------------------------------------
 
-/// 校验文件名 stem 是否合法。
-///
-/// stem 是从完整文件名中提取的部分：
-/// - "release" (来自 release.byk.json)
-/// - "" (来自 .byk.json)
-///   合法：空字符串或仅含字母、数字、-、_、中文
-///   非法：含 . 或 @ 等特殊字符
+/// 文件名 stem 是否合法：空串（匿名文件）或仅含字母、数字、`-`、`_`、中文。
 pub(crate) fn validate_filename(stem: &str) -> bool {
     if stem.is_empty() {
         return true;
@@ -32,10 +20,7 @@ fn is_cjk_char(c: char) -> bool {
     ('\u{4e00}'..='\u{9fff}').contains(&c)
 }
 
-/// 根据 stem 和位置构建文件 key。
-///
-/// stem: "release" | "" | "work"
-/// is_global: true → "@@" 前缀, false → "@" 前缀
+/// 构建文件 key：全局目录加 `@@`，当前目录加 `@`。
 pub(crate) fn build_file_key(stem: &str, is_global: bool) -> String {
     let prefix = if is_global { "@@" } else { "@" };
     if stem.is_empty() {
@@ -45,9 +30,6 @@ pub(crate) fn build_file_key(stem: &str, is_global: bool) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 优先级解析
-// ---------------------------------------------------------------------------
 
 /// 解析 $priority 字段，失败时返回默认值。
 ///
@@ -70,17 +52,11 @@ pub(crate) fn parse_priority(raw: &serde_json::Value, default: i32) -> i32 {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Key 过滤
-// ---------------------------------------------------------------------------
 
-/// 递归过滤含 @ 或 . 的 key，以及非法的值类型。
+/// 递归过滤：丢掉 key 含 `@`/`.` 的条目与非法的值类型。
 ///
-/// - key 含 @ 或 . → 丢弃该条目
-/// - 值是 object 且有 $ 前缀 key → 视为别名元数据，保留整体（不递归过滤 $ 内部）
-/// - 值是 object 且无 $ 前缀 key → 递归过滤（嵌套分组）
-/// - 值是 string → 保留
-/// - 其他类型（array、number、bool、null）→ 静默丢弃
+/// 含 `$` 前缀 key 的 object 是别名元数据，整体保留；其余 object 视为分组继续递归。
+/// array / number / bool / null 静默丢弃。
 pub(crate) fn filter_invalid_keys(
     data: &serde_json::Map<String, serde_json::Value>,
 ) -> serde_json::Map<String, serde_json::Value> {
@@ -91,7 +67,6 @@ pub(crate) fn filter_invalid_keys(
         }
         match val {
             serde_json::Value::Object(inner) => {
-                // 含 $ 前缀 key → 这是别名元数据对象，整体保留
                 if has_meta_key(inner) {
                     result.insert(key.clone(), val.clone());
                 } else {
@@ -110,21 +85,13 @@ pub(crate) fn filter_invalid_keys(
     result
 }
 
-/// 判断 Object 是否为别名元数据叶子节点（含 $cmd）。
-///
-/// 仅有 $cwd / $interactive 而无 $cmd 的 object 视为可继承属性的分组，
-/// 而非叶子别名。
+/// object 是否含 `$cmd`（叶子节点）；只有 `$cwd`/`$interactive` 的是分组。
 fn has_meta_key(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
     obj.contains_key("$cmd")
 }
 
-// ---------------------------------------------------------------------------
-// 值类型判断与转换
-// ---------------------------------------------------------------------------
 
-/// 判断是否为合法的别名值（叶子节点）。
-///
-/// String、含 $ 前缀 key 的 Object 都是叶子。
+/// string 或含 `$` 前缀 key 的 object 都是叶子。
 pub(crate) fn is_alias_value(val: &serde_json::Value) -> bool {
     match val {
         serde_json::Value::String(_) => true,
@@ -133,7 +100,6 @@ pub(crate) fn is_alias_value(val: &serde_json::Value) -> bool {
     }
 }
 
-/// 将 serde_json::Value 转换为 AliasValue。
 pub(crate) fn to_alias_value(val: &serde_json::Value) -> Option<AliasValue> {
     match val {
         serde_json::Value::String(s) => Some(AliasValue::Str(s.clone())),
@@ -142,7 +108,6 @@ pub(crate) fn to_alias_value(val: &serde_json::Value) -> Option<AliasValue> {
     }
 }
 
-/// 将 AliasValue 转换为 AliasDefinition。
 pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {
     match value {
         AliasValue::Str(command) => Some(AliasDefinition {
@@ -166,16 +131,12 @@ pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
-    // ==================== validate_filename ====================
 
     #[test]
     fn validate_empty_stem() {
@@ -222,7 +183,6 @@ mod tests {
         assert!(!validate_filename("name space"));
     }
 
-    // ==================== is_cjk_char ====================
 
     #[test]
     fn cjk_char_in_range() {
@@ -244,7 +204,6 @@ mod tests {
         assert!(!is_cjk_char('\u{3fff}')); // CJK 扩展前
     }
 
-    // ==================== build_file_key ====================
 
     #[test]
     fn build_key_local_empty_stem() {
@@ -266,7 +225,6 @@ mod tests {
         assert_eq!(build_file_key("release", true), "@@release");
     }
 
-    // ==================== parse_priority ====================
 
     #[test]
     fn priority_integer() {
@@ -306,7 +264,6 @@ mod tests {
         assert!(!has_meta_key(&obj));
     }
 
-    // ==================== filter_invalid_keys ====================
 
     #[test]
     fn filter_empty_object() {
@@ -397,7 +354,6 @@ mod tests {
         assert!(filter_invalid_keys(&data).is_empty());
     }
 
-    // ==================== is_alias_value ====================
 
     #[test]
     fn alias_value_string() {
@@ -424,7 +380,6 @@ mod tests {
         assert!(!is_alias_value(&json!(null)));
     }
 
-    // ==================== to_alias_value ====================
 
     #[test]
     fn to_alias_from_string() {
@@ -450,7 +405,6 @@ mod tests {
         assert!(to_alias_value(&json!(null)).is_none());
     }
 
-    // ==================== to_alias_definition ====================
 
     #[test]
     fn definition_from_str() {

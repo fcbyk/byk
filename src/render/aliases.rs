@@ -1,7 +1,4 @@
-//! 别名渲染。
-//!
-//! 将合并后的别名配置转为对齐的终端展示行并输出，
-//! 包含 CJK 显示宽度对齐和终端宽度感知的自动换行。
+//! 把合并后的别名配置渲染成对齐的终端展示行（CJK 宽度对齐 + 终端宽度感知换行）。
 
 use colored::Colorize;
 use std::path::{Path, PathBuf};
@@ -9,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::core::aliases::{self, MergedConfig};
 use crate::utils::display;
 
-/// 渲染 Aliases 区块（按名排序、统一对齐）。
+/// 输出 Aliases 区块：按名排序、统一对齐。
 pub fn render(merged: &MergedConfig) {
     let lines = align_entries(&collect_alias_entries(merged));
     if lines.is_empty() {
@@ -61,7 +58,7 @@ fn collect_alias_entries(merged: &MergedConfig) -> Vec<(String, String)> {
         .collect()
 }
 
-/// 对齐 + 终端宽度感知换行。
+/// 对齐并输出，超出终端宽度时换行。
 fn align_entries(entries: &[(String, String)]) -> Vec<(String, String)> {
     if entries.is_empty() {
         return Vec::new();
@@ -108,15 +105,11 @@ fn align_entries(entries: &[(String, String)]) -> Vec<(String, String)> {
     lines
 }
 
-/// 将合并后的别名配置格式化为对齐的展示行。
 #[cfg(test)]
 fn format_lines(merged: &MergedConfig, _alias_dir: &Path) -> Vec<(String, String)> {
     align_entries(&collect_alias_entries(merged))
 }
 
-// ---------------------------------------------------------------------------
-// 路径显示
-// ---------------------------------------------------------------------------
 
 /// 将 alias 文件中存储的 cwd 路径解析为直观的显示路径。
 ///
@@ -155,9 +148,6 @@ fn normalize(path: &Path) -> PathBuf {
     result
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -296,7 +286,6 @@ mod tests {
         assert!(result[0].1.contains("Say hello"));
     }
 
-    // ==================== resolve_cwd_display ====================
 
     #[test]
     fn resolve_cwd_absolute_path() {
@@ -324,7 +313,6 @@ mod tests {
         assert_eq!(result, "/home/user/project/lib");
     }
 
-    // ==================== normalize ====================
 
     #[test]
     fn normalize_simple_path() {

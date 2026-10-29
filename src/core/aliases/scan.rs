@@ -8,11 +8,7 @@ use colored::Colorize;
 use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
 use super::types::AliasFile;
 
-// ---------------------------------------------------------------------------
-// 文件扫描与解析
-// ---------------------------------------------------------------------------
 
-/// 扫描目录下所有 *.byk.json，返回 AliasFile 列表。
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool) -> Vec<AliasFile> {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
     // 只想给本文件用（仅 @file.key 可达）时显式写 `$priority: -1`。
@@ -41,11 +37,10 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool) -> Vec<AliasFile> {
     files
 }
 
-/// 解析单个 .byk.json 文件为 AliasFile，失败返回 None。
+/// 解析单个文件；文件名非法、读取失败或 JSON 损坏时静默返回 None。
 fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Option<AliasFile> {
     let name = path.file_name()?.to_str()?;
 
-    // 提取 stem（去掉 .byk.json 后缀）
     let suffix = ".byk.json";
     let stem = name.strip_suffix(suffix)?;
 
@@ -56,8 +51,7 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     let content = fs::read_to_string(path).ok()?;
     let mut data: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-    // 阶段一：提取 $var 并对整个文件做字符串值替换（内置变量留到阶段二）。
-    // 警告仅在扫描时打印——缓存命中不经过这里，不会重复刷屏
+    // 阶段一：提取 $var 并对整个文件做字符串值替换；内置变量留到执行时（阶段二）
     for name in crate::core::vars::preprocess_vars(&mut data) {
         eprintln!(
             "{} variable '${}' is reserved by byk, declaration ignored in {}",
@@ -69,7 +63,6 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
 
     let obj = data.as_object_mut()?;
 
-    // 提取 $priority
     let priority_raw = obj.remove("$priority");
     let priority =
         priority_raw
@@ -79,15 +72,12 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     // $var 为文件级变量声明（已在阶段一替换生效），移除避免泄漏为别名
     obj.remove("$var");
 
-    // 提取文件级 $cwd（所有子别名默认继承）
     let inherited_cwd = obj
         .remove("$cwd")
         .and_then(|v| v.as_str().map(String::from));
 
-    // 提取文件级 $interactive（所有子别名默认继承）
     let inherited_interactive = obj.remove("$interactive").and_then(|v| v.as_bool());
 
-    // 提取文件级 $paths（需要前置到 PATH 的目录列表）
     let inherited_paths = obj
         .remove("$paths")
         .and_then(|v| v.as_array().cloned())
@@ -98,7 +88,6 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         })
         .unwrap_or_default();
 
-    // 过滤非法 key
     let filtered = filter_invalid_keys(obj);
 
     Some(AliasFile {
@@ -112,9 +101,6 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     })
 }
 
-// ---------------------------------------------------------------------------
-// 排序
-// ---------------------------------------------------------------------------
 
 /// 原地排序 AliasFile 列表：低优先级在前，高优先级在后。
 ///
@@ -130,9 +116,6 @@ pub(crate) fn sort_alias_files(files: &mut [AliasFile]) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// 测试
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -151,7 +134,6 @@ mod tests {
         }
     }
 
-    // ==================== sort_alias_files ====================
 
     #[test]
     fn sort_by_priority_low_first() {
@@ -208,7 +190,6 @@ mod tests {
         assert_eq!(files[0].key, "@only");
     }
 
-    // ==================== $paths 提取 ====================
 
     #[test]
     fn paths_extracted_from_json() {
