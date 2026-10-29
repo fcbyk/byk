@@ -1,8 +1,0 @@
-{
-  "$add": {
-    "assets": {
-      "byksdk.py": "byksdk.py",
-      "utils.py": "utils.py"
-    }
-  }
-}
