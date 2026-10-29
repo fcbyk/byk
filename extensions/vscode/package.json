@@ -1,7 +1,7 @@
 {
   "name": "byk",
   "displayName": "BYK",
-  "description": "BYK CLI integration for VS Code — run tasks, manage plugins, and validate configs",
+  "description": "Run byk aliases from *.byk.json files — right-click to run, with schema validation and path completion",
   "version": "2026.10.25",
   "publisher": "fcbyk",
   "license": "MIT",
@@ -70,10 +70,6 @@
       {
         "fileMatch": "*.byk.json",
         "url": "./schemas/byk-alias.json"
-      },
-      {
-        "fileMatch": "byk.json",
-        "url": "./schemas/byk-plugin.json"
       }
     ],
     "menus": {
