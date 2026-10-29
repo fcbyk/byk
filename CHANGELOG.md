@@ -1,3 +1,19 @@
+## v0.6.0 (2026-10-29)
+
+### Breaking Changes
+
+- **commands**: remove all built-in subcommands (`add`, `remove`, `show`); byk is now a pure alias executor
+- **plugins**: remove plugin protocol and plugin installation/management
+- **cache**: remove alias caching; changes to `*.byk.json` files take effect immediately
+- **completion**: remove public `completion` subcommand; shell completion now uses the `__api__` interface
+- **node / py**: remove Node.js (npm/pnpm) and Python (py-v/uv) initialization features
+
+### Features
+
+- **`__api__`**: add hidden built-in command `byk __api__` for shell completion script generation and candidate queries
+- **`--paths`**: add `--paths` option to display CLI home and alias directory paths
+- **`$var`**: alias files now support `$var` declarations with per-platform value resolution (linux/macos/windows)
+
 ## v0.5.1 (2026-07-13)
 
 ### Features
