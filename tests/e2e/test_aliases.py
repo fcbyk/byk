@@ -35,12 +35,12 @@ def test_add_unexpected_target_errors(runner):
 
 
 def test_args_tree_completion(runner):
-    """$args 补全树：__complete 全链路（扫描→合并→补全）"""
+    """$args 补全树：__api__ complete 全链路（扫描→合并→补全）"""
     runner.prepare_alias_file(
         "args",
         '{"deploy": {"$cmd": "deploy {env}", "$args": {"$": ["prod", "staging"], "$options": ["--dry-run"]}}}',
     )
-    r = runner.run("__complete", "deploy", "")
+    r = runner.run("__api__", "complete", "deploy", "")
     assert r.returncode == 0
     assert "prod" in r.stdout
     assert "staging" in r.stdout
@@ -53,7 +53,7 @@ def test_args_tree_nested_completion(runner):
         "args",
         '{"deploy": {"$cmd": "deploy", "$args": {"build": {"$": ["debug", "release"]}}}}',
     )
-    r = runner.run("__complete", "deploy", "build", "")
+    r = runner.run("__api__", "complete", "deploy", "build", "")
     assert r.returncode == 0
     assert "debug" in r.stdout
     assert "release" in r.stdout
@@ -65,7 +65,7 @@ def test_args_tree_excludes_consumed_option(runner):
         "args",
         '{"deploy": {"$cmd": "deploy", "$args": {"$options": ["--dry-run", "--verbose"], "$": ["prod"]}}}',
     )
-    r = runner.run("__complete", "deploy", "--dry-run", "")
+    r = runner.run("__api__", "complete", "deploy", "--dry-run", "")
     assert r.returncode == 0
     assert "--verbose" in r.stdout
     assert "prod" in r.stdout

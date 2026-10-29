@@ -10,6 +10,7 @@ use std::process::Command;
 use crate::core::aliases::{self, ResolvedAlias};
 use crate::core::paths::PathLayout;
 use crate::core::pip::{PYTHON_BIN, VENV_BIN};
+use crate::utils::shell;
 
 // ---------------------------------------------------------------------------
 // 命令名查询
@@ -199,12 +200,7 @@ pub fn check_completion(shell_name: &str) -> (&'static str, bool) {
     let rc_path = home.join(rc_filename);
     let content = fs::read_to_string(&rc_path).unwrap_or_default();
 
-    let line = format!(
-        "if command -v byk >/dev/null 2>&1; then source <(byk completion {}); fi",
-        shell_name
-    );
-
-    (rc_filename, content.contains(&line))
+    (rc_filename, shell::has_completion_line(&content))
 }
 
 // ---------------------------------------------------------------------------

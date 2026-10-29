@@ -38,9 +38,22 @@ pub fn rc_path() -> Option<PathBuf> {
 /// 生成 byk completion 追加行。
 pub fn completion_line(shell_name: &str) -> String {
     format!(
-        "if command -v byk >/dev/null 2>&1; then source <(byk completion {}); fi",
+        "if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion {}); fi",
         shell_name
     )
+}
+
+/// 判断一行是否为 byk 的补全加载行。
+///
+/// 同时识旧形式 `byk completion <shell>`（`__api__` 之前写入 rc 的），
+/// 以保证升级后重跑 `byk add comp` 能替换而不是重复追加。
+fn is_completion_line(line: &str) -> bool {
+    line.contains("byk completion") || line.contains("byk __api__ completion")
+}
+
+/// 判断 rc 内容里是否已有 byk 补全加载行（新旧形式都算）。
+pub fn has_completion_line(content: &str) -> bool {
+    content.lines().any(is_completion_line)
 }
 
 /// 从 RC 文件内容中移除 byk completion 行及前面的注释/空行。
@@ -50,12 +63,12 @@ pub fn strip_completion_lines(content: &str) -> String {
     let mut i = 0;
     while i < lines.len() {
         let l = lines[i];
-        if l.contains("byk completion") {
+        if is_completion_line(l) {
             i += 1;
             continue;
         }
         if i + 1 < lines.len()
-            && lines[i + 1].contains("byk completion")
+            && is_completion_line(lines[i + 1])
             && (l.trim().is_empty() || l.trim().starts_with("# byk shell completion"))
         {
             i += 1;
@@ -118,14 +131,14 @@ mod tests {
     #[test]
     fn completion_line_zsh() {
         let line = completion_line("zsh");
-        assert!(line.contains("byk completion zsh"));
+        assert!(line.contains("byk __api__ completion zsh"));
         assert!(line.starts_with("if command -v byk"));
     }
 
     #[test]
     fn completion_line_bash() {
         let line = completion_line("bash");
-        assert!(line.contains("byk completion bash"));
+        assert!(line.contains("byk __api__ completion bash"));
         assert!(line.starts_with("if command -v byk"));
     }
 
@@ -162,6 +175,15 @@ mod tests {
         let input = "export PATH=/usr/bin:$PATH\n";
         let result = strip_completion_lines(input);
         assert_eq!(result, input);
+    }
+
+    #[test]
+    fn strip_removes_api_form_line() {
+        let input = "# byk shell completion\nif command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi\nother line\n";
+        let result = strip_completion_lines(input);
+        assert!(!result.contains("__api__ completion"));
+        assert!(!result.contains("byk shell completion"));
+        assert!(result.contains("other line"));
     }
 
     #[test]

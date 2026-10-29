@@ -31,6 +31,10 @@ fn main() {
             completion::complete(&words, &layout);
             return;
         }
+        Some(Commands::Api { request }) => {
+            core::api::dispatch(&request, &layout);
+            return;
+        }
         Some(Commands::Remove { feature }) => {
             match feature.as_deref() {
                 Some("comp") => remove::rm_comp(),

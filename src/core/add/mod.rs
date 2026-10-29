@@ -30,7 +30,7 @@ use crate::utils::shell;
 ///
 /// 行为与 install.sh 保持一致：
 /// - 从 `$SHELL` 检测当前 shell（zsh / bash）
-/// - 在对应的 rc 文件中追加 `source <(byk completion <shell>)` 行
+/// - 在对应的 rc 文件中追加 `source <(byk __api__ completion <shell>)` 行
 /// - 幂等：已配置则跳过
 pub fn init_completion() {
     let (_, shell_name) = match shell::detect_shell() {
@@ -62,6 +62,26 @@ pub fn init_completion() {
     if content.contains(&line) {
         println!(
             "Shell completion already configured in {}",
+            rc_path.display().to_string().dimmed()
+        );
+        return;
+    }
+
+    // rc 里是旧形式（`byk completion <shell>`）：剥离后重写，完成迁移
+    if shell::has_completion_line(&content) {
+        let mut updated = shell::strip_completion_lines(&content);
+        updated.push_str(&format!("\n# byk shell completion\n{}\n", line));
+        fs::write(&rc_path, updated).unwrap_or_else(|e| {
+            eprintln!("Failed to write {}: {}", rc_path.display(), e);
+            std::process::exit(1);
+        });
+        println!(
+            "+ Shell completion updated in {}",
+            rc_path.display().to_string().dimmed()
+        );
+        println!(
+            "  Restart your shell or run: {} {}",
+            "source".dimmed(),
             rc_path.display().to_string().dimmed()
         );
         return;

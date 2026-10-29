@@ -54,6 +54,13 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         words: Vec<String>,
     },
+    /// 内部：面向程序的只读接口，返回结构化信息
+    #[command(hide = true, name = "__api__")]
+    Api {
+        /// 请求名及其参数，如 completion zsh
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        request: Vec<String>,
+    },
 }
 
 /// 从 clap Command 中提取选项信息。

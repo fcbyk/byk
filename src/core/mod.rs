@@ -1,5 +1,6 @@
 pub mod add;
 pub mod aliases;
+pub mod api;
 pub mod completion;
 pub mod show;
 pub mod paths;

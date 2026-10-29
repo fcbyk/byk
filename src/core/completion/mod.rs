@@ -1,7 +1,7 @@
 //! Shell 补全脚本生成与动态补全查询。
 //!
-//! 通过 `byk completion <shell>` 输出对应 shell 的补全包装脚本（到 stdout），
-//! 通过 `byk __complete <words...>` 查询补全候选（供补全脚本回调）。
+//! 通过 `byk __api__ completion <shell>` 输出对应 shell 的补全包装脚本（到 stdout），
+//! 通过 `byk __api__ complete <words...>` 查询补全候选（供补全脚本回调）。
 //!
 //! 支持 zsh、bash、fish。
 
@@ -29,7 +29,11 @@ pub fn generate(shell: &str) {
         "zsh" => print_zsh(),
         "bash" => print_bash(),
         "fish" => print_fish(),
-        other => eprintln!("不支持的 shell: {}\n支持: zsh, bash, fish", other),
+        other => {
+            eprintln!("Unsupported shell: {}", other);
+            eprintln!("  Supported: zsh, bash, fish");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -856,7 +860,7 @@ fn print_zsh() {
     print!(
         r##"_byk() {{
     local -a completions
-    completions=(${{(f)"$(byk __complete "${{words[@]:1}}" 2>/dev/null)"}})
+    completions=(${{(f)"$(byk __api__ complete "${{words[@]:1}}" 2>/dev/null)"}})
     compadd -a completions
 }}
 
@@ -870,7 +874,7 @@ fn print_bash() {
         r##"_byk_completion() {{
     local cur
     cur="${{COMP_WORDS[COMP_CWORD]}}"
-    COMPREPLY=($(compgen -W "$(byk __complete "${{COMP_WORDS[@]:1}}" 2>/dev/null)" -- "$cur"))
+    COMPREPLY=($(compgen -W "$(byk __api__ complete "${{COMP_WORDS[@]:1}}" 2>/dev/null)" -- "$cur"))
 }}
 
 complete -F _byk_completion byk
@@ -882,7 +886,7 @@ fn print_fish() {
     print!(
         r##"function _byk_completions
     set -l tokens (commandline -cp | string split ' ')
-    byk __complete $tokens[2..-1] 2>/dev/null
+    byk __api__ complete $tokens[2..-1] 2>/dev/null
 end
 
 complete -c byk -f -a "(_byk_completions)"

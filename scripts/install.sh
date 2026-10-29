@@ -41,11 +41,11 @@ PATH_LINE='export PATH="$HOME/.byk/bin:$PATH"'
 case "${SHELL-}" in
   */zsh)
     SHELL_RC="$HOME/.zshrc"
-    COMPLETION_LINE='if command -v byk >/dev/null 2>&1; then source <(byk completion zsh); fi'
+    COMPLETION_LINE='if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi'
     ;;
   */bash)
     SHELL_RC="$HOME/.bashrc"
-    COMPLETION_LINE='if command -v byk >/dev/null 2>&1; then source <(byk completion bash); fi'
+    COMPLETION_LINE='if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion bash); fi'
     ;;
   *)
     SHELL_RC=""
