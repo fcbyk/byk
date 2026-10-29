@@ -27,12 +27,7 @@ pub fn build_alias_env(working_dir: &Path, custom_paths: &[String]) -> HashMap<S
 
     // 解析并前置 $paths 条目（保持配置中的顺序，最前的优先级最高）
     for raw in custom_paths {
-        let expanded = if raw.starts_with('~') {
-            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-            PathBuf::from(raw.replacen('~', &home.to_string_lossy(), 1))
-        } else {
-            PathBuf::from(raw)
-        };
+        let expanded = expand_home(raw);
         let resolved = if expanded.is_relative() {
             working_dir.join(&expanded)
         } else {
@@ -586,6 +581,17 @@ fn execute_interactive_impl(
     run_command(&final_command, working_dir, custom_paths);
 }
 
+/// 展开路径开头的 `~` 为用户主目录，其余原样返回。
+fn expand_home(raw: &str) -> PathBuf {
+    match raw.strip_prefix('~') {
+        Some(rest) => {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            PathBuf::from(format!("{}{}", home.to_string_lossy(), rest))
+        }
+        None => PathBuf::from(raw),
+    }
+}
+
 /// 解析工作目录，支持 `~` 展开和基于配置文件目录的相对路径解析。
 fn resolve_working_dir(cwd: Option<&str>, base_dir: Option<&Path>) -> PathBuf {
     let raw = match cwd {
@@ -593,12 +599,7 @@ fn resolve_working_dir(cwd: Option<&str>, base_dir: Option<&Path>) -> PathBuf {
         _ => return std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
     };
 
-    let path = if raw.starts_with('~') {
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-        PathBuf::from(raw.replacen('~', &home.to_string_lossy(), 1))
-    } else {
-        PathBuf::from(raw)
-    };
+    let path = expand_home(raw);
 
     // 相对路径以配置文件所在目录为基准解析
     if path.is_relative() && let Some(base) = base_dir {

@@ -10,7 +10,7 @@ mod at_prefix;
 use at_prefix::{complete_at_prefix, complete_nested_alias};
 
 #[cfg(test)]
-use at_prefix::{collect_object_keys, expand_tilde};
+use at_prefix::collect_object_keys;
 
 use super::aliases;
 use super::paths::PathLayout;
@@ -553,26 +553,6 @@ mod tests {
         // generate("invalid") 向 stderr 输出错误信息，不应 panic
     }
 
-    // ==================== expand_tilde ====================
-
-    #[test]
-    fn expand_tilde_replaces_home() {
-        let result = expand_tilde("~/foo/bar");
-        let home = std::env::var("HOME").unwrap();
-        assert_eq!(result, format!("{}/foo/bar", home));
-    }
-
-    #[test]
-    fn expand_tilde_no_tilde_unchanged() {
-        let result = expand_tilde("/usr/local/bin");
-        assert_eq!(result, "/usr/local/bin".to_string());
-    }
-
-    #[test]
-    fn expand_tilde_relative_path_unchanged() {
-        let result = expand_tilde("./foo");
-        assert_eq!(result, "./foo".to_string());
-    }
 }
 
 // ---------------------------------------------------------------------------

@@ -98,10 +98,6 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         })
         .unwrap_or_default();
 
-    // 安装期字段只服务于已删除的 `byk add` / `byk remove`，剥离以免被当成别名分组
-    obj.remove("$add");
-    obj.remove("$remove");
-
     // 过滤非法 key
     let filtered = filter_invalid_keys(obj);
 
@@ -280,19 +276,4 @@ mod tests {
         assert!(!files[0].aliases.contains_key("$paths"));
     }
 
-    #[test]
-    fn install_blocks_not_leaked_into_aliases() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.byk.json");
-        std::fs::write(
-            &file,
-            r#"{"$add": {"pip": ["rich"]}, "$remove": {"pip": true}, "build": "make"}"#,
-        )
-        .unwrap();
-        let files = scan_alias_files(dir.path(), false);
-        assert_eq!(files.len(), 1);
-        // 两个安装期字段都必须剥离，否则会被当成别名分组留下列名
-        assert!(!files[0].aliases.contains_key("$add"));
-        assert!(!files[0].aliases.contains_key("$remove"));
-    }
 }

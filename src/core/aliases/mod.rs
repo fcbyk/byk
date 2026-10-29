@@ -12,7 +12,7 @@ pub(crate) mod placeholder;
 mod execution;
 pub(crate) mod variables;
 
-// 重导出所有公开类型和函数，保持向后兼容
+// 统一出口：其他模块只从这里使用别名能力
 pub use types::*;
 pub use parse::to_alias_definition;
 pub use merge::{collect_merged_paths, load_merged_aliases, resolve_merged_alias};

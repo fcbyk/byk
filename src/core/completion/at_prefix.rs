@@ -4,17 +4,6 @@ use std::collections::HashMap;
 
 use crate::core::aliases::{self, MergedNode};
 
-/// 展开路径开头的 `~` 为用户 HOME 目录（仅测试使用）。
-#[cfg(test)]
-pub(crate) fn expand_tilde(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix('~')
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return home + rest;
-    }
-    path.to_string()
-}
-
 /// 补全 @ 和 @@ 语法：文件引用和文件内 key。
 pub(crate) fn complete_at_prefix(partial: &str, layout: &crate::core::paths::PathLayout) -> Vec<String> {
     let (_, files) = aliases::load_merged_aliases(layout);
