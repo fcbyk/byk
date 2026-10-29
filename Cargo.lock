@@ -105,6 +105,7 @@ dependencies = [
  "clap",
  "colored",
  "dirs",
+ "libc",
  "rustyline",
  "serde",
  "serde_json",
