@@ -21,12 +21,22 @@ def test_help(runner):
     r = runner.run("--help")
     assert r.returncode == 0
     assert r.stdout
+    assert "BYK v" in r.stdout
     assert "Usage:" in r.stdout
     assert "Options:" in r.stdout
-    assert "Commands or Aliases:" in r.stdout
-    assert "add" in r.stdout
-    assert "remove" in r.stdout
-    assert "show" in r.stdout
+    assert "--paths" in r.stdout
+    assert "__api__" not in r.stdout
+
+
+def test_help_lists_aliases_only(runner):
+    """内置命令已清空：帮助只列别名，不再出现 add / remove / show"""
+    runner.prepare_alias_file("demo", '{"hello": "echo hello"}')
+    r = runner.run("--help")
+    assert r.returncode == 0
+    assert "Aliases:" in r.stdout
+    assert "hello" in r.stdout
+    for gone in ("add", "remove", "show"):
+        assert f"\n  {gone}" not in r.stdout
 
 
 def test_help_short(runner):

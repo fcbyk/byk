@@ -71,33 +71,6 @@ pub(crate) fn parse_priority(raw: &serde_json::Value, default: i32) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
-// $pip 字段解析
-// ---------------------------------------------------------------------------
-
-/// 解析文件级 `$pip` 字段：`string | string[]`。
-///
-/// 与插件协议 `pip` 同一套取值语法（包名 / 版本约束 / `name @ url`），
-/// 但采用别名体系的宽松策略——非法元素静默跳过而非报错：
-/// - 单字符串（非空）→ `Some(vec![s])`
-/// - 数组 → 过滤出非空字符串；无有效元素 → `None`
-/// - 空数组 / 空字符串 / 其他类型 → `None`
-pub(crate) fn parse_pip_field(raw: &serde_json::Value) -> Option<Vec<String>> {
-    match raw {
-        serde_json::Value::String(s) if !s.trim().is_empty() => Some(vec![s.clone()]),
-        serde_json::Value::Array(arr) => {
-            let pkgs: Vec<String> = arr
-                .iter()
-                .filter_map(|v| v.as_str())
-                .filter(|s| !s.trim().is_empty())
-                .map(String::from)
-                .collect();
-            if pkgs.is_empty() { None } else { Some(pkgs) }
-        }
-        _ => None,
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Key 过滤
 // ---------------------------------------------------------------------------
 
@@ -318,61 +291,6 @@ mod tests {
         assert_eq!(parse_priority(&json!(null), 10), 10);
         assert_eq!(parse_priority(&json!([]), 10), 10);
     }
-
-    // ==================== parse_pip_field ====================
-
-    #[test]
-    fn pip_single_string() {
-        assert_eq!(
-            parse_pip_field(&json!("rich")),
-            Some(vec!["rich".to_string()])
-        );
-    }
-
-    #[test]
-    fn pip_array_of_strings() {
-        assert_eq!(
-            parse_pip_field(&json!(["rich", "click>=8.0", "pkg @ https://x/y.whl"])),
-            Some(vec![
-                "rich".to_string(),
-                "click>=8.0".to_string(),
-                "pkg @ https://x/y.whl".to_string()
-            ])
-        );
-    }
-
-    #[test]
-    fn pip_empty_array_is_none() {
-        assert_eq!(parse_pip_field(&json!([])), None);
-    }
-
-    #[test]
-    fn pip_skips_non_string_elements() {
-        assert_eq!(
-            parse_pip_field(&json!(["rich", 42, null, "click"])),
-            Some(vec!["rich".to_string(), "click".to_string()])
-        );
-    }
-
-    #[test]
-    fn pip_skips_empty_strings() {
-        assert_eq!(
-            parse_pip_field(&json!(["", "  ", "rich"])),
-            Some(vec!["rich".to_string()])
-        );
-        assert_eq!(parse_pip_field(&json!("")), None);
-        assert_eq!(parse_pip_field(&json!("   ")), None);
-    }
-
-    #[test]
-    fn pip_wrong_type_is_none() {
-        assert_eq!(parse_pip_field(&json!(42)), None);
-        assert_eq!(parse_pip_field(&json!(null)), None);
-        assert_eq!(parse_pip_field(&json!({"a": 1})), None);
-        assert_eq!(parse_pip_field(&json!(true)), None);
-    }
-
-    // ==================== has_meta_key ====================
 
     #[test]
     fn has_meta_key_true() {

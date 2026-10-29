@@ -1,4 +1,4 @@
-//! 帮助信息渲染（Usage / Options / Commands / Aliases）。
+//! 帮助信息渲染（Usage / Options / Aliases）。
 //!
 //! `render_all` 为 -h/--help 回调及无参数时的默认输出。
 
@@ -7,7 +7,7 @@ use colored::Colorize;
 use crate::core::aliases;
 use crate::core::paths::PathLayout;
 
-/// 渲染完整帮助信息（Banner + Usage + Options + Commands or Aliases）。
+/// 渲染完整帮助信息（Banner + Usage + Options + Aliases）。
 ///
 /// `byk`、`byk -h`、`byk --help` 三条入口输出完全一致，banner 在最上方。
 pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
@@ -17,13 +17,8 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
     println!();
     render_options(options);
 
-    // 内置命令 + 别名合并为一个区块
-    let builtins: Vec<(String, String)> = vec![
-        ("add".into(), "Add plugins or features".into()),
-    ];
-
     let (merged, _files) = aliases::load_merged_aliases(layout);
-    super::aliases::render(&merged, &builtins);
+    super::aliases::render(&merged);
 
     println!();
 }
@@ -31,7 +26,7 @@ pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
 /// 渲染 Usage 说明。
 pub fn render_usage() {
     println!(
-        "{} byk [OPTIONS] [COMMAND|ALIAS] [ARGS]...",
+        "{} byk [OPTIONS] [ALIAS] [ARGS]...",
         "Usage:".green().bold()
     );
 }

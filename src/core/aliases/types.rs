@@ -62,11 +62,6 @@ pub struct AliasFile {
     pub inherited_interactive: Option<bool>,
     /// 文件级 $paths，需要前置到 PATH 环境变量的目录列表
     pub inherited_paths: Vec<String>,
-    /// 文件级 $add 原始块，由 `byk add <file>` 解析。
-    /// 内部结构：`{ "pip"?: string|string[], "assets"?: {...} }`
-    /// 存在即表示文件可安装，不再需要单独的 $plugin 开关。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub add_block: Option<serde_json::Value>,
 }
 
 /// 合并后叶子节点，包含来源信息。

@@ -28,12 +28,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// 添加功能（comp）或从别名文件安装（@xxx / @@xxx）
-    Add {
-        /// 功能名(comp) 或别名文件(@xxx / @@xxx)
-        #[arg(allow_hyphen_values = true)]
-        name: Option<String>,
-    },
     /// 内部：面向程序的只读接口，返回结构化信息
     #[command(hide = true, name = "__api__")]
     Api {

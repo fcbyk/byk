@@ -4,12 +4,10 @@ mod render;
 mod utils;
 
 use clap::{CommandFactory, Parser};
-use colored::Colorize;
 use std::process::exit;
 
 use cli::{Cli, Commands, extract_options};
 use core::aliases;
-use core::add;
 use core::paths::PathLayout;
 
 /// 管道下游提前关闭时（如 `byk -h | head`），按 Unix 惯例静默退出，
@@ -38,21 +36,6 @@ fn main() {
     match cli.command {
         Some(Commands::Api { request }) => {
             core::api::dispatch(&request, &layout);
-            return;
-        }
-        Some(Commands::Add { name }) => {
-            match name.as_deref() {
-                None | Some("-h") | Some("--help") => render::add::render(),
-                Some("comp") => add::init_completion(),
-                Some(n) if n.starts_with("@@") => add::install_from_global(n, &layout),
-                Some(n) if n.starts_with("@") => add::install_from_local(n, &layout),
-                Some(n) => {
-                    eprintln!("{} unknown argument: {}", "Error:".red(), n);
-                    eprintln!("  Expected: comp, @<file>, or @@<file>");
-                    eprintln!("  Run {} for usage.", "byk add -h".bold());
-                    exit(1);
-                }
-            }
             return;
         }
         None => {}

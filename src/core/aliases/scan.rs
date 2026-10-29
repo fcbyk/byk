@@ -98,11 +98,8 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         })
         .unwrap_or_default();
 
-    // 提取文件级 $add（由 byk add <file> 解析，内部含 pip/assets）
-    // 存在即表示文件可安装，不再需要单独的 $plugin 开关
-    let add_block = obj.remove("$add").filter(|v| v.is_object());
-
-    // $remove 描述卸载步骤，运行期不参与执行；剥离以免被当成别名分组
+    // 安装期字段只服务于已删除的 `byk add` / `byk remove`，剥离以免被当成别名分组
+    obj.remove("$add");
     obj.remove("$remove");
 
     // 过滤非法 key
@@ -116,7 +113,6 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         inherited_cwd,
         inherited_interactive,
         inherited_paths,
-        add_block,
     })
 }
 
@@ -156,7 +152,6 @@ mod tests {
             inherited_cwd: None,
             inherited_interactive: None,
             inherited_paths: Vec::new(),
-            add_block: None,
         }
     }
 
@@ -285,63 +280,19 @@ mod tests {
         assert!(!files[0].aliases.contains_key("$paths"));
     }
 
-    // ==================== $add 提取 ====================
-
     #[test]
-    fn add_block_extracted_from_json() {
+    fn install_blocks_not_leaked_into_aliases() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(
             &file,
-            r#"{"$add": {"pip": ["rich", "click>=8.0"], "assets": {"tool.sh": "https://x/tool.sh"}}, "build": "make build"}"#,
+            r#"{"$add": {"pip": ["rich"]}, "$remove": {"pip": true}, "build": "make"}"#,
         )
         .unwrap();
         let files = scan_alias_files(dir.path(), false);
         assert_eq!(files.len(), 1);
-        let block = files[0].add_block.as_ref().unwrap();
-        assert_eq!(block["pip"][0], "rich");
-        assert_eq!(block["pip"][1], "click>=8.0");
-        assert_eq!(block["assets"]["tool.sh"], "https://x/tool.sh");
-    }
-
-    #[test]
-    fn add_block_with_pip_only() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"$add": {"pip": "rich"}, "build": "make build"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
-        assert_eq!(files.len(), 1);
-        let block = files[0].add_block.as_ref().unwrap();
-        assert_eq!(block["pip"], "rich");
-    }
-
-    #[test]
-    fn add_block_empty_when_absent() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"build": "make build"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
-        assert_eq!(files.len(), 1);
-        assert!(files[0].add_block.is_none());
-    }
-
-    #[test]
-    fn add_block_ignored_when_not_object() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"$add": "not-an-object", "build": "echo"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
-        assert_eq!(files.len(), 1);
-        assert!(files[0].add_block.is_none());
-    }
-
-    #[test]
-    fn add_not_leaked_into_aliases() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.byk.json");
-        std::fs::write(&file, r#"{"$add": {"pip": ["rich"]}, "build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
-        assert_eq!(files.len(), 1);
+        // 两个安装期字段都必须剥离，否则会被当成别名分组留下列名
         assert!(!files[0].aliases.contains_key("$add"));
+        assert!(!files[0].aliases.contains_key("$remove"));
     }
 }

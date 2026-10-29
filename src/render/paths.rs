@@ -2,8 +2,7 @@
 
 use colored::Colorize;
 
-use crate::core::paths::PathLayout;
-use crate::core::pip::{PYTHON_BIN, VENV_BIN};
+use crate::core::paths::{PathLayout, PYTHON_BIN, VENV_BIN};
 
 /// 渲染 CLI 路径和文件位置。
 pub fn render(layout: &PathLayout) {

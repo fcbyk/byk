@@ -1,5 +1,17 @@
 use std::path::PathBuf;
 
+/// venv 内可执行文件目录名。
+#[cfg(windows)]
+pub const VENV_BIN: &str = "Scripts";
+#[cfg(not(windows))]
+pub const VENV_BIN: &str = "bin";
+
+/// venv 内 Python 可执行文件名。
+#[cfg(windows)]
+pub const PYTHON_BIN: &str = "python.exe";
+#[cfg(not(windows))]
+pub const PYTHON_BIN: &str = "python";
+
 /// CLI 持久化目录布局。
 pub struct PathLayout {
     pub root_dir: PathBuf,

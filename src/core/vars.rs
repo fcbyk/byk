@@ -3,23 +3,19 @@
 //! 与内置变量（阶段二，见 `aliases::variables`）分工：
 //! - **阶段一**（扫描/读取文件时，本模块）：用户声明的 `$var` 按当前平台
 //!   解析后，对文件内所有字符串值做 `$NAME` 替换；
-//! - **阶段二**（命令执行/下载时）：内置变量 `$python`/`$venv`/`$byk`/`$assets` 展开。
-//!
-//! 分两阶段的原因：`$assets` 的值依赖文件 Scope 与运行 cwd，扫描时求不出来。
-//! 副作用好处：用户变量值里可组合内置变量（`"TOOLS": "$byk/tools"`），
-//! 阶段一替换出字面量，阶段二再展开。
+//! - **阶段二**（命令执行时）：内置变量 `$byk`/`$workdir` 展开。
 //!
 //! 规则：
-//! - `$var` 为文件级字段，作用于整个文件（`$cmd`/`$cwd`/`$paths`/`$pip`/`$assets` 均可用）；
+//! - `$var` 为文件级字段，作用于整个文件（`$cmd`/`$cwd`/`$paths` 均可用）；
 //! - 变量值可以是字符串或平台映射（当前平台不在映射 → 该变量未定义）；
-//! - 内置变量名（`python`/`venv`/`byk`/`assets`）声明无效——内置优先；
+//! - 内置变量名（`byk`/`workdir`）声明无效——内置优先；
 //! - 未定义的 `$NAME` 原样透传（URL 里的 `$`、shell 变量 `$HOME` 不受影响）；
 //! - 用户变量约定全大写——大小写即归属信号。
 
 use serde_json::Value;
 
 /// 内置变量名（在 `$var` 中声明无效）。
-pub const RESERVED_VARS: &[&str] = &["python", "venv", "byk", "assets", "downloads", "workdir"];
+pub const RESERVED_VARS: &[&str] = &["byk", "workdir"];
 
 /// 当前平台（编译期注入，对齐 GitHub Release 命名）。
 const PLATFORM: &str = env!("PLATFORM");

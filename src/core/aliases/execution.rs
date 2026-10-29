@@ -283,37 +283,16 @@ pub fn execute_alias(
     // 保留变量展开：对 $cmd / $cwd / $paths 一致生效；
     // 未命中的 $ token 透传给 shell
     let var_ctx = VarContext::from_layout(layout);
-    let command = match expand_variables(&definition.command, &var_ctx) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("{}", e);
-            exit(1);
-        }
-    };
-    let cwd = match definition
+    let command = expand_variables(&definition.command, &var_ctx);
+    let cwd = definition
         .cwd
         .as_deref()
-        .map(|c| expand_variables(c, &var_ctx))
-        .transpose()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("{}", e);
-            exit(1);
-        }
-    };
-    let custom_paths: Vec<String> = match resolved
+        .map(|c| expand_variables(c, &var_ctx));
+    let custom_paths: Vec<String> = resolved
         .paths
         .iter()
         .map(|p| expand_variables(p, &var_ctx))
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("{}", e);
-            exit(1);
-        }
-    };
+        .collect();
 
     let working_dir = resolve_working_dir(
         cwd.as_deref(),
