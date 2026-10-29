@@ -141,6 +141,44 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
         .collect()
 }
 
+fn print_zsh() {
+    print!(
+        r##"_byk() {{
+    local -a completions
+    completions=(${{(f)"$(byk __api__ complete "${{words[@]:1}}" 2>/dev/null)"}})
+    compadd -a completions
+}}
+
+compdef _byk byk
+"##
+    );
+}
+
+fn print_bash() {
+    print!(
+        r##"_byk_completion() {{
+    local cur
+    cur="${{COMP_WORDS[COMP_CWORD]}}"
+    COMPREPLY=($(compgen -W "$(byk __api__ complete "${{COMP_WORDS[@]:1}}" 2>/dev/null)" -- "$cur"))
+}}
+
+complete -F _byk_completion byk
+"##
+    );
+}
+
+fn print_fish() {
+    print!(
+        r##"function _byk_completions
+    set -l tokens (commandline -cp | string split ' ')
+    byk __api__ complete $tokens[2..-1] 2>/dev/null
+end
+
+complete -c byk -f -a "(_byk_completions)"
+"##
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -500,42 +538,4 @@ mod tests {
     fn generate_unsupported_shell_does_not_panic() {
         // generate("invalid") 向 stderr 输出错误信息，不应 panic
     }
-}
-
-fn print_zsh() {
-    print!(
-        r##"_byk() {{
-    local -a completions
-    completions=(${{(f)"$(byk __api__ complete "${{words[@]:1}}" 2>/dev/null)"}})
-    compadd -a completions
-}}
-
-compdef _byk byk
-"##
-    );
-}
-
-fn print_bash() {
-    print!(
-        r##"_byk_completion() {{
-    local cur
-    cur="${{COMP_WORDS[COMP_CWORD]}}"
-    COMPREPLY=($(compgen -W "$(byk __api__ complete "${{COMP_WORDS[@]:1}}" 2>/dev/null)" -- "$cur"))
-}}
-
-complete -F _byk_completion byk
-"##
-    );
-}
-
-fn print_fish() {
-    print!(
-        r##"function _byk_completions
-    set -l tokens (commandline -cp | string split ' ')
-    byk __api__ complete $tokens[2..-1] 2>/dev/null
-end
-
-complete -c byk -f -a "(_byk_completions)"
-"##
-    );
 }

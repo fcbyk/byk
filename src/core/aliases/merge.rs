@@ -369,8 +369,10 @@ mod tests {
     #[test]
     fn paths_single_leaf() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut node = MergedNode::default();
-        node.alias = Some(make_alias("cmd"));
+        let node = MergedNode {
+            alias: Some(make_alias("cmd")),
+            ..Default::default()
+        };
         merged.insert("greet".into(), node);
 
         let result = collect_merged_paths(&merged, "");
@@ -380,8 +382,10 @@ mod tests {
     #[test]
     fn paths_nested() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut child = MergedNode::default();
-        child.alias = Some(make_alias("child_cmd"));
+        let child = MergedNode {
+            alias: Some(make_alias("child_cmd")),
+            ..Default::default()
+        };
         let mut parent = MergedNode::default();
         parent.children.insert("sub".into(), child);
         merged.insert("ns".into(), parent);
@@ -394,10 +398,14 @@ mod tests {
     #[test]
     fn paths_intermediate_node_with_alias() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut child = MergedNode::default();
-        child.alias = Some(make_alias("sub_cmd"));
-        let mut parent = MergedNode::default();
-        parent.alias = Some(make_alias("parent_cmd")); // 父节点也有 alias
+        let child = MergedNode {
+            alias: Some(make_alias("sub_cmd")),
+            ..Default::default()
+        };
+        let mut parent = MergedNode {
+            alias: Some(make_alias("parent_cmd")),
+            ..Default::default()
+        };
         parent.children.insert("sub".into(), child);
         merged.insert("ns".into(), parent);
 
@@ -409,8 +417,10 @@ mod tests {
     #[test]
     fn paths_with_prefix() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut node = MergedNode::default();
-        node.alias = Some(make_alias("cmd"));
+        let node = MergedNode {
+            alias: Some(make_alias("cmd")),
+            ..Default::default()
+        };
         merged.insert("leaf".into(), node);
 
         let result = collect_merged_paths(&merged, "root");
@@ -420,8 +430,10 @@ mod tests {
     #[test]
     fn paths_node_without_alias_but_with_children() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut child = MergedNode::default();
-        child.alias = Some(make_alias("leaf_cmd"));
+        let child = MergedNode {
+            alias: Some(make_alias("leaf_cmd")),
+            ..Default::default()
+        };
         let mut parent = MergedNode::default();
         // parent 没有 alias，只有 children
         parent.children.insert("leaf".into(), child);
@@ -435,8 +447,10 @@ mod tests {
     #[test]
     fn resolve_found() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut node = MergedNode::default();
-        node.alias = Some(make_alias("echo hello"));
+        let node = MergedNode {
+            alias: Some(make_alias("echo hello")),
+            ..Default::default()
+        };
         merged.insert("greet".into(), node);
 
         let result = resolve_merged_alias(&merged, "greet");
@@ -455,8 +469,10 @@ mod tests {
     #[test]
     fn resolve_nested_path() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut child = MergedNode::default();
-        child.alias = Some(make_alias("nested_cmd"));
+        let child = MergedNode {
+            alias: Some(make_alias("nested_cmd")),
+            ..Default::default()
+        };
         let mut parent = MergedNode::default();
         parent.children.insert("sub".into(), child);
         merged.insert("ns".into(), parent);

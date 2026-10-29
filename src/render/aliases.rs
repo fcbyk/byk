@@ -180,16 +180,20 @@ mod tests {
 
     /// 插入一个顶层别名。
     fn insert_alias(merged: &mut MergedConfig, key: &str, cmd: &str) {
-        let mut node = MergedNode::default();
-        node.alias = Some(make_resolved_alias(cmd));
+        let node = MergedNode {
+            alias: Some(make_resolved_alias(cmd)),
+            ..Default::default()
+        };
         merged.insert(key.into(), node);
     }
 
     /// 插入嵌套别名，如 `ns.cmd`。
     fn insert_nested_alias(merged: &mut MergedConfig, ns: &str, key: &str, cmd: &str) {
         let entry = merged.entry(ns.into()).or_default();
-        let mut node = MergedNode::default();
-        node.alias = Some(make_resolved_alias(cmd));
+        let node = MergedNode {
+            alias: Some(make_resolved_alias(cmd)),
+            ..Default::default()
+        };
         entry.children.insert(key.into(), node);
     }
 
@@ -236,11 +240,13 @@ mod tests {
     #[test]
     fn alias_format_lines_with_cwd_suffix() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut node = MergedNode::default();
-        node.alias = Some(make_resolved_alias_with_cwd(
-            "npm run build",
-            "/path/to/project",
-        ));
+        let node = MergedNode {
+            alias: Some(make_resolved_alias_with_cwd(
+                "npm run build",
+                "/path/to/project",
+            )),
+            ..Default::default()
+        };
         merged.insert("build".into(), node);
         let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         assert_eq!(result.len(), 1);
@@ -267,18 +273,20 @@ mod tests {
     #[test]
     fn alias_format_with_description() {
         let mut merged: MergedConfig = HashMap::new();
-        let mut node = MergedNode::default();
-        node.alias = Some(ResolvedAlias {
-            value: aliases::AliasValue::Meta {
-                cmd: "echo hello".into(),
-                cwd: None,
-                interactive: None,
-                description: Some("Say hello".into()),
-            },
-            source: "@test".into(),
-            source_path: None,
-            paths: Vec::new(),
-        });
+        let node = MergedNode {
+            alias: Some(ResolvedAlias {
+                value: aliases::AliasValue::Meta {
+                    cmd: "echo hello".into(),
+                    cwd: None,
+                    interactive: None,
+                    description: Some("Say hello".into()),
+                },
+                source: "@test".into(),
+                source_path: None,
+                paths: Vec::new(),
+            }),
+            ..Default::default()
+        };
         merged.insert("greet".into(), node);
         let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         assert_eq!(result.len(), 1);
