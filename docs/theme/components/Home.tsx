@@ -367,8 +367,8 @@ export function BykHome() {
               <strong>状态只有别名</strong>
             </div>
             <p>
-              <span className="b-ic">~/.byk/</span> 里除了别名文件和一个扫描缓存，
-              不产生别的东西。
+              <span className="b-ic">~/.byk/</span> 里只有你自己放的别名文件——
+              byk 从不写盘，没有缓存、没有状态库。
             </p>
           </div>
         </div>

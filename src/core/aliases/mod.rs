@@ -12,7 +12,6 @@ mod merge;
 mod exact;
 pub(crate) mod placeholder;
 mod execution;
-mod cache;
 pub(crate) mod variables;
 
 // 重导出所有公开类型和函数，保持向后兼容

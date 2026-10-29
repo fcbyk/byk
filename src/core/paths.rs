@@ -1,12 +1,11 @@
 use std::path::PathBuf;
 
 /// CLI 持久化目录布局。
+///
+/// byk 只读两处：家目录（`~/.byk`）与别名目录（`~/.byk/alias`）。
 pub struct PathLayout {
     pub root_dir: PathBuf,
     pub alias_dir: PathBuf,
-    pub cache_dir: PathBuf,
-    /// ~/.byk/ 目录是否已存在（用于零配置分叉）
-    pub home_exists: bool,
 }
 
 impl PathLayout {
@@ -15,29 +14,18 @@ impl PathLayout {
         Self::with_name("byk")
     }
 
-    /// 使用自定义 app_name 构建目录布局，自动创建子目录。
+    /// 使用自定义 app_name 构建目录布局。
+    ///
+    /// 不创建任何目录：别名目录由用户自己放文件，缺失时扫描结果天然为空。
     pub fn with_name(app_name: &str) -> Self {
-        let home = dirs::home_dir()
-            .unwrap_or_else(|| {
-                eprintln!("无法获取用户主目录，回退到当前目录");
-                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-            });
+        let home = dirs::home_dir().unwrap_or_else(|| {
+            eprintln!("无法获取用户主目录，回退到当前目录");
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        });
         let root_dir = home.join(format!(".{}", app_name));
-        let home_exists = root_dir.is_dir();
-
         let alias_dir = root_dir.join("alias");
-        let cache_dir = root_dir.join("cache");
 
-        // 子目录不在此处创建，由各子系统按需创建：
-        // - cache/  → json_io::write_json 内部 create_dir_all
-        // - alias/  → 用户手动放入文件，scan 缺失时天然空
-
-        PathLayout {
-            root_dir,
-            alias_dir,
-            cache_dir,
-            home_exists,
-        }
+        PathLayout { root_dir, alias_dir }
     }
 }
 
@@ -59,20 +47,13 @@ mod tests {
             layout.alias_dir,
             home.join(".fcbyk_test_paths").join("alias")
         );
-        assert_eq!(
-            layout.cache_dir,
-            home.join(".fcbyk_test_paths").join("cache")
-        );
     }
 
     #[test]
-    fn path_layout_creates_directories() {
+    fn path_layout_creates_no_directories() {
         let layout = PathLayout::with_name("fcbyk_test_paths2");
 
-        // home_exists=false → 不创建任何目录
         assert!(!layout.root_dir.exists());
         assert!(!layout.alias_dir.exists());
-        assert!(!layout.cache_dir.exists());
-        assert!(!layout.home_exists);
     }
 }

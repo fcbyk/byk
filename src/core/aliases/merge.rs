@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::cache::load_alias_cache;
 use super::parse::{is_alias_value, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, ResolvedAlias};
@@ -182,24 +181,16 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile], layout: &PathLayout, cwd
 
 /// 扫描本地和全局别名文件，返回 (合并配置, 文件列表)。
 ///
-/// - ~/.byk 存在 → 本地 + 全局别名，通过缓存避免重复扫描和合并
-/// - ~/.byk 不存在 → 仅扫描 cwd 的本地别名，不走缓存不写文件
+/// 每次调用都重新扫描：别名文件通常只有几十个，扫描耗时以毫秒计，
+/// 不值得为此维护一份缓存状态。
 pub fn load_merged_aliases(layout: &PathLayout) -> (MergedConfig, Vec<AliasFile>) {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-    if layout.home_exists {
-        let cache_file = layout.cache_dir.join("alias.json");
-        let global_dir = &layout.alias_dir;
-
-        let (merged, mut files) = load_alias_cache(&cache_file, &cwd, global_dir, layout);
-        sort_alias_files(&mut files);
-        (merged, files)
-    } else {
-        let mut files = scan_alias_files(&cwd, false);
-        sort_alias_files(&mut files);
-        let merged = build_merged_aliases(&files, layout, &cwd);
-        (merged, files)
-    }
+    let mut files = scan_alias_files(&cwd, false);
+    files.extend(scan_alias_files(&layout.alias_dir, true));
+    sort_alias_files(&mut files);
+    let merged = build_merged_aliases(&files, layout, &cwd);
+    (merged, files)
 }
 
 // ---------------------------------------------------------------------------
@@ -262,8 +253,6 @@ mod tests {
         PathLayout {
             root_dir: PathBuf::from("/home/u/.byk"),
             alias_dir: PathBuf::from("/home/u/.byk/alias"),
-            cache_dir: PathBuf::from("/home/u/.byk/cache"),
-            home_exists: true,
         }
     }
 

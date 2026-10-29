@@ -245,18 +245,13 @@ mod tests {
         fn new() -> Self {
             let temp = tempfile::tempdir().unwrap();
             let alias_dir = temp.path().join("alias");
-            let cache_dir = temp.path().join("cache");
             let root_dir = temp.path().to_path_buf();
 
-            for d in [&alias_dir, &cache_dir] {
-                fs::create_dir_all(d).unwrap();
-            }
+            fs::create_dir_all(&alias_dir).unwrap();
 
             let layout = PathLayout {
                 root_dir: root_dir.clone(),
                 alias_dir,
-                cache_dir: cache_dir.clone(),
-                home_exists: true,
             };
 
             TestEnv { temp, layout }
