@@ -9,9 +9,7 @@ mod args_tree;
 mod at_prefix;
 
 use args_tree::{collect_args_candidates, complete_args_tree};
-use at_prefix::{
-    complete_at_prefix, complete_nested_alias, complete_show_topic,
-};
+use at_prefix::{complete_at_prefix, complete_nested_alias};
 
 #[cfg(test)]
 use at_prefix::{collect_object_keys, expand_tilde};
@@ -73,13 +71,8 @@ const GLOBAL_FLAGS: &[&str] = &[
     "-v",
     "--help",
     "-h",
+    "--paths",
 ];
-
-/// `add` 命令没有额外选项。
-const ADD_FLAGS: &[&str] = &["--help", "-h"];
-
-/// 仅 `--help` / `-h`（内置于命令无额外选项时使用）。
-const HELP_FLAGS: &[&str] = &["--help", "-h"];
 
 /// 根据当前输入的部分词，从所有命令源收集匹配的补全候选。
 fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
@@ -112,8 +105,7 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
 ///
 /// 前缀词可能是：
 /// - 别名节点（如 `rust`）→ 补全其子节点
-/// - @文件引用（如 `@release`）→ 补全文件内的 key
-/// - 插件命令 → 无子命令，返回空
+/// - 别名叶子 → 无子命令，返回空
 /// - 无法识别的词 → 返回空
 fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -> Vec<String> {
     if prev.is_empty() {
@@ -130,7 +122,7 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
     // 别名合并配置（$args 补全与嵌套别名节点共用一次加载）
     let (merged, _) = aliases::load_merged_aliases(layout);
 
-    // 上下文标志：根据已知命令返回对应的选项
+    // 上下文标志：别名没有自己的选项，一律给全局选项
     if partial.starts_with('-') {
         // 别名 $args 的 $options 也可能包含 flag
         if let Some(resolved) = aliases::resolve_merged_alias(&merged, first)
@@ -142,55 +134,11 @@ fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -
             }
         }
 
-        let flags = match first.as_str() {
-            "add" => ADD_FLAGS,
-            "remove" | "show" => HELP_FLAGS,
-            _ => GLOBAL_FLAGS,
-        };
-        return flags
+        return GLOBAL_FLAGS
             .iter()
             .filter(|f| f.starts_with(partial))
             .map(|f| f.to_string())
             .collect();
-    }
-
-    // show 子命令补全
-    if first == "show" {
-        return complete_show_topic(partial, layout);
-    }
-
-    // add 子命令补全
-    if first == "add" {
-        // byk add @<TAB> → 补全本地文件 stem（仅 @stem，安装不支持 @@stem）
-        if partial.starts_with('@') {
-            let (_, files) = aliases::load_merged_aliases(layout);
-            return files
-                .iter()
-                .map(|f| f.key.clone())
-                .filter(|k| k.starts_with('@') && !k.starts_with("@@"))
-                .filter(|k| k.starts_with(partial))
-                .collect();
-        }
-        const ADD_SUBS: &[&str] = &["comp", "pip", "assets"];
-        return ADD_SUBS
-            .iter()
-            .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
-            .collect();
-    }
-
-    // remove 子命令补全
-    if first == "remove" {
-        const RM_SUBS: &[&str] = &["comp", "all"];
-        let mut candidates: Vec<String> = RM_SUBS
-            .iter()
-            .filter(|s| s.starts_with(partial))
-            .map(|s| s.to_string())
-            .collect();
-
-        candidates.sort();
-        candidates.dedup();
-        return candidates;
     }
 
     // 1. @ 文件引用补全通过 complete_at_prefix 处理（@file. 语法），此处不处理
@@ -248,14 +196,9 @@ fn alias_args(value: &aliases::AliasValue) -> Option<&serde_json::Value> {
 }
 
 
-/// 补全顶级命令：内置子命令 + 插件 + 顶级别名。
+/// 补全顶级命令：全部别名文件的命名空间 + 合并树里的顶层 key。
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
-
-    // 内置子命令
-    candidates.push("add".into());
-    candidates.push("remove".into());
-    candidates.push("show".into());
 
     // 顶级别名（叶子节点 + 中间 dict 节点，dict 加 . 后缀提示可展开）
     let (merged, files) = aliases::load_merged_aliases(layout);
@@ -584,25 +527,6 @@ mod tests {
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn contextual_add_flag_returns_help_flags() {
-        let env = TestEnv::new();
-        let prev = vec!["add".to_string()];
-        let result = contextual_completions(&prev, "-", &env.layout);
-        assert!(result.contains(&"--help".to_string()));
-        assert!(result.contains(&"-h".to_string()));
-        assert!(!result.contains(&"--version".to_string()));
-        assert!(!result.contains(&"-v".to_string()));
-    }
-
-    #[test]
-    fn contextual_add_flag_filters_by_partial() {
-        let env = TestEnv::new();
-        let prev = vec!["add".to_string()];
-        let result = contextual_completions(&prev, "--h", &env.layout);
-        assert_eq!(result, vec!["--help".to_string()]);
-    }
-
     // ==================== 别名 $args 补全 ====================
 
     /// 带 $args 的别名文件（叶子 + 可重复选项 + 嵌套子命令）。
@@ -751,29 +675,9 @@ mod tests {
     #[test]
     fn contextual_unknown_word_returns_empty() {
         let env = TestEnv::new();
-        let prev = vec!["nobody".to_string()];
+        let prev = vec!["nope".to_string()];
         let result = contextual_completions(&prev, "", &env.layout);
         assert!(result.is_empty());
-    }
-
-    #[test]
-    fn contextual_remove_includes_builtin_subs() {
-        let env = TestEnv::new();
-        let prev = vec!["remove".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.contains(&"comp".to_string()));
-        assert!(result.contains(&"all".to_string()));
-        // py / node 子命令已移除：Python 环境自动管理，npm 交给插件与别名
-        assert!(!result.contains(&"py".to_string()));
-        assert!(!result.contains(&"node".to_string()));
-    }
-
-    #[test]
-    fn contextual_remove_filters_by_partial() {
-        let env = TestEnv::new();
-        let prev = vec!["remove".to_string()];
-        let result = contextual_completions(&prev, "al", &env.layout);
-        assert_eq!(result, vec!["all".to_string()]);
     }
 
     // ==================== get_completions ====================
@@ -788,9 +692,19 @@ mod tests {
     #[test]
     fn get_completions_empty_delegates_to_top_level() {
         let env = TestEnv::new();
+        env.add_alias_file("demo", &json!({"hello": "echo hi"}));
         let result = get_completions("", &env.layout);
-        assert!(result.contains(&"add".to_string()));
-        assert!(result.contains(&"show".to_string()));
+        // 内置命令已清空：顶级只剩别名与文件命名空间
+        assert!(result.contains(&"hello".to_string()));
+        assert!(!result.contains(&"add".to_string()));
+        assert!(!result.contains(&"show".to_string()));
+    }
+
+    #[test]
+    fn get_completions_includes_paths_flag() {
+        let env = TestEnv::new();
+        let result = get_completions("--p", &env.layout);
+        assert_eq!(result, vec!["--paths".to_string()]);
     }
 
     #[test]

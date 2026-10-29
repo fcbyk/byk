@@ -1,4 +1,4 @@
-//! @ / @@ 前缀补全、show 话题补全与 key 收集。
+//! @ / @@ 前缀补全与 key 收集。
 
 use std::collections::HashMap;
 
@@ -14,32 +14,6 @@ pub(crate) fn expand_tilde(path: &str) -> String {
     }
     path.to_string()
 }
-
-/// 补全 `byk show` 后面的子命令。
-pub(crate) fn complete_show_topic(partial: &str, layout: &crate::core::paths::PathLayout) -> Vec<String> {
-    let mut candidates: Vec<String> = vec![
-        "overview".into(),
-        "paths".into(),
-        "add".into(),
-        "remove".into(),
-        "completion".into(),
-    ];
-
-    // 别名路径
-    let (merged, _files) = aliases::load_merged_aliases(layout);
-    candidates.extend(aliases::collect_merged_paths(&merged, ""));
-
-    candidates.sort();
-    candidates.dedup();
-    candidates
-        .into_iter()
-        .filter(|c| c.starts_with(partial))
-        .collect()
-}
-
-// ---------------------------------------------------------------------------
-// 补全 @ 和 @@ 语法
-// ---------------------------------------------------------------------------
 
 /// 补全 @ 和 @@ 语法：文件引用和文件内 key。
 pub(crate) fn complete_at_prefix(partial: &str, layout: &crate::core::paths::PathLayout) -> Vec<String> {
