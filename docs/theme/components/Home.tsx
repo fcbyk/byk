@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from '@rspress/core/theme';
-import { useI18n } from '@rspress/core/runtime';
+import { useI18n, useLang, useSite } from '@rspress/core/runtime';
+import type { i18nSource } from '../../i18n';
 import './home.css';
 
 /**
@@ -34,7 +35,13 @@ const INSTALLS: Record<InstallTab, { label: string; cmd: string }> = {
 };
 
 export function BykHome() {
-  const t = useI18n();
+  // 泛型参数让 t() 接受 i18n.ts 里定义的 key，拼错会有类型报错
+  const t = useI18n<typeof i18nSource>();
+  const lang = useLang();
+  const { site } = useSite();
+  // rspress 的 Link 不会自动加语言前缀（只有导航/侧边栏/正文链接会）：
+  // 默认语言路由无前缀，其他语言需手动加 /{lang}
+  const langPrefix = lang === site.lang ? '' : `/${lang}`;
   const [activeTab, setActiveTab] = useState<InstallTab>('pip');
   const [copied, setCopied] = useState(false);
 
@@ -102,7 +109,7 @@ export function BykHome() {
             </button>
           </div>
           <div className="b-links">
-            <Link href="/cli/index" className="b-link">
+            <Link href={`${langPrefix}/cli/index`} className="b-link">
               {t('homeViewDocs')}
               <Arrow />
             </Link>
@@ -167,7 +174,7 @@ export function BykHome() {
         </div>
 
         <div className="b-features">
-          <Link href="/cli/alias/config" className="b-feature">
+          <Link href={`${langPrefix}/cli/alias/config`} className="b-feature">
             <span className="b-feature__mark">run.byk.json</span>
             <h3 className="b-feature__title">{t('homeFeat1Title')}</h3>
             <p className="b-feature__desc">
@@ -185,7 +192,7 @@ export function BykHome() {
             </span>
           </Link>
 
-          <Link href="/cli/commands" className="b-feature">
+          <Link href={`${langPrefix}/cli/commands`} className="b-feature">
             <span className="b-feature__mark">byk @run.build</span>
             <h3 className="b-feature__title">{t('homeFeat2Title')}</h3>
             <p className="b-feature__desc">
@@ -359,7 +366,7 @@ export function BykHome() {
         </div>
         <p className="b-close__sub">{t('homeCloseSub')}</p>
         <div className="b-close__actions">
-          <Link href="/cli/index" className="b-btn b-btn--solid">
+          <Link href={`${langPrefix}/cli/index`} className="b-btn b-btn--solid">
             {t('homeCloseCta')}
             <Arrow />
           </Link>
