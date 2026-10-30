@@ -23,6 +23,7 @@
 
 - **vscode**: version the extension off the CLI it bundles — `X.Y` mirrors the CLI's `major.minor` and `Z` is the extension's own revision, with `bykBinaryVersion` pinning the exact binary
 - **vscode**: `download-binary.mjs` resolves its release tag from `bykBinaryVersion` instead of falling back to `latest`, making a packaged build reproducible
+- **vscode**: `scripts/verify-version.mjs` fails the build when `version` and `bykBinaryVersion` disagree on `major.minor`, or when the bundled CLI would move backwards (`BYK_ALLOW_BINARY_DOWNGRADE=1` overrides a deliberate rollback)
 
 ## v0.6.0 (2026-10-29)
 

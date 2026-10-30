@@ -9,9 +9,10 @@
   "main": "./out/extension.js",
   "icon": "./assets/logo.png",
   "scripts": {
-    "vscode:prepublish": "pnpm run compile",
+    "vscode:prepublish": "node scripts/verify-version.mjs && pnpm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "verify-version": "node scripts/verify-version.mjs",
     "package": "vsce package",
     "download-binary": "node scripts/download-binary.mjs",
     "download-assets": "node scripts/download-assets.mjs"
