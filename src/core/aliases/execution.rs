@@ -9,6 +9,26 @@ use super::parse::to_alias_definition;
 use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mapping, split_ternary};
 use super::types::ResolvedAlias;
 
+/// 把 `$paths` 里的相对条目按配置文件目录展开为绝对路径。
+///
+/// `build_alias_env` 仍会把相对条目按命令落地目录兜底解析，
+/// 但在别名定义里写下的相对路径应当跟着配置文件走——否则从子目录
+/// 调用 `byk` 时，这些目录会被静默跳过。
+fn absolutize_paths(paths: &[String], config_dir: Option<&Path>) -> Vec<String> {
+    paths
+        .iter()
+        .map(|raw| {
+            let expanded = expand_home(raw);
+            if expanded.is_relative()
+                && let Some(base) = config_dir
+            {
+                return base.join(&expanded).to_string_lossy().into_owned();
+            }
+            expanded.to_string_lossy().into_owned()
+        })
+        .collect()
+}
+
 /// 构造别名执行环境，将自定义路径和 node_modules/.bin 前置到 PATH。
 ///
 /// `custom_paths` 来自别名文件的 `$paths` 字段，支持 `~` 展开和基于
@@ -251,7 +271,10 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
 
     let command = definition.command;
     let cwd = definition.cwd;
-    let custom_paths: Vec<String> = resolved.paths.clone();
+
+    // 相对 $paths 以配置文件所在目录为基准，与调用时的当前目录无关
+    let config_dir = resolved.source_path.as_deref().and_then(|p| p.parent());
+    let custom_paths = absolutize_paths(&resolved.paths, config_dir);
 
     let working_dir = resolve_working_dir(
         cwd.as_deref(),

@@ -15,6 +15,7 @@
 
 ### Bug Fixes
 
+- **`$paths`**: relative entries now resolve against the config file's directory instead of the command's working directory, so an alias still finds its scripts when invoked from a subdirectory
 - **variables**: undefined `${NAME}` is no longer swallowed by the argument-placeholder layer and now survives to the shell
 - **variables**: circular or self-referential variables no longer balloon into repeated nested text; resolution uses a snapshot closure with self-reference freezing
 
