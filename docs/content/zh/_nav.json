@@ -2,5 +2,14 @@
   {
     "text": "文档",
     "link": "/cli"
+  },
+  {
+    "text": "插件",
+    "items": [
+      {
+        "text": "vscode插件",
+        "link": "https://marketplace.visualstudio.com/items?itemName=fcbyk.byk"
+      }
+    ]
   }
 ]

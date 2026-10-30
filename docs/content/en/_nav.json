@@ -2,5 +2,14 @@
   {
     "text": "Docs",
     "link": "/cli"
+  },
+  {
+    "text": "Plugins",
+    "items": [
+      {
+        "text": "VS Code Plugin",
+        "link": "https://marketplace.visualstudio.com/items?itemName=fcbyk.byk"
+      }
+    ]
   }
 ]
