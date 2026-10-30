@@ -53,7 +53,7 @@ If a file should only ever be invoked explicitly and never appear under `byk <ke
 2. The first remaining word is the alias name; everything after it is passed as arguments
 3. A `@file.key` exact match reads that file directly
 4. Otherwise the alias is looked up in the merged alias space (global `~/.byk/alias/` + current directory)
-5. Reserved variables (`$byk` / `$workdir`) are expanded and placeholders are resolved
+5. Variables (`${byk}` / `${workdir}` and `$var`) are substituted, then argument placeholders are resolved
 6. The command executes under `$cwd`; on a miss, candidates are listed and byk exits 1
 
 ## Where to Read Next

@@ -17,8 +17,8 @@ The three namespaces are fully isolated:
 | Optional pass-through | `{{xxx}}` | Rendered as-is when `xxx` is present; disappears otherwise |
 | System placeholders | `${...}` | Fixed semantics provided by the system |
 
-:::note Reserved variables (expanded first)
-`$byk` / `$workdir` are byk's reserved variables, expanded to concrete paths **before** placeholder resolution. They are not part of the argument namespaces above — they consume no argument positions and accept no input values. See [Reserved Variables](/cli/alias/config).
+:::note Variables (expanded first)
+`${byk}` / `${workdir}` and any `$var`-declared variables are substituted with literals by byk **before** placeholder resolution. They are not part of the argument namespaces above — they consume no argument positions and accept no input values. `${args}` / `${N}` / `${...args}` are still handled by the argument layer. See [Variables](/cli/alias/config).
 :::
 
 ## Placeholder Reference

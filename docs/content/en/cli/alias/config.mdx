@@ -30,7 +30,7 @@ type AliasFileJSON = {
 };
 ```
 
-Only these five `$`-prefixed keys are recognized; any other `$xxx` is passed through to the shell verbatim (or expanded by the [reserved variables](#reserved-variables)).
+Only these five `$`-prefixed keys are recognized; any other `$xxx` is passed through to the shell verbatim (or expanded by [variables](#variables)).
 
 ## Alias Objects
 
@@ -225,9 +225,18 @@ Aliases:
 - Relative paths are resolved against the directory containing the config file
 - Nonexistent directories are silently skipped
 
-### File-Level Variables ($var)
+### Variables
 
-`$var` declares file-scoped variables that are substituted across all string values in the file during the **scan phase** — handy for long URL prefixes or version numbers reused in many places:
+Variables come from two places and are merged into **a single table**, substituted once during the scan phase:
+
+| Source | Description |
+|--------|-------------|
+| Built-in | `${byk}` → `~/.byk`; `${workdir}` → the directory byk was invoked from |
+| `$var` declarations | File-scoped custom variables |
+
+On a name collision, **the file declaration wins** — the value you wrote explicitly is the value you get.
+
+The syntax is uniformly `${name}`, where `name` matches `[A-Za-z_][A-Za-z0-9_]*` (the same rule as shell identifiers):
 
 ```json title="run.byk.json"
 {
@@ -238,43 +247,38 @@ Aliases:
       "linux-x86_64": "tool-linux"
     }
   },
-  "fetch": "curl -fsSL $BASE/$VER -o /tmp/tool"
+  "fetch": "curl -fsSL ${BASE}/${VER} -o /tmp/tool",
+  "log": "tail -f ${byk}/logs/app.log"
 }
 ```
 
 | Rule | Description |
 |------|-------------|
-| Syntax | `$NAME`, conventionally uppercase; substitution happens at scan time |
-| Scope | File-level global — applies to all string values including `$cmd` / `$cwd` / `$paths` |
+| Syntax | `${name}` — the braces are the delimiter and are required |
+| Bare `$xx` | Not recognized; passed to the shell as-is (`$HOME`, `$PATH` are still expanded by the shell) |
+| Scope | File-level: applies to all string values including `$cmd` / `$cwd` / `$paths`; JSON keys are untouched |
+| Override | A `$var` entry with a built-in's name takes that built-in's place |
+| Self-reference | In `"byk": "${byk}/tools"` the right-hand side is the built-in value, yielding `~/.byk/tools` |
+| Escaping | `\${byk}` is passed to the shell untouched, printing the literal `${byk}` |
 | Platform mapping | A value can be a platform map (`linux-x86_64` / `linux-arm64` / `darwin-x86_64` / `darwin-arm64` / `windows-x64`); the current platform's value is used |
-| Cross-references | A variable's value may reference other variables, expanded for at most 8 rounds; circular references cannot loop forever |
-| Reserved names | Built-in variable names (`byk` / `workdir`) are invalid here; built-ins take precedence |
-| Unknown variables | Undefined `$xxx` values are kept as-is and handed to the shell |
+| Cross-references | Values may reference each other regardless of declaration order, for at most 8 rounds |
+| Undefined | `${XXX}` is kept as-is; `args` is reserved for placeholders and its declaration is ignored |
+| Invalid names | Names that are not valid identifiers are ignored with a warning on stderr |
 
-User variables are substituted at scan time, while built-in variables are expanded at execution time. So user variables can compose built-in ones: `{"TOOLS": "$byk/tools"}` first becomes the literal `$byk/tools`, and `$byk` is expanded just before execution.
+:::tip Why the braces are mandatory
+A bare `$byk` has no terminator: there is no way to tell whether `$bykfoo` means the variable `bykfoo` or `byk` followed by `foo`. `${byk}foo` has no such ambiguity — which is also why it matches the shell syntax you already know.
+:::
 
-### Reserved Variables
-
-Expanded by byk just before execution — the shell never sees these two `$` signs:
-
-| Variable | Expands to | Description |
-|----------|-----------|-------------|
-| `$byk` | `~/.byk` | The alias home directory; keep your own scripts and tools here |
-| `$workdir` | The working directory at execution time | Use it when you need an absolute path |
-
-**Rules**:
-
-- Expansion happens **before** placeholder resolution and applies consistently to `$cmd` / `$cwd` / `$paths`
-- Only these two words are recognized; `$HOME`, `$PATH`, `$bykfoo`, etc. are passed through to the shell verbatim
-- Expanded values containing whitespace are automatically wrapped in double quotes — no need to do it by hand
-- System placeholders such as `${args}` are unaffected
+**Quoting is your job**: when a value contains whitespace, wrap it in quotes per shell rules; byk will not do it for you.
 
 ```json title="run.byk.json"
 {
-  "log": "tail -f $byk/logs/app.log",
-  "where": "echo $workdir"
+  "log": "tail -f \"${byk}/my logs/app.log\"",
+  "where": "echo ${workdir}"
 }
 ```
+
+`${workdir}` is the directory **byk was invoked from**, not the directory an alias `$cwd` points at.
 
 ### Usage Examples
 

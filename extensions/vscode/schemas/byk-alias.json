@@ -25,7 +25,7 @@
       }
     },
     "$var": {
-      "description": "文件级变量，扫描时做阶段一替换（作用于文件内所有字符串值，如长 URL 前缀）。约定全大写命名。值可为字符串或平台映射（当前平台取值）。内置保留变量（$byk/$workdir）声明无效。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"$BASE/mac\"}}",
+      "description": "文件级变量：与内置变量合并为一张表，扫描期一次性替换文件内所有字符串值（JSON key 不动）。同名时此处覆盖内置值。语法 ${name}，name 须符合 [A-Za-z_][A-Za-z0-9_]*。值可为字符串或平台映射（当前平台取值）。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"${BASE}/mac\"}}",
       "type": "object",
       "additionalProperties": {
         "oneOf": [
@@ -81,7 +81,7 @@
     },
     "PlatformMap": {
       "title": "平台映射",
-      "description": "$var 取值按平台区分。平台键取自 linux-x86_64 / linux-arm64 / darwin-x86_64 / darwin-arm64 / windows-x64。当前平台不在映射中时该变量视为未定义（`$NAME` 原样透传）。",
+      "description": "$var 取值按平台区分。平台键取自 linux-x86_64 / linux-arm64 / darwin-x86_64 / darwin-arm64 / windows-x64。当前平台不在映射中时该变量视为未定义（`${NAME}` 原样透传）。",
       "type": "object",
       "additionalProperties": {
         "type": "string"

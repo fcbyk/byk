@@ -8,8 +8,6 @@ use std::process::{Command, exit};
 use super::parse::to_alias_definition;
 use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mapping, split_ternary};
 use super::types::ResolvedAlias;
-use super::variables::{VarContext, expand_variables};
-use crate::core::paths::PathLayout;
 
 /// 构造别名执行环境，将自定义路径和 node_modules/.bin 前置到 PATH。
 ///
@@ -238,16 +236,11 @@ fn convert_unix_path_for_cmd(command: &str) -> String {
 
 /// 执行别名命令。
 ///
-/// 先展开保留变量（`$byk` / `$workdir`，先于占位符解析），
-/// 再根据别名定义中的 `$interactive` 字段决定行为：
+/// 变量（内置 `${byk}` / `${workdir}` 与文件 `$var`）已在扫描期替换完毕，
+/// 此处只剩参数占位符。按 `$interactive` 决定行为：
 /// - `false`（默认）：从 CLI 参数自动解析占位符，显示映射关系后直接执行。
 /// - `true`：逐项提示用户输入占位符值，显示最终命令后按 Enter 确认执行。
-pub fn execute_alias(
-    resolved: &ResolvedAlias,
-    args: &[String],
-    display_source: &str,
-    layout: &PathLayout,
-) {
+pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: &str) {
     let definition = match to_alias_definition(&resolved.value) {
         Some(d) => d,
         None => {
@@ -256,19 +249,9 @@ pub fn execute_alias(
         }
     };
 
-    // 保留变量展开：对 $cmd / $cwd / $paths 一致生效；
-    // 未命中的 $ token 透传给 shell
-    let var_ctx = VarContext::from_layout(layout);
-    let command = expand_variables(&definition.command, &var_ctx);
-    let cwd = definition
-        .cwd
-        .as_deref()
-        .map(|c| expand_variables(c, &var_ctx));
-    let custom_paths: Vec<String> = resolved
-        .paths
-        .iter()
-        .map(|p| expand_variables(p, &var_ctx))
-        .collect();
+    let command = definition.command;
+    let cwd = definition.cwd;
+    let custom_paths: Vec<String> = resolved.paths.clone();
 
     let working_dir = resolve_working_dir(
         cwd.as_deref(),

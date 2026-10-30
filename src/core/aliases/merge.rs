@@ -7,6 +7,7 @@ use super::parse::{is_alias_value, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, ResolvedAlias};
 use crate::core::paths::PathLayout;
+use crate::core::vars::build_builtin_table;
 
 /// 深度合并上下文，打包所有跨递归传递的参数。
 #[derive(Copy, Clone)]
@@ -160,8 +161,10 @@ pub(crate) fn load_merged_aliases_at(
     layout: &PathLayout,
     cwd: &Path,
 ) -> (MergedConfig, Vec<AliasFile>) {
-    let mut files = scan_alias_files(cwd, false);
-    files.extend(scan_alias_files(&layout.alias_dir, true));
+    // 内置变量在扫描期就展开，因此 workdir 固定为调用 byk 时的目录
+    let vars = build_builtin_table(&layout.root_dir, cwd);
+    let mut files = scan_alias_files(cwd, false, &vars);
+    files.extend(scan_alias_files(&layout.alias_dir, true, &vars));
     sort_alias_files(&mut files);
 
     // cwd 恰好是全局目录时，同一批文件会被扫两次（@f 与 @@f）。

@@ -1,32 +1,105 @@
-"""E2E —— 别名执行与保留变量展开（$byk / $workdir）"""
+"""E2E —— 变量替换：内置 ${byk}/${workdir} 与文件 $var"""
 
 
-def test_byk_var_expands(runner):
-    """$byk 展开为 byk 根目录（隔离 HOME 下的 .byk）"""
-    runner.prepare_alias_file("vars", '{"hi": {"$cmd": "echo $byk"}}')
+def test_builtin_byk_expands(runner):
+    """${byk} 展开为 byk 根目录（隔离 HOME 下的 .byk）"""
+    runner.prepare_alias_file("vars", '{"hi": "echo ${byk}"}')
     r = runner.run("hi")
     assert r.returncode == 0
     assert str(runner.byk_dir) in r.stdout
 
 
-def test_shell_dollar_passthrough(runner):
-    """未命中的 $ token 原样透传 shell（$HOME 由 shell 展开）"""
-    runner.prepare_alias_file("vars", '{"h": {"$cmd": "echo $HOME"}}')
+def test_builtin_workdir_expands(runner):
+    """${workdir} 展开为调用 byk 时的目录"""
+    work = runner.home / "wd"
+    work.mkdir(parents=True, exist_ok=True)
+    runner.prepare_alias_file("vars", '{"w": "echo ${workdir}"}')
+    r = runner.run("w", cwd=str(work))
+    assert r.returncode == 0, r.stderr
+    assert str(work) in r.stdout
+
+
+def test_bare_dollar_left_to_shell(runner):
+    """裸 $xxx 交给 shell，byk 不识别"""
+    runner.prepare_alias_file("vars", '{"h": "echo X$byk-Y"}')
+    r = runner.run("h")
+    assert r.returncode == 0
+    assert "X-Y" in r.stdout
+    assert str(runner.byk_dir) not in r.stdout
+
+
+def test_shell_var_passthrough(runner):
+    """$HOME 仍由 shell 展开"""
+    runner.prepare_alias_file("vars", '{"h": "echo $HOME"}')
     r = runner.run("h")
     assert r.returncode == 0
     assert str(runner.home) in r.stdout
 
 
+def test_escaped_brace_left_to_shell(runner):
+    """\\${byk} 由 shell 输出字面量"""
+    runner.prepare_alias_file("vars", r'{"h": "echo \\${byk}"}')
+    r = runner.run("h")
+    assert r.returncode == 0, r.stderr
+    assert "${byk}" in r.stdout
+
+
+def test_prefix_concatenation(runner):
+    """${byk}aaa 是明确的前缀拼接"""
+    runner.prepare_alias_file("vars", '{"h": "echo ${byk}aaa"}')
+    r = runner.run("h")
+    assert r.returncode == 0
+    assert f"{runner.byk_dir}aaa" in r.stdout
+
 
 def test_var_substitution_in_cmd(runner):
-    """$var 文件级变量：阶段一替换后命令直接生效"""
+    """$var 文件级变量在扫描期替换完成"""
     runner.prepare_alias_file(
         "vars",
-        '{"$var": {"MSG": "hello-var"}, "say": {"$cmd": "echo $MSG"}}',
+        '{"$var": {"MSG": "hello-var"}, "say": {"$cmd": "echo ${MSG}"}}',
     )
     r = runner.run("say")
     assert r.returncode == 0
     assert "hello-var" in r.stdout
+
+
+def test_var_overrides_builtin(runner):
+    """用户声明优先：$var 里的 byk 覆盖内置值"""
+    runner.prepare_alias_file(
+        "vars",
+        '{"$var": {"byk": "/tmp/custom-byk"}, "h": "echo ${byk}"}',
+    )
+    r = runner.run("h")
+    assert r.returncode == 0
+    assert "/tmp/custom-byk" in r.stdout
+
+
+def test_var_can_extend_builtin(runner):
+    """等号右边的 ${byk} 指内置原值：local byk = $byk/tools"""
+    runner.prepare_alias_file(
+        "vars",
+        '{"$var": {"byk": "${byk}/tools"}, "h": "echo ${byk}"}',
+    )
+    r = runner.run("h")
+    assert r.returncode == 0
+    assert f"{runner.byk_dir}/tools" in r.stdout
+
+
+def test_args_placeholder_not_shadowed(runner):
+    """${args} 属于参数占位符，不被变量层吃掉"""
+    runner.prepare_alias_file("vars", '{"say": "echo ${args}"}')
+    r = runner.run("say", "a", "b")
+    assert r.returncode == 0
+    assert "a b" in r.stdout
+
+
+def test_invalid_var_name_warns(runner):
+    """非法变量名被忽略并提示（不参与替换）"""
+    runner.prepare_alias_file("vars", '{"$var": {"9bad": "x"}, "h": "echo ok"}')
+    r = runner.run("h")
+    assert r.returncode == 0
+    assert "9bad" in r.stderr
+    assert "ok" in r.stdout
 
 
 def test_install_blocks_ignored(runner):

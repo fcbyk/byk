@@ -7,8 +7,9 @@ use colored::Colorize;
 
 use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
 use super::types::AliasFile;
+use crate::core::vars::{VarIssue, VarTable, preprocess_vars};
 
-pub(crate) fn scan_alias_files(dir: &Path, is_global: bool) -> Vec<AliasFile> {
+pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> Vec<AliasFile> {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
     // 只想给本文件用（仅 @file.key 可达）时显式写 `$priority: -1`。
     let default_priority = if is_global { 0 } else { 1 };
@@ -28,7 +29,7 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool) -> Vec<AliasFile> {
         if !file_name.ends_with(".byk.json") {
             continue;
         }
-        if let Some(alias_file) = parse_alias_file(&path, is_global, default_priority) {
+        if let Some(alias_file) = parse_alias_file(&path, is_global, default_priority, vars) {
             files.push(alias_file);
         }
     }
@@ -37,7 +38,12 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool) -> Vec<AliasFile> {
 }
 
 /// 解析单个文件；文件名非法、读取失败或 JSON 损坏时静默返回 None。
-fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Option<AliasFile> {
+fn parse_alias_file(
+    path: &Path,
+    is_global: bool,
+    default_priority: i32,
+    vars: &VarTable,
+) -> Option<AliasFile> {
     let name = path.file_name()?.to_str()?;
 
     let suffix = ".byk.json";
@@ -50,14 +56,23 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
     let content = fs::read_to_string(path).ok()?;
     let mut data: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-    // 阶段一：提取 $var 并对整个文件做字符串值替换；内置变量留到执行时（阶段二）
-    for name in crate::core::vars::preprocess_vars(&mut data) {
-        eprintln!(
-            "{} variable '${}' is reserved by byk, declaration ignored in {}",
-            "Warning:".yellow(),
-            name,
-            path.display()
-        );
+    // 变量替换：内置 ${byk}/${workdir} 与文件 $var 合成一张表，扫描期一次替换完成
+    for issue in preprocess_vars(&mut data, vars) {
+        let detail = match &issue {
+            VarIssue::InvalidName(n) => format!(
+                "variable '${{{}}}' has an invalid name (expected [A-Za-z_][A-Za-z0-9_]*), ignored",
+                n
+            ),
+            VarIssue::Reserved(n) => format!(
+                "variable '${{{}}}' collides with an alias placeholder, declaration ignored",
+                n
+            ),
+            VarIssue::SelfReference(n) => format!(
+                "variable '${{{}}}' references itself and cannot be resolved, left as-is",
+                n
+            ),
+        };
+        eprintln!("{} {} in {}", "Warning:".yellow(), detail, path.display());
     }
 
     let obj = data.as_object_mut()?;
@@ -67,7 +82,7 @@ fn parse_alias_file(path: &Path, is_global: bool, default_priority: i32) -> Opti
         .as_ref()
         .map_or(default_priority, |v| parse_priority(v, default_priority));
 
-    // $var 为文件级变量声明（已在阶段一替换生效），移除避免泄漏为别名
+    // $var 为文件级变量声明（已在变量替换阶段生效），移除避免泄漏为别名
     obj.remove("$var");
 
     let inherited_cwd = obj
@@ -194,7 +209,7 @@ mod tests {
             r#"{"$paths": ["./scripts", "~/tools/bin"], "build": "make build"}"#,
         )
         .unwrap();
-        let files = scan_alias_files(dir.path(), false);
+        let files = scan_alias_files(dir.path(), false, &VarTable::new());
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].inherited_paths, vec!["./scripts", "~/tools/bin"]);
     }
@@ -204,7 +219,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"build": "make build"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
+        let files = scan_alias_files(dir.path(), false, &VarTable::new());
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_paths.is_empty());
     }
@@ -218,7 +233,7 @@ mod tests {
             r#"{"$paths": ["./good", 42, null, "./also-good"], "build": "echo"}"#,
         )
         .unwrap();
-        let files = scan_alias_files(dir.path(), false);
+        let files = scan_alias_files(dir.path(), false, &VarTable::new());
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].inherited_paths, vec!["./good", "./also-good"]);
     }
@@ -228,7 +243,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"$paths": "not-an-array", "build": "echo"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
+        let files = scan_alias_files(dir.path(), false, &VarTable::new());
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_paths.is_empty());
     }
@@ -238,7 +253,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"$paths": ["./bin"], "build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false);
+        let files = scan_alias_files(dir.path(), false, &VarTable::new());
         assert_eq!(files.len(), 1);
         assert!(!files[0].aliases.contains_key("$paths"));
     }

@@ -145,6 +145,8 @@ fn resolve_placeholder(
 
     if ph.starts_with("${") && ph.ends_with('}') {
         let inner = &ph[2..ph.len() - 1];
+        // `${name}` 是变量语法（内置或未定义），归变量层处理；
+        // 这里只认位置参数 `${N}`，其余原样保留，避免把未定义变量清空。
         if let Ok(idx) = inner.parse::<usize>() {
             if idx < args.len() {
                 resolved.insert(ph.to_string(), args[idx].clone());
@@ -152,8 +154,8 @@ fn resolve_placeholder(
             } else {
                 resolved.insert(ph.to_string(), String::new());
             }
-            return;
         }
+        return;
     }
 
     if ph.starts_with("{{") && ph.ends_with("}}") {
@@ -431,6 +433,14 @@ mod tests {
         let (cmd, _) =
             parse_alias_arguments_with_mapping("cp ${0} ${1}", &["src".into(), "dst".into()], &[]);
         assert_eq!(cmd, "cp src dst");
+    }
+
+    #[test]
+    fn parse_undefined_named_var_kept() {
+        // `${NAME}` 属于变量语法，占位符层原样保留（交给 shell 或保持字面）
+        let (cmd, map) = parse_alias_arguments_with_mapping("echo ${UNDEF}", &[], &[]);
+        assert_eq!(cmd, "echo ${UNDEF}");
+        assert!(map.is_empty());
     }
 
     #[test]

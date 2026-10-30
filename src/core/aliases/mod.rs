@@ -10,7 +10,6 @@ mod parse;
 pub(crate) mod placeholder;
 mod scan;
 mod types;
-pub(crate) mod variables;
 
 // 统一出口：其他模块只从这里使用别名能力
 pub use exact::{lookup_exact_alias, parse_exact_syntax};

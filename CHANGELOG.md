@@ -1,3 +1,23 @@
+## Unreleased
+
+### Breaking Changes
+
+- **variables**: variable syntax is now `${name}`; bare `$xx` is no longer interpreted and is passed to the shell untouched — rewrite `$byk` / `$workdir` as `${byk}` / `${workdir}` and `$VAR` as `${VAR}`
+- **variables**: all substitution now happens during the scan phase; there is no second expansion before execution
+- **variables**: values containing whitespace are no longer auto-quoted — quote them yourself following shell rules
+
+### Features
+
+- **variables**: built-in and `$var` variables share one table; a declaration with a built-in name overrides it, so explicitly written values always win
+- **variables**: self-reference such as `"byk": "${byk}/tools"` resolves the right-hand side against the built-in value (`local byk = $byk/tools`)
+- **variables**: `\${...}` hands the expression to the shell instead of byk, useful for printing a literal
+- **variables**: variable names are limited to `[A-Za-z_][A-Za-z0-9_]*`; invalid names and the reserved `args` are reported on stderr
+
+### Bug Fixes
+
+- **variables**: undefined `${NAME}` is no longer swallowed by the argument-placeholder layer and now survives to the shell
+- **variables**: circular or self-referential variables no longer balloon into repeated nested text; resolution uses a snapshot closure with self-reference freezing
+
 ## v0.6.0 (2026-10-29)
 
 ### Breaking Changes
