@@ -13,6 +13,10 @@
  *      behind, because the extension absorbs upstream at its own pace.
  *   3. bykBinaryVersion never goes backwards, so a newer extension build can
  *      never ship an older CLI. Checked against git history when available.
+ *   4. bykBinaryVersion does not point ahead of the CLI version in Cargo.toml
+ *      — it would bundle a release that does not exist. Being behind is fine
+ *      and only produces a hint, since the extension absorbs upstream at its
+ *      own pace.
  *
  * Bumping the extension to 0.8.0 without bumping bykBinaryVersion is the easy
  * mistake this catches: it would ship a build claiming the 0.8 line while
@@ -111,6 +115,25 @@ function previousBinaryVersion(pkgPath, current) {
   return JSON.parse(raw).bykBinaryVersion ?? null;
 }
 
+/**
+ * The CLI version declared in the repository's Cargo.toml, or null when the
+ * file is absent (packaging a bare `extensions/vscode` copy).
+ *
+ * Cargo.toml is the single source of truth for CLI releases — commitizen bumps
+ * it via `version_files`.
+ */
+function cargoVersion(pkgPath) {
+  let text;
+  try {
+    text = readFileSync(join(dirname(pkgPath), '..', '..', 'Cargo.toml'), 'utf8');
+  } catch {
+    return null;
+  }
+  const section = text.split(/^\[/m).find((chunk) => chunk.startsWith('package]'));
+  const match = section?.match(/^\s*version\s*=\s*"([^"]+)"/m);
+  return match ? match[1] : null;
+}
+
 function main() {
   const pkgPath = resolve(process.argv[2] || DEFAULT_PKG);
   let pkg;
@@ -150,6 +173,27 @@ function main() {
         `bykBinaryVersion went backwards: ${previous} → ${bykBinaryVersion}\n` +
           `  a newer extension build must not ship an older CLI;\n` +
           `  set BYK_ALLOW_BINARY_DOWNGRADE=1 if this rollback is intentional`,
+      );
+    }
+  }
+
+  const latestCli = cargoVersion(pkgPath);
+  if (latestCli === null) {
+    note('no Cargo.toml found — skipping CLI freshness check');
+  } else {
+    const drift = compare(bykBinaryVersion, latestCli);
+    if (drift > 0) {
+      fail(
+        `bykBinaryVersion ${bykBinaryVersion} is ahead of the CLI in Cargo.toml (${latestCli})\n` +
+          `  that release does not exist yet — bump Cargo.toml first, or point\n` +
+          `  bykBinaryVersion at a tag that has actually been published`,
+      );
+    }
+    if (drift < 0) {
+      console.log(
+        `⚠ CLI ${latestCli} is newer than the bundled ${bykBinaryVersion}\n` +
+          `  if v${latestCli} has been released, consider setting "bykBinaryVersion": "${latestCli}"\n` +
+          `  (not blocking — the extension may lag upstream on purpose)`,
       );
     }
   }

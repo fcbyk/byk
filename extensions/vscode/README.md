@@ -58,6 +58,8 @@ The extension is a shell around the CLI, so its version tracks the CLI's:
 
 `scripts/download-binary.mjs` picks the release tag from `bykBinaryVersion`, so packaging is reproducible — it never resolves `latest` at build time.
 
+Packaging also cross-checks the repository's `Cargo.toml`, which is the source of truth for CLI releases: bundling a CLI **newer** than the one declared there fails the build (that tag cannot exist yet), while lagging **behind** only prints a hint naming the newer release.
+
 To check which binary is actually running (relevant after setting `byk.binaryPath` or `byk.useSystemBinary`):
 
 ```bash
