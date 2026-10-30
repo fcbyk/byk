@@ -45,6 +45,25 @@ The `@file.key` form calls the alias in that exact file, so a project file works
 | `byk.useSystemBinary` | Use the `byk` on `PATH` instead of the bundled binary | `false` |
 | `byk.binaryPath`      | Custom path to the `byk` binary (supports `~`)        | `""`    |
 
+## Versioning
+
+The extension is a shell around the CLI, so its version tracks the CLI's:
+
+| Field | Meaning |
+| --- | --- |
+| `version` (`X.Y.Z`) | `X.Y` equals the bundled CLI's `major.minor`; `Z` increments independently for extension-only fixes |
+| `bykBinaryVersion` | The exact CLI release bundled into this build |
+
+`0.6.3` therefore means "the fourth extension build on the byk 0.6 line", while `bykBinaryVersion` says precisely which `0.6.x` binary it ships. When the CLI moves to a new `X.Y`, the extension resets `Z` to `0`.
+
+`scripts/download-binary.mjs` picks the release tag from `bykBinaryVersion`, so packaging is reproducible — it never resolves `latest` at build time.
+
+To check which binary is actually running (relevant after setting `byk.binaryPath` or `byk.useSystemBinary`):
+
+```bash
+byk --version
+```
+
 ## Learn more
 
 - [byk CLI docs](https://cli.fcbyk.com)

@@ -4,15 +4,21 @@
  * All archives contain a single `byk` / `byk.exe` — no renames needed.
  *
  * Usage:
- *   node scripts/download-binary-v2.mjs              # latest release
- *   node scripts/download-binary-v2.mjs v2.0.0       # specific tag
+ *   node scripts/download-binary.mjs              # tag from package.json
+ *   node scripts/download-binary.mjs v0.6.0       # specific tag
+ *
+ * Version source: package.json `bykBinaryVersion`, falling back to `version`.
+ * The plugin's own version tracks the CLI's major.minor while its patch digit
+ * increments independently, so `bykBinaryVersion` is the only field that pins
+ * the exact binary. Never default to `latest` — that makes packaging
+ * non-reproducible and detaches the bundled binary from the declared version.
  *
  * Env:
  *   BYK_REPO   GitHub repo (default: fcbyk/byk)
  */
 
 import { execSync } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, readFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import { get } from 'node:https';
 import { join, dirname } from 'node:path';
@@ -22,8 +28,20 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = process.env.BYK_REPO || 'fcbyk/byk';
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const BIN_DIR = join(__dirname, '..', 'bin');
+const PKG_DIR = join(__dirname, '..');
+const BIN_DIR = join(PKG_DIR, 'bin');
 const TMP_DIR = join(BIN_DIR, '.tmp');
+
+/** Resolve the release tag from package.json. */
+function resolveDefaultTag() {
+  const pkg = JSON.parse(readFileSync(join(PKG_DIR, 'package.json'), 'utf8'));
+  const version = pkg.bykBinaryVersion || pkg.version;
+  if (!version) {
+    throw new Error('package.json has neither bykBinaryVersion nor version');
+  }
+  return `v${version}`;
+}
+
 
 // Asset name → bin/ output directory
 // Asset arch uses x86_64; bin dir uses x64 (matching process.arch)
@@ -73,13 +91,12 @@ function downloadFile(url, dest) {
 // ── Main ────────────────────────────────────────────────────────────
 
 async function main() {
-  const version = process.argv[2] || 'latest';
+  const version = process.argv[2] || resolveDefaultTag();
+  const tag = version.startsWith('v') ? version : `v${version}`;
 
-  const baseUrl = version === 'latest'
-    ? `https://github.com/${REPO}/releases/latest/download`
-    : `https://github.com/${REPO}/releases/download/${version}`;
+  const baseUrl = `https://github.com/${REPO}/releases/download/${tag}`;
 
-  console.log(`⬇  ${REPO} @ ${version}`);
+  console.log(`⬇  ${REPO} @ ${tag}`);
 
   await rm(BIN_DIR, { recursive: true, force: true });
   await mkdir(TMP_DIR, { recursive: true });

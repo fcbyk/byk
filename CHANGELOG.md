@@ -19,6 +19,11 @@
 - **variables**: undefined `${NAME}` is no longer swallowed by the argument-placeholder layer and now survives to the shell
 - **variables**: circular or self-referential variables no longer balloon into repeated nested text; resolution uses a snapshot closure with self-reference freezing
 
+### Chores
+
+- **vscode**: version the extension off the CLI it bundles — `X.Y` mirrors the CLI's `major.minor` and `Z` is the extension's own revision, with `bykBinaryVersion` pinning the exact binary
+- **vscode**: `download-binary.mjs` resolves its release tag from `bykBinaryVersion` instead of falling back to `latest`, making a packaged build reproducible
+
 ## v0.6.0 (2026-10-29)
 
 ### Breaking Changes
