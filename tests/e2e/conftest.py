@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -50,6 +51,10 @@ class BykRunner:
         path = alias_dir / f"{stem}.byk.json"
         path.write_text(content, encoding="utf-8")
         return path
+
+    def prepare_alias_json(self, stem: str, data: dict) -> Path:
+        """以 Python dict 写别名文件，免去手写 JSON 转义"""
+        return self.prepare_alias_file(stem, json.dumps(data, ensure_ascii=False))
 
 
 @pytest.fixture(scope="session")
