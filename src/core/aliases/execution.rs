@@ -29,14 +29,12 @@ fn absolutize_paths(paths: &[String], config_dir: Option<&Path>) -> Vec<String> 
         .collect()
 }
 
-/// 构造别名执行环境，将自定义路径和 node_modules/.bin 前置到 PATH。
+/// 计算需要前置到 PATH 的目录列表（`$paths` + `node_modules/.bin`）。
 ///
-/// `custom_paths` 来自别名文件的 `$paths` 字段，支持 `~` 展开和基于
-/// `working_dir` 的相对路径解析。非字符串元素已在扫描阶段过滤。
-pub fn build_alias_env(working_dir: &Path, custom_paths: &[String]) -> HashMap<String, String> {
-    let mut env_map = HashMap::new();
-    let existing_path = std::env::var("PATH").unwrap_or_default();
-
+/// 与 `build_alias_env` 共用同一套前缀规则，保证 `byk __api__ resolve` 返回的
+/// `paths` 与实际执行时的 PATH 完全一致。相对条目以 `working_dir` 为基准解析，
+/// `~` 已展开，不存在的目录静默跳过。
+pub fn build_path_prefixes(working_dir: &Path, custom_paths: &[String]) -> Vec<String> {
     let mut prefixes: Vec<String> = Vec::new();
 
     // 解析并前置 $paths 条目（保持配置中的顺序，最前的优先级最高）
@@ -54,8 +52,21 @@ pub fn build_alias_env(working_dir: &Path, custom_paths: &[String]) -> HashMap<S
 
     let node_bin = working_dir.join("node_modules").join(".bin");
     if node_bin.is_dir() {
-        prefixes.push(node_bin.display().to_string());
+        prefixes.push(node_bin.to_string_lossy().into_owned());
     }
+
+    prefixes
+}
+
+/// 构造别名执行环境，将自定义路径和 node_modules/.bin 前置到 PATH。
+///
+/// `custom_paths` 来自别名文件的 `$paths` 字段，支持 `~` 展开和基于
+/// `working_dir` 的相对路径解析。非字符串元素已在扫描阶段过滤。
+pub fn build_alias_env(working_dir: &Path, custom_paths: &[String]) -> HashMap<String, String> {
+    let mut env_map = HashMap::new();
+    let existing_path = std::env::var("PATH").unwrap_or_default();
+
+    let prefixes = build_path_prefixes(working_dir, custom_paths);
 
     if prefixes.is_empty() {
         env_map.insert("PATH".to_string(), existing_path);
@@ -288,6 +299,67 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
         execute_interactive_impl(&command, args, &placeholders, &working_dir, &custom_paths);
     } else {
         execute_direct_impl(&command, args, &placeholders, &working_dir, &custom_paths);
+    }
+}
+
+/// 别名的解析结果（只解析、不执行），供 `byk __api__ resolve` 使用。
+#[derive(Debug, Clone)]
+pub struct ResolvedCommand {
+    /// 最终命令：非交互别名已按参数解析占位符，交互别名为未解析模板
+    pub command: String,
+    /// 解析后的工作目录（`$cwd` + `~` 展开 + 相对路径已解析）
+    pub cwd: PathBuf,
+    /// 需要前置到 PATH 的目录列表（含 node_modules/.bin，已绝对化）
+    pub paths: Vec<String>,
+    /// 是否为交互别名
+    pub interactive: bool,
+    /// 别名描述
+    pub description: Option<String>,
+}
+
+/// 解析别名但不执行：产出最终命令、工作目录与 PATH 前缀。
+///
+/// 与 `execute_alias` 共用同一套解析逻辑（变量替换已在扫描期完成，
+/// 此处只处理 `$cwd`/`$paths` 继承与占位符），保证 `resolve` 的结果
+/// 与 `byk <key>` 实际执行的命令完全一致。
+///
+/// 交互别名无法在无终端下确定占位符值，因此原样返回模板并置
+/// `interactive = true`，由调用方（插件）决定回退到 byk 或自行交互。
+pub fn resolve_alias(resolved: &ResolvedAlias, args: &[String]) -> ResolvedCommand {
+    let definition = match to_alias_definition(&resolved.value) {
+        Some(d) => d,
+        None => {
+            return ResolvedCommand {
+                command: String::new(),
+                cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                paths: Vec::new(),
+                interactive: false,
+                description: None,
+            };
+        }
+    };
+
+    // 相对 $paths 以配置文件所在目录为基准，与 execute_alias 保持一致
+    let config_dir = resolved.source_path.as_deref().and_then(|p| p.parent());
+    let custom_paths = absolutize_paths(&resolved.paths, config_dir);
+    let working_dir = resolve_working_dir(definition.cwd.as_deref(), config_dir);
+    let paths = build_path_prefixes(&working_dir, &custom_paths);
+
+    let (command, interactive) = if definition.interactive {
+        (definition.command.clone(), true)
+    } else {
+        (
+            parse_alias_arguments_with_mapping(&definition.command, args, &[]).0,
+            false,
+        )
+    };
+
+    ResolvedCommand {
+        command,
+        cwd: working_dir,
+        paths,
+        interactive,
+        description: definition.description,
     }
 }
 
@@ -1034,5 +1106,85 @@ mod tests {
         let custom_pos = path.find(&custom.to_string_lossy().into_owned()).unwrap();
         let nm_pos = path.find(&nm_bin.to_string_lossy().into_owned()).unwrap();
         assert!(custom_pos < nm_pos, "$paths 应在 node_modules/.bin 之前");
+    }
+
+    // ---------- resolve_alias ----------
+
+    fn resolved_str(cmd: &str) -> ResolvedAlias {
+        use crate::core::aliases::AliasValue;
+        ResolvedAlias {
+            value: AliasValue::Str(cmd.into()),
+            source: "@t".into(),
+            source_path: None,
+            paths: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_simple_string() {
+        let rc = resolve_alias(&resolved_str("echo hi"), &[]);
+        assert_eq!(rc.command, "echo hi");
+        assert!(!rc.interactive);
+        assert!(rc.description.is_none());
+        assert!(rc.cwd.is_absolute());
+        assert!(rc.paths.is_empty());
+    }
+
+    #[test]
+    fn resolve_placeholder_with_args() {
+        let rc = resolve_alias(
+            &resolved_str("echo {name}"),
+            &["name".into(), "Alice".into()],
+        );
+        assert_eq!(rc.command, "echo Alice");
+        assert!(!rc.interactive);
+    }
+
+    #[test]
+    fn resolve_interactive_returns_template() {
+        use crate::core::aliases::AliasValue;
+        let resolved = ResolvedAlias {
+            value: AliasValue::Meta {
+                cmd: "deploy --env {env}".into(),
+                cwd: None,
+                interactive: Some(true),
+                description: Some("部署".into()),
+            },
+            source: "@t".into(),
+            source_path: None,
+            paths: Vec::new(),
+        };
+        let rc = resolve_alias(&resolved, &[]);
+        assert!(rc.interactive);
+        assert_eq!(rc.command, "deploy --env {env}");
+        assert_eq!(rc.description.as_deref(), Some("部署"));
+    }
+
+    #[test]
+    fn resolve_meta_cwd_and_paths() {
+        use crate::core::aliases::AliasValue;
+        let dir = tempfile::tempdir().unwrap();
+        let nm_bin = dir.path().join("node_modules").join(".bin");
+        std::fs::create_dir_all(&nm_bin).unwrap();
+
+        let resolved = ResolvedAlias {
+            value: AliasValue::Meta {
+                cmd: "make".into(),
+                cwd: Some(dir.path().to_string_lossy().into_owned()),
+                interactive: None,
+                description: None,
+            },
+            source: "@t".into(),
+            source_path: None,
+            paths: vec![dir.path().to_string_lossy().into_owned()],
+        };
+
+        let rc = resolve_alias(&resolved, &[]);
+        assert_eq!(rc.command, "make");
+        assert!(!rc.interactive);
+        // $cwd 解析到 dir，且 node_modules/.bin 被纳入 PATH 前缀
+        assert_eq!(rc.cwd, dir.path());
+        let nm = nm_bin.to_string_lossy().into_owned();
+        assert!(rc.paths.contains(&nm));
     }
 }

@@ -59,7 +59,7 @@ def test_api_lists_requests(runner):
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     names = {item["name"] for item in payload["requests"]}
-    assert names == {"completion", "complete"}
+    assert names == {"completion", "complete", "resolve"}
 
 
 def test_api_complete_lists_aliases(runner):
