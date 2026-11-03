@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawnSync } from 'child_process';
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -49,6 +50,12 @@ interface AliasItem {
   description: string;
   /** The exact `byk @stem.key` command to execute. */
   exactCommand: string;
+}
+
+/** A runnable alias found at the cursor, plus its raw config value. */
+interface AliasHit {
+  exactCommand: string;
+  value: unknown;
 }
 
 /**
@@ -105,7 +112,7 @@ function getAliasAtCursor(
   lineNumber: number,
   colNumber: number,
   stem: string,
-): string | null {
+): AliasHit | null {
   // Collect all keys on the cursor line, pick the nearest one to the left
   let bestPath = '';
   let bestCol = -1;
@@ -137,8 +144,8 @@ function getAliasAtCursor(
   }
 
   const value = resolvePath(config, execPath);
-  if (typeof value === 'string') return `@${stem}.${execPath}`;
-  if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) return `@${stem}.${execPath}`;
+  if (typeof value === 'string') return { exactCommand: `@${stem}.${execPath}`, value };
+  if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) return { exactCommand: `@${stem}.${execPath}`, value };
   return null; // group — not executable
 }
 
@@ -450,6 +457,140 @@ function runAliasTask(exactCommand: string, cwd: string) {
   vscode.tasks.executeTask(task);
 }
 
+// ── Run Alias Directly (bypass byk) ───────────────────────────────
+
+interface ResolveResult {
+  key: string;
+  source: string;
+  sourcePath: string | null;
+  command: string;
+  cwd: string;
+  paths: string[];
+  interactive: boolean;
+  description: string | null;
+}
+
+/** Call `byk __api__ resolve` and parse the JSON. Returns null on any failure. */
+function callResolve(key: string, cwd: string): ResolveResult | null {
+  let stdout: string;
+  try {
+    const result = spawnSync('byk', ['__api__', 'resolve', key], {
+      cwd,
+      env: { ...process.env, PATH: buildPath() },
+      encoding: 'utf-8',
+      timeout: 15000,
+      windowsHide: true,
+    });
+    if (result.error || result.status !== 0) return null;
+    stdout = result.stdout;
+  } catch {
+    return null;
+  }
+
+  try {
+    return JSON.parse(stdout) as ResolveResult;
+  } catch {
+    return null;
+  }
+}
+
+/** Extract a runnable command (+ optional cwd/interactive) from a raw config value. */
+function rawValueToCommand(
+  value: unknown,
+): { command: string; cwd?: string; interactive: boolean } | null {
+  if (typeof value === 'string') {
+    return value.trim() ? { command: value, interactive: false } : null;
+  }
+  if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) {
+    const v = value as Record<string, unknown>;
+    if (typeof v.$cmd !== 'string' || !v.$cmd.trim()) return null;
+    return {
+      command: v.$cmd,
+      cwd: typeof v.$cwd === 'string' && v.$cwd.trim() ? v.$cwd : undefined,
+      interactive: v.$interactive === true,
+    };
+  }
+  return null;
+}
+
+/** Execute a fully-resolved command as a VS Code task — no byk process involved. */
+function executeDirectCommand(command: string, cwd: string, paths: string[], taskName: string) {
+  let envPath = buildPath();
+  if (paths.length > 0) {
+    envPath = paths.join(path.delimiter) + path.delimiter + envPath;
+  }
+
+  const options: vscode.ShellExecutionOptions = {
+    cwd,
+    env: { PATH: envPath },
+  };
+
+  // PowerShell treats @ as the splat operator — escape every @ with a backtick.
+  const shellPath = vscode.env.shell || '';
+  const isPowerShell = /powershell|pwsh/i.test(shellPath);
+  const cmd = isPowerShell ? command.replace(/@/g, '`@') : command;
+
+  const task = new vscode.Task(
+    { type: 'byk' },
+    vscode.TaskScope.Workspace,
+    taskName,
+    'byk',
+    new vscode.ShellExecution(cmd, options),
+  );
+  task.presentationOptions = {
+    echo: true,
+    focus: true,
+    reveal: vscode.TaskRevealKind.Always,
+    panel: vscode.TaskPanelKind.Shared,
+    showReuseMessage: true,
+  };
+  vscode.tasks.executeTask(task);
+}
+
+/**
+ * Run the alias under the cursor WITHOUT going through byk for execution.
+ * Calls `byk __api__ resolve` (read-only, exits immediately) to get the
+ * resolved command, then executes it directly — so byk.exe is never resident
+ * while the alias runs. This avoids the Windows file lock that blocks an
+ * alias from rebuilding byk.exe itself.
+ *
+ * Interactive aliases fall back to `byk @key`; when the byk binary predates
+ * the resolve endpoint, falls back to running the raw config value.
+ */
+function runAliasDirect(exactCommand: string, rawValue: unknown, configDir: string) {
+  const resolved = callResolve(exactCommand, configDir);
+
+  if (resolved) {
+    if (resolved.interactive) {
+      vscode.window.showInformationMessage(`"${exactCommand}" 需要交互输入，改用 byk 执行`);
+      runAliasTask(exactCommand, configDir);
+      return;
+    }
+    executeDirectCommand(
+      resolved.command,
+      resolved.cwd || configDir,
+      resolved.paths ?? [],
+      `${exactCommand} (direct)`,
+    );
+    return;
+  }
+
+  // resolve unavailable — fall back to the raw value from the config file.
+  const raw = rawValueToCommand(rawValue);
+  if (!raw) {
+    vscode.window.showErrorMessage(`无法解析别名 "${exactCommand}"，且 byk 不支持 resolve`);
+    return;
+  }
+  if (raw.interactive) {
+    runAliasTask(exactCommand, configDir);
+    return;
+  }
+
+  vscode.window.showWarningMessage('byk resolve 不可用，直接运行原始命令（未做变量/占位符解析）');
+  const rawCwd = raw.cwd ? path.resolve(configDir, resolveTilde(raw.cwd)) : configDir;
+  executeDirectCommand(raw.command, rawCwd, [], `${exactCommand} (direct)`);
+}
+
 export function activate(context: vscode.ExtensionContext) {
   extPath = context.extensionPath;
 
@@ -496,13 +637,50 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const exactCommand = getAliasAtCursor(config, document, lineNumber, colNumber, stem);
-      if (!exactCommand) {
+      const hit = getAliasAtCursor(config, document, lineNumber, colNumber, stem);
+      if (!hit) {
         vscode.window.showInformationMessage('当前行没有可执行的别名');
         return;
       }
 
-      runAliasTask(exactCommand, cwd);
+      runAliasTask(hit.exactCommand, cwd);
+    }),
+  );
+
+  // Right-click: run the alias under the cursor directly (bypass byk execution)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('byk.runDirect', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const document = editor.document;
+      const filename = path.basename(document.fileName);
+
+      if (!isBykFile(filename)) {
+        vscode.window.showErrorMessage(`Not a valid .byk.json file: ${filename}`);
+        return;
+      }
+
+      const stem = bykFileStem(filename);
+      const cwd = path.dirname(document.fileName);
+      const lineNumber = editor.selection.active.line;
+      const colNumber = editor.selection.active.character;
+
+      let config: Record<string, unknown>;
+      try {
+        config = JSON.parse(document.getText());
+      } catch {
+        vscode.window.showErrorMessage(`Failed to parse ${filename}`);
+        return;
+      }
+
+      const hit = getAliasAtCursor(config, document, lineNumber, colNumber, stem);
+      if (!hit) {
+        vscode.window.showInformationMessage('当前行没有可执行的别名');
+        return;
+      }
+
+      runAliasDirect(hit.exactCommand, hit.value, cwd);
     }),
   );
 

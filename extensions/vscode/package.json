@@ -64,6 +64,11 @@
         "icon": "$(run)"
       },
       {
+        "command": "byk.runDirect",
+        "title": "%command.runDirect.title%",
+        "icon": "$(debug-start)"
+      },
+      {
         "command": "byk.runScript",
         "title": "%command.runScript.title%"
       }
@@ -89,9 +94,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "byk.runScript",
+          "command": "byk.runDirect",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@2"
+        },
+        {
+          "command": "byk.runScript",
+          "when": "resourceFilename =~ /\\.byk\\.json$/",
+          "group": "navigation@3"
         }
       ],
       "editor/title/context": [
@@ -101,9 +111,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "byk.runScript",
+          "command": "byk.runDirect",
           "when": "resourceFilename =~ /\\.byk\\.json$/",
           "group": "navigation@2"
+        },
+        {
+          "command": "byk.runScript",
+          "when": "resourceFilename =~ /\\.byk\\.json$/",
+          "group": "navigation@3"
         }
       ]
     }
