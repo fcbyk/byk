@@ -1,31 +1,34 @@
 {
-  "dev": {
-    "test": "cargo test && cargo clippy ",
-    "运行": "cargo run",
-    "构建": "cargo build --release",
-    "安装": "ln -sf $(pwd)/target/debug/byk /opt/homebrew/bin/byk",
-    "清空缓存": "hash -r",
-    "显示": "ls -la /opt/homebrew/bin/byk && echo '---' && echo \"$PATH\" | tr ':' '\n' | nl",
-    "卸载": "rm /opt/homebrew/bin/byk"
+  "$priority": -1,
+  "mac":{
+    "创建软链接": "ln -sf \"$(pwd)/target/debug/byk\" /opt/homebrew/bin/byk",
+    "移除软链接": "rm -f /opt/homebrew/bin/byk",
+    "查看软链接": "ls -la /opt/homebrew/bin/byk && echo '---' && echo \"$PATH\" | tr ':' '\\n' | nl"
   },
 
-  
+  "win": {
+    "$description": "创建软链接，需要管理员权限",
+    "创建目录": "cmd /c if not exist %USERPROFILE%\\.byk\\bin mkdir %USERPROFILE%\\.byk\\bin",
+    "创建软链接": "cmd /c scripts\\symlink-win.cmd",
+    "移除软链接": "cmd /c if exist %USERPROFILE%\\.byk\\bin\\byk.exe del %USERPROFILE%\\.byk\\bin\\byk.exe",
+    "查看软链接": "cmd /c dir /AL %USERPROFILE%\\.byk\\bin"
+  },
+
+  "dev": {
+    "运行": "cargo run",
+    "构建": "cargo build --release",
+    "清空缓存": "hash -r",
+    "test": "cargo test",
+    "lint": "cargo clippy",
+    "cov": "cargo llvm-cov"
+  },
+
   "git": {
     "查看本地标签": "git tag",
     "查看远程库标签": "git ls-remote --tags origin",
     "推送标签到远程库": "git push origin --tags",
     "撤销上一次提交": "git reset --soft HEAD~1"
   },
-
-
-  "测试": {
-    "test": "cargo test",
-    "lint": "cargo clippy",
-    "cov": "cargo llvm-cov",
-    "run": "cargo run",
-    "build": "cargo build --release"
-  },
-
 
   "发布": {
     "生成变更日志": "cz changelog --incremental",
@@ -41,13 +44,5 @@
     "检查上传的文件": "twine check dist/*",
     "上传到PyPI": "twine upload dist/*",
     "推送标签到远程库": "git push origin --tags"
-  },
-
-
-  "curl": {
-    "安装": "bash scripts/install.sh",
-    "显示": "ls -a ~/.byk/bin",
-    "卸载-保留数据": "rm ~/.byk/bin/byk",
-    "卸载": "bash scripts/uninstall.sh"
   }
 }
