@@ -374,62 +374,141 @@ const bykTaskProvider: vscode.TaskProvider = {
   },
 };
 
-// ── Run Alias ──────────────────────────────────────────────────────
+// ── Binary resolution ──────────────────────────────────────────────
+//
+// One mechanism only: every candidate is a PATH entry, first match wins.
+//
+//   byk.priorityPaths    directories searched first, in array order
+//   byk.secondarySource  which tier comes next — "bundled" (default) or
+//                        "system"; the other one becomes the final fallback
+//
+// Directories that do not exist are skipped silently. A relative entry is
+// rejected outright: PATH members resolve against the task's working
+// directory, which the user cannot reason about from settings.json.
+// Settings are read on every invocation, so edits apply without a reload.
 
 /** Extension path, set during activate. */
 let extPath = '';
 
-/** Expand ~ to the user's home directory. */
-function resolveTilde(p: string): string {
-  if (p.startsWith('~/') || p === '~') {
-    return path.join(process.env.HOME || '/', p.length > 1 ? p.slice(2) : '');
-  }
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '/';
+const IS_WINDOWS = process.platform === 'win32';
+const BINARY_NAME = IS_WINDOWS ? 'byk.exe' : 'byk';
+
+/** Expand a leading ~ to the user's home directory. */
+function expandHome(p: string): string {
+  if (p === '~') return HOME_DIR;
+  if (p.startsWith('~/') || p.startsWith('~\\')) return path.join(HOME_DIR, p.slice(2));
   return p;
 }
 
-/** Build the PATH for the shell execution based on current settings.
- *  Order: binaryPath dir → home dirs (if useSystemBinary) → system PATH → bundled dir
- */
-function buildPath(): string {
-  const parts: string[] = [];
-  const home = process.env.HOME || '/';
-  const binaryPath = vscode.workspace.getConfiguration('byk').get<string>('binaryPath', '');
-  const useSystem = vscode.workspace.getConfiguration('byk').get<boolean>('useSystemBinary', false);
-
-  // 1. Explicit binaryPath directory
-  if (binaryPath) {
-    const resolved = resolveTilde(binaryPath);
-    try {
-      fs.accessSync(resolved, fs.constants.X_OK);
-    } catch {
-      vscode.window.showErrorMessage(`byk binary not found at "${binaryPath}". Check your byk.binaryPath setting.`);
-    }
-    parts.push(path.dirname(resolved));
-  }
-
-  // 2. Home directories (useSystemBinary)
-  if (useSystem) {
-    parts.push(path.join(home, '.byk', 'bin'));
-    parts.push(path.join(home, 'bin'));
-    parts.push(path.join(home, '.local', 'bin'));
-  }
-
-  // 3. System PATH
-  parts.push(process.env.PATH || '');
-
-  // 4. Bundled binary directory (always last fallback)
-  const platform = process.platform;
-  const arch = process.arch;
-  parts.push(path.join(extPath, 'bin', `${platform}-${arch}`));
-
-  return parts.join(path.delimiter);
+/** Expand ~ to the user's home directory (kept for $cwd resolution). */
+function resolveTilde(p: string): string {
+  return expandHome(p);
 }
+
+/** The name PATH is actually stored under — Windows uses `Path`, POSIX `PATH`. */
+function pathEnvKey(): string {
+  for (const key of Object.keys(process.env)) {
+    if (key.toUpperCase() === 'PATH') return key;
+  }
+  return 'PATH';
+}
+
+/** Directory holding the binary shipped inside the extension package. */
+function bundledDir(): string {
+  return path.join(extPath, 'bin', `${process.platform}-${process.arch}`);
+}
+
+type BinarySource = 'bundled' | 'system';
+
+interface BinarySettings {
+  /** byk.priorityPaths with ~ expanded; entries that cannot be used land in `rejected`. */
+  priorityPaths: string[];
+  /** Entries this extension refuses to use, surfaced by the diagnostic report. */
+  rejected: string[];
+  source: BinarySource;
+}
+
+function binarySettings(): BinarySettings {
+  const cfg = vscode.workspace.getConfiguration('byk');
+  const raw = cfg.get<string[]>('priorityPaths', []) ?? [];
+  const priorityPaths: string[] = [];
+  const rejected: string[] = [];
+
+  for (const entry of raw) {
+    const trimmed = (entry ?? '').trim();
+    if (!trimmed) continue;
+    const expanded = expandHome(trimmed);
+    if (path.isAbsolute(expanded)) priorityPaths.push(expanded);
+    else rejected.push(trimmed);
+  }
+
+  return {
+    priorityPaths,
+    rejected,
+    source: cfg.get<string>('secondarySource', 'bundled') === 'system' ? 'system' : 'bundled',
+  };
+}
+
+function isDirectory(dir: string): boolean {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** process.env PATH as entries — empty segments are dropped (":" means cwd in POSIX). */
+function systemDirs(): string[] {
+  return (process.env[pathEnvKey()] || '')
+    .split(path.delimiter)
+    .map((dir) => dir.trim())
+    .filter(Boolean);
+}
+
+/** Comparison key for a directory — case-insensitive on Windows. */
+function dirKey(dir: string): string {
+  const abs = path.resolve(dir);
+  return IS_WINDOWS ? abs.toLowerCase() : abs;
+}
+
+function dedupeDirs(dirs: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const dir of dirs) {
+    if (!dir) continue;
+    const key = dirKey(dir);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(dir);
+  }
+  return out;
+}
+
+/** Ordered search directories — index 0 has the highest priority. */
+function binaryDirs(): string[] {
+  const { priorityPaths, source } = binarySettings();
+  const head = priorityPaths.filter(isDirectory);
+
+  const bundled = bundledDir();
+  const system = systemDirs();
+  const tail = source === 'system' ? [...system, bundled] : [bundled, ...system];
+
+  return dedupeDirs([...head, ...tail]);
+}
+
+/** PATH handed to every shell / child process. */
+function buildPath(): string {
+  return binaryDirs().join(path.delimiter);
+}
+
+// ── Run Alias ──────────────────────────────────────────────────────
 
 /** Run an alias as a VS Code Task — preserves task output formatting. */
 function runAliasTask(exactCommand: string, cwd: string) {
   const options: vscode.ShellExecutionOptions = {
     cwd,
-    env: { PATH: buildPath() },
+    env: { [pathEnvKey()]: buildPath() },
   };
 
   // PowerShell treats @ as the splat operator — escape every @ with a backtick.
@@ -476,7 +555,7 @@ function callResolve(key: string, cwd: string): ResolveResult | null {
   try {
     const result = spawnSync('byk', ['__api__', 'resolve', key], {
       cwd,
-      env: { ...process.env, PATH: buildPath() },
+      env: { ...process.env, [pathEnvKey()]: buildPath() },
       encoding: 'utf-8',
       timeout: 15000,
       windowsHide: true,
@@ -522,7 +601,7 @@ function executeDirectCommand(command: string, cwd: string, paths: string[], tas
 
   const options: vscode.ShellExecutionOptions = {
     cwd,
-    env: { PATH: envPath },
+    env: { [pathEnvKey()]: envPath },
   };
 
   // PowerShell treats @ as the splat operator — escape every @ with a backtick.
@@ -589,6 +668,89 @@ function runAliasDirect(exactCommand: string, rawValue: unknown, configDir: stri
   vscode.window.showWarningMessage('byk resolve 不可用，直接运行原始命令（未做变量/占位符解析）');
   const rawCwd = raw.cwd ? path.resolve(configDir, resolveTilde(raw.cwd)) : configDir;
   executeDirectCommand(raw.command, rawCwd, [], `${exactCommand} (direct)`);
+}
+
+// ── Diagnostics ────────────────────────────────────────────────────
+
+let outputChannel: vscode.OutputChannel | undefined;
+
+function getOutputChannel(): vscode.OutputChannel {
+  if (!outputChannel) outputChannel = vscode.window.createOutputChannel('BYK');
+  return outputChannel;
+}
+
+/**
+ * Print the resolved search order and the binary it lands on.
+ * The only trustworthy answer to "which byk am I running" — a terminal's
+ * `byk --version` reflects the terminal's PATH, not the one handed to tasks.
+ */
+function showBinaryReport(): void {
+  const channel = getOutputChannel();
+  const { priorityPaths, rejected, source } = binarySettings();
+  const bundled = bundledDir();
+  const priorityKeys = new Set(priorityPaths.filter(isDirectory).map(dirKey));
+
+  channel.appendLine('BYK — binary resolution');
+  channel.appendLine('');
+  channel.appendLine(`  byk.secondarySource  ${source}`);
+  channel.appendLine(`  platform             ${process.platform}-${process.arch}`);
+  channel.appendLine('');
+  channel.appendLine('  search order (top wins):');
+
+  const entries = binaryDirs().map((dir) => ({
+    dir,
+    hasBinary: fs.existsSync(path.join(dir, BINARY_NAME)),
+    tier: dirKey(dir) === dirKey(bundled)
+      ? 'bundled '
+      : priorityKeys.has(dirKey(dir))
+        ? 'priority'
+        : 'system  ',
+  }));
+
+  let resolved: string | null = null;
+  let squashed = 0;
+
+  const flushSquashed = () => {
+    if (squashed === 0) return;
+    channel.appendLine(`     … ${squashed} more PATH ${squashed === 1 ? 'directory' : 'directories'} without ${BINARY_NAME}`);
+    squashed = 0;
+  };
+
+  for (const entry of entries) {
+    if (entry.hasBinary && !resolved) resolved = path.join(entry.dir, BINARY_NAME);
+    // PATH is long and mostly noise — only show the entries that can supply byk.
+    if (entry.tier === 'system  ' && !entry.hasBinary) {
+      squashed++;
+      continue;
+    }
+    flushSquashed();
+    channel.appendLine(`     [${entry.tier}] ${entry.dir}${entry.hasBinary ? '  ✓' : ''}`);
+  }
+  flushSquashed();
+
+  if (rejected.length > 0) {
+    channel.appendLine('');
+    channel.appendLine('  ignored (not an absolute path):');
+    for (const entry of rejected) channel.appendLine(`   - ${entry}`);
+  }
+
+  channel.appendLine('');
+  if (resolved) {
+    channel.appendLine(`  → ${resolved}`);
+    const version = spawnSync(resolved, ['--version'], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      windowsHide: true,
+    });
+    const text = (version.stdout || version.stderr || '').trim();
+    channel.appendLine(`    ${text || '(failed to run --version)'}`);
+  } else {
+    channel.appendLine(`  → no ${BINARY_NAME} found in any directory above`);
+    channel.appendLine('    add the directory holding your byk to byk.priorityPaths');
+  }
+
+  channel.appendLine('');
+  channel.show(true);
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -681,6 +843,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       runAliasDirect(hit.exactCommand, hit.value, cwd);
+    }),
+  );
+
+  // Command palette: report which byk binary the extension actually resolves
+  context.subscriptions.push(
+    vscode.commands.registerCommand('byk.showBinary', () => {
+      showBinaryReport();
     }),
   );
 

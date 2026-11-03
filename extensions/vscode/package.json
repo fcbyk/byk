@@ -38,15 +38,26 @@
     "configuration": {
       "title": "%configuration.title%",
       "properties": {
-        "byk.useSystemBinary": {
-          "type": "boolean",
-          "default": false,
-          "description": "%byk.useSystemBinary.description%"
+        "byk.priorityPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "%byk.priorityPaths.description%"
         },
-        "byk.binaryPath": {
+        "byk.secondarySource": {
           "type": "string",
-          "default": "",
-          "description": "%byk.binaryPath.description%"
+          "enum": [
+            "bundled",
+            "system"
+          ],
+          "enumDescriptions": [
+            "%byk.secondarySource.bundled.description%",
+            "%byk.secondarySource.system.description%"
+          ],
+          "default": "bundled",
+          "description": "%byk.secondarySource.description%"
         }
       }
     },
@@ -58,6 +69,10 @@
       }
     ],
     "commands": [
+      {
+        "command": "byk.showBinary",
+        "title": "%command.showBinary.title%"
+      },
       {
         "command": "byk.runAtCursor",
         "title": "%command.runAtCursor.title%",

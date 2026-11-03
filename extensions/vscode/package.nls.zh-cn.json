@@ -1,7 +1,10 @@
 {
   "configuration.title": "BYK",
-  "byk.useSystemBinary.description": "优先使用系统 PATH 中的 byk 二进制文件",
-  "byk.binaryPath.description": "自定义 byk 二进制文件的完整路径。设置后将优先使用此路径，支持 ~ 展开",
+  "byk.priorityPaths.description": "最高优先：按顺序在这些目录中查找 `byk` / `byk.exe`，先命中先用。必须写绝对路径，支持 `~` 展开；不存在的目录会被静默跳过",
+  "byk.secondarySource.description": "第二优先：上面的目录都没有命中时，先用内置的还是系统上的 byk。另一个作为最后兜底",
+  "byk.secondarySource.bundled.description": "内置优先 —— 用插件随包分发的 byk（版本固定），系统 PATH 兜底",
+  "byk.secondarySource.system.description": "系统优先 —— 用系统 PATH 中的 byk，内置的兜底",
+  "command.showBinary.title": "查看当前使用的 byk",
   "command.runAtCursor.title": "运行别名",
   "command.runDirect.title": "独立运行别名",
   "command.runScript.title": "别名列表"

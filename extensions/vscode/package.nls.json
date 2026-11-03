@@ -1,7 +1,10 @@
 {
   "configuration.title": "BYK",
-  "byk.useSystemBinary.description": "Use the system PATH byk binary instead of the bundled one",
-  "byk.binaryPath.description": "Custom path to the byk binary. Takes priority when set, supports ~ expansion",
+  "byk.priorityPaths.description": "Highest priority: directories to search for `byk` / `byk.exe`, in array order, first hit wins. Absolute paths only; `~` is expanded; missing directories are skipped silently",
+  "byk.secondarySource.description": "Second priority: when none of the directories above hit, use the bundled byk or the system one. The other becomes the final fallback",
+  "byk.secondarySource.bundled.description": "Bundled first — use the byk shipped with this extension (pinned version), falling back to PATH",
+  "byk.secondarySource.system.description": "System first — use the byk found on PATH, falling back to the bundled one",
+  "command.showBinary.title": "Show Active byk",
   "command.runAtCursor.title": "Run Alias",
   "command.runDirect.title": "Run Alias Directly",
   "command.runScript.title": "Alias List"

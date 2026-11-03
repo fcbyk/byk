@@ -2,12 +2,16 @@
 
 ### Breaking Changes
 
+- **vscode**: replace `useSystemBinary` / `binaryPath` with `priorityPaths` / `secondarySource` — the old pair was self-contradictory: `useSystemBinary: false` only skipped injecting `~/.byk/bin` and friends, while the system `PATH` still ranked ahead of the bundled binary, so the documented default never held
 - **variables**: variable syntax is now `${name}`; bare `$xx` is no longer interpreted and is passed to the shell untouched — rewrite `$byk` / `$workdir` as `${byk}` / `${workdir}` and `$VAR` as `${VAR}`
 - **variables**: all substitution now happens during the scan phase; there is no second expansion before execution
 - **variables**: values containing whitespace are no longer auto-quoted — quote them yourself following shell rules
 
 ### Features
 
+- **vscode**: `byk.priorityPaths` takes an array of directories searched ahead of everything else, in order, so several candidate builds can coexist
+- **vscode**: `byk.secondarySource` (`bundled` | `system`) decides which tier follows the priority paths; the other one stays as the final fallback instead of being dropped
+- **vscode**: add **BYK: Show Active byk** — prints the resolved search order, the directory that won, and that binary's `--version`, since a terminal's `PATH` is not the one tasks receive
 - **variables**: built-in and `$var` variables share one table; a declaration with a built-in name overrides it, so explicitly written values always win
 - **variables**: self-reference such as `"byk": "${byk}/tools"` resolves the right-hand side against the built-in value (`local byk = $byk/tools`)
 - **variables**: `\${...}` hands the expression to the shell instead of byk, useful for printing a literal
@@ -15,6 +19,8 @@
 
 ### Bug Fixes
 
+- **vscode**: the bundled binary was unreachable by default — it sat last in `PATH`, behind the system one, so any user with a `byk` on `PATH` always ran that copy instead of the pinned one
+- **vscode**: an empty `PATH` segment is no longer emitted (POSIX reads it as the current directory), and `PATH` is written under the key name the platform actually uses
 - **`$paths`**: relative entries now resolve against the config file's directory instead of the command's working directory, so an alias still finds its scripts when invoked from a subdirectory
 - **variables**: undefined `${NAME}` is no longer swallowed by the argument-placeholder layer and now survives to the shell
 - **variables**: circular or self-referential variables no longer balloon into repeated nested text; resolution uses a snapshot closure with self-reference freezing
