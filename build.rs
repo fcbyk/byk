@@ -17,7 +17,9 @@ fn main() {
         Ok("aarch64-unknown-linux-gnu") => "linux-arm64",
         Ok("x86_64-apple-darwin") => "darwin-x86_64",
         Ok("aarch64-apple-darwin") => "darwin-arm64",
-        Ok("x86_64-pc-windows-msvc") => "windows-x64",
+        // 同为 Windows x64，GNU 与 MSVC 工具链对用户无差别，统一归到同一个键，
+        // 否则 `$var` 的平台映射在这类构建上会整体静默失效。
+        Ok("x86_64-pc-windows-msvc") | Ok("x86_64-pc-windows-gnu") => "windows-x64",
         _ => "unknown",
     };
 

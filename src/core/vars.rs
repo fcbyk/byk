@@ -421,14 +421,17 @@ mod tests {
         let (v, _) = run(json!({
             "$var": {"BASE": {
                 "linux-x86_64": "https://linux.example",
+                "windows-x64": "https://win.example",
                 "darwin-arm64": "https://mac.example"
             }},
             "d": "${BASE}/tool"
         }));
-        let expected = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-            "https://mac.example/tool"
-        } else {
-            "https://linux.example/tool"
+        // 以编译期注入的 PLATFORM 为准，避免测试假设与实际平台命名漂移。
+        let expected = match PLATFORM {
+            "linux-x86_64" => "https://linux.example/tool",
+            "windows-x64" => "https://win.example/tool",
+            "darwin-arm64" => "https://mac.example/tool",
+            other => panic!("platform map in this test is missing a key for {other}"),
         };
         assert_eq!(v["d"], json!(expected));
     }
