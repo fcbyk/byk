@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::parse::{is_alias_value, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
-use super::types::{AliasFile, AliasValue, MergedConfig, ResolvedAlias};
+use super::types::{AliasFile, AliasValue, MergedConfig, Mode, ResolvedAlias};
 use crate::core::paths::PathLayout;
 use crate::core::vars::build_builtin_table;
 
@@ -15,7 +15,7 @@ struct MergeContext<'a> {
     file_key: &'a str,
     source_path: Option<&'a Path>,
     inherited_cwd: Option<&'a str>,
-    inherited_interactive: Option<bool>,
+    inherited_mode: Option<Mode>,
     inherited_paths: &'a [String],
 }
 
@@ -28,15 +28,15 @@ fn deep_merge_dict(
     source: &serde_json::Map<String, serde_json::Value>,
     ctx: &MergeContext,
 ) {
-    // 提取当前分组的 $cwd / $interactive，子级覆盖父级
+    // 提取当前分组的 $cwd / $mode，子级覆盖父级
     let group_cwd = source
         .get("$cwd")
         .and_then(|v| v.as_str())
         .or(ctx.inherited_cwd);
-    let group_interactive = source
-        .get("$interactive")
-        .and_then(|v| v.as_bool())
-        .or(ctx.inherited_interactive);
+    let group_mode = source
+        .get("$mode")
+        .map(Mode::from_json)
+        .or(ctx.inherited_mode);
 
     for (key, val) in source {
         if key.starts_with('$') {
@@ -46,7 +46,7 @@ fn deep_merge_dict(
         if is_alias_value(val) {
             let alias_val = to_alias_value(val);
             if let Some(av) = alias_val {
-                let av = apply_inherited(av, group_cwd, group_interactive);
+                let av = apply_inherited(av, group_cwd, group_mode);
                 let entry = target.entry(key.clone()).or_default();
                 entry.alias = Some(ResolvedAlias {
                     value: av,
@@ -61,7 +61,7 @@ fn deep_merge_dict(
                         inner,
                         &MergeContext {
                             inherited_cwd: group_cwd,
-                            inherited_interactive: group_interactive,
+                            inherited_mode: group_mode,
                             ..*ctx
                         },
                     );
@@ -74,7 +74,7 @@ fn deep_merge_dict(
                 inner,
                 &MergeContext {
                     inherited_cwd: group_cwd,
-                    inherited_interactive: group_interactive,
+                    inherited_mode: group_mode,
                     ..*ctx
                 },
             );
@@ -82,41 +82,46 @@ fn deep_merge_dict(
     }
 }
 
-/// 对未指定 $cwd / $interactive 的别名应用文件级继承。
+/// 对未指定 $cwd / $mode 的别名应用继承。
+///
+/// 三者都用 `or`：别名自己写了就以自己为准（包括 `Mode::Normal`，
+/// 它表示「这条就要普通」，能覆盖文件级的 `interactive` / `silent`），
+/// 只有 `None` 才落回继承值。
 pub(crate) fn apply_inherited(
     av: AliasValue,
     inherited_cwd: Option<&str>,
-    inherited_interactive: Option<bool>,
+    inherited_mode: Option<Mode>,
 ) -> AliasValue {
     match av {
         AliasValue::Meta {
             cmd,
             cwd: None,
-            interactive,
+            mode,
             description,
         } => AliasValue::Meta {
             cmd,
             cwd: inherited_cwd.map(String::from),
-            interactive: interactive.or(inherited_interactive),
+            mode: mode.or(inherited_mode),
             description, // $description 不继承，直接透传
         },
         AliasValue::Meta {
             cmd,
             cwd: Some(c),
-            interactive,
+            mode,
             description,
         } => AliasValue::Meta {
             cmd,
             cwd: Some(c), // 别名自己的 $cwd 优先
-            interactive: interactive.or(inherited_interactive),
+            mode: mode.or(inherited_mode),
             description, // $description 不继承，直接透传
         },
         AliasValue::Str(cmd) => {
-            if inherited_cwd.is_some() || inherited_interactive.is_some() {
+            // `Mode::Normal` 继承值就是默认态，没必要为此把纯字符串别名升级成 Meta
+            if inherited_cwd.is_some() || inherited_mode.is_some_and(|m| m != Mode::Normal) {
                 AliasValue::Meta {
                     cmd,
                     cwd: inherited_cwd.map(String::from),
-                    interactive: inherited_interactive,
+                    mode: inherited_mode,
                     description: None,
                 }
             } else {
@@ -140,7 +145,7 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
                 file_key: &f.key,
                 source_path: Some(f.path.as_path()),
                 inherited_cwd: f.inherited_cwd.as_deref(),
-                inherited_interactive: f.inherited_interactive,
+                inherited_mode: f.inherited_mode,
                 inherited_paths: &f.inherited_paths,
             },
         );
@@ -262,19 +267,22 @@ mod tests {
     }
 
     #[test]
+    fn inherit_str_with_normal_mode_stays_str() {
+        // Normal 继承值就是默认态，不该把字符串别名无谓升级成 Meta
+        let av = AliasValue::Str("build".into());
+        let result = apply_inherited(av, None, Some(Mode::Normal));
+        assert!(matches!(result, AliasValue::Str(s) if s == "build"));
+    }
+
+    #[test]
     fn inherit_str_with_cwd_becomes_meta() {
         let av = AliasValue::Str("build".into());
         let result = apply_inherited(av, Some("/app"), None);
         match result {
-            AliasValue::Meta {
-                cmd,
-                cwd,
-                interactive,
-                ..
-            } => {
+            AliasValue::Meta { cmd, cwd, mode, .. } => {
                 assert_eq!(cmd, "build");
                 assert_eq!(cwd, Some("/app".into()));
-                assert_eq!(interactive, None);
+                assert_eq!(mode, None);
             }
             _ => panic!("Expected Meta"),
         }
@@ -283,13 +291,24 @@ mod tests {
     #[test]
     fn inherit_str_with_interactive_becomes_meta() {
         let av = AliasValue::Str("run".into());
-        let result = apply_inherited(av, None, Some(true));
+        let result = apply_inherited(av, None, Some(Mode::Interactive));
         match result {
-            AliasValue::Meta {
-                cmd, interactive, ..
-            } => {
+            AliasValue::Meta { cmd, mode, .. } => {
                 assert_eq!(cmd, "run");
-                assert_eq!(interactive, Some(true));
+                assert_eq!(mode, Some(Mode::Interactive));
+            }
+            _ => panic!("Expected Meta"),
+        }
+    }
+
+    #[test]
+    fn inherit_str_with_silent_becomes_meta() {
+        let av = AliasValue::Str("build".into());
+        let result = apply_inherited(av, None, Some(Mode::Silent));
+        match result {
+            AliasValue::Meta { cmd, mode, .. } => {
+                assert_eq!(cmd, "build");
+                assert_eq!(mode, Some(Mode::Silent));
             }
             _ => panic!("Expected Meta"),
         }
@@ -300,7 +319,7 @@ mod tests {
         let av = AliasValue::Meta {
             cmd: "test".into(),
             cwd: Some("/own".into()),
-            interactive: None,
+            mode: None,
             description: None,
         };
         let result = apply_inherited(av, Some("/inherit"), None);
@@ -317,7 +336,7 @@ mod tests {
         let av = AliasValue::Meta {
             cmd: "test".into(),
             cwd: None,
-            interactive: None,
+            mode: None,
             description: None,
         };
         let result = apply_inherited(av, Some("/inherit"), None);
@@ -330,35 +349,48 @@ mod tests {
     }
 
     #[test]
-    fn inherit_meta_fills_missing_interactive() {
+    fn inherit_meta_fills_missing_mode() {
         let av = AliasValue::Meta {
             cmd: "ask".into(),
             cwd: None,
-            interactive: None,
+            mode: None,
             description: None,
         };
-        let result = apply_inherited(av, None, Some(true));
+        let result = apply_inherited(av, None, Some(Mode::Interactive));
         match result {
-            AliasValue::Meta { interactive, .. } => {
-                assert_eq!(interactive, Some(true));
-            }
+            AliasValue::Meta { mode, .. } => assert_eq!(mode, Some(Mode::Interactive)),
             _ => panic!("Expected Meta"),
         }
     }
 
     #[test]
-    fn inherit_meta_keeps_own_interactive() {
+    fn inherit_meta_own_mode_wins() {
+        // 文件级交互，别名写 silent：一个字就够，不必再关掉另一个开关
         let av = AliasValue::Meta {
-            cmd: "ask".into(),
+            cmd: "backup".into(),
             cwd: None,
-            interactive: Some(false),
+            mode: Some(Mode::Silent),
             description: None,
         };
-        let result = apply_inherited(av, None, Some(true));
+        let result = apply_inherited(av, None, Some(Mode::Interactive));
         match result {
-            AliasValue::Meta { interactive, .. } => {
-                assert_eq!(interactive, Some(false)); // 自己的优先
-            }
+            AliasValue::Meta { mode, .. } => assert_eq!(mode, Some(Mode::Silent)),
+            _ => panic!("Expected Meta"),
+        }
+    }
+
+    #[test]
+    fn inherit_meta_normal_overrides_inherited_mode() {
+        // 文件级静默，别名写 normal 就该恢复提示
+        let av = AliasValue::Meta {
+            cmd: "deploy".into(),
+            cwd: None,
+            mode: Some(Mode::Normal),
+            description: None,
+        };
+        let result = apply_inherited(av, None, Some(Mode::Silent));
+        match result {
+            AliasValue::Meta { mode, .. } => assert_eq!(mode, Some(Mode::Normal)),
             _ => panic!("Expected Meta"),
         }
     }
@@ -510,7 +542,7 @@ mod tests {
             aliases,
             path: PathBuf::from("/fake/test.byk.json"),
             inherited_cwd: None,
-            inherited_interactive: None,
+            inherited_mode: None,
             inherited_paths: vec!["./scripts".into(), "~/tools/bin".into()],
         }];
         let merged = build_merged_aliases(&files);
@@ -531,7 +563,7 @@ mod tests {
             aliases,
             path: PathBuf::from("/fake/test.byk.json"),
             inherited_cwd: None,
-            inherited_interactive: None,
+            inherited_mode: None,
             inherited_paths: Vec::new(),
         }];
         let merged = build_merged_aliases(&files);

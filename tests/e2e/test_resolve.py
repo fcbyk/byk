@@ -10,6 +10,7 @@ def test_resolve_simple_alias(runner):
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     assert payload["command"] == "echo built"
+    assert payload["mode"] == "normal"
     assert payload["interactive"] is False
     assert payload["key"] == "build"
     assert "source" in payload
@@ -41,14 +42,43 @@ def test_resolve_interactive_returns_template(runner):
     """交互别名返回未解析模板并标记 interactive"""
     runner.prepare_alias_json(
         "r",
-        {"deploy": {"$cmd": "echo {env}", "$interactive": True, "$description": "部署"}},
+        {"deploy": {"$cmd": "echo {env}", "$mode": "interactive", "$description": "部署"}},
     )
     r = runner.run("__api__", "resolve", "deploy")
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
+    assert payload["mode"] == "interactive"
     assert payload["interactive"] is True
     assert payload["command"] == "echo {env}"
     assert payload["description"] == "部署"
+
+
+def test_resolve_reports_mode_normal_by_default(runner):
+    """未写 $mode 时报告 normal"""
+    runner.prepare_alias_json("r", {"build": "echo built"})
+    r = runner.run("__api__", "resolve", "build")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["mode"] == "normal"
+
+
+def test_resolve_reports_mode_inherited(runner):
+    """文件级 $mode 继承到别名，并按解析结果返回"""
+    runner.prepare_alias_json("r", {"$mode": "silent", "build": "echo built"})
+    r = runner.run("__api__", "resolve", "build")
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["mode"] == "silent"
+
+
+def test_resolve_reports_mode_and_derived_interactive(runner):
+    """mode 是权威字段，interactive 是给旧插件的派生布尔"""
+    runner.prepare_alias_json(
+        "r", {"deploy": {"$cmd": "echo {env}", "$mode": "interactive"}}
+    )
+    r = runner.run("__api__", "resolve", "deploy")
+    assert r.returncode == 0, r.stderr
+    payload = json.loads(r.stdout)
+    assert payload["mode"] == "interactive"
+    assert payload["interactive"] is True
 
 
 def test_resolve_exact_global_syntax(runner):

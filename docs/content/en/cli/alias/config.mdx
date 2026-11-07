@@ -14,7 +14,7 @@ import { Tab, Tabs } from '@rspress/core/theme';
 type AliasObject = {
   $cmd?: string;
   $cwd?: string;
-  $interactive?: boolean;
+  $mode?: 'normal' | 'interactive' | 'silent';
   $description?: string;
   [key: string]: string | AliasObject | boolean | undefined;
 }
@@ -23,7 +23,7 @@ type AliasObject = {
 type AliasFileJSON = {
   $priority?: number;      // priority; defaults to 1 in the current directory, 0 globally
   $cwd?: string;           // file- or group-level working directory, inherited by child aliases
-  $interactive?: boolean;  // file- or group-level interactive mode, inherited by child aliases
+  $mode?: 'normal' | 'interactive' | 'silent';  // file- or group-level mode, inherited by child aliases
   $paths?: string[];       // file-level PATH directories, inherited by child aliases
   $var?: Record<string, string | Record<string, string>>;  // file-level variables
   [key: string]: string | AliasObject | number | boolean | undefined;
@@ -59,11 +59,11 @@ byk 开发.测试
 |-------|------|-------------|
 | `$cmd` | string | The command to execute |
 | `$cwd` | string | Working directory (inheritable) |
-| `$interactive` | boolean | Whether to run interactively (inheritable) |
+| `$mode` | `'normal'` \| `'interactive'` \| `'silent'` | How to run the alias (inheritable), defaults to `normal` |
 | `$description` | string | Help-page description text (not inheritable) |
 
 :::note
-An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$interactive` but no `$cmd` is a **group with inherited properties** and is not executable itself.
+An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$mode` but no `$cmd` is a **group with inherited properties** and is not executable itself.
 :::
 
 ### Working Directory (cwd)
@@ -120,23 +120,32 @@ Three levels of inheritance: file → group → alias, with the level closer to 
 </Tab>
 </Tabs>
 
-### Interactive Mode
+### Execution Mode
 
-When enabled, byk prompts for each placeholder value in turn and asks for final confirmation before executing — a good fit for commands with side effects.
+`$mode` decides how an alias runs. The three states are mutually exclusive and `normal` is the default.
 
-`$interactive` supports the same three levels of inheritance.
+| Value | Behavior |
+|---|---|
+| `normal` | Print the hint lines, then run directly |
+| `interactive` | Print the hint lines, ask for each placeholder, then wait for Enter |
+| `silent` | Print nothing, leaving stdout to the child process alone |
 
-<Tabs>
-<Tab label="Alias level">
+Before running, byk prints two lines to stdout: the source (`file.key` plus the working directory) and the resolved command. `silent` drops both, so `byk build > log.txt` and `byk build | grep error` are no longer polluted by byk itself:
 
-```json
-{
-  "deploy": {
-    "$cmd": "deploy --env {env} --tag {version}",
-    "$interactive": true
-  }
-}
+```bash
+byk build
+# > @.build /project
+#
+# > pnpm build
+#
+# ...(output of pnpm)
+
+# with "$mode": "silent"
+byk build
+# ...(output of pnpm only)
 ```
+
+`interactive` fits commands with side effects:
 
 ```bash
 byk deploy
@@ -147,40 +156,60 @@ byk deploy
 #    Press Enter to execute...
 ```
 
+`$mode` inherits through three levels — file, group, alias — with the closest one winning.
+
+<Tabs>
+<Tab label="Alias level">
+
+```json
+{
+  "deploy": {
+    "$cmd": "deploy --env {env} --tag {version}",
+    "$mode": "interactive"
+  }
+}
+```
+
 </Tab>
 <Tab label="Group level">
 
 ```json
 {
   "danger": {
-    "$interactive": true,
-    "delete": "rm -rf {path}",
-    "migrate": {
-      "$cmd": "db migrate --env {env}",
-      "$interactive": false
+    "$mode": "interactive",
+    "drop": "rm -rf {path}",
+    "backup": {
+      "$cmd": "rsync -a ./ {dest}",
+      "$mode": "silent"
     }
   }
 }
 ```
 
-`delete` inherits the interactive mode from `danger`, while `migrate` explicitly overrides it back to non-interactive.
+`drop` inherits the interactive mode from `danger`; `backup` just says `silent` — there is no second switch to turn off.
 
 </Tab>
 <Tab label="File level">
 
 ```json
 {
-  "$interactive": true,
-  "deploy": "deploy --env {env}",
-  "build": {
-    "$cmd": "pnpm build",
-    "$interactive": false
+  "$mode": "silent",
+  "build": "pnpm build",
+  "deploy": {
+    "$cmd": "deploy --env {env}",
+    "$mode": "interactive"
   }
 }
 ```
 
+The whole file stays quiet; only `deploy` asks for confirmation.
+
 </Tab>
 </Tabs>
+
+:::note
+Interactive and silent are the two extremes of one axis: interactive has to show what is about to run, so `silent` merely keeps byk quiet — it never skips a confirmation step. Reach for `interactive` when a command needs one.
+:::
 
 ### Description Text
 
@@ -189,7 +218,7 @@ byk deploy
 ```json
 {
   "release": {
-    "$interactive": true,
+    "$mode": "interactive",
     "$cmd": "cz bump {version}",
     "$description": "Bump the version interactively"
   }
@@ -296,7 +325,7 @@ A bare `$byk` has no terminator: there is no way to tell whether `$bykfoo` means
 
   "deploy": {
     "$cmd": "deploy --env {env}",
-    "$interactive": true
+    "$mode": "interactive"
   }
 }
 ```

@@ -13,9 +13,11 @@
       "description": "文件级工作目录，所有子别名未单独指定 $cwd 时会自动继承。",
       "type": "string"
     },
-    "$interactive": {
-      "description": "文件级交互模式，子别名自动继承。",
-      "type": "boolean"
+    "$mode": {
+      "description": "文件级执行方式，子别名自动继承。normal 打印提示行后直接执行；interactive 逐项提示占位符、确认后执行；silent 不打印 byk 自己的提示行，stdout 只剩子进程输出。",
+      "type": "string",
+      "enum": ["normal", "interactive", "silent"],
+      "default": "normal"
     },
     "$paths": {
       "description": "文件级 PATH 目录列表，前置到 PATH 环境变量，子别名自动继承。支持 ~ 和相对路径。示例：[\"./scripts\", \"~/tools/bin\"]",
@@ -51,7 +53,7 @@
   "$defs": {
     "AliasObject": {
       "title": "别名对象（对象模式）",
-      "description": "使用 $cmd / $cwd / $interactive 系统字段配置别名，可嵌套子别名。",
+      "description": "使用 $cmd / $cwd / $mode / $description 系统字段配置别名，可嵌套子别名。",
       "type": "object",
       "properties": {
         "$cmd": {
@@ -62,9 +64,10 @@
           "description": "工作目录（可选），覆盖继承的 $cwd。示例：\"/project/web\"",
           "type": "string"
         },
-        "$interactive": {
-          "description": "是否启用交互模式（可选）。",
-          "type": "boolean"
+        "$mode": {
+          "description": "执行方式（可选），覆盖继承的 $mode。normal 直接执行，interactive 交互确认，silent 不打印提示行。",
+          "type": "string",
+          "enum": ["normal", "interactive", "silent"]
         },
         "$description": {
           "description": "描述文本，在帮助页中替代命令映射显示。仅对当前别名生效，不可继承。",

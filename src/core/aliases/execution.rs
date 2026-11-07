@@ -7,7 +7,7 @@ use std::process::{Command, exit};
 
 use super::parse::to_alias_definition;
 use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mapping, split_ternary};
-use super::types::ResolvedAlias;
+use super::types::{Mode, ResolvedAlias};
 
 /// 把 `$paths` 里的相对条目按配置文件目录展开为绝对路径。
 ///
@@ -288,9 +288,10 @@ fn convert_unix_path_for_cmd(command: &str) -> String {
 /// 执行别名命令。
 ///
 /// 变量（内置 `${byk}` / `${workdir}` 与文件 `$var`）已在扫描期替换完毕，
-/// 此处只剩参数占位符。按 `$interactive` 决定行为：
-/// - `false`（默认）：从 CLI 参数自动解析占位符，显示映射关系后直接执行。
-/// - `true`：逐项提示用户输入占位符值，显示最终命令后按 Enter 确认执行。
+/// 此处只剩参数占位符。`$mode` 决定怎么跑，三态互斥：
+/// - `normal`：打印提示行后直接执行；
+/// - `interactive`：打印提示行，逐项提示占位符，确认后执行；
+/// - `silent`：连提示行都不打印，stdout 只剩子进程输出。
 pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: &str) {
     let definition = match to_alias_definition(&resolved.value) {
         Some(d) => d,
@@ -302,6 +303,7 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
 
     let command = definition.command;
     let cwd = definition.cwd;
+    let mode = definition.mode;
 
     // 相对 $paths 以配置文件所在目录为基准，与调用时的当前目录无关
     let config_dir = resolved.source_path.as_deref().and_then(|p| p.parent());
@@ -313,12 +315,23 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
     );
     let placeholders = collect_placeholders(&command);
 
-    println!("\n> {} {}", display_source, working_dir.display());
+    // 只有 silent 才闭口：交互必须让用户看见要确认什么
+    let quiet = mode == Mode::Silent;
+    if !quiet {
+        println!("\n> {} {}", display_source, working_dir.display());
+    }
 
-    if definition.interactive {
+    if mode == Mode::Interactive {
         execute_interactive_impl(&command, args, &placeholders, &working_dir, &custom_paths);
     } else {
-        execute_direct_impl(&command, args, &placeholders, &working_dir, &custom_paths);
+        execute_direct_impl(
+            &command,
+            args,
+            &placeholders,
+            &working_dir,
+            &custom_paths,
+            quiet,
+        );
     }
 }
 
@@ -331,8 +344,8 @@ pub struct ResolvedCommand {
     pub cwd: PathBuf,
     /// 需要前置到 PATH 的目录列表（含 node_modules/.bin，已绝对化）
     pub paths: Vec<String>,
-    /// 是否为交互别名
-    pub interactive: bool,
+    /// 执行方式：`normal` / `interactive` / `silent`
+    pub mode: Mode,
     /// 别名描述
     pub description: Option<String>,
 }
@@ -344,7 +357,7 @@ pub struct ResolvedCommand {
 /// 与 `byk <key>` 实际执行的命令完全一致。
 ///
 /// 交互别名无法在无终端下确定占位符值，因此原样返回模板并置
-/// `interactive = true`，由调用方（插件）决定回退到 byk 或自行交互。
+/// `mode = "interactive"`，由调用方（插件）决定回退到 byk 或自行交互。
 pub fn resolve_alias(resolved: &ResolvedAlias, args: &[String]) -> ResolvedCommand {
     let definition = match to_alias_definition(&resolved.value) {
         Some(d) => d,
@@ -353,7 +366,7 @@ pub fn resolve_alias(resolved: &ResolvedAlias, args: &[String]) -> ResolvedComma
                 command: String::new(),
                 cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
                 paths: Vec::new(),
-                interactive: false,
+                mode: Mode::Normal,
                 description: None,
             };
         }
@@ -365,20 +378,17 @@ pub fn resolve_alias(resolved: &ResolvedAlias, args: &[String]) -> ResolvedComma
     let working_dir = resolve_working_dir(definition.cwd.as_deref(), config_dir);
     let paths = build_path_prefixes(&working_dir, &custom_paths);
 
-    let (command, interactive) = if definition.interactive {
-        (definition.command.clone(), true)
+    let command = if definition.mode == Mode::Interactive {
+        definition.command.clone()
     } else {
-        (
-            parse_alias_arguments_with_mapping(&definition.command, args, &[]).0,
-            false,
-        )
+        parse_alias_arguments_with_mapping(&definition.command, args, &[]).0
     };
 
     ResolvedCommand {
         command,
         cwd: working_dir,
         paths,
-        interactive,
+        mode: definition.mode,
         description: definition.description,
     }
 }
@@ -389,9 +399,12 @@ fn execute_direct_impl(
     _placeholders: &[String],
     working_dir: &Path,
     custom_paths: &[String],
+    quiet: bool,
 ) -> ! {
     let (final_command, _) = parse_alias_arguments_with_mapping(command, args, &[]);
-    println!("> {}\n", final_command);
+    if !quiet {
+        println!("> {}\n", final_command);
+    }
     run_command(&final_command, working_dir, custom_paths);
 }
 
@@ -1168,7 +1181,7 @@ mod tests {
     fn resolve_simple_string() {
         let rc = resolve_alias(&resolved_str("echo hi"), &[]);
         assert_eq!(rc.command, "echo hi");
-        assert!(!rc.interactive);
+        assert_eq!(rc.mode, Mode::Normal);
         assert!(rc.description.is_none());
         assert!(rc.cwd.is_absolute());
         assert!(rc.paths.is_empty());
@@ -1181,7 +1194,7 @@ mod tests {
             &["name".into(), "Alice".into()],
         );
         assert_eq!(rc.command, "echo Alice");
-        assert!(!rc.interactive);
+        assert_eq!(rc.mode, Mode::Normal);
     }
 
     #[test]
@@ -1191,7 +1204,7 @@ mod tests {
             value: AliasValue::Meta {
                 cmd: "deploy --env {env}".into(),
                 cwd: None,
-                interactive: Some(true),
+                mode: Some(Mode::Interactive),
                 description: Some("部署".into()),
             },
             source: "@t".into(),
@@ -1199,9 +1212,27 @@ mod tests {
             paths: Vec::new(),
         };
         let rc = resolve_alias(&resolved, &[]);
-        assert!(rc.interactive);
+        assert_eq!(rc.mode, Mode::Interactive);
         assert_eq!(rc.command, "deploy --env {env}");
         assert_eq!(rc.description.as_deref(), Some("部署"));
+    }
+
+    #[test]
+    fn resolve_carries_silent() {
+        use crate::core::aliases::AliasValue;
+        let resolved = ResolvedAlias {
+            value: AliasValue::Meta {
+                cmd: "echo quiet".into(),
+                cwd: None,
+                mode: Some(Mode::Silent),
+                description: None,
+            },
+            source: "@t".into(),
+            source_path: None,
+            paths: Vec::new(),
+        };
+        let rc = resolve_alias(&resolved, &[]);
+        assert_eq!(rc.mode, Mode::Silent);
     }
 
     #[test]
@@ -1215,7 +1246,7 @@ mod tests {
             value: AliasValue::Meta {
                 cmd: "make".into(),
                 cwd: Some(dir.path().to_string_lossy().into_owned()),
-                interactive: None,
+                mode: None,
                 description: None,
             },
             source: "@t".into(),
@@ -1225,7 +1256,7 @@ mod tests {
 
         let rc = resolve_alias(&resolved, &[]);
         assert_eq!(rc.command, "make");
-        assert!(!rc.interactive);
+        assert_eq!(rc.mode, Mode::Normal);
         // $cwd 解析到 dir，且 node_modules/.bin 被纳入 PATH 前缀
         assert_eq!(rc.cwd, dir.path());
         let nm = nm_bin.to_string_lossy().into_owned();

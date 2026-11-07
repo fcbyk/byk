@@ -1,4 +1,4 @@
-"""E2E —— 执行环境：$cwd 三级继承、$paths 前置、$interactive 预览与继承"""
+"""E2E —— 执行环境：$cwd / $mode 三级继承、$paths 前置、$mode 三态行为"""
 
 
 def make_dir(runner, name: str):
@@ -90,37 +90,118 @@ def test_paths_relative_to_config_file(runner):
     assert "hi-from-bin2" in r.stdout
 
 
+def test_mode_default_is_normal(runner):
+    """不写 $mode：打印来源行与最终命令，然后直接执行"""
+    runner.prepare_alias_json("env", {"hi": "echo hello"})
+    r = runner.run("hi")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith("\n> ")
+    assert "> echo hello" in r.stdout
+    assert "hello" in r.stdout
+
+
+def test_mode_silent_alias_level(runner):
+    """$mode=silent：stdout 只剩子进程输出，没有 byk 的 > 提示行"""
+    runner.prepare_alias_json("env", {"hi": {"$cmd": "echo hello", "$mode": "silent"}})
+    r = runner.run("hi")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "hello"
+
+
+def test_mode_silent_file_level_inherited(runner):
+    """文件级 $mode=silent 被所有子别名继承"""
+    runner.prepare_alias_json("env", {"$mode": "silent", "hi": "echo hello"})
+    r = runner.run("hi")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "hello"
+
+
+def test_mode_silent_group_level_inherited(runner):
+    """分组级 $mode=silent 被组内别名继承"""
+    runner.prepare_alias_json("env", {"g": {"$mode": "silent", "hi": "echo hello"}})
+    r = runner.run("g.hi")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "hello"
+
+
+def test_mode_silent_applies_to_exact_syntax(runner):
+    """@@file.key 精确调用同样受 $mode 影响"""
+    runner.prepare_alias_json("env", {"$mode": "silent", "hi": "echo hello"})
+    r = runner.run("@@env.hi")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "hello"
+
+
+def test_mode_normal_overrides_inherited_silent(runner):
+    """文件级 silent，别名写 normal 就能恢复提示"""
+    runner.prepare_alias_json(
+        "env",
+        {"$mode": "silent", "loud": {"$cmd": "echo hello", "$mode": "normal"}},
+    )
+    r = runner.run("loud")
+    assert r.returncode == 0, r.stderr
+    assert "> echo hello" in r.stdout
+
+
+def test_mode_silent_overrides_inherited_interactive(runner):
+    """文件级 interactive，别名只写 silent 就够——不必再关掉第二个开关"""
+    runner.prepare_alias_json(
+        "env",
+        {"$mode": "interactive", "backup": {"$cmd": "echo quiet", "$mode": "silent"}},
+    )
+    r = runner.run("backup")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "quiet"
+    assert "Cancelled" not in r.stdout
+
+
 def test_interactive_shows_preview_then_cancels_without_tty(runner):
     """无 TTY 时交互模式打印预览后取消，不执行命令"""
     runner.prepare_alias_json(
-        "env", {"i": {"$cmd": "echo should-not-run", "$interactive": True}}
+        "env", {"i": {"$cmd": "echo should-not-run", "$mode": "interactive"}}
     )
     r = runner.run("i")
     assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith("\n> ")
     assert "${args}" in r.stdout
     assert "Cancelled" in r.stdout
 
 
 def test_interactive_inherited_from_file_level(runner):
-    """文件级 $interactive 被继承"""
-    runner.prepare_alias_json(
-        "env", {"$interactive": True, "i": "echo should-not-run"}
-    )
+    """文件级 $mode=interactive 被继承"""
+    runner.prepare_alias_json("env", {"$mode": "interactive", "i": "echo should-not-run"})
     r = runner.run("i")
     assert r.returncode == 0, r.stderr
     assert "Cancelled" in r.stdout
 
 
-def test_interactive_overridden_to_false(runner):
-    """别名级显式 false 覆盖文件级 true"""
+def test_interactive_inherited_from_group_level(runner):
+    """分组级 $mode=interactive 被组内别名继承"""
+    runner.prepare_alias_json(
+        "env", {"danger": {"$mode": "interactive", "drop": "echo should-not-run"}}
+    )
+    r = runner.run("danger.drop")
+    assert r.returncode == 0, r.stderr
+    assert "Cancelled" in r.stdout
+
+
+def test_interactive_overridden_to_normal(runner):
+    """别名级 normal 覆盖文件级 interactive"""
     runner.prepare_alias_json(
         "env",
-        {
-            "$interactive": True,
-            "direct": {"$cmd": "echo ran-directly", "$interactive": False},
-        },
+        {"$mode": "interactive", "direct": {"$cmd": "echo ran-directly", "$mode": "normal"}},
     )
     r = runner.run("direct")
     assert r.returncode == 0, r.stderr
     assert "ran-directly" in r.stdout
     assert "Cancelled" not in r.stdout
+
+
+def test_mode_invalid_value_warns_and_falls_back_to_normal(runner):
+    """非法 $mode 值告警并回落 normal，别名不会整条消失"""
+    runner.prepare_alias_json("env", {"hi": {"$cmd": "echo hello", "$mode": "interactiv"}})
+    r = runner.run("hi")
+    assert r.returncode == 0, r.stderr
+    assert "hello" in r.stdout
+    assert "$mode must be one of" in r.stderr
+    assert "interactiv" in r.stderr

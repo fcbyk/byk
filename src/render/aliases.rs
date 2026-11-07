@@ -169,7 +169,7 @@ mod tests {
             value: aliases::AliasValue::Meta {
                 cmd: cmd.into(),
                 cwd: Some(cwd.into()),
-                interactive: None,
+                mode: None,
                 description: None,
             },
             source: "@test".into(),
@@ -278,7 +278,7 @@ mod tests {
                 value: aliases::AliasValue::Meta {
                     cmd: "echo hello".into(),
                     cwd: None,
-                    interactive: None,
+                    mode: None,
                     description: Some("Say hello".into()),
                 },
                 source: "@test".into(),

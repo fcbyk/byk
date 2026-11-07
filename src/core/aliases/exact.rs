@@ -2,7 +2,7 @@
 
 use super::merge::apply_inherited;
 use super::parse::{is_alias_value, to_alias_value};
-use super::types::{AliasFile, ResolvedAlias};
+use super::types::{AliasFile, Mode, ResolvedAlias};
 
 /// 解析 `@file.key` / `@@file.key`，返回 (file_key, alias_key)。
 ///
@@ -39,19 +39,17 @@ pub fn lookup_exact_alias(
         }
         let parts: Vec<&str> = alias_key.split('.').collect();
         let mut current: &serde_json::Value = &serde_json::Value::Object(f.aliases.clone());
-        // 沿路径遍历时累积分组级 $cwd / $interactive，子级覆盖父级
+        // 沿路径遍历时累积分组级 $cwd / $mode，子级覆盖父级
         let mut group_cwd: Option<&str> = None;
-        let mut group_interactive: Option<bool> = None;
+        let mut group_mode: Option<Mode> = None;
         for (i, part) in parts.iter().enumerate() {
             let obj = current.as_object()?;
-            // 累积分组级继承属性（文件根级的 $cwd/$interactive 已被 parse_alias_file 移除，此处不影响）
+            // 累积分组级继承属性（文件根级的 $cwd/$mode 已被 parse_alias_file 移除，此处不影响）
             if let Some(c) = obj.get("$cwd").and_then(|v| v.as_str()) {
                 group_cwd = Some(c);
             }
-            if let Some(v) = obj.get("$interactive")
-                && let Some(b) = v.as_bool()
-            {
-                group_interactive = Some(b);
+            if let Some(v) = obj.get("$mode") {
+                group_mode = Some(Mode::from_json(v));
             }
             current = obj.get(*part)?;
             if i < parts.len() - 1 && !current.is_object() {
@@ -61,8 +59,8 @@ pub fn lookup_exact_alias(
         if is_alias_value(current) {
             let value = to_alias_value(current)?;
             let effective_cwd = group_cwd.or(f.inherited_cwd.as_deref());
-            let effective_interactive = group_interactive.or(f.inherited_interactive);
-            let value = apply_inherited(value, effective_cwd, effective_interactive);
+            let effective_mode = group_mode.or(f.inherited_mode);
+            let value = apply_inherited(value, effective_cwd, effective_mode);
             let display_source = format!("{}.{}", file_key, alias_key);
             let source_path = Some(f.path.clone());
             return Some((

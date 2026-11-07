@@ -97,4 +97,4 @@ Packaging also cross-checks the repository's `Cargo.toml`, which is the source o
 ## Learn more
 
 - [byk CLI docs](https://cli.fcbyk.com)
-- [Alias syntax](https://cli.fcbyk.com/cli/alias/start) — nested groups, `$cwd`, `$interactive`, placeholders, etc.
+- [Alias syntax](https://cli.fcbyk.com/cli/alias/start) — nested groups, `$cwd`, `$mode`, placeholders, etc.

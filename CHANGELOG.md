@@ -2,6 +2,7 @@
 
 ### Breaking Changes
 
+- **`$mode`**: the boolean `$interactive` is gone, replaced by an inheritable three-state `$mode` (`normal` / `interactive` / `silent`); old files are not read for it — an alias that relied on `$interactive: true` loses its confirmation prompt and needs `"$mode": "interactive"`
 - **vscode**: replace `useSystemBinary` / `binaryPath` with `priorityPaths` / `secondarySource` — the old pair was self-contradictory: `useSystemBinary: false` only skipped injecting `~/.byk/bin` and friends, while the system `PATH` still ranked ahead of the bundled binary, so the documented default never held
 - **variables**: variable syntax is now `${name}`; bare `$xx` is no longer interpreted and is passed to the shell untouched — rewrite `$byk` / `$workdir` as `${byk}` / `${workdir}` and `$VAR` as `${VAR}`
 - **variables**: all substitution now happens during the scan phase; there is no second expansion before execution
@@ -16,6 +17,9 @@
 - **variables**: self-reference such as `"byk": "${byk}/tools"` resolves the right-hand side against the built-in value (`local byk = $byk/tools`)
 - **variables**: `\${...}` hands the expression to the shell instead of byk, useful for printing a literal
 - **variables**: variable names are limited to `[A-Za-z_][A-Za-z0-9_]*`; invalid names and the reserved `args` are reported on stderr
+- **`$mode`**: one inheritable three-state property (`normal` / `interactive` / `silent`) replaces the two independent booleans — `silent` drops byk's own hint lines from stdout so `byk build > log.txt` and `byk build | grep error` carry only the child's output, while `interactive` keeps every prompt; the meaningless combination is now unrepresentable, and an alias under a file-level `interactive` reaches `silent` with a single word instead of turning a second switch off
+- **`$mode`**: an unrecognised value prints a warning and falls back to `normal` instead of making the whole alias vanish from the namespace
+- **`__api__ resolve`**: reports the authoritative `mode` alongside the derived `interactive` boolean, so an extension that only knows the boolean still refuses to run an interactive alias unattended
 
 ### Bug Fixes
 

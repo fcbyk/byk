@@ -13,7 +13,7 @@ mod types;
 
 // 统一出口：其他模块只从这里使用别名能力
 pub use exact::{lookup_exact_alias, parse_exact_syntax};
-pub use execution::{execute_alias, resolve_alias, ResolvedCommand};
+pub use execution::{ResolvedCommand, execute_alias, resolve_alias};
 pub use merge::{collect_merged_paths, load_merged_aliases, resolve_merged_alias};
 pub use parse::to_alias_definition;
 pub use types::*;

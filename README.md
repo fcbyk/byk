@@ -14,7 +14,7 @@ byk does two things — **find an alias, run it**. One binary, one config format
   "build": "pnpm build",
   "deploy": {
     "$cmd": "deploy --env {env}",
-    "$interactive": true
+    "$mode": "interactive"
   }
 }
 ```
@@ -25,8 +25,8 @@ byk build           # pnpm build
 byk deploy          # asks for {env}, then runs
 ```
 
-`{env}` is a placeholder, `$cwd` / `$interactive` / `$description` are
-inheritable metadata, `@file.key` / `@@file.key` route to one exact file.
+`{env}` is a placeholder, `$cwd` / `$mode` / `$description` are inheritable
+metadata (`$mode` is `normal` / `interactive` / `silent`), `@file.key` / `@@file.key` route to one exact file.
 
 Alias files in the current directory join the merged namespace with priority
 1, global ones in `~/.byk/alias/` with 0 — so `cd` into a project and its

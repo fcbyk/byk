@@ -52,6 +52,10 @@ struct ResolveResponse {
     command: String,
     cwd: PathBuf,
     paths: Vec<String>,
+    /// 执行方式：`normal` / `interactive` / `silent`
+    mode: &'static str,
+    /// `mode == "interactive"` 的派生布尔。保留它是为了版本错配时的安全：
+    /// 只认 `mode` 的旧插件读到 `null` 会把交互别名直接执行、跳过确认。
     interactive: bool,
     description: Option<String>,
 }
@@ -104,7 +108,8 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 command: rc.command,
                 cwd: rc.cwd,
                 paths: rc.paths,
-                interactive: rc.interactive,
+                mode: rc.mode.as_str(),
+                interactive: rc.mode == aliases::Mode::Interactive,
                 description: rc.description,
             };
 

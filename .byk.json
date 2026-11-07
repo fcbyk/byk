@@ -33,7 +33,7 @@
   "发布": {
     "生成变更日志": "cz changelog --incremental",
     "更新版本号": {
-      "$interactive": true,
+      "$mode": "interactive",
       "$cmd": "cz bump {version}"
     },
     "maturin": {

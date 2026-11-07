@@ -82,13 +82,14 @@ function flattenAliases(
         exactCommand: `@${stem}.${fullPath}`,
       });
     } else if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) {
-      // Object‑mode alias: { $cmd, $cwd?, $interactive?, $description? }
+      // Object‑mode alias: { $cmd, $cwd?, $mode?, $description? }
       const v = value as Record<string, unknown>;
       const cmd = typeof v.$cmd === 'string' ? v.$cmd : '';
       const desc = typeof v.$description === 'string' ? v.$description : '';
       const parts = desc ? [desc] : [cmd];
       if (v.$cwd) parts.push(`cwd:${v.$cwd}`);
-      if (v.$interactive) parts.push('interactive');
+      const mode = readMode(v.$mode);
+      if (mode !== 'normal') parts.push(mode);
       items.push({
         label: `@${stem}.${fullPath}`,
         description: parts.join('  '),
@@ -538,6 +539,8 @@ function runAliasTask(exactCommand: string, cwd: string) {
 
 // ── Run Alias Directly (bypass byk) ───────────────────────────────
 
+type AliasMode = 'normal' | 'interactive' | 'silent';
+
 interface ResolveResult {
   key: string;
   source: string;
@@ -545,8 +548,22 @@ interface ResolveResult {
   command: string;
   cwd: string;
   paths: string[];
+  mode?: AliasMode;
+  /** Derived from `mode`; kept so a CLI that still only reports this stays safe. */
   interactive: boolean;
   description: string | null;
+}
+
+/**
+ * Effective mode of a resolved alias.
+ *
+ * Prefers the authoritative `mode` field and falls back to the legacy
+ * boolean — falling back the other way round would treat every alias as
+ * `normal` and run interactive ones without their confirmation.
+ */
+function resolvedMode(resolved: ResolveResult): AliasMode {
+  if (resolved.mode) return resolved.mode;
+  return resolved.interactive ? 'interactive' : 'normal';
 }
 
 /** Call `byk __api__ resolve` and parse the JSON. Returns null on any failure. */
@@ -573,12 +590,19 @@ function callResolve(key: string, cwd: string): ResolveResult | null {
   }
 }
 
-/** Extract a runnable command (+ optional cwd/interactive) from a raw config value. */
+/** Read `$mode` as a valid mode, ignoring anything unrecognised. */
+function readMode(value: unknown): AliasMode {
+  return value === 'interactive' || value === 'silent' || value === 'normal'
+    ? value
+    : 'normal';
+}
+
+/** Extract a runnable command (+ optional cwd/mode) from a raw config value. */
 function rawValueToCommand(
   value: unknown,
-): { command: string; cwd?: string; interactive: boolean } | null {
+): { command: string; cwd?: string; mode: AliasMode } | null {
   if (typeof value === 'string') {
-    return value.trim() ? { command: value, interactive: false } : null;
+    return value.trim() ? { command: value, mode: 'normal' } : null;
   }
   if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) {
     const v = value as Record<string, unknown>;
@@ -586,7 +610,7 @@ function rawValueToCommand(
     return {
       command: v.$cmd,
       cwd: typeof v.$cwd === 'string' && v.$cwd.trim() ? v.$cwd : undefined,
-      interactive: v.$interactive === true,
+      mode: readMode(v.$mode),
     };
   }
   return null;
@@ -640,7 +664,7 @@ function runAliasDirect(exactCommand: string, rawValue: unknown, configDir: stri
   const resolved = callResolve(exactCommand, configDir);
 
   if (resolved) {
-    if (resolved.interactive) {
+    if (resolvedMode(resolved) === 'interactive') {
       vscode.window.showInformationMessage(`"${exactCommand}" 需要交互输入，改用 byk 执行`);
       runAliasTask(exactCommand, configDir);
       return;
@@ -660,7 +684,7 @@ function runAliasDirect(exactCommand: string, rawValue: unknown, configDir: stri
     vscode.window.showErrorMessage(`无法解析别名 "${exactCommand}"，且 byk 不支持 resolve`);
     return;
   }
-  if (raw.interactive) {
+  if (raw.mode === 'interactive') {
     runAliasTask(exactCommand, configDir);
     return;
   }

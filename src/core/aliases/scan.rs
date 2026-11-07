@@ -6,7 +6,7 @@ use std::path::Path;
 use colored::Colorize;
 
 use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
-use super::types::AliasFile;
+use super::types::{AliasFile, Mode};
 use crate::core::vars::{VarIssue, VarTable, preprocess_vars};
 
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> Vec<AliasFile> {
@@ -75,6 +75,8 @@ fn parse_alias_file(
         eprintln!("{} {} in {}", "Warning:".yellow(), detail, path.display());
     }
 
+    warn_invalid_modes(&data, path);
+
     let obj = data.as_object_mut()?;
 
     let priority_raw = obj.remove("$priority");
@@ -89,7 +91,7 @@ fn parse_alias_file(
         .remove("$cwd")
         .and_then(|v| v.as_str().map(String::from));
 
-    let inherited_interactive = obj.remove("$interactive").and_then(|v| v.as_bool());
+    let inherited_mode = obj.remove("$mode").map(|v| Mode::from_json(&v));
 
     let inherited_paths = obj
         .remove("$paths")
@@ -109,9 +111,40 @@ fn parse_alias_file(
         aliases: filtered,
         path: path.to_path_buf(),
         inherited_cwd,
-        inherited_interactive,
+        inherited_mode,
         inherited_paths,
     })
+}
+
+/// `$mode` 只认三个值；写错时告警并回落 `normal`。
+///
+/// 必须在这里喊一声：把它拼成 `"interactiv"` 会让一条本该确认的危险命令
+/// 直接执行，是「配置写了没生效」里后果最重的一种。
+///
+/// 只走 object：数组在 `filter_invalid_keys` 里本来就会被整段丢掉，
+/// 里面的 `$mode` 属于死配置，不值得为它再递归一层。
+fn warn_invalid_modes(value: &serde_json::Value, path: &Path) {
+    let serde_json::Value::Object(obj) = value else {
+        return;
+    };
+
+    if let Some(raw) = obj.get("$mode")
+        && !matches!(
+            raw.as_str(),
+            Some("normal") | Some("interactive") | Some("silent")
+        )
+    {
+        eprintln!(
+            "{} $mode must be one of normal|interactive|silent, got {} in {} (treated as normal)",
+            "Warning:".yellow(),
+            raw,
+            path.display()
+        );
+    }
+
+    for child in obj.values() {
+        warn_invalid_modes(child, path);
+    }
 }
 
 /// 原地排序 AliasFile 列表：低优先级在前，高优先级在后。
@@ -140,7 +173,7 @@ mod tests {
             aliases: serde_json::Map::new(),
             path: PathBuf::from(format!("/fake/{}.byk.json", key.trim_start_matches('@'))),
             inherited_cwd: None,
-            inherited_interactive: None,
+            inherited_mode: None,
             inherited_paths: Vec::new(),
         }
     }

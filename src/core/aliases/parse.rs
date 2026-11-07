@@ -1,6 +1,6 @@
 //! 原始 JSON → 结构化别名数据的转换：文件名校验、优先级解析、key 过滤、值类型转换。
 
-use super::types::{AliasDefinition, AliasValue};
+use super::types::{AliasDefinition, AliasValue, Mode};
 
 /// 文件名 stem 是否合法：空串（匿名文件）或仅含字母、数字、`-`、`_`、中文。
 pub(crate) fn validate_filename(stem: &str) -> bool {
@@ -82,7 +82,7 @@ pub(crate) fn filter_invalid_keys(
     result
 }
 
-/// object 是否含 `$cmd`（叶子节点）；只有 `$cwd`/`$interactive` 的是分组。
+/// object 是否含 `$cmd`（叶子节点）；只有 `$cwd`/`$mode` 的是分组。
 fn has_meta_key(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
     obj.contains_key("$cmd")
 }
@@ -109,19 +109,19 @@ pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {
         AliasValue::Str(command) => Some(AliasDefinition {
             command: command.clone(),
             cwd: None,
-            interactive: false,
+            mode: Mode::Normal,
             description: None,
         }),
         AliasValue::Meta {
             cmd,
             cwd,
-            interactive,
+            mode,
             description,
             ..
         } => Some(AliasDefinition {
             command: cmd.clone(),
             cwd: cwd.clone(),
-            interactive: interactive.unwrap_or(false),
+            mode: mode.unwrap_or(Mode::Normal),
             description: description.clone(),
         }),
     }
@@ -402,7 +402,6 @@ mod tests {
         let def = to_alias_definition(&av).unwrap();
         assert_eq!(def.command, "echo hello");
         assert_eq!(def.cwd, None);
-        assert!(!def.interactive);
     }
 
     #[test]
@@ -410,13 +409,13 @@ mod tests {
         let av = AliasValue::Meta {
             cmd: "build".into(),
             cwd: Some("/app".into()),
-            interactive: Some(true),
+            mode: Some(Mode::Interactive),
             description: None,
         };
         let def = to_alias_definition(&av).unwrap();
         assert_eq!(def.command, "build");
         assert_eq!(def.cwd, Some("/app".into()));
-        assert!(def.interactive);
+        assert_eq!(def.mode, Mode::Interactive);
     }
 
     #[test]
@@ -424,11 +423,17 @@ mod tests {
         let av = AliasValue::Meta {
             cmd: "run".into(),
             cwd: None,
-            interactive: None,
+            mode: None,
             description: None,
         };
         let def = to_alias_definition(&av).unwrap();
-        assert!(!def.interactive);
+        assert_eq!(def.mode, Mode::Normal);
         assert_eq!(def.cwd, None);
+    }
+
+    #[test]
+    fn definition_from_str_is_normal() {
+        let av = AliasValue::Str("echo hi".into());
+        assert_eq!(to_alias_definition(&av).unwrap().mode, Mode::Normal);
     }
 }

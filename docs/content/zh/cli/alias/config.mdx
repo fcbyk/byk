@@ -14,7 +14,7 @@ import { Tab, Tabs } from '@rspress/core/theme';
 type AliasObject = {
   $cmd?: string;
   $cwd?: string;
-  $interactive?: boolean;
+  $mode?: 'normal' | 'interactive' | 'silent';
   $description?: string;
   [key: string]: string | AliasObject | boolean | undefined;
 }
@@ -23,7 +23,7 @@ type AliasObject = {
 type AliasFileJSON = {
   $priority?: number;      // 优先级，默认当前目录 = 1、全局 = 0
   $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
-  $interactive?: boolean;  // 文件级 / 分组级交互模式，子别名自动继承
+  $mode?: 'normal' | 'interactive' | 'silent';  // 文件级 / 分组级执行方式，子别名自动继承
   $paths?: string[];       // 文件级 PATH 目录列表，子别名自动继承
   $var?: Record<string, string | Record<string, string>>;  // 文件级变量
   [key: string]: string | AliasObject | number | boolean | undefined;
@@ -46,11 +46,11 @@ type AliasFileJSON = {
 |------|------|------|
 | `$cmd` | string | 执行命令 |
 | `$cwd` | string | 工作目录（可继承） |
-| `$interactive` | boolean | 是否交互执行（可继承） |
+| `$mode` | `'normal'` \| `'interactive'` \| `'silent'` | 执行方式（可继承），默认 `normal` |
 | `$description` | string | 帮助页描述文本（不可继承） |
 
 :::note
-含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$interactive` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
+含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$mode` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
 :::
 
 ### 工作目录 cwd
@@ -107,23 +107,33 @@ type AliasFileJSON = {
 </Tab>
 </Tabs>
 
-### 交互模式
+### 执行方式
 
-开启后逐项提示输入占位符的值，最后确认再执行，适合有副作用的命令。
+`$mode` 决定别名怎么跑，三态互斥，默认 `normal`。
 
-`$interactive` 同样支持三级继承。
+| 值 | 行为 |
+|---|---|
+| `normal` | 打印提示行，然后直接执行 |
+| `interactive` | 打印提示行，逐项询问占位符，回车确认后才执行 |
+| `silent` | 一行提示都不打，stdout 只剩子进程自己的输出 |
 
-<Tabs>
-<Tab label="别名级指定">
+执行前 byk 会打印两行（都写 stdout）：来源（`文件.key` 与落地目录）和解析后的最终命令。
+`silent` 关掉这两行，`byk build > log.txt`、`byk build | grep error` 就不会被 byk 自己污染：
 
-```json
-{
-  "deploy": {
-    "$cmd": "deploy --env {env} --tag {version}",
-    "$interactive": true
-  }
-}
+```bash
+byk build
+# > @.build /project
+#
+# > pnpm build
+#
+# ...（pnpm 的输出）
+
+# "$mode": "silent" 时
+byk build
+# ...（只剩 pnpm 的输出）
 ```
+
+`interactive` 适合有副作用的命令：
 
 ```bash
 byk deploy
@@ -134,40 +144,61 @@ byk deploy
 #    Press Enter to execute...
 ```
 
+`$mode` 支持三级继承：文件级 → 分组级 → 别名级，越靠近别名优先级越高。
+
+<Tabs>
+<Tab label="别名级指定">
+
+```json
+{
+  "deploy": {
+    "$cmd": "deploy --env {env} --tag {version}",
+    "$mode": "interactive"
+  }
+}
+```
+
 </Tab>
 <Tab label="分组级继承">
 
 ```json
 {
   "danger": {
-    "$interactive": true,
-    "delete": "rm -rf {path}",
-    "migrate": {
-      "$cmd": "db migrate --env {env}",
-      "$interactive": false
+    "$mode": "interactive",
+    "drop": "rm -rf {path}",
+    "backup": {
+      "$cmd": "rsync -a ./ {dest}",
+      "$mode": "silent"
     }
   }
 }
 ```
 
-`delete` 继承 `danger` 的交互模式，`migrate` 显式覆盖为非交互。
+`drop` 继承 `danger` 的 `interactive`；`backup` 写一个 `silent` 就够，不需要再把交互关一次。
 
 </Tab>
 <Tab label="文件级继承">
 
 ```json
 {
-  "$interactive": true,
-  "deploy": "deploy --env {env}",
-  "build": {
-    "$cmd": "pnpm build",
-    "$interactive": false
+  "$mode": "silent",
+  "build": "pnpm build",
+  "deploy": {
+    "$cmd": "deploy --env {env}",
+    "$mode": "interactive"
   }
 }
 ```
 
+整个文件安静，只有 `deploy` 需要确认。
+
 </Tab>
 </Tabs>
+
+:::note
+交互和静默是互斥的两种形态：交互必须让用户看清要确认什么，所以 `silent` 只是让 byk 闭嘴，
+不会跳过任何确认步骤——需要确认就写 `interactive`。
+:::
 
 ### 描述文本
 
@@ -176,7 +207,7 @@ byk deploy
 ```json
 {
   "更新版本号": {
-    "$interactive": true,
+    "$mode": "interactive",
     "$cmd": "cz bump {version}",
     "$description": "交互式更新版本号"
   }
@@ -283,7 +314,7 @@ Aliases:
 
   "deploy": {
     "$cmd": "deploy --env {env}",
-    "$interactive": true
+    "$mode": "interactive"
   }
 }
 ```
