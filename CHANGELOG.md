@@ -43,6 +43,7 @@
 - **vscode**: version the extension off the CLI it bundles — `X.Y` mirrors the CLI's `major.minor` and `Z` is the extension's own revision, with `bykBinaryVersion` pinning the exact binary
 - **vscode**: `download-binary.mjs` resolves its release tag from `bykBinaryVersion` instead of falling back to `latest`, making a packaged build reproducible
 - **vscode**: `scripts/verify-version.mjs` fails the build when `version` and `bykBinaryVersion` disagree on `major.minor`, when the bundled CLI would move backwards, or when `bykBinaryVersion` points ahead of `Cargo.toml`; a bundle lagging behind `Cargo.toml` only prints a hint (`BYK_ALLOW_BINARY_DOWNGRADE=1` overrides a deliberate rollback)
+- **docs**: every generated `llms.txt` and `.md` page now carries the version read from `Cargo.toml` at build time, so a reader can tell when a page lags behind the binary it is describing; `llms.txt` also gains a "For agents" section naming the fetch order and the sources that outrank the page
 
 ## v0.6.0 (2026-10-29)
 
