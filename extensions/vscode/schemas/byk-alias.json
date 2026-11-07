@@ -27,7 +27,7 @@
       }
     },
     "$var": {
-      "description": "文件级变量：与内置变量合并为一张表，扫描期一次性替换文件内所有字符串值（JSON key 不动）。同名时此处覆盖内置值。语法 ${name}，name 须符合 [A-Za-z_][A-Za-z0-9_]*。值可为字符串或平台映射（当前平台取值）。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"${BASE}/mac\"}}",
+      "description": "文件级变量：与内置变量合并为一张表，扫描期一次性替换文件内所有字符串值（JSON key 不动）。同名时此处覆盖内置值。内置变量 ${byk_dir}（~/.byk）与 ${file_dir}（当前别名文件所在目录）也在这张表里，同名声明覆盖它们。语法 ${name}，name 须符合 [A-Za-z_][A-Za-z0-9_]*。值可为字符串或平台映射（当前平台取值）。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"${BASE}/mac\"}}",
       "type": "object",
       "additionalProperties": {
         "oneOf": [

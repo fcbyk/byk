@@ -7,7 +7,7 @@ use colored::Colorize;
 
 use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
 use super::types::{AliasFile, Mode};
-use crate::core::vars::{VarIssue, VarTable, preprocess_vars};
+use crate::core::vars::{FILE_DIR_VAR, VarIssue, VarTable, preprocess_vars};
 
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> Vec<AliasFile> {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
@@ -56,8 +56,18 @@ fn parse_alias_file(
     let content = fs::read_to_string(path).ok()?;
     let mut data: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-    // 变量替换：内置 ${byk}/${workdir} 与文件 $var 合成一张表，扫描期一次替换完成
-    for issue in preprocess_vars(&mut data, vars) {
+    // 内置表是全局共用的，file_dir 逐文件不同：克隆一份局部表再注入
+    let mut file_vars = vars.clone();
+    file_vars.insert(
+        FILE_DIR_VAR.to_string(),
+        path.parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_string_lossy()
+            .into_owned(),
+    );
+
+    // 变量替换：内置变量与文件 $var 合成一张表，扫描期一次替换完成
+    for issue in preprocess_vars(&mut data, &file_vars) {
         let detail = match &issue {
             VarIssue::InvalidName(n) => format!(
                 "variable '${{{}}}' has an invalid name (expected [A-Za-z_][A-Za-z0-9_]*), ignored",
@@ -76,6 +86,7 @@ fn parse_alias_file(
     }
 
     warn_invalid_modes(&data, path);
+    warn_retired_vars(&data, path);
 
     let obj = data.as_object_mut()?;
 
@@ -144,6 +155,46 @@ fn warn_invalid_modes(value: &serde_json::Value, path: &Path) {
 
     for child in obj.values() {
         warn_invalid_modes(child, path);
+    }
+}
+
+/// 已退役的内置变量（名字, 替代写法）。
+///
+/// 退役后它们不再命中变量表，会原样透传给 shell，而 shell 把未定义变量展开成**空串**：
+/// `cd ${workdir}/x` 静默变成 `cd /x`。这是最不该悄悄发生的一类错误，所以扫描期喊一声。
+const RETIRED_VARS: &[(&str, &str)] = &[
+    ("${byk}", "${byk_dir}"),
+    ("${workdir}", "the shell's $PWD, or ${file_dir}"),
+];
+
+fn warn_retired_vars(value: &serde_json::Value, path: &Path) {
+    let mut hits: Vec<&'static str> = Vec::new();
+    collect_retired(value, &mut hits);
+    for &(retired, replacement) in RETIRED_VARS {
+        if hits.contains(&retired) {
+            eprintln!(
+                "{} {} is no longer a built-in variable, use {} in {}",
+                "Warning:".yellow(),
+                retired,
+                replacement,
+                path.display()
+            );
+        }
+    }
+}
+
+fn collect_retired(value: &serde_json::Value, hits: &mut Vec<&'static str>) {
+    match value {
+        serde_json::Value::String(s) => {
+            for &(retired, _) in RETIRED_VARS {
+                if s.contains(retired) && !hits.contains(&retired) {
+                    hits.push(retired);
+                }
+            }
+        }
+        serde_json::Value::Object(obj) => obj.values().for_each(|v| collect_retired(v, hits)),
+        serde_json::Value::Array(arr) => arr.iter().for_each(|v| collect_retired(v, hits)),
+        _ => {}
     }
 }
 

@@ -288,7 +288,7 @@ fn convert_unix_path_for_cmd(command: &str) -> String {
 
 /// 执行别名命令。
 ///
-/// 变量（内置 `${byk}` / `${workdir}` 与文件 `$var`）已在扫描期替换完毕，
+/// 变量（内置 `${byk_dir}` / `${file_dir}` 与文件 `$var`）已在扫描期替换完毕，
 /// 此处只剩参数占位符。`$mode` 决定怎么跑，三态互斥：
 /// - `normal`：打印提示行后直接执行；
 /// - `interactive`：打印提示行，逐项提示占位符，确认后执行；

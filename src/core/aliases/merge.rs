@@ -166,8 +166,8 @@ pub(crate) fn load_merged_aliases_at(
     layout: &PathLayout,
     cwd: &Path,
 ) -> (MergedConfig, Vec<AliasFile>) {
-    // 内置变量在扫描期就展开，因此 workdir 固定为调用 byk 时的目录
-    let vars = build_builtin_table(&layout.root_dir, cwd);
+    // 内置变量在扫描期展开：byk_dir 是固定的资源根，file_dir 由扫描阶段逐文件注入
+    let vars = build_builtin_table(&layout.root_dir);
     let mut files = scan_alias_files(cwd, false, &vars);
     files.extend(scan_alias_files(&layout.alias_dir, true, &vars));
     sort_alias_files(&mut files);

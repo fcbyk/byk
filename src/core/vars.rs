@@ -2,7 +2,7 @@
 //!
 //! 设计目标：**一张表、一个语法、一次替换**。
 //!
-//! - 表：内置变量（`byk` / `workdir`）与文件 `$var` 声明合并，声明覆盖内置；
+//! - 表：内置变量（`byk_dir` / `file_dir`）与文件 `$var` 声明合并，声明覆盖内置；
 //! - 语法：`${name}`，`name` 为 `[A-Za-z_][A-Za-z0-9_]*`（与 shell 标识符一致）；
 //! - 裸 `$xx` 不再识别，原样透传给 shell（`$HOME`、`$PATH` 交给 shell 自己展开）；
 //! - `\${...}` 输出字面量 `${...}`；
@@ -10,8 +10,8 @@
 //!
 //! 解析分两遍，都不依赖 `$var` 的书写顺序：
 //!
-//! 1. 内置名（`byk` / `workdir`）先按**内置原值**展开，
-//!    因此 `{"byk": "${byk}/tools"}` 的右侧指 `~/.byk`，等价于 `local byk = $byk/tools`；
+//! 1. 内置名先按**内置原值**展开，
+//!    因此 `{"byk_dir": "${byk_dir}/tools"}` 的右侧指 `~/.byk`，等价于 `local byk_dir = $byk_dir/tools`；
 //! 2. 其余声明按已合并的表展开，再跑快照迭代直到不动点，消解交叉引用。
 //!
 //! 快照迭代（每轮用上一轮的表计算新表）而非原地替换，避免 `{"A": "${A}x"}`
@@ -31,8 +31,16 @@ const MAX_ROUNDS: usize = 8;
 /// 变量表：名字 → 替换值。
 pub type VarTable = BTreeMap<String, String>;
 
+/// 当前别名文件所在目录的变量名。
+///
+/// 它没法进 `build_builtin_table`：同一份内置表会被所有文件共用，
+/// 而这个值逐文件不同，由扫描阶段克隆一份局部表再注入。
+pub const FILE_DIR_VAR: &str = "file_dir";
+
 /// 允许被 `$var` 覆盖的内置变量名。
-pub const BUILTIN_NAMES: &[&str] = &["byk", "workdir"];
+///
+/// 内置变量只有目录这一类，名字一律以 `_dir` 结尾，值是绝对路径。
+pub const BUILTIN_NAMES: &[&str] = &["byk_dir", FILE_DIR_VAR];
 
 /// 禁止在 `$var` 中声明的名字：会遮蔽别名参数占位符。
 pub const RESERVED_DECL_NAMES: &[&str] = &["args"];
@@ -59,12 +67,14 @@ pub fn is_valid_var_name(name: &str) -> bool {
 }
 
 /// 构建内置变量表。
-pub fn build_builtin_table(byk_root: &Path, workdir: &Path) -> VarTable {
+///
+/// 只放与文件无关的 `byk_dir`（byk 的资源根，`~/.byk`，不是二进制目录）；
+/// `file_dir` 由扫描阶段按文件注入。
+pub fn build_builtin_table(byk_root: &Path) -> VarTable {
     let mut table = VarTable::new();
-    table.insert("byk".to_string(), byk_root.to_string_lossy().into_owned());
     table.insert(
-        "workdir".to_string(),
-        workdir.to_string_lossy().into_owned(),
+        "byk_dir".to_string(),
+        byk_root.to_string_lossy().into_owned(),
     );
     table
 }
@@ -72,7 +82,7 @@ pub fn build_builtin_table(byk_root: &Path, workdir: &Path) -> VarTable {
 /// 单遍展开：只认 `${name}`，命中则替换，其余原样保留。
 ///
 /// `\$` 被视为「交给 shell」的标记：两个字符原样输出，
-/// 由 shell 自己做转义（`\${byk}` 最终打印字面量 `${byk}`）。
+/// 由 shell 自己做转义（`\${byk_dir}` 最终打印字面量 `${byk_dir}`）。
 pub fn expand(input: &str, table: &VarTable) -> String {
     let mut out = String::with_capacity(input.len());
     let bytes = input.as_bytes();
@@ -186,7 +196,7 @@ fn resolve_table(
         true
     }
 
-    // 第一遍：内置名覆盖项按内置原值展开，右侧的 ${byk} 指向内置值。
+    // 第一遍：内置名覆盖项按内置原值展开，右侧的 ${byk_dir} 指向内置值。
     for (name, raw) in declared {
         if !BUILTIN_NAMES.contains(&name.as_str()) || !check(name, &mut issues) {
             continue;
@@ -259,8 +269,8 @@ mod tests {
 
     fn builtin() -> VarTable {
         let mut t = VarTable::new();
-        t.insert("byk".into(), "/home/u/.byk".into());
-        t.insert("workdir".into(), "/home/u/proj".into());
+        t.insert("byk_dir".into(), "/home/u/.byk".into());
+        t.insert("file_dir".into(), "/home/u/proj/conf".into());
         t
     }
 
@@ -275,7 +285,7 @@ mod tests {
     #[test]
     fn expands_braced_builtin() {
         assert_eq!(
-            expand("ls ${byk}/tools", &builtin()),
+            expand("ls ${byk_dir}/tools", &builtin()),
             "ls /home/u/.byk/tools"
         );
     }
@@ -287,13 +297,13 @@ mod tests {
 
     #[test]
     fn brace_prefix_concatenation() {
-        assert_eq!(expand("${byk}aaa", &builtin()), "/home/u/.bykaaa");
+        assert_eq!(expand("${byk_dir}aaa", &builtin()), "/home/u/.bykaaa");
     }
 
     #[test]
     fn escaped_dollar_left_to_shell() {
         // 反斜杠保留，由 shell 处理成字面量
-        assert_eq!(expand(r"echo \${byk}", &builtin()), r"echo \${byk}");
+        assert_eq!(expand(r"echo \${byk_dir}", &builtin()), r"echo \${byk_dir}");
     }
 
     #[test]
@@ -313,7 +323,10 @@ mod tests {
 
     #[test]
     fn cjk_around_var_preserved() {
-        assert_eq!(expand("中文${byk}中文", &builtin()), "中文/home/u/.byk中文");
+        assert_eq!(
+            expand("中文${byk_dir}中文", &builtin()),
+            "中文/home/u/.byk中文"
+        );
     }
 
     // ---------- preprocess ----------
@@ -330,35 +343,38 @@ mod tests {
 
     #[test]
     fn builtin_expands_without_var_field() {
-        let (v, issues) = run(json!({"hi": "echo ${byk}"}));
+        let (v, issues) = run(json!({"hi": "echo ${byk_dir}"}));
         assert!(issues.is_empty());
         assert_eq!(v["hi"], json!("echo /home/u/.byk"));
     }
 
     #[test]
-    fn workdir_expands() {
-        let (v, _) = run(json!({"p": "echo ${workdir}"}));
-        assert_eq!(v["p"], json!("echo /home/u/proj"));
+    fn file_dir_expands() {
+        let (v, _) = run(json!({"p": "echo ${file_dir}"}));
+        assert_eq!(v["p"], json!("echo /home/u/proj/conf"));
     }
 
     #[test]
     fn user_var_overrides_builtin() {
-        let (v, issues) = run(json!({"$var": {"byk": "/tmp/x"}, "hi": "echo ${byk}"}));
+        let (v, issues) = run(json!({"$var": {"byk_dir": "/tmp/x"}, "hi": "echo ${byk_dir}"}));
         assert!(issues.is_empty());
         assert_eq!(v["hi"], json!("echo /tmp/x"));
     }
 
     #[test]
     fn override_rhs_sees_builtin_value() {
-        // 等号右边的 ${byk} 指内置原值：local byk = $byk/tools
-        let (v, _) = run(json!({"$var": {"byk": "${byk}/tools"}, "hi": "echo ${byk}"}));
+        // 等号右边的 ${byk_dir} 指内置原值：local byk_dir = $byk_dir/tools
+        let (v, _) = run(json!({
+            "$var": {"byk_dir": "${byk_dir}/tools"},
+            "hi": "echo ${byk_dir}"
+        }));
         assert_eq!(v["hi"], json!("echo /home/u/.byk/tools"));
     }
 
     #[test]
     fn other_var_sees_overridden_builtin() {
         let (v, _) = run(json!({
-            "$var": {"byk": "/tmp/x", "T": "${byk}/t"},
+            "$var": {"byk_dir": "/tmp/x", "T": "${byk_dir}/t"},
             "hi": "echo ${T}"
         }));
         assert_eq!(v["hi"], json!("echo /tmp/x/t"));
@@ -457,15 +473,25 @@ mod tests {
 
     #[test]
     fn paths_array_substituted() {
-        let (v, _) = run(json!({"$paths": ["${byk}/bin"], "b": "make"}));
+        let (v, _) = run(json!({"$paths": ["${byk_dir}/bin"], "b": "make"}));
         assert_eq!(v["$paths"][0], json!("/home/u/.byk/bin"));
     }
 
     #[test]
     fn build_builtin_table_values() {
-        let t = build_builtin_table(&PathBuf::from("/r/.byk"), &PathBuf::from("/w"));
-        assert_eq!(t["byk"], "/r/.byk");
-        assert_eq!(t["workdir"], "/w");
+        let t = build_builtin_table(&PathBuf::from("/r/.byk"));
+        assert_eq!(t["byk_dir"], "/r/.byk");
+        // file_dir 逐文件不同，不能出现在共享表里
+        assert_eq!(t.len(), 1);
+        assert!(!t.contains_key("file_dir"));
+    }
+
+    #[test]
+    fn every_builtin_name_ends_with_dir() {
+        // 约定：内置变量只有目录一类，名字都以 _dir 结尾
+        for name in BUILTIN_NAMES {
+            assert!(name.ends_with("_dir"), "{name} should end with _dir");
+        }
     }
 
     #[test]

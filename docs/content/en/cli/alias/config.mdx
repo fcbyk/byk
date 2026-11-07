@@ -264,7 +264,7 @@ Variables come from two places and are merged into **a single table**, substitut
 
 | Source | Description |
 |--------|-------------|
-| Built-in | `${byk}` → `~/.byk`; `${workdir}` → the directory byk was invoked from |
+| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${file_dir}` → the directory holding the current alias file |
 | `$var` declarations | File-scoped custom variables |
 
 On a name collision, **the file declaration wins** — the value you wrote explicitly is the value you get.
@@ -281,7 +281,7 @@ The syntax is uniformly `${name}`, where `name` matches `[A-Za-z_][A-Za-z0-9_]*`
     }
   },
   "fetch": "curl -fsSL ${BASE}/${VER} -o /tmp/tool",
-  "log": "tail -f ${byk}/logs/app.log"
+  "log": "tail -f ${byk_dir}/logs/app.log"
 }
 ```
 
@@ -291,27 +291,27 @@ The syntax is uniformly `${name}`, where `name` matches `[A-Za-z_][A-Za-z0-9_]*`
 | Bare `$xx` | Not recognized; passed to the shell as-is (`$HOME`, `$PATH` are still expanded by the shell) |
 | Scope | File-level: applies to all string values including `$cmd` / `$cwd` / `$paths`; JSON keys are untouched |
 | Override | A `$var` entry with a built-in's name takes that built-in's place |
-| Self-reference | In `"byk": "${byk}/tools"` the right-hand side is the built-in value, yielding `~/.byk/tools` |
-| Escaping | `\${byk}` is passed to the shell untouched, printing the literal `${byk}` |
+| Self-reference | In `"byk_dir": "${byk_dir}/tools"` the right-hand side is the built-in value, yielding `~/.byk/tools` |
+| Escaping | `\${byk_dir}` is passed to the shell untouched, printing the literal `${byk_dir}` |
 | Platform mapping | A value can be a platform map (`linux-x86_64` / `linux-arm64` / `darwin-x86_64` / `darwin-arm64` / `windows-x64`); the current platform's value is used |
 | Cross-references | Values may reference each other regardless of declaration order, for at most 8 rounds |
 | Undefined | `${XXX}` is kept as-is; `args` is reserved for placeholders and its declaration is ignored |
 | Invalid names | Names that are not valid identifiers are ignored with a warning on stderr |
 
 :::tip Why the braces are mandatory
-A bare `$byk` has no terminator: there is no way to tell whether `$bykfoo` means the variable `bykfoo` or `byk` followed by `foo`. `${byk}foo` has no such ambiguity — which is also why it matches the shell syntax you already know.
+A bare `$byk_dir` has no terminator: there is no way to tell whether `$byk_dirfoo` means the variable `byk_dirfoo` or `byk_dir` followed by `foo`. `${byk_dir}foo` has no such ambiguity — which is also why it matches the shell syntax you already know.
 :::
 
 **Quoting is your job**: when a value contains whitespace, wrap it in quotes per shell rules; byk will not do it for you.
 
 ```json title="run.byk.json"
 {
-  "log": "tail -f \"${byk}/my logs/app.log\"",
-  "where": "echo ${workdir}"
+  "log": "tail -f \"${byk_dir}/my logs/app.log\"",
+  "where": "echo ${file_dir}"
 }
 ```
 
-`${workdir}` is the directory **byk was invoked from**, not the directory an alias `$cwd` points at.
+`${file_dir}` is the directory **holding the alias file** — neither the directory an alias `$cwd` points at, nor the one `byk` was invoked from. Reach for the shell's `$PWD` when you need the latter.
 
 ### Usage Examples
 

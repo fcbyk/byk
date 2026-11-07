@@ -4,7 +4,8 @@
 
 - **`$mode`**: the boolean `$interactive` is gone, replaced by an inheritable three-state `$mode` (`normal` / `interactive` / `silent`); old files are not read for it — an alias that relied on `$interactive: true` loses its confirmation prompt and needs `"$mode": "interactive"`
 - **vscode**: replace `useSystemBinary` / `binaryPath` with `priorityPaths` / `secondarySource` — the old pair was self-contradictory: `useSystemBinary: false` only skipped injecting `~/.byk/bin` and friends, while the system `PATH` still ranked ahead of the bundled binary, so the documented default never held
-- **variables**: variable syntax is now `${name}`; bare `$xx` is no longer interpreted and is passed to the shell untouched — rewrite `$byk` / `$workdir` as `${byk}` / `${workdir}` and `$VAR` as `${VAR}`
+- **variables**: variable syntax is now `${name}`; bare `$xx` is no longer interpreted and is passed to the shell untouched — rewrite `$byk` as `${byk_dir}` and `$VAR` as `${VAR}`
+- **variables**: `$workdir` is gone; the invocation directory is the shell's `$PWD`, which costs nothing to reach and cannot drift out of sync with the alias's own `$cwd`
 - **variables**: all substitution now happens during the scan phase; there is no second expansion before execution
 - **variables**: values containing whitespace are no longer auto-quoted — quote them yourself following shell rules
 
@@ -14,10 +15,12 @@
 - **vscode**: `byk.secondarySource` (`bundled` | `system`) decides which tier follows the priority paths; the other one stays as the final fallback instead of being dropped
 - **vscode**: add **BYK: Show Active byk** — prints the resolved search order, the directory that won, and that binary's `--version`, since a terminal's `PATH` is not the one tasks receive
 - **variables**: built-in and `$var` variables share one table; a declaration with a built-in name overrides it, so explicitly written values always win
-- **variables**: self-reference such as `"byk": "${byk}/tools"` resolves the right-hand side against the built-in value (`local byk = $byk/tools`)
+- **variables**: self-reference such as `"byk_dir": "${byk_dir}/tools"` resolves the right-hand side against the built-in value (`local byk_dir = $byk_dir/tools`)
 - **variables**: `\${...}` hands the expression to the shell instead of byk, useful for printing a literal
+- **`${byk_dir}`**: the built-in formerly known as `${byk}` — byk's resource root (`~/.byk`, not the binary directory); every built-in now ends in `_dir`, so the suffix alone says "this is a path"
+- **`${file_dir}`**: the directory holding the alias file being scanned, so a global alias in `~/.byk/alias` can reach scripts that sit beside it; injected per file rather than shared, and still overridable from `$var`
 - **variables**: variable names are limited to `[A-Za-z_][A-Za-z0-9_]*`; invalid names and the reserved `args` are reported on stderr
-- **`$mode`**: one inheritable three-state property (`normal` / `interactive` / `silent`) replaces the two independent booleans — `silent` drops byk's own hint lines from stdout so `byk build > log.txt` and `byk build | grep error` carry only the child's output, while `interactive` keeps every prompt; the meaningless combination is now unrepresentable, and an alias under a file-level `interactive` reaches `silent` with a single word instead of turning a second switch off
+- **`$mode`**: one inheritable three-state property (`normal` / `interactive` / `silent`) replaces the two independent booleans — `silent` drops byk's own hint lines so `byk build > log.txt` and `byk build | grep error` carry only the child's output, while `interactive` keeps every prompt; the meaningless combination is now unrepresentable, and an alias under a file-level `interactive` reaches `silent` with a single word instead of turning a second switch off
 - **`$mode`**: an unrecognised value prints a warning and falls back to `normal` instead of making the whole alias vanish from the namespace
 - **`__api__ resolve`**: reports the authoritative `mode` alongside the derived `interactive` boolean, so an extension that only knows the boolean still refuses to run an interactive alias unattended
 

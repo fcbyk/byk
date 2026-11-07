@@ -1,22 +1,39 @@
-"""E2E —— 变量替换：内置 ${byk}/${workdir} 与文件 $var"""
+"""E2E —— 变量替换：内置 ${byk_dir}/${file_dir} 与文件 $var"""
 
 
-def test_builtin_byk_expands(runner):
-    """${byk} 展开为 byk 根目录（隔离 HOME 下的 .byk）"""
-    runner.prepare_alias_file("vars", '{"hi": "echo ${byk}"}')
+def test_builtin_byk_dir_expands(runner):
+    """${byk_dir} 展开为 byk 资源根（隔离 HOME 下的 .byk）"""
+    runner.prepare_alias_file("vars", '{"hi": "echo ${byk_dir}"}')
     r = runner.run("hi")
     assert r.returncode == 0
     assert str(runner.byk_dir) in r.stdout
 
 
-def test_builtin_workdir_expands(runner):
-    """${workdir} 展开为调用 byk 时的目录"""
-    work = runner.home / "wd"
+def test_file_dir_points_at_global_alias_dir(runner):
+    """${file_dir} 指向别名文件所在目录：全局文件的目录与调用目录无关"""
+    work = runner.home / "somewhere"
     work.mkdir(parents=True, exist_ok=True)
-    runner.prepare_alias_file("vars", '{"w": "echo ${workdir}"}')
+    runner.prepare_alias_file("vars", '{"w": "echo ${file_dir}"}')
     r = runner.run("w", cwd=str(work))
     assert r.returncode == 0, r.stderr
-    assert str(work) in r.stdout
+    assert str(runner.byk_dir / "alias") in r.stdout
+    assert str(work) not in r.stdout
+
+
+def test_file_dir_independent_of_cwd(runner):
+    """$cwd 把命令挪到别处时，${file_dir} 仍是配置文件所在目录"""
+    proj = runner.home / "proj"
+    build = runner.home / "build"
+    for d in (proj, build):
+        d.mkdir(parents=True, exist_ok=True)
+    (proj / "p.byk.json").write_text(
+        '{"w": {"$cmd": "echo ${file_dir}", "$cwd": "%s"}}' % build,
+        encoding="utf-8",
+    )
+    r = runner.run("@p.w", cwd=str(proj))
+    assert r.returncode == 0, r.stderr
+    assert str(proj) in r.stdout
+    assert str(build) not in r.stdout
 
 
 def test_bare_dollar_left_to_shell(runner):
@@ -37,16 +54,16 @@ def test_shell_var_passthrough(runner):
 
 
 def test_escaped_brace_left_to_shell(runner):
-    """\\${byk} 由 shell 输出字面量"""
-    runner.prepare_alias_file("vars", r'{"h": "echo \\${byk}"}')
+    """\\${byk_dir} 由 shell 输出字面量"""
+    runner.prepare_alias_file("vars", r'{"h": "echo \\${byk_dir}"}')
     r = runner.run("h")
     assert r.returncode == 0, r.stderr
-    assert "${byk}" in r.stdout
+    assert "${byk_dir}" in r.stdout
 
 
 def test_prefix_concatenation(runner):
-    """${byk}aaa 是明确的前缀拼接"""
-    runner.prepare_alias_file("vars", '{"h": "echo ${byk}aaa"}')
+    """${byk_dir}aaa 是明确的前缀拼接"""
+    runner.prepare_alias_file("vars", '{"h": "echo ${byk_dir}aaa"}')
     r = runner.run("h")
     assert r.returncode == 0
     assert f"{runner.byk_dir}aaa" in r.stdout
@@ -64,10 +81,10 @@ def test_var_substitution_in_cmd(runner):
 
 
 def test_var_overrides_builtin(runner):
-    """用户声明优先：$var 里的 byk 覆盖内置值"""
+    """用户声明优先：$var 里的 byk_dir 覆盖内置值"""
     runner.prepare_alias_file(
         "vars",
-        '{"$var": {"byk": "/tmp/custom-byk"}, "h": "echo ${byk}"}',
+        '{"$var": {"byk_dir": "/tmp/custom-byk"}, "h": "echo ${byk_dir}"}',
     )
     r = runner.run("h")
     assert r.returncode == 0
@@ -75,10 +92,10 @@ def test_var_overrides_builtin(runner):
 
 
 def test_var_can_extend_builtin(runner):
-    """等号右边的 ${byk} 指内置原值：local byk = $byk/tools"""
+    """等号右边的 ${byk_dir} 指内置原值：local byk_dir = $byk_dir/tools"""
     runner.prepare_alias_file(
         "vars",
-        '{"$var": {"byk": "${byk}/tools"}, "h": "echo ${byk}"}',
+        '{"$var": {"byk_dir": "${byk_dir}/tools"}, "h": "echo ${byk_dir}"}',
     )
     r = runner.run("h")
     assert r.returncode == 0
@@ -155,3 +172,23 @@ def test_negative_priority_needs_scope(runner):
     r2 = runner.run("@p.hidden", cwd=str(work))
     assert r2.returncode == 0, r2.stderr
     assert "hidden" in r2.stdout
+
+
+def test_retired_builtin_warns(runner):
+    """退役的 ${byk} / ${workdir} 会静默变成空串，所以扫描期要告警"""
+    runner.prepare_alias_file("vars", '{"a": "echo ${workdir}/x", "b": "cd ${byk}/bin"}')
+    r = runner.run("a")
+    assert r.returncode == 0, r.stderr
+    assert "${byk}" in r.stderr
+    assert "${workdir}" in r.stderr
+    assert "${byk_dir}" in r.stderr
+    # 未定义但没有退役的变量不告警，仍原样交给 shell
+    assert "${nope}" not in r.stderr
+
+
+def test_byk_dir_does_not_trip_retired_warning(runner):
+    """${byk_dir} 不该被 ${byk} 的告警误伤"""
+    runner.prepare_alias_file("vars", '{"h": "echo ${byk_dir}"}')
+    r = runner.run("h")
+    assert r.returncode == 0, r.stderr
+    assert r.stderr == ""

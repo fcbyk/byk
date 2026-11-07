@@ -249,11 +249,11 @@ Aliases:
 
 ### 变量
 
-变量来自两处，合并成**一张表**，扫描期一次性替换完成：
+变量来自两处，合并成**一张表**，扫描期一次性替换完成。内置变量只有目录这一类，名字一律以 `_dir` 结尾、值都是绝对路径：
 
 | 来源 | 说明 |
 |------|------|
-| 内置 | `${byk}` → `~/.byk`；`${workdir}` → 调用 byk 时的目录 |
+| 内置 | `${byk_dir}` → `~/.byk`（资源根，不是二进制目录）；`${file_dir}` → 当前别名文件所在目录 |
 | `$var` 声明 | 文件级自定义变量 |
 
 同名时**文件声明覆盖内置**——显式写下的值，就是你预期的那个值。
@@ -270,7 +270,7 @@ Aliases:
     }
   },
   "fetch": "curl -fsSL ${BASE}/${VER} -o /tmp/tool",
-  "log": "tail -f ${byk}/logs/app.log"
+  "log": "tail -f ${byk_dir}/logs/app.log"
 }
 ```
 
@@ -280,27 +280,27 @@ Aliases:
 | 裸 `$xx` | 不识别，原样交给 shell（`$HOME`、`$PATH` 照常由 shell 展开） |
 | 作用域 | 文件级，替换 `$cmd` / `$cwd` / `$paths` 等所有字符串值；JSON key 不动 |
 | 覆盖 | `$var` 与内置同名时取 `$var` 的值 |
-| 自引用 | `"byk": "${byk}/tools"` 等号右边取内置原值，结果为 `~/.byk/tools` |
-| 转义 | `\${byk}` 原样交给 shell，最终打印字面量 `${byk}` |
+| 自引用 | `"byk_dir": "${byk_dir}/tools"` 等号右边取内置原值，结果为 `~/.byk/tools` |
+| 转义 | `\${byk_dir}` 原样交给 shell，最终打印字面量 `${byk_dir}` |
 | 平台映射 | 值可为平台映射（`linux-x86_64` / `linux-arm64` / `darwin-x86_64` / `darwin-arm64` / `windows-x64`），取当前平台的值 |
 | 交叉引用 | 变量值之间可互相引用，与书写顺序无关，最多展开 8 轮 |
 | 未定义 | `${XXX}` 原样保留；`args` 是参数占位符保留名，声明会被忽略 |
 | 非法名 | 不符合标识符规则的名字被忽略，并在 stderr 提示 |
 
 :::tip 为什么必须写花括号
-裸 `$byk` 没有结束符，`$bykfoo` 到底是变量 `bykfoo` 还是 `byk` 接上 `foo`，无法判断。`${byk}foo` 没有这个歧义——这也是它和 shell 写法一致的原因。
+裸 `$byk_dir` 没有结束符，`$byk_dirfoo` 到底是变量 `byk_dirfoo` 还是 `byk_dir` 接上 `foo`，无法判断。`${byk_dir}foo` 没有这个歧义——这也是它和 shell 写法一致的原因。
 :::
 
 **引号自己负责**：值里含空格时按 shell 规则自己包引号，byk 不会替你加。
 
 ```json title="run.byk.json"
 {
-  "log": "tail -f \"${byk}/my logs/app.log\"",
-  "where": "echo ${workdir}"
+  "log": "tail -f \"${byk_dir}/my logs/app.log\"",
+  "where": "echo ${file_dir}"
 }
 ```
 
-`${workdir}` 是**调用 byk 时所在的目录**，不是别名 `$cwd` 指定的目录。
+`${file_dir}` 是**别名文件所在目录**：既不是 `$cwd` 指定的落地目录，也不是调用 `byk` 时所在的目录。需要后者时直接用 shell 的 `$PWD`。
 
 ### 调用示例
 
