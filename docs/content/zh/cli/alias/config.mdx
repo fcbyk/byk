@@ -115,10 +115,14 @@ type AliasFileJSON = {
 |---|---|
 | `normal` | 打印提示行，然后直接执行 |
 | `interactive` | 打印提示行，逐项询问占位符，回车确认后才执行 |
-| `silent` | 一行提示都不打，stdout 只剩子进程自己的输出 |
+| `silent` | 连终端上也不打提示（管道场景本来就不打） |
 
-执行前 byk 会打印两行（都写 stdout）：来源（`文件.key` 与落地目录）和解析后的最终命令。
-`silent` 关掉这两行，`byk build > log.txt`、`byk build | grep error` 就不会被 byk 自己污染：
+执行前 byk 会往 **stderr** 打两行提示：来源（`文件.key` 与落地目录）和解析后的最终命令。
+走 stderr 而不是 stdout，是因为这两行是给人看的旁白，不该混进可以被管道消费的数据：
+
+- `byk build > log.txt`、`byk build | grep error` 拿到的只有命令自己的输出；
+- stderr 不是终端时（被 `2>` 重定向、CI、编辑器任务）这两行干脆不打；
+- 想连终端上也保持安静，才写 `$mode: "silent"`。
 
 ```bash
 byk build

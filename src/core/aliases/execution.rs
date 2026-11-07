@@ -2,6 +2,7 @@
 
 use rustyline::DefaultEditor;
 use std::collections::{HashMap, HashSet};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, exit};
 
@@ -315,10 +316,9 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
     );
     let placeholders = collect_placeholders(&command);
 
-    // 只有 silent 才闭口：交互必须让用户看见要确认什么
-    let quiet = mode == Mode::Silent;
-    if !quiet {
-        println!("\n> {} {}", display_source, working_dir.display());
+    let announce = should_announce(mode);
+    if announce {
+        eprintln!("\n> {} {}", display_source, working_dir.display());
     }
 
     if mode == Mode::Interactive {
@@ -330,9 +330,18 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
             &placeholders,
             &working_dir,
             &custom_paths,
-            quiet,
+            announce,
         );
     }
+}
+
+/// 提示行该不该打印：别名不是 `silent`，且 stderr 落在终端上。
+///
+/// 检查 stderr 而不是 stdout 是刻意的——提示行本来就写 stderr，判断「有没有人在看」
+/// 得看它自己的去处。若检查 stdout，`byk build | grep error` 时管道会让 stdout
+/// 不再是终端，提示被吞掉，可终端前的人其实正盯着这两行。
+fn should_announce(mode: Mode) -> bool {
+    mode != Mode::Silent && std::io::stderr().is_terminal()
 }
 
 /// 别名的解析结果（只解析、不执行），供 `byk __api__ resolve` 使用。
@@ -399,11 +408,11 @@ fn execute_direct_impl(
     _placeholders: &[String],
     working_dir: &Path,
     custom_paths: &[String],
-    quiet: bool,
+    announce: bool,
 ) -> ! {
     let (final_command, _) = parse_alias_arguments_with_mapping(command, args, &[]);
-    if !quiet {
-        println!("> {}\n", final_command);
+    if announce {
+        eprintln!("> {}\n", final_command);
     }
     run_command(&final_command, working_dir, custom_paths);
 }

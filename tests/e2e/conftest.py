@@ -1,6 +1,8 @@
 import json
 import os
+import pty
 import subprocess
+import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -22,6 +24,7 @@ class BykRunner:
         *args: str,
         input: str | None = None,
         cwd: str | None = None,
+        tty_stderr: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         """执行 byk 命令，HOME 指向隔离的临时目录
 
@@ -31,10 +34,16 @@ class BykRunner:
         cwd:    子进程工作目录（默认继承 pytest 的 cwd）。
                 测试全局文件“缺省根 = 工作目录”时须传隔离目录，
                 避免污染项目根。
+        tty_stderr: 把 stderr 接到伪终端，模拟「有人坐在终端前」。
+                byk 的提示行只在 stderr 是终端时打印，验证它必须给个 tty；
+                此时 stdout 仍是管道，正好用来确认提示没有污染数据流。
         """
         env = {**os.environ, "HOME": str(self.home)}
+        argv = [str(self.binary), *args]
+        if tty_stderr:
+            return self._run_with_tty(argv, input=input, cwd=cwd, env=env)
         return subprocess.run(
-            [str(self.binary), *args],
+            argv,
             capture_output=True,
             text=True,
             input=input,
@@ -43,6 +52,55 @@ class BykRunner:
             cwd=cwd,
             timeout=120,
         )
+
+    def _run_with_tty(
+        self,
+        argv: list[str],
+        *,
+        input: str | None,
+        cwd: str | None,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        """stderr 走伪终端，stdin / stdout 维持管道。
+
+        master 端必须一直读到 EOF，否则子进程写满 pts 缓冲会卡住；但也不能
+        「先读完 master 再收 stdout」——两侧都可能写满。所以 communicate 放线程里跑。
+        """
+        master, slave = pty.openpty()
+        proc = subprocess.Popen(
+            argv,
+            stdin=None if input is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=slave,
+            text=True,
+            env=env,
+            cwd=cwd,
+        )
+        os.close(slave)
+
+        collected: dict[str, tuple[str, str]] = {}
+
+        def drain_stdout() -> None:
+            collected["out"] = proc.communicate(input=input, timeout=120)
+
+        worker = threading.Thread(target=drain_stdout)
+        worker.start()
+
+        chunks: list[bytes] = []
+        while True:
+            try:
+                data = os.read(master, 4096)
+            except OSError:  # 对端关闭，Linux 上是 EIO
+                break
+            if not data:
+                break
+            chunks.append(data)
+        os.close(master)
+        worker.join()
+
+        stdout, _ = collected["out"]
+        stderr = b"".join(chunks).decode("utf-8", "replace").replace("\r\n", "\n")
+        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
 
     def prepare_alias_file(self, stem: str, content: str) -> Path:
         """在隔离环境中创建别名 JSON 文件"""

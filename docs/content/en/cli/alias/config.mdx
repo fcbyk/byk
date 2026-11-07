@@ -128,9 +128,13 @@ Three levels of inheritance: file → group → alias, with the level closer to 
 |---|---|
 | `normal` | Print the hint lines, then run directly |
 | `interactive` | Print the hint lines, ask for each placeholder, then wait for Enter |
-| `silent` | Print nothing, leaving stdout to the child process alone |
+| `silent` | Say nothing even on a terminal (a pipe already gets nothing) |
 
-Before running, byk prints two lines to stdout: the source (`file.key` plus the working directory) and the resolved command. `silent` drops both, so `byk build > log.txt` and `byk build | grep error` are no longer polluted by byk itself:
+Before running, byk prints two lines to **stderr**: the source (`file.key` plus the working directory) and the resolved command. They belong there because they are commentary for a human, not data to be piped:
+
+- `byk build > log.txt` and `byk build | grep error` receive only the command's own output;
+- when stderr is not a terminal (redirected with `2>`, CI, editor tasks) the two lines are skipped entirely;
+- `$mode: "silent"` is for staying quiet on a terminal as well.
 
 ```bash
 byk build

@@ -23,6 +23,8 @@
 
 ### Bug Fixes
 
+- **execution**: the hint lines move to stderr, so `byk build > log.txt` and `byk build | grep error` receive only the child process's output instead of the source line and the resolved command
+- **execution**: the hint lines are skipped when stderr is not a terminal — CI runs, `2>` redirects and editor tasks stay quiet without every alias needing `$mode: "silent"`, and the check is deliberately on stderr so piping stdout does not mute the terminal
 - **vscode**: the bundled binary was unreachable by default — it sat last in `PATH`, behind the system one, so any user with a `byk` on `PATH` always ran that copy instead of the pinned one
 - **vscode**: an empty `PATH` segment is no longer emitted (POSIX reads it as the current directory), and `PATH` is written under the key name the platform actually uses
 - **`$paths`**: relative entries now resolve against the config file's directory instead of the command's working directory, so an alias still finds its scripts when invoked from a subdirectory

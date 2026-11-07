@@ -90,14 +90,23 @@ def test_paths_relative_to_config_file(runner):
     assert "hi-from-bin2" in r.stdout
 
 
-def test_mode_default_is_normal(runner):
-    """不写 $mode：打印来源行与最终命令，然后直接执行"""
+def test_preamble_skipped_when_stderr_is_not_a_tty(runner):
+    """输出没落到终端时不打提示行：stdout 和 stderr 都是干净的"""
     runner.prepare_alias_json("env", {"hi": "echo hello"})
     r = runner.run("hi")
     assert r.returncode == 0, r.stderr
-    assert r.stdout.startswith("\n> ")
-    assert "> echo hello" in r.stdout
-    assert "hello" in r.stdout
+    assert r.stdout == "hello\n"
+    assert r.stderr == ""
+
+
+def test_preamble_goes_to_stderr_not_stdout(runner):
+    """有终端时提示行打在 stderr，stdout 只剩子进程的数据"""
+    runner.prepare_alias_json("env", {"hi": "echo hello"})
+    r = runner.run("hi", tty_stderr=True)
+    assert r.returncode == 0
+    assert r.stdout == "hello\n"
+    assert "> @@env.hi" in r.stderr
+    assert "> echo hello" in r.stderr
 
 
 def test_mode_silent_alias_level(runner):
@@ -138,9 +147,19 @@ def test_mode_normal_overrides_inherited_silent(runner):
         "env",
         {"$mode": "silent", "loud": {"$cmd": "echo hello", "$mode": "normal"}},
     )
-    r = runner.run("loud")
-    assert r.returncode == 0, r.stderr
-    assert "> echo hello" in r.stdout
+    r = runner.run("loud", tty_stderr=True)
+    assert r.returncode == 0
+    assert r.stdout == "hello\n"
+    assert "> echo hello" in r.stderr
+
+
+def test_mode_silent_suppresses_even_on_tty(runner):
+    """$mode=silent 是显式偏好：终端前也不说"""
+    runner.prepare_alias_json("env", {"hi": {"$cmd": "echo hello", "$mode": "silent"}})
+    r = runner.run("hi", tty_stderr=True)
+    assert r.returncode == 0
+    assert r.stdout == "hello\n"
+    assert r.stderr == ""
 
 
 def test_mode_silent_overrides_inherited_interactive(runner):
@@ -156,15 +175,15 @@ def test_mode_silent_overrides_inherited_interactive(runner):
 
 
 def test_interactive_shows_preview_then_cancels_without_tty(runner):
-    """无 TTY 时交互模式打印预览后取消，不执行命令"""
+    """无 TTY 时交互模式打印预览后取消，不执行命令（提示行按降级规则省略）"""
     runner.prepare_alias_json(
         "env", {"i": {"$cmd": "echo should-not-run", "$mode": "interactive"}}
     )
     r = runner.run("i")
     assert r.returncode == 0, r.stderr
-    assert r.stdout.startswith("\n> ")
     assert "${args}" in r.stdout
     assert "Cancelled" in r.stdout
+    assert r.stderr == ""
 
 
 def test_interactive_inherited_from_file_level(runner):
