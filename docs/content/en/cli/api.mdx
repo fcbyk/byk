@@ -1,0 +1,172 @@
+---
+title: Program Interface
+description: The hidden byk __api__ interface — read-only requests for shell scripts and editor plugins, plus the output contract of each
+---
+
+# The `__api__` Program Interface
+
+`byk __api__` is the machine-facing side of byk: **it never executes an alias and never writes to disk**, so you can call it as often as you like. It does not appear in `-h` — it was never meant for people.
+
+Three rules apply to every request:
+
+- **stdout carries data only** — warnings and errors go to stderr, so `$(byk __api__ …)` always yields a clean value
+- **failure exits 1** — unknown request, missing argument, unsupported shell, unknown path name
+- **no argument slots beyond the table** — one extra argument is an error, not something silently ignored
+
+## Requests
+
+| Request | Output |
+|---------|--------|
+| `__api__ completion <shell>` | Shell registration script (zsh / bash / fish) |
+| `__api__ complete <words...>` | Completion candidates, one per line |
+| `__api__ resolve <key> [args...]` | Resolved alias, JSON |
+| `__api__ paths` | The two CLI directories, JSON |
+| `__api__ paths <name>` | A single bare path (`root` / `alias`) |
+| `__api__` (no args) | Interface manifest, JSON |
+
+Keep the last one close: **don't memorise request names, ask for them**.
+
+```bash
+byk __api__
+```
+
+```json title="byk __api__"
+{
+  "requests": [
+    {
+      "name": "completion",
+      "args": "<shell>",
+      "description": "print the shell registration script (zsh|bash|fish)"
+    },
+    {
+      "name": "complete",
+      "args": "<words...>",
+      "description": "print completion candidates, one per line"
+    },
+    {
+      "name": "resolve",
+      "args": "<key> [args...]",
+      "description": "resolve an alias to its final command without executing"
+    },
+    {
+      "name": "paths",
+      "args": "[name]",
+      "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
+    }
+  ]
+}
+```
+
+## completion `<shell>`
+
+Prints the completion registration script for a shell, which in turn calls `complete` on Tab. An unsupported shell exits 1 and lists the three that work:
+
+```text
+Unsupported shell: pwsh
+  Supported: zsh, bash, fish
+```
+
+This request exists for the install script; day to day you only need one line (see [How completion hooks up](#how-completion-hooks-up)).
+
+## complete `<words...>`
+
+Hand it the words already typed on the command line and it returns candidates, one per line. With an `@` / `@@` prefix it returns file keys only; with a group prefix it returns that group's children.
+
+```bash
+$ byk __api__ complete grp.
+grp.inner
+```
+
+Each call is a read-only scan, and scan-time warnings about alias files (an invalid variable name, say) still go to stderr — stdout holds candidates only, which is why the completion script can wrap it in `$(...)`.
+
+## resolve `<key> [args...]`
+
+Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`@run.build`, `@@ops.deploy`).
+
+:::warning Not `file.key`
+`run.build` is a **dotted path**, looked up as a group name inside the merged space, and will usually miss. File keys take a prefix: `@run.build`.
+:::
+
+```bash
+byk __api__ resolve @run.build --env staging
+```
+
+| Field | Meaning |
+|-------|---------|
+| `key` | The key you passed, echoed back |
+| `source` | The file key that matched, e.g. `@run` / `@@ops` |
+| `sourcePath` | Absolute path of that alias file; `null` only in the rare sourceless case |
+| `command` | Non-interactive: the final command with placeholders resolved; interactive: **the unresolved template** |
+| `cwd` | Working directory the alias would run in (absolute) |
+| `paths` | Directories actually prepended to `PATH` — see below |
+| `mode` | `normal` / `interactive` / `silent` |
+| `interactive` | Derived boolean for `mode == "interactive"`, kept for callers that only know the boolean |
+| `description` | `$description`, or `null` |
+
+Two fields deserve their own explanation, because a plugin's correctness rests on them:
+
+- **`command` is a template when `mode` is `interactive`.** The placeholder values have to be asked of a human, and byk cannot answer for one without a terminal, so it returns `deploy --env {env}` untouched with `mode: "interactive"`. The caller either prompts itself or hands the request back to byk in a terminal; executing that string directly skips the confirmation.
+- **`paths` is the effective value, not the configured one.** Entries are absolutised (relative ones against the alias file's directory), directories that do not exist are dropped, and the working directory's `node_modules/.bin` is included. An entry written in the file but pointing nowhere will not appear.
+
+```json title="byk __api__ resolve int"
+{
+  "key": "int",
+  "source": "@i",
+  "sourcePath": "/Users/you/proj/i.byk.json",
+  "command": "deploy --env {env}",
+  "cwd": "/Users/you/proj",
+  "paths": ["/Users/you/proj/scripts", "/Users/you/proj/node_modules/.bin"],
+  "mode": "interactive",
+  "interactive": true,
+  "description": null
+}
+```
+
+## paths `[name]`
+
+Called without a name it returns both directories as JSON, for programs that want everything at once:
+
+```json title="byk __api__ paths"
+{
+  "root": "/Users/you/.byk",
+  "alias": "/Users/you/.byk/alias"
+}
+```
+
+`root` is the same directory as `${byk_dir}` inside aliases; `alias` is the global alias directory. Both only answer "where is it" and **never create anything**.
+
+### Reading paths
+
+Shell scripts use `paths <name>`: it prints that value as a bare string — no quotes, no label, a single trailing newline — exactly the shape `$()` wants.
+
+```bash
+INSTALL_DIR="$(byk __api__ paths root)/bin"
+ALIAS_DIR="$(byk __api__ paths alias)"
+```
+
+A wrong name lists the valid ones and exits 1:
+
+```text
+__api__ paths: unknown name "bin" (expected one of: root, alias)
+```
+
+`paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal, rendered from the same path layout.
+
+## How completion hooks up
+
+`install.sh` writes one line to `~/.zshrc` (or `~/.bashrc`):
+
+```bash
+# byk shell completion
+if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
+```
+
+This line forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same.
+
+## Versions and compatibility
+
+Requests get added over time — `resolve` and `paths` both arrived after the first release. When integrating:
+
+- read request names from `byk __api__`, never hardcode the list
+- tolerate unknown fields when parsing the JSON; fields only get added
+- check `byk -v` first — a request the installed version lacks fails with exit code 1

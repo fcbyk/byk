@@ -10,6 +10,11 @@
     "label": "Options & Commands"
   },
   {
+    "type": "file",
+    "name": "api",
+    "label": "Program Interface"
+  },
+  {
     "type": "dir",
     "name": "alias",
     "label": "Command Aliases",

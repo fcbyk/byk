@@ -1,0 +1,172 @@
+---
+title: 程序接口
+description: 隐藏的 byk __api__：给 shell 脚本与编辑器插件的只读请求，以及每个请求的输出契约
+---
+
+# 程序接口 `__api__`
+
+`byk __api__` 是 byk 面向程序的一面：**从不执行别名，从不写磁盘**，可以任意频率调用。它不出现在 `-h` 里——它本来就不是给人看的。
+
+三条约定，所有请求通用：
+
+- **stdout 只有数据**：告警、错误一律写 stderr，所以 `$(byk __api__ …)` 拿到的永远是干净的值
+- **失败退出码 1**：未知请求、缺参数、不支持的 shell、未知的路径名
+- **表外的参数位不存在**：多写一个参数是错误，不会被忽略
+
+## 请求一览
+
+| 请求 | 输出 |
+|------|------|
+| `__api__ completion <shell>` | 补全注册脚本（zsh / bash / fish） |
+| `__api__ complete <words...>` | 补全候选，一行一个 |
+| `__api__ resolve <key> [args...]` | 别名的解析结果，JSON |
+| `__api__ paths` | CLI 两条目录，JSON |
+| `__api__ paths <name>` | 单个目录的裸路径（`root` / `alias`） |
+| `__api__`（无参） | 接口清单，JSON |
+
+最后一条建议常备：**请求名别背，直接问**。
+
+```bash
+byk __api__
+```
+
+```json title="byk __api__"
+{
+  "requests": [
+    {
+      "name": "completion",
+      "args": "<shell>",
+      "description": "print the shell registration script (zsh|bash|fish)"
+    },
+    {
+      "name": "complete",
+      "args": "<words...>",
+      "description": "print completion candidates, one per line"
+    },
+    {
+      "name": "resolve",
+      "args": "<key> [args...]",
+      "description": "resolve an alias to its final command without executing"
+    },
+    {
+      "name": "paths",
+      "args": "[name]",
+      "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
+    }
+  ]
+}
+```
+
+## completion `<shell>`
+
+打印某个 shell 的补全注册脚本，由它在 Tab 时反过来调用 `complete`。写错 shell 时退出码 1，并列出支持的三个：
+
+```text
+Unsupported shell: pwsh
+  Supported: zsh, bash, fish
+```
+
+这个请求是给安装脚本用的，日常只需要这一行（见[补全是怎么接上的](#补全是怎么接上的)）。
+
+## complete `<words...>`
+
+把命令行上已经敲下的词原样传进去，返回候选，一行一个。带 `@` / `@@` 前缀时只返回文件 key，带分组前缀时只返回该组的子项。
+
+```bash
+$ byk __api__ complete grp.
+grp.inner
+```
+
+它做的是一次只读扫描，扫描期对别名文件的告警（例如非法变量名）仍然走 stderr——stdout 上只有候选，补全脚本因此可以直接 `$(...)`。
+
+## resolve `<key> [args...]`
+
+解析一个别名但不执行：返回最终命令、工作目录、PATH 前缀和执行方式。键支持两种写法——合并空间里的名字（`dep`），或精确语法（`@run.build`、`@@ops.deploy`）。
+
+:::warning 不是 `file.key`
+`run.build` 是**点号路径**，会在合并空间里当成分组名查找，通常找不到。文件 key 必须带前缀：`@run.build`。
+:::
+
+```bash
+byk __api__ resolve @run.build --env staging
+```
+
+| 字段 | 说明 |
+|------|------|
+| `key` | 传入的键，原样回显 |
+| `source` | 命中的文件 key，如 `@run` / `@@ops` |
+| `sourcePath` | 该别名文件的绝对路径；仅少数无来源的场合为 `null` |
+| `command` | 非交互别名：占位符已按参数解析的最终命令；交互别名：**未解析的模板** |
+| `cwd` | 执行时的工作目录（绝对路径） |
+| `paths` | 实际前置到 `PATH` 的目录，见下 |
+| `mode` | `normal` / `interactive` / `silent` |
+| `interactive` | `mode == "interactive"` 的派生布尔，保留给只认布尔值的旧版本调用方 |
+| `description` | `$description`，未设置为 `null` |
+
+两个字段的语义值得单独说清，插件的正确性基本都压在它们身上：
+
+- **`command` 在 `interactive` 时是模板**。交互别名的占位符值要问用户，而无终端时 byk 无法代答，所以原样返回 `deploy --env {env}` 并置 `mode: "interactive"`。调用方要么自己交互，要么把请求交回终端里的 byk；直接执行这个字符串等于跳过确认。
+- **`paths` 是生效值，不是配置值**。它已绝对化（相对条目以别名文件所在目录为基准）、只保留真实存在的目录，并且包含工作目录下的 `node_modules/.bin`。文件里写了但目录不存在的条目不会出现。
+
+```json title="byk __api__ resolve int"
+{
+  "key": "int",
+  "source": "@i",
+  "sourcePath": "/Users/you/proj/i.byk.json",
+  "command": "deploy --env {env}",
+  "cwd": "/Users/you/proj",
+  "paths": ["/Users/you/proj/scripts", "/Users/you/proj/node_modules/.bin"],
+  "mode": "interactive",
+  "interactive": true,
+  "description": null
+}
+```
+
+## paths `[name]`
+
+不带名字返回两条目录的 JSON，给需要一次拿全的程序：
+
+```json title="byk __api__ paths"
+{
+  "root": "/Users/you/.byk",
+  "alias": "/Users/you/.byk/alias"
+}
+```
+
+`root` 就是别名里可用的 `${byk_dir}`，`alias` 是全局别名目录。两者都只回答"在哪"，**不会顺手创建目录**。
+
+### 取路径
+
+shell 脚本用 `paths <name>`：它只打印那个值的裸字符串，不带引号、不带标签、结尾只有一个换行，正好是 `$()` 想要的形状。
+
+```bash
+INSTALL_DIR="$(byk __api__ paths root)/bin"
+ALIAS_DIR="$(byk __api__ paths alias)"
+```
+
+名字写错时列出可选值，退出码 1：
+
+```text
+__api__ paths: unknown name "bin" (expected one of: root, alias)
+```
+
+之所以不给 `paths <name>` 也套 JSON：它的调用方是 shell 脚本，套一层就得靠 `jq` 或 `sed` 剥引号，而 `"$(...)"` 天然拿到干净的值；需要结构化数据的程序走无参 `paths`。人读的版本仍然是 `byk --paths`——带标签和空行，终端里一眼看清，两者共用同一份路径布局。
+
+## 补全是怎么接上的
+
+`install.sh` 会往 `~/.zshrc`（或 `~/.bashrc`）写一行：
+
+```bash
+# byk shell completion
+if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
+```
+
+这行把 Tab 事件转给 `byk __api__ complete`，由 byk 实时扫描别名后返回候选。手工写同样的行也完全等价。
+
+## 版本与兼容
+
+请求可能随版本增加——`resolve` 和 `paths` 都是后来才有的。写集成时：
+
+- 请求名从 `byk __api__` 读，不要写死在代码里
+- 解析 JSON 时容忍未知字段，字段只会增加
+- 动手前用 `byk -v` 确认版本，旧版本上没有你要的请求会直接以退出码 1 失败

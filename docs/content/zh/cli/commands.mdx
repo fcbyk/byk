@@ -1,11 +1,11 @@
 ---
 title: 选项与命令
-description: byk 的全部命令行表面：三个选项、三种执行形式和一个隐藏的程序接口
+description: byk 的全部命令行表面：三个选项、两种执行形式、一个隐藏的程序接口与保留字
 ---
 
 # 选项与命令
 
-byk 的命令行只有三层：**选项**、**别名**、**程序接口**。除了这三个选项和隐藏接口，其余任何一个词都会被当作别名去查找——所以你不会撞上保留字，想到什么名字都能用。
+byk 的命令行只有三层：**选项**、**别名**、**程序接口**。除了 §保留字 里的几个词，其余任何一个词都会被当作别名去查找——所以想到什么名字都能用。
 
 ```
 Usage: byk [OPTIONS] [ALIAS] [ARGS]...
@@ -15,7 +15,7 @@ Usage: byk [OPTIONS] [ALIAS] [ARGS]...
 
 | 选项 | 说明 |
 |------|------|
-| `-h, --help` | 帮助：banner + Usage + Options + 全部别名 |
+| `-h, --help` | 帮助：banner + Usage + Options + 合并空间里的别名 |
 | `-v, --version` | 版本、构建信息与安装路径 |
 | `--paths` | 打印 CLI 用到的目录位置 |
 
@@ -23,7 +23,7 @@ Usage: byk [OPTIONS] [ALIAS] [ARGS]...
 
 ```bash title="-v"
 $ byk -v
-byk 0.5.1 (51ba30b32 2026-10-29) [darwin-arm64]
+byk 0.6.0 (a1b2c3d4e 2026-11-08) [darwin-arm64]
 installed at /opt/homebrew/bin/byk
 ```
 
@@ -36,10 +36,12 @@ Alias: /Users/coke/.byk/alias
 
 `CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录——把 `*.byk.json` 放进去，它就会进入 `byk <key>` 的查找空间。
 
+帮助页里的别名列表只包含**合并空间**中的别名：`$priority: -1` 的文件不出现在这里，因为它们本来就只能通过 `@file.key` 调用。设了 `$cwd` 的别名后面会附上生效目录，形如 `deploy  deploy.sh (/Users/me/proj)`。
+
 ## 执行别名
 
 | 形式 | 说明 |
-|------|------|
+|------|-------------|
 | `byk <key> [args...]` | 在合并后的别名空间里查找并执行 |
 | `byk @file.key [args...]` | 精确执行**当前目录**某个文件里的别名 |
 | `byk @@file.key [args...]` | 精确执行**全局目录** `~/.byk/alias/` 里某个文件的别名 |
@@ -52,101 +54,38 @@ byk @run.build           # ./run.byk.json 的 build
 byk @@work.deploy        # ~/.byk/alias/work.byk.json 的 deploy
 ```
 
-精确语法只做文件路由，不做 fallback：文件不存在报 `Alias file not found: <file>`，key 不存在报 `Alias key not found in file @<file>: <key>`，两者都以退出码 1 结束。
+精确语法只做文件路由，不做 fallback：文件不存在报 `Alias file not found: @run`（全局是 `@@run`），key 不存在报 `Alias key not found in file @run: build`，两者都以退出码 1 结束。
 
 ## 程序接口 `__api__`
 
-`byk __api__` 是给程序和编辑器插件用的只读接口：它**从不执行别名，从不写磁盘**，可以按任意频率调用。它不出现在 `-h` 里。
+`byk __api__` 是给程序和编辑器插件用的只读接口：**从不执行别名，从不写磁盘**，可以任意频率调用。它不出现在 `-h` 里。
 
-| 请求 | 输出 |
+```bash
+byk __api__              # 接口清单（请求名别背，直接问）
+byk __api__ paths root   # 免解析地拿一个目录
+```
+
+请求列表、每个字段的语义与调用示例都在 [程序接口](/cli/api) 里——集成时该读的是那一页。
+
+## 保留字
+
+`byk <word>` 里的任何一个词都会被当作别名查找，只有下面这几个例外，别名不能同名：
+
+| 保留 | 原因 |
 |------|------|
-| `__api__ completion <shell>` | 补全注册脚本（zsh / bash / fish） |
-| `__api__ complete <words...>` | 补全候选，一行一个 |
-| `__api__ resolve <key> [args...]` | 别名解析结果，JSON |
-| `__api__ paths` | CLI 两条目录，JSON |
-| `__api__ paths <name>` | 单个目录的裸路径（`root` / `alias`） |
-| `__api__`（无参） | 接口清单，JSON |
+| `-h` / `--help` | 选项 |
+| `-v` / `--version` | 选项 |
+| `--paths` | 选项 |
+| `__api__` | 隐藏接口 |
 
-```bash
-# 让 shell 认识 byk 的补全
-source <(byk __api__ completion zsh)
-
-# 查看接口清单
-byk __api__
-```
-
-```json title="byk __api__"
-{
-  "requests": [
-    {
-      "name": "completion",
-      "args": "<shell>",
-      "description": "print the shell registration script (zsh|bash|fish)"
-    },
-    {
-      "name": "complete",
-      "args": "<words...>",
-      "description": "print completion candidates, one per line"
-    },
-    {
-      "name": "resolve",
-      "args": "<key> [args...]",
-      "description": "resolve an alias to its final command without executing"
-    },
-    {
-      "name": "paths",
-      "args": "[name]",
-      "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
-    }
-  ]
-}
-```
-
-除上表之外没有别的参数位：未知请求、缺参数、不支持的 shell、未知的路径名都以退出码 1 结束。错误只写 stderr，stdout 永远只有数据。
-
-### 取路径
-
-shell 脚本用 `paths <name>`：它只打印那个值的裸字符串，不带引号、不带标签、结尾只有一个换行，正好是 `$()` 想要的形状。
-
-```bash
-INSTALL_DIR="$(byk __api__ paths root)/bin"
-ALIAS_DIR="$(byk __api__ paths alias)"
-```
-
-无参 `paths` 面向程序，返回 JSON，一次拿全：
-
-```json title="byk __api__ paths"
-{
-  "root": "/Users/you/.byk",
-  "alias": "/Users/you/.byk/alias"
-}
-```
-
-`root` 就是别名里可用的 `${byk_dir}`，`alias` 是全局别名目录。两者都只回答"在哪"，不会顺手创建目录。名字写错时会列出可选值：
-
-```text
-__api__ paths: unknown name "bin" (expected one of: root, alias)
-```
-
-之所以不给 `paths <name>` 也套 JSON：它的调用方是 shell 脚本，套一层就得靠 `jq` 或 `sed` 剥引号，而 `"$(...)"` 天然拿到干净的值；需要结构化数据的程序走无参 `paths`。人读的版本仍然是 `byk --paths`——带标签和空行，终端里一眼看清，两者共用同一份 `PathLayout`。
-
-### 补全是怎么接上的
-
-`install.sh` 会往 `~/.zshrc`（或 `~/.bashrc`）写一行：
-
-```bash
-# byk shell completion
-if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
-```
-
-这行把 Tab 事件转给 `byk __api__ complete`，由 byk 实时扫描别名后返回候选。手工写同样的行也完全等价。
+除此之外都是自由的——连 `version`、`paths` 这样的词也能当别名，只要不带前导 `-`。
 
 ## 匹配顺序
 
 输入 `byk <word> ...` 时按以下顺序判断，第一个命中即返回：
 
-1. `-h` / `-v` / `--paths` 等选项
-2. `__api__` 隐藏接口
+1. `__api__` 隐藏接口
+2. `-h` / `-v` / `--paths` 等选项
 3. `@file.key` / `@@file.key` 精确执行
 4. 合并空间里的别名
 

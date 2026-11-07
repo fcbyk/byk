@@ -70,7 +70,7 @@ An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / 
 
 ### Working Directory (cwd)
 
-Three levels of inheritance: file → group → alias, with the level closer to the alias winning.
+Three levels of inheritance: file → group → alias, with the level closer to the alias winning. `~` expands, and **a relative path is resolved against the alias file's directory** — not the directory you happened to run `byk` from. With no `$cwd` at all, the alias runs in the invocation directory.
 
 <Tabs>
 <Tab label="Alias level">
@@ -247,7 +247,7 @@ Aliases:
 
 `$paths` prepends directories to `PATH` before an alias runs, letting the alias call executables in those directories directly.
 
-**File level only** — all child aliases inherit it.
+**File level only** — all child aliases inherit it; writing it inside a group is ignored.
 
 ```json title="run.byk.json"
 {
@@ -257,8 +257,10 @@ Aliases:
 }
 ```
 
-- Relative paths are resolved against the directory containing the config file
-- Nonexistent directories are silently skipped
+- Relative paths are resolved against the directory containing the config file, and `~` expands
+- **Nonexistent directories are silently skipped** — they never reach the child process's `PATH`
+- Separately, byk always prepends the working directory's `node_modules/.bin`; there is no need to write it into `$paths` yourself
+- The order of `$paths` is the order in `PATH`, so earlier entries win
 
 ### Variables
 
@@ -448,13 +450,13 @@ All merged files share a single key space, and higher-priority files override lo
 | File location | Default priority |
 |---------------|------------------|
 | Current directory `[name].byk.json` | 1 |
-| Current directory `.byk.json` | 1 (sorted last) |
+| Current directory `.byk.json` | 1 (loads last among its peers) |
 | Global `[name].byk.json` | 0 |
-| Global `.byk.json` | 0 (sorted last) |
+| Global `.byk.json` | 0 (loads last among its peers) |
 
 Hence "near-first": project files automatically override same-named global aliases, so `byk <key>` works the moment you enter a directory — no declaration needed.
 
-Files at the same priority load in alphabetical order by filename, with later files overriding earlier ones — the behavior is deterministic.
+Files at the same priority load in alphabetical order by filename, and the anonymous `.byk.json` sorts **last** among its peers; later files override earlier ones. So if both `a.byk.json` and `.byk.json` in one directory define `build`, the `.byk.json` copy is the one that runs.
 
 :::note Running inside the global directory
 When the cwd happens to be `~/.byk/alias/`, the files there belong to both the "current directory" and the "global directory". They are scanned in both roles (`@f` and `@@f` both work), but they participate in the merge **only once, as the global role** — they are never merged twice.
@@ -498,6 +500,6 @@ Only write a number when you need to outrank other files in the same directory:
 Conventions:
 
 - Pure file routing, no fallback
-- File not found → `Alias file not found: release`
+- File not found → `Alias file not found: @release` (`@@release` on the global side)
 - File exists but key not found → `Alias key not found in file @release: build`
 - Both cases exit with code 1

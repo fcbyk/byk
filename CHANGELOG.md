@@ -44,6 +44,8 @@
 - **vscode**: `download-binary.mjs` resolves its release tag from `bykBinaryVersion` instead of falling back to `latest`, making a packaged build reproducible
 - **vscode**: `scripts/verify-version.mjs` fails the build when `version` and `bykBinaryVersion` disagree on `major.minor`, when the bundled CLI would move backwards, or when `bykBinaryVersion` points ahead of `Cargo.toml`; a bundle lagging behind `Cargo.toml` only prints a hint (`BYK_ALLOW_BINARY_DOWNGRADE=1` overrides a deliberate rollback)
 - **docs**: every generated `llms.txt` and `.md` page now carries the version read from `Cargo.toml` at build time, so a reader can tell when a page lags behind the binary it is describing; `llms.txt` also gains a "For agents" section naming the fetch order and the sources that outrank the page
+- **docs**: `__api__` moves out of the commands page into its own Program Interface page — request list, the `resolve` field contract (including "`command` is a template when interactive" and "`paths` is the effective PATH, not the configured one"), and the paths-vs-JSON rationale — while the commands page shrinks to options, execution forms, reserved words and match order
+- **docs**: correct four claims that had drifted from the implementation — the missing `@`/`@@` prefix in `Alias file not found`, the anonymous `.byk.json` actually winning same-priority collisions (it loads last), `$paths` silently gaining `node_modules/.bin` and being ignored inside groups, and `__api__` plus the three options being reserved words rather than "any word is an alias"
 
 ## v0.6.0 (2026-10-29)
 

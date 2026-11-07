@@ -10,6 +10,11 @@
     "label": "选项与命令"
   },
   {
+    "type": "file",
+    "name": "api",
+    "label": "程序接口"
+  },
+  {
     "type": "dir",
     "name": "alias",
     "label": "命令别名",

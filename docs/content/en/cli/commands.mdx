@@ -1,11 +1,11 @@
 ---
 title: Options & Commands
-description: The full command-line surface of byk — three options, three execution forms, and one hidden program interface
+description: The full command-line surface of byk — three options, two execution forms, one hidden program interface and a short list of reserved words
 ---
 
 # Options & Commands
 
-byk's command line has only three layers: **options**, **aliases**, and the **program interface**. Apart from these three options and the hidden interface, every other word is treated as an alias to look up — so you'll never hit a reserved word, and you can name aliases whatever you like.
+byk's command line has only three layers: **options**, **aliases**, and the **program interface**. Apart from the words in [Reserved Words](#reserved-words), every word is treated as an alias to look up — so you can name aliases whatever you like.
 
 ```
 Usage: byk [OPTIONS] [ALIAS] [ARGS]...
@@ -15,7 +15,7 @@ Usage: byk [OPTIONS] [ALIAS] [ARGS]...
 
 | Option | Description |
 |--------|-------------|
-| `-h, --help` | Help: banner + Usage + Options + all aliases |
+| `-h, --help` | Help: banner + Usage + Options + aliases in the merged space |
 | `-v, --version` | Version, build info, and install path |
 | `--paths` | Print the directories the CLI uses |
 
@@ -23,7 +23,7 @@ Running `byk` with no arguments produces exactly the same output as `byk -h`. Th
 
 ```bash title="-v"
 $ byk -v
-byk 0.5.1 (51ba30b32 2026-10-29) [darwin-arm64]
+byk 0.6.0 (a1b2c3d4e 2026-11-08) [darwin-arm64]
 installed at /opt/homebrew/bin/byk
 ```
 
@@ -35,6 +35,8 @@ Alias: /Users/coke/.byk/alias
 ```
 
 `CLI Home` is byk's home directory and `Alias` is where global alias files live — drop `*.byk.json` files there and they join the `byk <key>` lookup space.
+
+The alias list in the help page covers the **merged space** only: files marked `$priority: -1` never appear, since they are reachable through `@file.key` alone. An alias with a `$cwd` gets its effective directory appended, as in `deploy  deploy.sh (/Users/me/proj)`.
 
 ## Running Aliases
 
@@ -52,101 +54,38 @@ byk @run.build           # build from ./run.byk.json
 byk @@work.deploy        # deploy from ~/.byk/alias/work.byk.json
 ```
 
-The exact syntax is pure file routing with no fallback: a missing file reports `Alias file not found: <file>`, a missing key reports `Alias key not found in file @<file>: <key>`, and both exit with code 1.
+The exact syntax is pure file routing with no fallback: a missing file reports `Alias file not found: @run` (`@@run` for the global side), a missing key reports `Alias key not found in file @run: build`, and both exit with code 1.
 
 ## The `__api__` Program Interface
 
-`byk __api__` is a read-only interface for programs and editor plugins: it **never executes aliases and never writes to disk**, so you can call it as often as you like. It does not appear in `-h`.
-
-| Request | Output |
-|---------|--------|
-| `__api__ completion <shell>` | Shell registration script (zsh / bash / fish) |
-| `__api__ complete <words...>` | Completion candidates, one per line |
-| `__api__ resolve <key> [args...]` | Resolved alias, JSON |
-| `__api__ paths` | The two CLI directories, JSON |
-| `__api__ paths <name>` | A single bare path (`root` / `alias`) |
-| `__api__` (no args) | Interface manifest, JSON |
+`byk __api__` is a read-only interface for programs and editor plugins: **it never executes an alias and never writes to disk**, so you can call it as often as you like. It does not appear in `-h`.
 
 ```bash
-# let your shell know about byk completion
-source <(byk __api__ completion zsh)
-
-# view the interface manifest
-byk __api__
+byk __api__              # interface manifest (don't memorise request names)
+byk __api__ paths root   # one directory, unparsed
 ```
 
-```json title="byk __api__"
-{
-  "requests": [
-    {
-      "name": "completion",
-      "args": "<shell>",
-      "description": "print the shell registration script (zsh|bash|fish)"
-    },
-    {
-      "name": "complete",
-      "args": "<words...>",
-      "description": "print completion candidates, one per line"
-    },
-    {
-      "name": "resolve",
-      "args": "<key> [args...]",
-      "description": "resolve an alias to its final command without executing"
-    },
-    {
-      "name": "paths",
-      "args": "[name]",
-      "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
-    }
-  ]
-}
-```
+The request list, the meaning of every field and worked examples live in [Program Interface](/cli/api) — that is the page to read when integrating.
 
-There are no other argument slots beyond these requests: unknown requests, missing arguments, unsupported shells, and unknown path names all exit with code 1. Errors go to stderr only, so stdout carries nothing but data.
+## Reserved Words
 
-### Reading Paths
+Every word after `byk` is treated as an alias, with only these exceptions — none of them can be an alias name:
 
-Shell scripts use `paths <name>`: it prints that value as a bare string — no quotes, no label, a single trailing newline — exactly the shape `$()` wants.
+| Reserved | Why |
+|----------|-----|
+| `-h` / `--help` | Option |
+| `-v` / `--version` | Option |
+| `--paths` | Option |
+| `__api__` | Hidden interface |
 
-```bash
-INSTALL_DIR="$(byk __api__ paths root)/bin"
-ALIAS_DIR="$(byk __api__ paths alias)"
-```
-
-Called without a name, `paths` serves programs and returns JSON with everything at once:
-
-```json title="byk __api__ paths"
-{
-  "root": "/Users/you/.byk",
-  "alias": "/Users/you/.byk/alias"
-}
-```
-
-`root` is the same directory as `${byk_dir}` inside aliases; `alias` is the global alias directory. Both only answer "where is it" and never create anything. A wrong name lists the valid ones:
-
-```text
-__api__ paths: unknown name "bin" (expected one of: root, alias)
-```
-
-`paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal, rendered from the same `PathLayout`.
-
-### How Completion Hooks Up
-
-`install.sh` writes one line to `~/.zshrc` (or `~/.bashrc`):
-
-```bash
-# byk shell completion
-if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
-```
-
-This line forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same.
+Everything else is free — even words like `version` or `paths` work as aliases, as long as they do not start with `-`.
 
 ## Match Order
 
 When you run `byk <word> ...`, the following order applies — the first match wins:
 
-1. Options such as `-h` / `-v` / `--paths`
-2. The `__api__` hidden interface
+1. The `__api__` hidden interface
+2. Options such as `-h` / `-v` / `--paths`
 3. `@file.key` / `@@file.key` exact execution
 4. Aliases in the merged space
 

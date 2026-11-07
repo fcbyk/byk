@@ -310,7 +310,8 @@ fn collect_retired(value: &serde_json::Value, hits: &mut Vec<&'static str>) {
 
 /// 原地排序 AliasFile 列表：低优先级在前，高优先级在后。
 ///
-/// 同优先级时匿名文件（@ 或 @@）排在前，非匿名按 key 字母序。
+/// 同优先级时非匿名文件按 key 字母序，匿名文件（`@` 或 `@@`）排在最后——
+/// 因为后面的覆盖前面的，所以同目录里 `.byk.json` 的别名最后生效。
 pub(crate) fn sort_alias_files(files: &mut [AliasFile]) {
     files.sort_by(|a, b| {
         let a_is_anon = matches!(a.key.as_str(), "@" | "@@");
