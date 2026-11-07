@@ -62,6 +62,9 @@ byk @@work.deploy        # ~/.byk/alias/work.byk.json 的 deploy
 |------|------|
 | `__api__ completion <shell>` | 补全注册脚本（zsh / bash / fish） |
 | `__api__ complete <words...>` | 补全候选，一行一个 |
+| `__api__ resolve <key> [args...]` | 别名解析结果，JSON |
+| `__api__ paths` | CLI 两条目录，JSON |
+| `__api__ paths <name>` | 单个目录的裸路径（`root` / `alias`） |
 | `__api__`（无参） | 接口清单，JSON |
 
 ```bash
@@ -84,12 +87,48 @@ byk __api__
       "name": "complete",
       "args": "<words...>",
       "description": "print completion candidates, one per line"
+    },
+    {
+      "name": "resolve",
+      "args": "<key> [args...]",
+      "description": "resolve an alias to its final command without executing"
+    },
+    {
+      "name": "paths",
+      "args": "[name]",
+      "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
     }
   ]
 }
 ```
 
-除上表三个请求之外没有别的参数位：未知请求、缺参数、不支持的 shell 都以退出码 1 结束。
+除上表之外没有别的参数位：未知请求、缺参数、不支持的 shell、未知的路径名都以退出码 1 结束。错误只写 stderr，stdout 永远只有数据。
+
+### 取路径
+
+shell 脚本用 `paths <name>`：它只打印那个值的裸字符串，不带引号、不带标签、结尾只有一个换行，正好是 `$()` 想要的形状。
+
+```bash
+INSTALL_DIR="$(byk __api__ paths root)/bin"
+ALIAS_DIR="$(byk __api__ paths alias)"
+```
+
+无参 `paths` 面向程序，返回 JSON，一次拿全：
+
+```json title="byk __api__ paths"
+{
+  "root": "/Users/you/.byk",
+  "alias": "/Users/you/.byk/alias"
+}
+```
+
+`root` 就是别名里可用的 `${byk_dir}`，`alias` 是全局别名目录。两者都只回答"在哪"，不会顺手创建目录。名字写错时会列出可选值：
+
+```text
+__api__ paths: unknown name "bin" (expected one of: root, alias)
+```
+
+之所以不给 `paths <name>` 也套 JSON：它的调用方是 shell 脚本，套一层就得靠 `jq` 或 `sed` 剥引号，而 `"$(...)"` 天然拿到干净的值；需要结构化数据的程序走无参 `paths`。人读的版本仍然是 `byk --paths`——带标签和空行，终端里一眼看清，两者共用同一份 `PathLayout`。
 
 ### 补全是怎么接上的
 

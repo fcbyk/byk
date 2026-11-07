@@ -28,7 +28,16 @@ const REQUESTS: &[RequestInfo] = &[
         args: "<key> [args...]",
         description: "resolve an alias to its final command without executing",
     },
+    RequestInfo {
+        name: "paths",
+        args: "[name]",
+        description: "print CLI paths as JSON; with <name>, print only that path (root|alias)",
+    },
 ];
+
+/// `paths <name>` 可取的键，顺序即错误提示里的顺序。
+/// `PathsResponse` 的字段必须与它保持一致。
+const PATH_NAMES: &[&str] = &["root", "alias"];
 
 #[derive(Serialize)]
 struct RequestInfo {
@@ -58,6 +67,25 @@ struct ResolveResponse {
     /// 只认 `mode` 的旧插件读到 `null` 会把交互别名直接执行、跳过确认。
     interactive: bool,
     description: Option<String>,
+}
+
+/// `__api__ paths` 的返回体：byk 实际使用的两条目录。
+///
+/// 与 `--paths` 共用同一份 `PathLayout`，区别只在形状：
+/// `--paths` 给人看（带标签和空行），这份 JSON 只给程序解析。
+#[derive(Serialize)]
+struct PathsResponse {
+    root: PathBuf,
+    alias: PathBuf,
+}
+
+/// 键名到目录的唯一映射，JSON 与 `paths <name>` 两条出口共用。
+fn path_for<'a>(name: &str, layout: &'a PathLayout) -> Option<&'a PathBuf> {
+    match name {
+        "root" => Some(&layout.root_dir),
+        "alias" => Some(&layout.alias_dir),
+        _ => None,
+    }
 }
 
 pub fn dispatch(args: &[String], layout: &PathLayout) {
@@ -118,6 +146,36 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 serde_json::to_string_pretty(&response).unwrap_or_else(|_| "{}".to_string())
             );
         }
+        Some("paths") => match args.get(1) {
+            // 不带名字：整份 JSON，一次拿全
+            None => {
+                let payload = PathsResponse {
+                    root: layout.root_dir.clone(),
+                    alias: layout.alias_dir.clone(),
+                };
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
+                );
+            }
+            // 带名字：只打印那一个值的裸字符串，不引号、不转义，直接进 `$(...)`
+            Some(name) => {
+                if args.len() > 2 {
+                    usage_error("paths", "too many arguments (expected [name])");
+                }
+                match path_for(name, layout) {
+                    Some(path) => println!("{}", path.display()),
+                    None => usage_error(
+                        "paths",
+                        &format!(
+                            "unknown name {:?} (expected one of: {})",
+                            name,
+                            PATH_NAMES.join(", ")
+                        ),
+                    ),
+                }
+            }
+        },
         Some(other) => {
             eprintln!("__api__: unknown request {:?}", other);
             eprintln!("  Run `byk __api__` to list available requests.");

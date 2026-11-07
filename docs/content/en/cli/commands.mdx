@@ -62,6 +62,9 @@ The exact syntax is pure file routing with no fallback: a missing file reports `
 |---------|--------|
 | `__api__ completion <shell>` | Shell registration script (zsh / bash / fish) |
 | `__api__ complete <words...>` | Completion candidates, one per line |
+| `__api__ resolve <key> [args...]` | Resolved alias, JSON |
+| `__api__ paths` | The two CLI directories, JSON |
+| `__api__ paths <name>` | A single bare path (`root` / `alias`) |
 | `__api__` (no args) | Interface manifest, JSON |
 
 ```bash
@@ -84,12 +87,48 @@ byk __api__
       "name": "complete",
       "args": "<words...>",
       "description": "print completion candidates, one per line"
+    },
+    {
+      "name": "resolve",
+      "args": "<key> [args...]",
+      "description": "resolve an alias to its final command without executing"
+    },
+    {
+      "name": "paths",
+      "args": "[name]",
+      "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
     }
   ]
 }
 ```
 
-There are no other argument slots beyond these three requests: unknown requests, missing arguments, and unsupported shells all exit with code 1.
+There are no other argument slots beyond these requests: unknown requests, missing arguments, unsupported shells, and unknown path names all exit with code 1. Errors go to stderr only, so stdout carries nothing but data.
+
+### Reading Paths
+
+Shell scripts use `paths <name>`: it prints that value as a bare string — no quotes, no label, a single trailing newline — exactly the shape `$()` wants.
+
+```bash
+INSTALL_DIR="$(byk __api__ paths root)/bin"
+ALIAS_DIR="$(byk __api__ paths alias)"
+```
+
+Called without a name, `paths` serves programs and returns JSON with everything at once:
+
+```json title="byk __api__ paths"
+{
+  "root": "/Users/you/.byk",
+  "alias": "/Users/you/.byk/alias"
+}
+```
+
+`root` is the same directory as `${byk_dir}` inside aliases; `alias` is the global alias directory. Both only answer "where is it" and never create anything. A wrong name lists the valid ones:
+
+```text
+__api__ paths: unknown name "bin" (expected one of: root, alias)
+```
+
+`paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal, rendered from the same `PathLayout`.
 
 ### How Completion Hooks Up
 

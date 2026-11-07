@@ -59,7 +59,50 @@ def test_api_lists_requests(runner):
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     names = {item["name"] for item in payload["requests"]}
-    assert names == {"completion", "complete", "resolve"}
+    assert names == {"completion", "complete", "resolve", "paths"}
+
+
+def test_api_paths_json(runner):
+    """无参 paths 输出两条目录的 JSON"""
+    r = runner.run("__api__", "paths")
+    assert r.returncode == 0, r.stderr
+    payload = json.loads(r.stdout)
+    assert payload == {
+        "root": str(runner.byk_dir),
+        "alias": str(runner.byk_dir / "alias"),
+    }
+
+
+def test_api_paths_single_value_is_bare(runner):
+    """paths <name> 只输出裸字符串：无引号、无转义、结尾一个换行，可直接进 $()"""
+    r = runner.run("__api__", "paths", "root")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == f"{runner.byk_dir}\n"
+
+    r = runner.run("__api__", "paths", "alias")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == f"{runner.byk_dir / 'alias'}\n"
+
+
+def test_api_paths_does_not_create_dirs(runner):
+    """paths 只回答位置，不顺手创建目录"""
+    r = runner.run("__api__", "paths")
+    assert r.returncode == 0, r.stderr
+    assert not runner.byk_dir.exists()
+
+
+def test_api_paths_rejects_unknown_name(runner):
+    r = runner.run("__api__", "paths", "bin")
+    assert r.returncode == 1
+    assert 'unknown name "bin"' in r.stderr
+    assert "root, alias" in r.stderr
+    assert r.stdout == ""
+
+
+def test_api_paths_rejects_extra_args(runner):
+    r = runner.run("__api__", "paths", "root", "alias")
+    assert r.returncode == 1
+    assert "too many arguments" in r.stderr
 
 
 def test_api_complete_lists_aliases(runner):
