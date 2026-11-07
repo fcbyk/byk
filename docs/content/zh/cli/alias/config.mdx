@@ -19,15 +19,17 @@ type AliasObject = {
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
-// 一个 *.byk.json 文件
-type AliasFileJSON = {
-  $priority?: number;      // 优先级，默认当前目录 = 1、全局 = 0
-  $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
-  $mode?: 'normal' | 'interactive' | 'silent';  // 文件级 / 分组级执行方式，子别名自动继承
-  $paths?: string[];       // 文件级 PATH 目录列表，子别名自动继承
-  $var?: Record<string, string | Record<string, string>>;  // 文件级变量
-  [key: string]: string | AliasObject | number | boolean | undefined;
-};
+// 一个 *.byk.json 文件：别名对象，或单导入数组
+type AliasFileJSON =
+  | {
+      $priority?: number;      // 优先级，默认当前目录 = 1、全局 = 0
+      $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
+      $mode?: 'normal' | 'interactive' | 'silent';  // 文件级 / 分组级执行方式，子别名自动继承
+      $paths?: string[];       // 文件级 PATH 目录列表，子别名自动继承
+      $var?: Record<string, string | Record<string, string>>;  // 文件级变量
+      [key: string]: string | AliasObject | number | boolean | undefined;
+    }
+  | [string];  // 单导入：只含一个路径的数组
 ```
 
 文件里只认这五个 `$` 开头的键，其余 `$xxx` 一律原样透传给 shell（或由 [变量](#变量) 展开）。
@@ -390,6 +392,41 @@ byk 读取两个位置：**全局目录** `~/.byk/alias/` 与**当前工作目�
 ├── release.byk.json
 └── .byk.json
 ```
+
+### 单导入
+
+根是**只含一个路径的数组**时，这个文件不是别名文件，而是指向另一个别名文件的指针：
+
+```json title="~/.byk/alias/ops.byk.json"
+["~/proj/web/run.byk.json"]
+```
+
+含义是「放弃自己的身份」：`@`/`@@` 前缀、key、默认优先级留在索引文件上，别名内容与一切声明都来自目标文件，相对路径也以**目标文件所在目录**为基准。所以同一份 bundle，直接扫描和通过索引导入，行为完全一致。
+
+```json title="~/proj/web/run.byk.json"
+{
+  "$cwd": ".",
+  "build": "node build.js",
+  "deploy": "node deploy.js"
+}
+```
+
+```bash
+byk build           # 在 ~/proj/web 里执行 node build.js
+byk @@ops.build     # 精确调用走索引的 key
+```
+
+| 规则 | 说明 |
+|---|---|
+| 只能一项 | 数组写多项时只用第一项，并在 stderr 提示 |
+| 路径基准 | 相对**索引文件所在目录**解析，支持 `~` 和 `${...}` 变量 |
+| 只允许一层 | 目标文件本身不能也是数组，否则报错并跳过该文件 |
+| 身份 | key、`@`/`@@` 前缀、默认优先级来自索引；其余全部来自目标 |
+| `$priority` | 照常生效：目标写 `-1` 会让索引一起退出合并命名空间，只剩精确调用 |
+
+:::note
+目标缺失、JSON 损坏、数组为空时，只跳过该文件，其他别名照常可用。
+:::
 
 ### 优先级
 

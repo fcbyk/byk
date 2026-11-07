@@ -9,6 +9,7 @@ use std::process::{Command, exit};
 use super::parse::to_alias_definition;
 use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mapping, split_ternary};
 use super::types::{Mode, ResolvedAlias};
+use crate::utils::path::{canonical, expand_home};
 
 /// 把 `$paths` 里的相对条目按配置文件目录展开为绝对路径。
 ///
@@ -661,17 +662,6 @@ fn execute_interactive_impl(
     run_command(&final_command, working_dir, custom_paths);
 }
 
-/// 展开路径开头的 `~` 为用户主目录，其余原样返回。
-fn expand_home(raw: &str) -> PathBuf {
-    match raw.strip_prefix('~') {
-        Some(rest) => {
-            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-            PathBuf::from(format!("{}{}", home.to_string_lossy(), rest))
-        }
-        None => PathBuf::from(raw),
-    }
-}
-
 /// 解析工作目录，支持 `~` 展开和基于配置文件目录的相对路径解析。
 fn resolve_working_dir(cwd: Option<&str>, base_dir: Option<&Path>) -> PathBuf {
     let raw = match cwd {
@@ -685,25 +675,7 @@ fn resolve_working_dir(cwd: Option<&str>, base_dir: Option<&Path>) -> PathBuf {
     if path.is_relative()
         && let Some(base) = base_dir
     {
-        let joined = base.join(&path);
-        // 规范化路径（消除 .. 等），失败时回退到拼接结果
-        if let Ok(canonical) = joined.canonicalize() {
-            return strip_extended_path_prefix(canonical);
-        }
-        return joined;
-    }
-    path
-}
-
-/// 在 Windows 上剥离 `\\?\` 扩展路径前缀，保持标准 DOS 路径。
-/// 其他平台原样返回。
-fn strip_extended_path_prefix(path: PathBuf) -> PathBuf {
-    #[cfg(windows)]
-    {
-        let s = path.to_string_lossy();
-        if let Some(stripped) = s.strip_prefix(r"\\?\") {
-            return PathBuf::from(stripped);
-        }
+        return canonical(&base.join(&path));
     }
     path
 }

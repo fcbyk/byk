@@ -19,15 +19,17 @@ type AliasObject = {
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
-// A single *.byk.json file
-type AliasFileJSON = {
-  $priority?: number;      // priority; defaults to 1 in the current directory, 0 globally
-  $cwd?: string;           // file- or group-level working directory, inherited by child aliases
-  $mode?: 'normal' | 'interactive' | 'silent';  // file- or group-level mode, inherited by child aliases
-  $paths?: string[];       // file-level PATH directories, inherited by child aliases
-  $var?: Record<string, string | Record<string, string>>;  // file-level variables
-  [key: string]: string | AliasObject | number | boolean | undefined;
-};
+// A single *.byk.json file: an alias object, or a one-entry import array
+type AliasFileJSON =
+  | {
+      $priority?: number;      // priority; defaults to 1 in the current directory, 0 globally
+      $cwd?: string;           // file- or group-level working directory, inherited by child aliases
+      $mode?: 'normal' | 'interactive' | 'silent';  // file- or group-level mode, inherited by child aliases
+      $paths?: string[];       // file-level PATH directories, inherited by child aliases
+      $var?: Record<string, string | Record<string, string>>;  // file-level variables
+      [key: string]: string | AliasObject | number | boolean | undefined;
+    }
+  | [string];  // single import: an array holding exactly one path
 ```
 
 Only these five `$`-prefixed keys are recognized; any other `$xxx` is passed through to the shell verbatim (or expanded by [variables](#variables)).
@@ -401,6 +403,41 @@ Illegally named files (such as `aaa.bbb.byk.json`) are **silently skipped** — 
 ├── release.byk.json
 └── .byk.json
 ```
+
+### Single Import
+
+When the root is an **array holding one path**, the file is not an alias file but a pointer to another one:
+
+```json title="~/.byk/alias/ops.byk.json"
+["~/proj/web/run.byk.json"]
+```
+
+The index gives up its own identity: the `@` / `@@` prefix, its key and its default priority stay with the index file, while the aliases and every declaration come from the target — and relative paths resolve against the **target's** directory. The same bundle therefore behaves identically whether it is scanned directly or reached through an index.
+
+```json title="~/proj/web/run.byk.json"
+{
+  "$cwd": ".",
+  "build": "node build.js",
+  "deploy": "node deploy.js"
+}
+```
+
+```bash
+byk build           # runs node build.js inside ~/proj/web
+byk @@ops.build     # exact call goes through the index's key
+```
+
+| Rule | Behavior |
+|---|---|
+| One entry only | Extra entries are ignored with a note on stderr; the first is used |
+| Path base | Relative paths resolve against the **index file's** directory; `~` and `${...}` work |
+| One level | The target may not itself be an array; that is an error and the file is skipped |
+| Identity | Key, `@` / `@@` prefix and default priority come from the index; everything else from the target |
+| `$priority` | Still honoured: a target with `-1` pulls the index out of the merged namespace, leaving exact calls only |
+
+:::note
+A missing target, broken JSON or an empty array only skips that one file — other aliases keep working.
+:::
 
 ### Priority
 

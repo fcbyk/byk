@@ -3,54 +3,86 @@
   "$id": "https://cli.fcbyk.com/schemas/byk-alias.json",
   "title": "byk CLI Alias Configuration",
   "description": "Schema for *.byk.json alias configuration files",
-  "type": "object",
-  "properties": {
-    "$priority": {
-      "description": "优先级，默认当前目录=1、全局目录=0（数字大的覆盖小的，即就近优先）。写 -1 表示不参与合并，只能用 @filename.key 精确调用。",
-      "type": "integer"
+  "oneOf": [
+    {
+      "$ref": "#/$defs/AliasFileObject"
     },
-    "$cwd": {
-      "description": "文件级工作目录，所有子别名未单独指定 $cwd 时会自动继承。",
-      "type": "string"
-    },
-    "$mode": {
-      "description": "文件级执行方式，子别名自动继承。normal 打印提示行后直接执行；interactive 逐项提示占位符、确认后执行；silent 不打印 byk 自己的提示行，stdout 只剩子进程输出。",
-      "type": "string",
-      "enum": ["normal", "interactive", "silent"],
-      "default": "normal"
-    },
-    "$paths": {
-      "description": "文件级 PATH 目录列表，前置到 PATH 环境变量，子别名自动继承。支持 ~ 和相对路径。示例：[\"./scripts\", \"~/tools/bin\"]",
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "$var": {
-      "description": "文件级变量：与内置变量合并为一张表，扫描期一次性替换文件内所有字符串值（JSON key 不动）。同名时此处覆盖内置值。内置变量 ${byk_dir}（~/.byk）与 ${file_dir}（当前别名文件所在目录）也在这张表里，同名声明覆盖它们。语法 ${name}，name 须符合 [A-Za-z_][A-Za-z0-9_]*。值可为字符串或平台映射（当前平台取值）。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"${BASE}/mac\"}}",
+    {
+      "$ref": "#/$defs/ImportIndex"
+    }
+  ],
+  "$defs": {
+    "AliasFileObject": {
+      "title": "别名文件（对象模式）",
       "type": "object",
+      "properties": {
+        "$priority": {
+          "description": "优先级，默认当前目录=1、全局目录=0（数字大的覆盖小的，即就近优先）。写 -1 表示不参与合并，只能用 @filename.key 精确调用。",
+          "type": "integer"
+        },
+        "$cwd": {
+          "description": "文件级工作目录，所有子别名未单独指定 $cwd 时会自动继承。",
+          "type": "string"
+        },
+        "$mode": {
+          "description": "文件级执行方式，子别名自动继承。normal 打印提示行后直接执行；interactive 逐项提示占位符、确认后执行；silent 不打印 byk 自己的提示行，stdout 只剩子进程输出。",
+          "type": "string",
+          "enum": [
+            "normal",
+            "interactive",
+            "silent"
+          ],
+          "default": "normal"
+        },
+        "$paths": {
+          "description": "文件级 PATH 目录列表，前置到 PATH 环境变量，子别名自动继承。支持 ~ 和相对路径。示例：[\"./scripts\", \"~/tools/bin\"]",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "$var": {
+          "description": "文件级变量：与内置变量合并为一张表，扫描期一次性替换文件内所有字符串值（JSON key 不动）。同名时此处覆盖内置值。内置变量 ${byk_dir}（~/.byk）与 ${file_dir}（当前别名文件所在目录）也在这张表里，同名声明覆盖它们。语法 ${name}，name 须符合 [A-Za-z_][A-Za-z0-9_]*。值可为字符串或平台映射（当前平台取值）。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"${BASE}/mac\"}}",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "普通字符串值"
+              },
+              {
+                "$ref": "#/$defs/PlatformMap"
+              }
+            ]
+          }
+        }
+      },
       "additionalProperties": {
         "oneOf": [
-          { "type": "string", "description": "普通字符串值" },
-          { "$ref": "#/$defs/PlatformMap" }
+          {
+            "type": "string",
+            "description": "简写形式：key 直接映射命令字符串。示例：\"dev\": \"vite\""
+          },
+          {
+            "$ref": "#/$defs/AliasObject"
+          },
+          {
+            "type": "boolean",
+            "description": "布尔值属性。"
+          }
         ]
       }
-    }
-  },
-  "additionalProperties": {
-    "oneOf": [
-      {
+    },
+    "ImportIndex": {
+      "title": "单导入（数组模式）",
+      "description": "根是只含一个路径的数组：本文件放弃自己的别名，内容与一切声明都来自目标文件，相对路径以目标文件所在目录为基准。key 与默认优先级仍留在本文件上。只支持一层，目标文件不能再是数组。",
+      "type": "array",
+      "items": {
         "type": "string",
-        "description": "简写形式：key 直接映射命令字符串。示例：\"dev\": \"vite\""
+        "description": "目标别名文件路径，支持 ~ 与 ${...} 变量，相对路径按本文件所在目录解析"
       },
-      { "$ref": "#/$defs/AliasObject" },
-      {
-        "type": "boolean",
-        "description": "布尔值属性。"
-      }
-    ]
-  },
-  "$defs": {
+      "minItems": 1
+    },
     "AliasObject": {
       "title": "别名对象（对象模式）",
       "description": "使用 $cmd / $cwd / $mode / $description 系统字段配置别名，可嵌套子别名。",
@@ -67,7 +99,11 @@
         "$mode": {
           "description": "执行方式（可选），覆盖继承的 $mode。normal 直接执行，interactive 交互确认，silent 不打印提示行。",
           "type": "string",
-          "enum": ["normal", "interactive", "silent"]
+          "enum": [
+            "normal",
+            "interactive",
+            "silent"
+          ]
         },
         "$description": {
           "description": "描述文本，在帮助页中替代命令映射显示。仅对当前别名生效，不可继承。",
@@ -76,9 +112,15 @@
       },
       "additionalProperties": {
         "oneOf": [
-          { "type": "string" },
-          { "$ref": "#/$defs/AliasObject" },
-          { "type": "boolean" }
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/AliasObject"
+          },
+          {
+            "type": "boolean"
+          }
         ]
       }
     },

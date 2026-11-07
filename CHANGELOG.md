@@ -24,6 +24,9 @@
 - **`$mode`**: an unrecognised value prints a warning and falls back to `normal` instead of making the whole alias vanish from the namespace
 - **`__api__ resolve`**: reports the authoritative `mode` alongside the derived `interactive` boolean, so an extension that only knows the boolean still refuses to run an interactive alias unattended
 
+- **import**: a `*.byk.json` whose root is a one-entry array points at another alias file, so a bundle can live next to the scripts it runs instead of in `~/.byk/alias` — aliases, `$cwd`, `$paths`, `$var` and `$mode` all come from the target and relative paths resolve against the target's directory, while the `@file` key and default priority stay with the index; the same bundle therefore behaves identically whether it is scanned directly or reached through an index
+- **import**: one level only — a target that is itself an array is an error, and a missing or broken target skips just that file rather than the whole run
+
 ### Bug Fixes
 
 - **execution**: the hint lines move to stderr, so `byk build > log.txt` and `byk build | grep error` receive only the child process's output instead of the source line and the resolved command

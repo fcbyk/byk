@@ -1,13 +1,14 @@
 //! 文件扫描：扫描目录下的 *.byk.json 文件并解析为 AliasFile。
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use colored::Colorize;
 
 use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
 use super::types::{AliasFile, Mode};
 use crate::core::vars::{FILE_DIR_VAR, VarIssue, VarTable, preprocess_vars};
+use crate::utils::path::{canonical, dir_of, expand_home};
 
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> Vec<AliasFile> {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
@@ -37,7 +38,145 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
     files
 }
 
+/// 读取一个别名文件：注入它自己的 `file_dir`，完成变量替换与告警。
+///
+/// 返回 `(文档, 文件路径)`。索引文件和被导入的目标文件都走这里，所以两者
+/// 的 `${file_dir}` 都指向各自所在目录。
+fn load_document(path: &Path, vars: &VarTable) -> Option<(serde_json::Value, PathBuf)> {
+    let content = fs::read_to_string(path).ok()?;
+    let mut data: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    // 内置表是全局共用的，file_dir 逐文件不同：克隆一份局部表再注入
+    let mut file_vars = vars.clone();
+    file_vars.insert(FILE_DIR_VAR.to_string(), dir_of(path));
+
+    // 变量替换：内置变量与文件 $var 合成一张表，扫描期一次替换完成
+    for issue in preprocess_vars(&mut data, &file_vars) {
+        report_var_issue(&issue, path);
+    }
+
+    warn_invalid_modes(&data, path);
+    warn_retired_vars(&data, path);
+
+    Some((data, path.to_path_buf()))
+}
+
+fn report_var_issue(issue: &VarIssue, path: &Path) {
+    let detail = match issue {
+        VarIssue::InvalidName(n) => format!(
+            "variable '${{{}}}' has an invalid name (expected [A-Za-z_][A-Za-z0-9_]*), ignored",
+            n
+        ),
+        VarIssue::Reserved(n) => format!(
+            "variable '${{{}}}' collides with an alias placeholder, declaration ignored",
+            n
+        ),
+        VarIssue::SelfReference(n) => format!(
+            "variable '${{{}}}' references itself and cannot be resolved, left as-is",
+            n
+        ),
+    };
+    eprintln!("{} {} in {}", "Warning:".yellow(), detail, path.display());
+}
+
+/// 根是数组时跟随单导入指针，返回 `(目标文档, 目标路径)`。
+///
+/// 语义是「放弃自己的身份」：`@file` 前缀、key、默认优先级都留在索引文件上，
+/// 内容与相对路径基准则完全来自目标。所以返回的路径会替换掉 `AliasFile.path`，
+/// 让 `$cwd` / `$paths` / `$var` 的相对基准都落到目标目录。
+///
+/// 链深只允许一层：目标是数组（又一个导入文件）直接报错——索引本可以一步指到位，
+/// 多一层只是隐藏真实文件的位置。
+fn follow_single_import(
+    data: serde_json::Value,
+    index_path: &Path,
+    vars: &VarTable,
+) -> Option<(serde_json::Value, PathBuf)> {
+    let serde_json::Value::Array(items) = &data else {
+        return Some((data, index_path.to_path_buf()));
+    };
+
+    let Some(first) = items.first() else {
+        eprintln!(
+            "{} import file lists no path, {} is skipped",
+            "Warning:".yellow(),
+            index_path.display()
+        );
+        return None;
+    };
+
+    if items.len() > 1 {
+        eprintln!(
+            "{} only the first of {} import paths is used in {}",
+            "Warning:".yellow(),
+            items.len(),
+            index_path.display()
+        );
+    }
+
+    let Some(spec) = first.as_str() else {
+        eprintln!(
+            "{} import path must be a string in {}",
+            "Warning:".yellow(),
+            index_path.display()
+        );
+        return None;
+    };
+
+    let target = resolve_import_path(spec, index_path);
+    let (target_data, target_path) = match load_document(&target, vars) {
+        Some(loaded) => loaded,
+        None => {
+            eprintln!(
+                "{} cannot load import target {} (from {})",
+                "Error:".red(),
+                target.display(),
+                index_path.display()
+            );
+            return None;
+        }
+    };
+
+    if target_data.is_array() {
+        eprintln!(
+            "{} import chains are limited to one level, {} points at another import file",
+            "Error:".red(),
+            index_path.display()
+        );
+        return None;
+    }
+
+    if !target_data.is_object() {
+        eprintln!(
+            "{} import target must be a JSON object: {}",
+            "Error:".red(),
+            target.display()
+        );
+        return None;
+    }
+
+    Some((target_data, target_path))
+}
+
+/// 导入路径：`~` 展开，相对路径按**索引文件所在目录**解析（与调用目录无关）。
+fn resolve_import_path(spec: &str, index_path: &Path) -> PathBuf {
+    let expanded = expand_home(spec);
+    let joined = if expanded.is_relative() {
+        index_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(expanded)
+    } else {
+        expanded
+    };
+    // 规范化，让 ${file_dir} 和 $cwd 看到的是干净路径而不是一串 ../
+    canonical(&joined)
+}
+
 /// 解析单个文件；文件名非法、读取失败或 JSON 损坏时静默返回 None。
+///
+/// 根是对象时按别名文件处理；根是数组时视为**单导入指针**，转去解析它指向的
+/// 文件（见 `follow_single_import`）。
 fn parse_alias_file(
     path: &Path,
     is_global: bool,
@@ -53,40 +192,11 @@ fn parse_alias_file(
         return None;
     }
 
-    let content = fs::read_to_string(path).ok()?;
-    let mut data: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-    // 内置表是全局共用的，file_dir 逐文件不同：克隆一份局部表再注入
-    let mut file_vars = vars.clone();
-    file_vars.insert(
-        FILE_DIR_VAR.to_string(),
-        path.parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_string_lossy()
-            .into_owned(),
-    );
-
-    // 变量替换：内置变量与文件 $var 合成一张表，扫描期一次替换完成
-    for issue in preprocess_vars(&mut data, &file_vars) {
-        let detail = match &issue {
-            VarIssue::InvalidName(n) => format!(
-                "variable '${{{}}}' has an invalid name (expected [A-Za-z_][A-Za-z0-9_]*), ignored",
-                n
-            ),
-            VarIssue::Reserved(n) => format!(
-                "variable '${{{}}}' collides with an alias placeholder, declaration ignored",
-                n
-            ),
-            VarIssue::SelfReference(n) => format!(
-                "variable '${{{}}}' references itself and cannot be resolved, left as-is",
-                n
-            ),
-        };
-        eprintln!("{} {} in {}", "Warning:".yellow(), detail, path.display());
-    }
-
-    warn_invalid_modes(&data, path);
-    warn_retired_vars(&data, path);
+    // 读索引文件本身，再顺着指针（如果有）拿到真正的别名文档
+    let (mut data, source_path) = {
+        let (index_data, index_path) = load_document(path, vars)?;
+        follow_single_import(index_data, &index_path, vars)?
+    };
 
     let obj = data.as_object_mut()?;
 
@@ -120,7 +230,7 @@ fn parse_alias_file(
         key: build_file_key(stem, is_global),
         priority,
         aliases: filtered,
-        path: path.to_path_buf(),
+        path: source_path,
         inherited_cwd,
         inherited_mode,
         inherited_paths,
