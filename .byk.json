@@ -20,7 +20,8 @@
     "清空缓存": "hash -r",
     "test": "cargo test",
     "lint": "cargo clippy",
-    "cov": "cargo llvm-cov"
+    "cov": "cargo llvm-cov",
+    "e2e": "pytest"
   },
 
   "git": {

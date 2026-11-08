@@ -58,7 +58,7 @@ export function BykHome() {
       <header className="b-shell b-hero b-reveal">
         <div className="b-hero__eyebrow">
           <span className="b-dot" />
-          <span>v0.6.0</span>
+          <span>v0.7.0</span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span>MIT</span>
           <span style={{ opacity: 0.4 }}>·</span>

@@ -22,7 +22,7 @@ const VERSION = (() => {
 })();
 const VERSION_TAG = `byk v${VERSION}`;
 
-const ZH_DESCRIPTION = '一个只会执行别名的 CLI：命令写进 *.byk.json，短名字调用';
+const ZH_DESCRIPTION = '一个专注于执行别名的 CLI：命令写进 *.byk.json，短名字调用';
 const EN_DESCRIPTION =
   'A CLI that only runs aliases: write commands into *.byk.json, call them by short names';
 

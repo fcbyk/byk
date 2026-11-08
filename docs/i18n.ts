@@ -9,7 +9,7 @@
  */
 export const i18nSource = {
   homeLede: {
-    zh: '一个只会执行别名的 CLI',
+    zh: '一个专注于执行别名的 CLI',
     en: 'A CLI that only runs aliases',
   },
   homeSub: {
