@@ -16,6 +16,7 @@ type AliasObject = {
   $cwd?: string;
   $mode?: 'normal' | 'interactive' | 'silent';
   $description?: string;
+  $recursive?: boolean;
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
@@ -50,6 +51,7 @@ type AliasFileJSON =
 | `$cwd` | string | 工作目录（可继承） |
 | `$mode` | `'normal'` \| `'interactive'` \| `'silent'` | 执行方式（可继承），默认 `normal` |
 | `$description` | string | 帮助页描述文本（不可继承） |
+| `$recursive` | boolean | 放行调用链上的重复进入（不可继承），默认 `false`，见[递归保护](#递归保护) |
 
 :::note
 含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$mode` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
@@ -204,6 +206,45 @@ byk deploy
 :::note
 交互和静默是互斥的两种形态：交互必须让用户看清要确认什么，所以 `silent` 只是让 byk 闭嘴，
 不会跳过任何确认步骤——需要确认就写 `interactive`。
+:::
+
+### 递归保护
+
+`$cmd` 是任意 shell 字符串，它完全可以再调用 byk —— 包括解析回自己。把 `add` 的 `$cmd` 写成
+`byk add`，每一层都会再展开同一个别名；每层都是独立进程，没有栈溢出这种天然上限，
+只有进程数一路往上涨，直到机器吃不下为止。
+
+byk 为此给调用链留了标记：执行别名前把 `文件.key` 压进环境变量 `BYK_ALIAS_STACK`
+（逗号分隔）交给子进程。下一层发现自己已经在链路上，就报错退出：
+
+```text
+Error: alias recursion detected: @dev.build -> @dev.release -> @dev.build
+```
+
+报的是**完整链路**而不只是首尾两个名字，因为「谁绕回来的」才是要定位的东西。
+链路超过 32 层同样拦住：这一层兜底是给标记被清空的场景准备的（`env -i byk build`、
+外部包装器），标记传不下去，只能靠深度止损。
+
+刻意自调用（`FOO=1 byk build`、`sudo byk serve`）需要显式放行，两种写法等价：
+
+```json
+{
+  "build": {
+    "$cmd": "FOO=1 byk build",
+    "$recursive": true
+  }
+}
+```
+
+```bash
+BYK_ALLOW_RECURSION=1 byk build   # 临时全局放行
+```
+
+放行只取消「同一别名重入」这一项检查，深度上限照样生效。
+
+:::note
+`$recursive` 只对当前别名生效、不继承。`$mode: "silent"` 也压不住这条错误——
+它本来就是用来说明「命令为什么卡住」的。
 :::
 
 ### 描述文本

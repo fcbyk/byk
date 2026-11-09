@@ -95,25 +95,17 @@ pub(crate) fn apply_inherited(
     match av {
         AliasValue::Meta {
             cmd,
-            cwd: None,
+            cwd,
             mode,
             description,
+            recursive,
         } => AliasValue::Meta {
             cmd,
-            cwd: inherited_cwd.map(String::from),
+            // 别名自己的 $cwd 优先，缺省才落回继承值
+            cwd: cwd.or_else(|| inherited_cwd.map(String::from)),
             mode: mode.or(inherited_mode),
-            description, // $description 不继承，直接透传
-        },
-        AliasValue::Meta {
-            cmd,
-            cwd: Some(c),
-            mode,
-            description,
-        } => AliasValue::Meta {
-            cmd,
-            cwd: Some(c), // 别名自己的 $cwd 优先
-            mode: mode.or(inherited_mode),
-            description, // $description 不继承，直接透传
+            description, // $description / $recursive 不继承，直接透传
+            recursive,
         },
         AliasValue::Str(cmd) => {
             // `Mode::Normal` 继承值就是默认态，没必要为此把纯字符串别名升级成 Meta
@@ -123,6 +115,7 @@ pub(crate) fn apply_inherited(
                     cwd: inherited_cwd.map(String::from),
                     mode: inherited_mode,
                     description: None,
+                    recursive: None,
                 }
             } else {
                 AliasValue::Str(cmd)
@@ -321,6 +314,7 @@ mod tests {
             cwd: Some("/own".into()),
             mode: None,
             description: None,
+            recursive: None,
         };
         let result = apply_inherited(av, Some("/inherit"), None);
         match result {
@@ -338,6 +332,7 @@ mod tests {
             cwd: None,
             mode: None,
             description: None,
+            recursive: None,
         };
         let result = apply_inherited(av, Some("/inherit"), None);
         match result {
@@ -355,6 +350,7 @@ mod tests {
             cwd: None,
             mode: None,
             description: None,
+            recursive: None,
         };
         let result = apply_inherited(av, None, Some(Mode::Interactive));
         match result {
@@ -371,6 +367,7 @@ mod tests {
             cwd: None,
             mode: Some(Mode::Silent),
             description: None,
+            recursive: None,
         };
         let result = apply_inherited(av, None, Some(Mode::Interactive));
         match result {
@@ -387,6 +384,7 @@ mod tests {
             cwd: None,
             mode: Some(Mode::Normal),
             description: None,
+            recursive: None,
         };
         let result = apply_inherited(av, None, Some(Mode::Silent));
         match result {

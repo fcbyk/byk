@@ -57,7 +57,7 @@ impl<'de> Deserialize<'de> for Mode {
 #[serde(untagged)]
 pub enum AliasValue {
     Str(String),
-    /// 对象格式：{ "$cmd": "...", "$cwd": "...", "$mode": "silent", "$description": "..." }
+    /// 对象格式：{ "$cmd": "...", "$cwd": "...", "$mode": "silent", "$description": "...", "$recursive": true }
     Meta {
         #[serde(rename = "$cmd")]
         cmd: String,
@@ -70,7 +70,31 @@ pub enum AliasValue {
         #[serde(rename = "$description")]
         #[serde(default)]
         description: Option<String>,
+        /// 允许该别名在调用链上重复进入，用于刻意自调用（如 `FOO=1 byk build`）
+        #[serde(rename = "$recursive")]
+        #[serde(default, deserialize_with = "deserialize_recursive")]
+        recursive: Option<bool>,
     },
+}
+
+/// `$recursive` 的宽容解析：布尔为准，`"true"` / `1` 之类也认，其余按假处理。
+///
+/// 与 `$mode` 同一套思路——字段写错不该让整条别名从命名空间里静默消失，
+/// 那比把 `$recursive` 当成 `false` 难查得多。
+fn deserialize_recursive<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = serde_json::Value::deserialize(deserializer)?;
+    Ok(Some(match raw {
+        serde_json::Value::Bool(b) => b,
+        serde_json::Value::String(s) => matches!(
+            s.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        serde_json::Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        _ => false,
+    }))
 }
 
 /// 别名定义（解析后的可执行形式）。
@@ -81,6 +105,8 @@ pub struct AliasDefinition {
     /// 执行方式，默认 `Mode::Normal`
     pub mode: Mode,
     pub description: Option<String>,
+    /// 是否放行调用链上的重复进入（`$recursive`）
+    pub recursive: bool,
 }
 
 /// 单个别名文件的数据结构。

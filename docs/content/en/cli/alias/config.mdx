@@ -16,6 +16,7 @@ type AliasObject = {
   $cwd?: string;
   $mode?: 'normal' | 'interactive' | 'silent';
   $description?: string;
+  $recursive?: boolean;
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
@@ -63,6 +64,7 @@ byk 开发.测试
 | `$cwd` | string | Working directory (inheritable) |
 | `$mode` | `'normal'` \| `'interactive'` \| `'silent'` | How to run the alias (inheritable), defaults to `normal` |
 | `$description` | string | Help-page description text (not inheritable) |
+| `$recursive` | boolean | Allow re-entering this alias on the call chain (not inheritable), defaults to `false` — see [Recursion Guard](#recursion-guard) |
 
 :::note
 An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$mode` but no `$cmd` is a **group with inherited properties** and is not executable itself.
@@ -215,6 +217,39 @@ The whole file stays quiet; only `deploy` asks for confirmation.
 
 :::note
 Interactive and silent are the two extremes of one axis: interactive has to show what is about to run, so `silent` merely keeps byk quiet — it never skips a confirmation step. Reach for `interactive` when a command needs one.
+:::
+
+### Recursion Guard
+
+`$cmd` is an arbitrary shell string, so it can invoke byk again — including resolving back to itself. Give the `add` alias a `$cmd` of `byk add` and every level re-expands the same alias; each level is its own process, so there is no stack to overflow, only a process count that keeps climbing until the machine gives up.
+
+byk therefore leaves a trail on the call chain: before running an alias it pushes `file.key` onto the `BYK_ALIAS_STACK` environment variable (comma-separated) and hands it to the child process. A level that finds itself already on the chain reports and exits:
+
+```text
+Error: alias recursion detected: @dev.build -> @dev.release -> @dev.build
+```
+
+The **whole chain** is printed, not just the endpoints — which level looped back is the thing worth locating. Chains deeper than 32 levels are stopped as well: that backstop exists for wrappers that scrub the environment (`env -i byk build`), where the trail cannot survive and depth is all that is left.
+
+Deliberate self-invocation (`FOO=1 byk build`, `sudo byk serve`) needs an explicit opt-in; these two are equivalent:
+
+```json
+{
+  "build": {
+    "$cmd": "FOO=1 byk build",
+    "$recursive": true
+  }
+}
+```
+
+```bash
+BYK_ALLOW_RECURSION=1 byk build   # temporary, global
+```
+
+Opting in only disables the "same alias re-entered" check; the depth limit still applies.
+
+:::note
+`$recursive` applies to the current alias only and is not inherited. `$mode: "silent"` does not suppress this error either — explaining why a command hung is exactly what it is for.
 :::
 
 ### Description Text

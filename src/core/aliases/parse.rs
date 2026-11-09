@@ -111,18 +111,20 @@ pub fn to_alias_definition(value: &AliasValue) -> Option<AliasDefinition> {
             cwd: None,
             mode: Mode::Normal,
             description: None,
+            recursive: false,
         }),
         AliasValue::Meta {
             cmd,
             cwd,
             mode,
             description,
-            ..
+            recursive,
         } => Some(AliasDefinition {
             command: cmd.clone(),
             cwd: cwd.clone(),
             mode: mode.unwrap_or(Mode::Normal),
             description: description.clone(),
+            recursive: recursive.unwrap_or(false),
         }),
     }
 }
@@ -397,6 +399,62 @@ mod tests {
     }
 
     #[test]
+    fn to_alias_recursive_true() {
+        let result = to_alias_value(&json!({"$cmd": "byk build", "$recursive": true}));
+        assert!(matches!(
+            result,
+            Some(AliasValue::Meta {
+                recursive: Some(true),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn to_alias_recursive_absent_is_none() {
+        let result = to_alias_value(&json!({"$cmd": "byk build"}));
+        assert!(matches!(
+            result,
+            Some(AliasValue::Meta {
+                recursive: None,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn to_alias_recursive_string_value_is_coerced() {
+        // 写成字符串也不该让整条别名消失
+        let result = to_alias_value(&json!({"$cmd": "byk build", "$recursive": "true"}));
+        assert!(matches!(
+            result,
+            Some(AliasValue::Meta {
+                recursive: Some(true),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn to_alias_recursive_weird_value_keeps_alias() {
+        // 类型写错按「不放行」处理，但别名本身要留下来
+        let result = to_alias_value(&json!({"$cmd": "byk build", "$recursive": []}));
+        assert!(matches!(
+            result,
+            Some(AliasValue::Meta {
+                recursive: Some(false),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn definition_from_meta_recursive() {
+        let av = to_alias_value(&json!({"$cmd": "byk build", "$recursive": true})).unwrap();
+        assert!(to_alias_definition(&av).unwrap().recursive);
+    }
+
+    #[test]
     fn definition_from_str() {
         let av = AliasValue::Str("echo hello".into());
         let def = to_alias_definition(&av).unwrap();
@@ -411,11 +469,13 @@ mod tests {
             cwd: Some("/app".into()),
             mode: Some(Mode::Interactive),
             description: None,
+            recursive: None,
         };
         let def = to_alias_definition(&av).unwrap();
         assert_eq!(def.command, "build");
         assert_eq!(def.cwd, Some("/app".into()));
         assert_eq!(def.mode, Mode::Interactive);
+        assert!(!def.recursive);
     }
 
     #[test]
@@ -425,10 +485,12 @@ mod tests {
             cwd: None,
             mode: None,
             description: None,
+            recursive: None,
         };
         let def = to_alias_definition(&av).unwrap();
         assert_eq!(def.mode, Mode::Normal);
         assert_eq!(def.cwd, None);
+        assert!(!def.recursive);
     }
 
     #[test]
