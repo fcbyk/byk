@@ -24,24 +24,28 @@ pub fn generate(shell: &str) {
 }
 
 /// 输出补全候选，一行一个。
-///
-/// 最后一个词是正在输入的部分，前面的词用于判断上下文。
 pub fn complete(args: &[String], layout: &PathLayout) {
-    let partial = args.last().map(|s| s.as_str()).unwrap_or("");
-    let prev = if args.len() > 1 {
-        &args[..args.len() - 1]
-    } else {
-        &[]
+    for c in candidates(args, layout) {
+        println!("{}", c);
+    }
+}
+
+/// 只有第一个词位置可补。
+///
+/// 别名只认点号单 token（`发布.maturin`）。词一旦被空格终结，后面敲的都是
+/// 原样传给目标命令的参数，byk 无从得知它们该是什么；分组名也不能像子命令
+/// 那样展开——`byk 发布 maturin` 不成立，能补的只有 `byk 发布.<TAB>`。
+/// 所以除了补第一个词，其余位置一律返回空。
+fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
+    let Some((partial, prev)) = args.split_last() else {
+        // 无参数：焦点在第一个词
+        return get_completions("", layout);
     };
 
-    let candidates = if prev.is_empty() {
+    if prev.is_empty() {
         get_completions(partial, layout)
     } else {
-        contextual_completions(prev, partial, layout)
-    };
-
-    for c in &candidates {
-        println!("{}", c);
+        Vec::new()
     }
 }
 
@@ -71,51 +75,6 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     }
 
     get_top_level_completions(partial, layout)
-}
-
-/// 根据前缀词决定补什么：分组补子节点，叶子与未知词返回空。
-fn contextual_completions(prev: &[String], partial: &str, layout: &PathLayout) -> Vec<String> {
-    if prev.is_empty() {
-        return Vec::new();
-    }
-
-    // 多前缀词场景：别名没有参数级补全，无法继续
-    if prev.len() > 1 {
-        return Vec::new();
-    }
-
-    let first = &prev[0];
-
-    // 别名合并配置（嵌套别名节点使用）
-    let (merged, _) = aliases::load_merged_aliases(layout);
-
-    // 上下文标志：别名没有自己的选项，一律给全局选项
-    if partial.starts_with('-') {
-        return GLOBAL_FLAGS
-            .iter()
-            .filter(|f| f.starts_with(partial))
-            .map(|f| f.to_string())
-            .collect();
-    }
-
-    // 1. @ 文件引用补全通过 complete_at_prefix 处理（@file. 语法），此处不处理
-
-    // 2. 检查嵌套别名：`byk rust ` → 补全子节点
-    if let Some(node) = merged.get(first.as_str()) {
-        if !node.children.is_empty() {
-            return node
-                .children
-                .keys()
-                .filter(|k| k.starts_with(partial))
-                .cloned()
-                .collect();
-        }
-        // 别名叶子节点 → 无子命令
-        return Vec::new();
-    }
-
-    // 3. 无法识别 → 无补全
-    Vec::new()
 }
 
 /// 补全顶级命令：全部别名文件的命名空间 + 合并树里的顶层 key。
@@ -157,9 +116,15 @@ compdef _byk byk
 fn print_bash() {
     print!(
         r##"_byk_completion() {{
-    local cur
+    local i cur
+    local -a words
     cur="${{COMP_WORDS[COMP_CWORD]}}"
-    COMPREPLY=($(compgen -W "$(byk __api__ complete "${{COMP_WORDS[@]:1}}" 2>/dev/null)" -- "$cur"))
+    # COMP_WORDS 不含光标处的空词，按 COMP_CWORD 逐下标取（越界即空），
+    # 让 complete 看到的形状与 zsh 一致：光标在空格后 = 最后一个词为空
+    for ((i = 1; i <= COMP_CWORD; i++)); do
+        words+=("${{COMP_WORDS[i]}}")
+    done
+    COMPREPLY=($(compgen -W "$(byk __api__ complete "${{words[@]}}" 2>/dev/null)" -- "$cur"))
 }}
 
 complete -F _byk_completion byk
@@ -170,8 +135,9 @@ complete -F _byk_completion byk
 fn print_fish() {
     print!(
         r##"function _byk_completions
-    set -l tokens (commandline -cp | string split ' ')
-    byk __api__ complete $tokens[2..-1] 2>/dev/null
+    set -l words (commandline -cp | string split ' ')
+    set -e words[1]
+    byk __api__ complete "$words" 2>/dev/null
 end
 
 complete -c byk -f -a "(_byk_completions)"
@@ -407,76 +373,73 @@ mod tests {
         assert!(completions.is_empty());
     }
 
-    #[test]
-    fn contextual_empty_prev_returns_empty() {
-        let env = TestEnv::new();
-        let prev: Vec<String> = vec![];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.is_empty());
+    /// 把命令行词表转成 `complete` 收到的 `args`。
+    fn words(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn contextual_multi_prev_returns_empty() {
+    fn candidates_no_words_completes_first_word() {
         let env = TestEnv::new();
-        let prev = vec!["a".to_string(), "b".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.is_empty());
+        env.add_alias_file("demo", &json!({"hello": "echo hi"}));
+        let result = candidates(&words(&[]), &env.layout);
+        assert!(result.contains(&"hello".to_string()));
     }
 
     #[test]
-    fn contextual_flag_prefix_returns_global_flags() {
+    fn candidates_first_word_partial() {
         let env = TestEnv::new();
-        let prev = vec!["some-command".to_string()];
-        let result = contextual_completions(&prev, "-", &env.layout);
-        assert!(!result.is_empty());
-        assert!(result.contains(&"--version".to_string()));
-        assert!(result.contains(&"--help".to_string()));
+        env.add_alias_file("demo", &json!({"hello": "echo hi", "hi": "echo hi"}));
+        assert_eq!(candidates(&words(&["h"]), &env.layout), vec!["hello", "hi"]);
     }
 
     #[test]
-    fn contextual_alias_node_children() {
+    fn candidates_group_name_itself_is_still_offered() {
+        let env = TestEnv::new();
+        env.add_alias_file("default", &json!({"rust": {"build": "cargo build"}}));
+        // 还没敲空格：第一个词位置照常补组名，敲完点号再补子项
+        assert_eq!(candidates(&words(&["rus"]), &env.layout), vec!["rust"]);
+    }
+
+    #[test]
+    fn candidates_after_group_word_returns_empty() {
+        // 回归：`byk rust <TAB>` 曾吐出 build/test，而 `byk rust build` 不成立
+        // ——嵌套别名只认 `rust.build` 这一个 token。
         let env = TestEnv::new();
         env.add_alias_file(
             "default",
-            &json!({
-                "rust": {
-                    "build": "cargo build",
-                    "test": "cargo test",
-                    "run": "cargo run"
-                }
-            }),
+            &json!({"rust": {"build": "cargo build", "test": "cargo test"}}),
         );
-        let prev = vec!["rust".to_string()];
-        let result = contextual_completions(&prev, "b", &env.layout);
-        assert_eq!(result, vec!["build".to_string()]);
+        assert!(candidates(&words(&["rust", ""]), &env.layout).is_empty());
+        assert!(candidates(&words(&["rust", "b"]), &env.layout).is_empty());
     }
 
     #[test]
-    fn contextual_alias_leaf_returns_empty() {
+    fn candidates_after_dotted_word_returns_empty() {
+        let env = TestEnv::new();
+        env.add_alias_file("default", &json!({"rust": {"build": "cargo build"}}));
+        assert!(candidates(&words(&["rust.build", ""]), &env.layout).is_empty());
+    }
+
+    #[test]
+    fn candidates_after_leaf_word_returns_empty() {
         let env = TestEnv::new();
         env.add_alias_file("default", &json!({"hello": "echo hello"}));
-        let prev = vec!["hello".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.is_empty());
+        assert!(candidates(&words(&["hello", ""]), &env.layout).is_empty());
     }
 
     #[test]
-    fn contextual_unknown_command_returns_global_flags() {
+    fn candidates_flag_after_word_returns_empty() {
+        // `byk hello --help` 里的 --help 属于目标命令，不是 byk 的选项
         let env = TestEnv::new();
-        let prev = vec!["some-command".to_string()];
-        let result = contextual_completions(&prev, "-", &env.layout);
-        assert!(result.contains(&"--version".to_string()));
-        assert!(result.contains(&"-v".to_string()));
-        assert!(result.contains(&"--help".to_string()));
-        assert!(result.contains(&"-h".to_string()));
+        env.add_alias_file("default", &json!({"hello": "echo hello"}));
+        assert!(candidates(&words(&["hello", "--h"]), &env.layout).is_empty());
     }
 
     #[test]
-    fn contextual_unknown_word_returns_empty() {
+    fn candidates_unknown_word_returns_empty() {
         let env = TestEnv::new();
-        let prev = vec!["nope".to_string()];
-        let result = contextual_completions(&prev, "", &env.layout);
-        assert!(result.is_empty());
+        assert!(candidates(&words(&["nope", ""]), &env.layout).is_empty());
     }
 
     #[test]

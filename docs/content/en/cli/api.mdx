@@ -77,6 +77,8 @@ $ byk __api__ complete grp.
 grp.inner
 ```
 
+**Only the first word is completable.** An alias is a single dotted token (`grp.inner`), so once a word is closed by a space everything after it is passed to the target command as-is and byk cannot know what belongs there — `complete grp ''` (Tab after `byk grp `) returns nothing instead of listing `inner` as a subcommand. When the cursor sits after a space the shell passes one empty word, and that empty word is exactly what separates "still typing the first word" from "first word already finished".
+
 Each call is a read-only scan, and scan-time warnings about alias files (an invalid variable name, say) still go to stderr — stdout holds candidates only, which is why the completion script can wrap it in `$(...)`.
 
 ## resolve `<key> [args...]`
