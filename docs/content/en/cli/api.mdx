@@ -98,7 +98,7 @@ byk __api__ resolve @run.build --env staging
 | `key` | The key you passed, echoed back |
 | `source` | The file key that matched, e.g. `@run` / `@@ops` |
 | `sourcePath` | Absolute path of that alias file; `null` only in the rare sourceless case |
-| `command` | Non-interactive: the final command with placeholders resolved; interactive: **the unresolved template** |
+| `command` | Non-interactive: the final command with placeholders resolved (arguments are already quoted for the shell, so it can go straight to `sh -c`); interactive: **the unresolved template** |
 | `cwd` | Working directory the alias would run in (absolute) |
 | `paths` | Directories actually prepended to `PATH` — see below |
 | `mode` | `normal` / `interactive` / `silent` |

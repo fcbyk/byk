@@ -51,6 +51,28 @@ import { Tab, Tabs } from '@rspress/core/theme';
 任何占位符取不到对应的值时，**静默消失**，不报错。参数缺失导致的错误由底层命令的运行时处理。
 :::
 
+## 参数保真
+
+命令最终交给 `sh -c` 解释，所以每个参数在拼进命令时都会被单引号包裹——边界由引号守住，不再交给 shell 重新切分：
+
+| 你输入 | 命令收到 |
+|--------|----------|
+| `byk probe "my file.json"` | 1 个参数 `my file.json` |
+| `byk probe ""` | 1 个参数（空） |
+| `byk probe 'a; echo INJECTED'` | 1 个参数 `a; echo INJECTED`，`echo` 不会执行 |
+| `byk probe "*.json"` | 1 个参数 `*.json`，不做通配展开 |
+| `byk probe 'C:\tmp\x'` | 1 个参数 `C:\tmp\x`，反斜杠保留 |
+
+只有纯字母数字（外加 `- _ . / : = @ + ,`）的值不加引号，所以提示行里 `cp src dst` 依然是原样；需要引号时才会看到 `cp 'my file.json' dst`。
+
+:::warning 参数不会再被 shell 展开
+`*`、`~`、`$VAR` 都在你敲命令时由你自己的 shell 处理过一次了——`byk probe *.json` 里的 `*` 在 byk 拿到之前就已经展开成文件列表。所以 byk 侧按字面传，是保真而不是丢失。
+:::
+
+:::note Windows
+`cmd` 侧用双引号包裹，已知不保真的只剩 `%VAR%`：cmd 在引号内照样展开环境变量，命令行上也没有可靠的转义写法（`%%` 只在批处理文件里有效）。
+:::
+
 ## 具名占位符示例
 
 <Tabs>

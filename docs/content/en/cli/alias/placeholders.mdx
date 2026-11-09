@@ -51,6 +51,28 @@ When an alias contains no placeholders, all raw arguments are appended automatic
 When a placeholder finds no corresponding value, it **silently disappears** — no error is raised. Errors caused by missing arguments are handled at runtime by the underlying command.
 :::
 
+## Argument Fidelity
+
+The command is ultimately interpreted by `sh -c`, so every argument is single-quoted when it is spliced in — the quotes hold the boundary instead of letting the shell re-split it:
+
+| You type | The command receives |
+|----------|----------------------|
+| `byk probe "my file.json"` | one argument `my file.json` |
+| `byk probe ""` | one argument (empty) |
+| `byk probe 'a; echo INJECTED'` | one argument `a; echo INJECTED`; `echo` never runs |
+| `byk probe "*.json"` | one argument `*.json`, no globbing |
+| `byk probe 'C:\tmp\x'` | one argument `C:\tmp\x`, backslash intact |
+
+Only plain values (letters, digits and `- _ . / : = @ + ,`) go in bare, so the hint line still reads `cp src dst`; you see quotes only when they are needed: `cp 'my file.json' dst`.
+
+:::warning Arguments are not expanded again
+`*`, `~` and `$VAR` were already handled by your own shell before byk saw them — the `*` in `byk probe *.json` has been expanded to a file list by then. Passing them through literally is fidelity, not loss.
+:::
+
+:::note Windows
+The `cmd` side uses double quotes. The one known gap is `%VAR%`: cmd expands environment variables even inside quotes, and there is no reliable escape at the command line (`%%` only works inside batch files).
+:::
+
 ## Named Placeholder Examples
 
 <Tabs>

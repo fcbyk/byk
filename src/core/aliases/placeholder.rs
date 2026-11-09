@@ -8,6 +8,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::quote::{join, normalize_spaces, quote};
+
 /// 收集模板中所有唯一占位符，保持首次出现顺序。
 ///
 /// 通过括号计数处理嵌套占位符（如 `{a?{b?x:y}:z}`），
@@ -127,11 +129,16 @@ fn resolve_nested_impl(
 }
 
 /// 解析单个占位符（`${...args}` 除外），结果写入 resolved。
+///
+/// 落到 resolved 里的字符串分两类：用户输入（`${N}` / `{xxx}` / `{{xxx}}` /
+/// `${args}`）在插入时就已经按 shell 规则包裹好，并登记进 `literal`；模板
+/// 片段（三元分支文本）保持原样，留给后面的嵌套展开。
 fn resolve_placeholder(
     ph: &str,
     args: &[String],
     consumed: &mut HashSet<usize>,
     resolved: &mut HashMap<String, String>,
+    literal: &mut HashSet<String>,
 ) {
     // {} 是 find 命令语法（find . -exec ... {} +），不是别名占位符
     if ph == "{}" {
@@ -139,7 +146,8 @@ fn resolve_placeholder(
     }
 
     if ph == "${args}" {
-        resolved.insert(ph.to_string(), args.join(" "));
+        resolved.insert(ph.to_string(), join(args));
+        literal.insert(ph.to_string());
         return;
     }
 
@@ -149,7 +157,8 @@ fn resolve_placeholder(
         // 这里只认位置参数 `${N}`，其余原样保留，避免把未定义变量清空。
         if let Ok(idx) = inner.parse::<usize>() {
             if idx < args.len() {
-                resolved.insert(ph.to_string(), args[idx].clone());
+                resolved.insert(ph.to_string(), quote(&args[idx]));
+                literal.insert(ph.to_string());
                 consumed.insert(idx);
             } else {
                 resolved.insert(ph.to_string(), String::new());
@@ -163,12 +172,14 @@ fn resolve_placeholder(
         for (i, arg) in args.iter().enumerate() {
             if arg == key {
                 consumed.insert(i);
-                if i + 1 < args.len() {
-                    resolved.insert(ph.to_string(), format!("{} {}", key, args[i + 1]));
+                let rendered = if i + 1 < args.len() {
                     consumed.insert(i + 1);
+                    format!("{} {}", key, quote(&args[i + 1]))
                 } else {
-                    resolved.insert(ph.to_string(), key.to_string());
-                }
+                    key.to_string()
+                };
+                resolved.insert(ph.to_string(), rendered);
+                literal.insert(ph.to_string());
                 return;
             }
         }
@@ -195,7 +206,8 @@ fn resolve_placeholder(
         if arg == key {
             consumed.insert(i);
             if i + 1 < args.len() {
-                resolved.insert(ph.to_string(), args[i + 1].clone());
+                resolved.insert(ph.to_string(), quote(&args[i + 1]));
+                literal.insert(ph.to_string());
                 consumed.insert(i + 1);
             } else {
                 resolved.insert(ph.to_string(), String::new());
@@ -209,6 +221,9 @@ fn resolve_placeholder(
 /// 解析占位符，返回最终命令与「占位符 → 值」映射（交互模式回显用）。
 ///
 /// 命令里没有占位符时自动追加所有参数，等价于隐式 `${args}`。
+///
+/// 返回的命令可以直接交给 `sh -c`：参数值在插入时已按 shell 规则包裹，
+/// 边界（空格、空串、`;`、通配符、反斜杠）不会丢。
 pub fn parse_alias_arguments_with_mapping(
     command: &str,
     args: &[String],
@@ -221,11 +236,12 @@ pub fn parse_alias_arguments_with_mapping(
         if args.is_empty() {
             return (command.to_string(), HashMap::new());
         }
-        return (format!("{} {}", command, args.join(" ")), HashMap::new());
+        return (format!("{} {}", command, join(args)), HashMap::new());
     }
 
     let mut consumed: HashSet<usize> = pre_consumed.iter().cloned().collect();
     let mut resolved: HashMap<String, String> = HashMap::new();
+    let mut literal: HashSet<String> = HashSet::new();
     let mut has_rest = false;
 
     // 第一趟：解析所有占位符
@@ -234,7 +250,7 @@ pub fn parse_alias_arguments_with_mapping(
             has_rest = true;
             continue;
         }
-        resolve_placeholder(ph, args, &mut consumed, &mut resolved);
+        resolve_placeholder(ph, args, &mut consumed, &mut resolved, &mut literal);
     }
 
     // ${...args} 依赖消费集合，最后计算
@@ -245,12 +261,17 @@ pub fn parse_alias_arguments_with_mapping(
             .filter(|(i, _)| !consumed.contains(i))
             .map(|(_, a)| a.clone())
             .collect();
-        resolved.insert("${...args}".to_string(), rest.join(" "));
+        resolved.insert("${...args}".to_string(), join(&rest));
+        literal.insert("${...args}".to_string());
     }
 
-    // 递归展开 resolved 中的嵌套占位符
+    // 递归展开 resolved 中的嵌套占位符；用户输入不参与——那是原文，
+    // 展开它等于把参数内容当成模板再执行一遍。
     let keys: Vec<String> = resolved.keys().cloned().collect();
     for key in &keys {
+        if literal.contains(key) {
+            continue;
+        }
         let expanded = resolve_nested(&resolved[key], &resolved);
         resolved.insert(key.clone(), expanded);
     }
@@ -263,9 +284,7 @@ pub fn parse_alias_arguments_with_mapping(
         result = result.replace(*ph, &resolved[*ph]);
     }
 
-    let final_command = result.split_whitespace().collect::<Vec<&str>>().join(" ");
-
-    (final_command, resolved)
+    (normalize_spaces(&result), resolved)
 }
 
 #[cfg(test)]
@@ -503,5 +522,110 @@ mod tests {
     fn parse_optional_placeholder_not_matched() {
         let (cmd, _) = parse_alias_arguments_with_mapping("echo {{name}}", &[], &[]);
         assert_eq!(cmd, "echo");
+    }
+
+    #[test]
+    fn parse_no_placeholders_quotes_args() {
+        // 空格、空串、`;`、通配符都必须落在引号里
+        let (cmd, _) = parse_alias_arguments_with_mapping(
+            "probe",
+            &["my file.json".into(), String::new(), "a; rm -rf /".into()],
+            &[],
+        );
+        assert_eq!(cmd, "probe 'my file.json' '' 'a; rm -rf /'");
+    }
+
+    #[test]
+    fn parse_dollar_args_quotes_each_element() {
+        let (cmd, _) =
+            parse_alias_arguments_with_mapping("probe ${args}", &["a b".into(), "c".into()], &[]);
+        assert_eq!(cmd, "probe 'a b' c");
+    }
+
+    #[test]
+    fn parse_positional_quote() {
+        let (cmd, _) = parse_alias_arguments_with_mapping(
+            "cp ${0} ${1}",
+            &["my file".into(), "dst".into()],
+            &[],
+        );
+        assert_eq!(cmd, "cp 'my file' dst");
+    }
+
+    #[test]
+    fn parse_named_placeholder_quote() {
+        let (cmd, _) = parse_alias_arguments_with_mapping(
+            "cp {--src} /tmp",
+            &["--src".into(), "a b".into()],
+            &[],
+        );
+        assert_eq!(cmd, "cp 'a b' /tmp");
+    }
+
+    #[test]
+    fn parse_ternary_branch_is_not_quoted() {
+        // 分支是模板文本，不是用户输入
+        let (cmd, _) = parse_alias_arguments_with_mapping(
+            "jest {--coverage?--coverage:--no-coverage}",
+            &["--coverage".into()],
+            &[],
+        );
+        assert_eq!(cmd, "jest --coverage");
+    }
+
+    /// 回归：参数边界必须原样穿过 `sh -c`。
+    ///
+    /// 旧实现把参数 `join(" ")` 后交给 `sh -c`，于是 `my file.json` 变成两个参数、
+    /// 空串消失、`;` 后面被当成新命令执行。
+    #[cfg(unix)]
+    #[test]
+    fn arguments_survive_sh_c() {
+        let args: Vec<String> = vec![
+            "my file.json".into(),
+            String::new(),
+            "a; echo INJECTED".into(),
+            "*.json".into(),
+            "it's".into(),
+            r"C:\tmp\x".into(),
+        ];
+        let (cmd, _) = parse_alias_arguments_with_mapping("printf '<%s>\\n'", &args, &[]);
+
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .output()
+            .unwrap();
+
+        assert!(
+            out.status.success(),
+            "sh failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "<my file.json>\n<>\n<a; echo INJECTED>\n<*.json>\n<it's>\n<C:\\tmp\\x>\n"
+        );
+    }
+
+    /// `${...args}` 只带走未被消耗的参数，且同样保持边界。
+    #[cfg(unix)]
+    #[test]
+    fn rest_args_survive_sh_c() {
+        let args: Vec<String> = vec!["--mode".into(), "dev".into(), "a b".into(), String::new()];
+        let (cmd, _) =
+            parse_alias_arguments_with_mapping("printf '<%s>\\n' {--mode} ${...args}", &args, &[]);
+
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .output()
+            .unwrap();
+
+        assert!(
+            out.status.success(),
+            "sh failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "<dev>\n<a b>\n<>\n");
     }
 }

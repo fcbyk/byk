@@ -8,6 +8,7 @@ mod execution;
 mod merge;
 mod parse;
 pub(crate) mod placeholder;
+mod quote;
 mod scan;
 mod types;
 

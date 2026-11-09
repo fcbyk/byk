@@ -98,7 +98,7 @@ byk __api__ resolve @run.build --env staging
 | `key` | 传入的键，原样回显 |
 | `source` | 命中的文件 key，如 `@run` / `@@ops` |
 | `sourcePath` | 该别名文件的绝对路径；仅少数无来源的场合为 `null` |
-| `command` | 非交互别名：占位符已按参数解析的最终命令；交互别名：**未解析的模板** |
+| `command` | 非交互别名：占位符已按参数解析的最终命令（参数已按 shell 规则引用，可直接交给 `sh -c`）；交互别名：**未解析的模板** |
 | `cwd` | 执行时的工作目录（绝对路径） |
 | `paths` | 实际前置到 `PATH` 的目录，见下 |
 | `mode` | `normal` / `interactive` / `silent` |

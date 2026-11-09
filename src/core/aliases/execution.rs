@@ -8,6 +8,7 @@ use std::process::{Command, exit};
 
 use super::parse::to_alias_definition;
 use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mapping, split_ternary};
+use super::quote::quote;
 use super::types::{Mode, ResolvedAlias};
 use crate::utils::path::{canonical, expand_home};
 
@@ -503,7 +504,7 @@ fn execute_interactive_impl(
         };
         if !input.is_empty() {
             resolved_map.insert((*ph).clone(), input.clone());
-            cmd = cmd.replace(ph.as_str(), &input);
+            cmd = cmd.replace(ph.as_str(), &quote(&input));
         } else {
             resolved_map.insert((*ph).clone(), String::new());
             cmd = cmd.replace(ph.as_str(), "");
