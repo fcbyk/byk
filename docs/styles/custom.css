@@ -31,3 +31,16 @@ header.rp-nav {
 .rp-toc-item[data-depth="2"] {
   display: none;
 }
+
+/**
+ * 更新日志页面：Entry 只列版本号，不列版本内的分组标题
+ *
+ * 每个版本下的「破坏性变更 / 新功能 / 问题修复」都进目录的话，十来个版本会
+ * 撑出三四十行，而正文本身也是一屏一个版本，从目录跳过去并没有比滚动更快。
+ * 何况这些标题在每个版本里重名，锚点指的是哪一版并不明确。
+ *
+ * 用 :has 限定在这一页，其它文档页的三级标题不受影响。
+ */
+body:has(#changelog-page) .rp-toc-item[data-depth="1"] {
+  display: none;
+}

@@ -75,7 +75,7 @@
 
 ## v0.4.0 (2026-06-27)
 
-## Breaking Changes
+### Breaking Changes
 
 - **plugins**: remove `pip-e` field from plugin protocol and `-e` flag from add command
 - **plugins**: extract `scripts` field from `commands`/`command`
@@ -108,7 +108,7 @@
 
 ## v0.3.0 (2026-06-23)
 
-## Breaking Changes
+### Breaking Changes
 
 - remove init/remove py-v, auto-create venv in `byk add` (#7)
 - merge `init` subcommand into `add`

@@ -19,3 +19,7 @@ target
 .pnpm-store/
 .data
 doc_build
+
+# 由 docs/scripts/gen-changelog.mjs 从根 CHANGELOG*.md 生成
+docs/content/en/changelog.mdx
+docs/content/zh/changelog.mdx

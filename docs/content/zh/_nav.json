@@ -4,6 +4,10 @@
     "link": "/cli"
   },
   {
+    "text": "更新日志",
+    "link": "/changelog"
+  },
+  {
     "text": "插件",
     "items": [
       {

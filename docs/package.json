@@ -2,7 +2,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "gen:changelog": "node scripts/gen-changelog.mjs",
+    "predev": "pnpm run gen:changelog",
     "dev": "rspress dev --host 0.0.0.0",
+    "prebuild": "pnpm run gen:changelog",
     "build": "rspress build && cp ../scripts/install.sh doc_build/install.sh && cp ../scripts/install.ps1 doc_build/install.ps1",
     "preview": "rspress preview"
   },
@@ -10,6 +13,7 @@
     "@rspress/core": "^2.0.13",
     "@rspress/plugin-llms": "^2.0.13",
     "@types/react": "^19.2.17",
+    
     "@types/react-dom": "^19.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

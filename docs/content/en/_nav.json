@@ -4,6 +4,10 @@
     "link": "/cli"
   },
   {
+    "text": "Changelog",
+    "link": "/changelog"
+  },
+  {
     "text": "Plugins",
     "items": [
       {
