@@ -1,0 +1,13 @@
+diff --git a/dist/index.js b/dist/index.js
+index 6a79991e5a3d89a2521d2de403ebc22fff6f2be8..0bb0af5ec22def9e36b58eacb284a34caa5effd2 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -205,7 +205,7 @@ const rsbuildPluginLlms = ({ docDirectory, disableSSGRef, baseRef, pageDataList,
+                         const name = `${versionPrefix}${llmsFullTxt.name}`;
+                         const llmsFullTxtContent = generateLlmsFullTxt(pageArray, navList, others, baseRef.current, siteOriginRef.current);
+                         api.processAssets({
+-                            targets: disableSSG ? [
++                            environments: disableSSG ? [
+                                 'web'
+                             ] : [
+                                 'node'
