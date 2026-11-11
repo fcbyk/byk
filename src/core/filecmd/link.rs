@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::{FileScope, invalid_stem_message, resolve_target, target_path};
 use crate::core::aliases::validate_filename;
 use crate::core::paths::PathLayout;
-use crate::utils::path::expand_home;
+use crate::utils::path::{canonical, expand_home};
 
 pub(super) fn run(
     scope: FileScope,
@@ -48,9 +48,8 @@ pub(super) fn run(
         return Err(format!("Refusing to link directory: {}", path.display()));
     }
 
-    let canonical = fs::canonicalize(&path)
-        .map_err(|e| format!("Failed to resolve {}: {}", path.display(), e))?;
-    if canonical == target {
+    let resolved = canonical(&path);
+    if resolved == target {
         return Err(format!("Link cannot point to itself: {}", path.display()));
     }
 
@@ -111,8 +110,7 @@ pub(super) fn resolve_spec(spec: &str) -> Result<PathBuf, String> {
         return Err(format!("Link target is not a file: {}", raw.display()));
     }
 
-    let target = fs::canonicalize(&raw)
-        .map_err(|e| format!("Failed to resolve link target {}: {}", raw.display(), e))?;
+    let target = canonical(&raw);
     let data = fs::read(&target)
         .map_err(|e| format!("Failed to read link target {}: {}", target.display(), e))?;
     match serde_json::from_slice::<Value>(&data) {
@@ -179,7 +177,7 @@ mod tests {
 
         let resolved = resolve_spec(&spec(&target)).unwrap();
 
-        assert_eq!(resolved, fs::canonicalize(&target).unwrap());
+        assert_eq!(resolved, canonical(&target));
     }
 
     #[test]
@@ -251,7 +249,7 @@ mod tests {
         let (path, linked) = run(FileScope::Global, "tools", &[spec(&target)], &layout).unwrap();
 
         assert_eq!(path, link_path);
-        assert_eq!(linked, fs::canonicalize(&target).unwrap());
+        assert_eq!(linked, canonical(&target));
         let raw = fs::read_to_string(&link_path).unwrap();
         let items: Vec<String> = serde_json::from_str(&raw).unwrap();
         assert_eq!(items, vec![linked.to_str().unwrap().to_string()]);

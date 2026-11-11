@@ -30,18 +30,19 @@ mod tests {
 
     #[test]
     fn global_path() {
+        let layout = layout();
+        let expected = format!("{}\n", layout.alias_dir.join("ops.byk.json").display());
         assert_eq!(
-            run(FileScope::Global, "ops", &[], &layout()).unwrap(),
-            "/home/me/.byk/alias/ops.byk.json\n"
+            run(FileScope::Global, "ops", &[], &layout).unwrap(),
+            expected
         );
     }
 
     #[test]
     fn anonymous_path() {
-        assert_eq!(
-            run(FileScope::Global, "", &[], &layout()).unwrap(),
-            "/home/me/.byk/alias/.byk.json\n"
-        );
+        let layout = layout();
+        let expected = format!("{}\n", layout.alias_dir.join(".byk.json").display());
+        assert_eq!(run(FileScope::Global, "", &[], &layout).unwrap(), expected);
     }
 
     #[test]

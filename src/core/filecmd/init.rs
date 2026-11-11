@@ -117,7 +117,7 @@ mod tests {
         let layout = test_layout(&temp);
         let source = temp.path().join("tool.byk.json");
         fs::write(&source, "{}").unwrap();
-        let canonical = fs::canonicalize(&source).unwrap();
+        let canonical = crate::utils::path::canonical(&source);
 
         let path = run(
             FileScope::Global,
@@ -128,7 +128,8 @@ mod tests {
         .unwrap();
 
         let raw = fs::read_to_string(&path).unwrap();
-        assert_eq!(raw, format!("[\"{}\"]\n", canonical.to_str().unwrap()));
+        let items: Vec<String> = serde_json::from_str(&raw).unwrap();
+        assert_eq!(PathBuf::from(&items[0]), canonical);
     }
 
     #[test]
