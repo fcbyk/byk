@@ -8,6 +8,7 @@ mod help;
 mod init;
 mod json;
 mod path;
+mod rename;
 
 use std::fs;
 use std::io::Write;
@@ -30,6 +31,7 @@ enum Verb {
     Destroy,
     Json,
     Path,
+    Rename,
     Help,
 }
 
@@ -60,6 +62,11 @@ const VERBS: &[VerbInfo] = &[
         name: "path",
         verb: Verb::Path,
         description: "Print the absolute path",
+    },
+    VerbInfo {
+        name: "rename",
+        verb: Verb::Rename,
+        description: "Rename the alias file",
     },
     VerbInfo {
         name: "help",
@@ -150,12 +157,16 @@ impl FileCommandError {
                 verb,
                 verb_names().join(", ")
             ),
-            Self::InvalidStem(stem) => format!(
-                "Invalid file name: {:?}\nHint: file name cannot contain `.`, `@`, `/` or spaces",
-                stem
-            ),
+            Self::InvalidStem(stem) => invalid_stem_message(stem),
         }
     }
+}
+
+fn invalid_stem_message(stem: &str) -> String {
+    format!(
+        "Invalid file name: {:?}\nHint: file name cannot contain `.`, `@`, `/` or spaces",
+        stem
+    )
 }
 
 fn verb_names() -> Vec<&'static str> {
@@ -316,6 +327,8 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
             .and_then(|content| write_stdout(&content)),
         Verb::Path => path::run(command.scope, &command.stem, args, layout)
             .and_then(|text| write_stdout(text.as_bytes())),
+        Verb::Rename => rename::run(command.scope, &command.stem, args, layout)
+            .map(|(from, to)| eprintln!("Renamed {} to {}", from.display(), to.display())),
         Verb::Help => help::run(command.scope, &command.stem, args)
             .and_then(|text| write_stdout(text.as_bytes())),
     };
@@ -490,6 +503,7 @@ mod tests {
         assert_eq!(describe("@ops..destroy"), Some("Remove the alias file"));
         assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
         assert_eq!(describe("@@ops..path"), Some("Print the absolute path"));
+        assert_eq!(describe("@@ops..rename"), Some("Rename the alias file"));
         assert_eq!(describe("@@ops..help"), Some("Show this help"));
         assert_eq!(describe("@@ops.init"), None);
         assert_eq!(describe("@ops"), None);
@@ -528,6 +542,7 @@ mod tests {
                 "@@ops..destroy".to_string(),
                 "@@ops..json".to_string(),
                 "@@ops..path".to_string(),
+                "@@ops..rename".to_string(),
                 "@@ops..help".to_string()
             ])
         );
@@ -546,6 +561,10 @@ mod tests {
         assert_eq!(
             complete_verbs("@@ops..p"),
             Some(vec!["@@ops..path".to_string()])
+        );
+        assert_eq!(
+            complete_verbs("@@ops..r"),
+            Some(vec!["@@ops..rename".to_string()])
         );
         assert_eq!(complete_verbs("@..i"), Some(vec!["@..init".to_string()]));
     }

@@ -375,6 +375,7 @@ mod tests {
                 "@@anything..destroy".to_string(),
                 "@@anything..json".to_string(),
                 "@@anything..path".to_string(),
+                "@@anything..rename".to_string(),
                 "@@anything..help".to_string()
             ]
         );

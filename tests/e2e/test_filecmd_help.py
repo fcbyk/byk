@@ -12,6 +12,7 @@ def test_help_lists_commands_and_options_without_file(runner):
     assert "  @@ops..destroy  Remove the alias file" in lines
     assert "  @@ops..json     Show the alias file JSON" in lines
     assert "  @@ops..path     Print the absolute path" in lines
+    assert "  @@ops..rename   Rename the alias file" in lines
     assert "  @@ops..help     Show this help" in lines
     assert "Options:" in lines
     assert "  @@ops..destroy --yes    Skip confirmation" in lines

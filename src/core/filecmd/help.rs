@@ -104,6 +104,8 @@ mod tests {
         assert!(text.contains("Create an empty alias file"));
         assert!(text.contains("  @@ops..path"));
         assert!(text.contains("Print the absolute path"));
+        assert!(text.contains("  @@ops..rename"));
+        assert!(text.contains("Rename the alias file"));
         assert!(text.contains("  @@ops..help"));
         assert!(text.contains("Show this help"));
         assert!(text.contains("\nOptions:\n"));
