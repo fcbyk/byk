@@ -7,6 +7,7 @@ mod destroy;
 mod help;
 mod init;
 mod json;
+mod path;
 
 use std::fs;
 use std::io::Write;
@@ -28,6 +29,7 @@ enum Verb {
     Init,
     Destroy,
     Json,
+    Path,
     Help,
 }
 
@@ -53,6 +55,11 @@ const VERBS: &[VerbInfo] = &[
         name: "json",
         verb: Verb::Json,
         description: "Show the alias file JSON",
+    },
+    VerbInfo {
+        name: "path",
+        verb: Verb::Path,
+        description: "Print the absolute path",
     },
     VerbInfo {
         name: "help",
@@ -307,6 +314,8 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
         }
         Verb::Json => json::run(command.scope, &command.stem, args, layout)
             .and_then(|content| write_stdout(&content)),
+        Verb::Path => path::run(command.scope, &command.stem, args, layout)
+            .and_then(|text| write_stdout(text.as_bytes())),
         Verb::Help => help::run(command.scope, &command.stem, args)
             .and_then(|text| write_stdout(text.as_bytes())),
     };
@@ -480,6 +489,7 @@ mod tests {
         assert_eq!(describe("@@ops..init"), Some("Create an empty alias file"));
         assert_eq!(describe("@ops..destroy"), Some("Remove the alias file"));
         assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
+        assert_eq!(describe("@@ops..path"), Some("Print the absolute path"));
         assert_eq!(describe("@@ops..help"), Some("Show this help"));
         assert_eq!(describe("@@ops.init"), None);
         assert_eq!(describe("@ops"), None);
@@ -517,6 +527,7 @@ mod tests {
                 "@@ops..init".to_string(),
                 "@@ops..destroy".to_string(),
                 "@@ops..json".to_string(),
+                "@@ops..path".to_string(),
                 "@@ops..help".to_string()
             ])
         );
@@ -531,6 +542,10 @@ mod tests {
         assert_eq!(
             complete_verbs("@@ops..j"),
             Some(vec!["@@ops..json".to_string()])
+        );
+        assert_eq!(
+            complete_verbs("@@ops..p"),
+            Some(vec!["@@ops..path".to_string()])
         );
         assert_eq!(complete_verbs("@..i"), Some(vec!["@..init".to_string()]));
     }

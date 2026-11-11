@@ -102,6 +102,8 @@ mod tests {
         assert!(text.ends_with("\n\n"));
         assert!(text.contains("  @@ops..init"));
         assert!(text.contains("Create an empty alias file"));
+        assert!(text.contains("  @@ops..path"));
+        assert!(text.contains("Print the absolute path"));
         assert!(text.contains("  @@ops..help"));
         assert!(text.contains("Show this help"));
         assert!(text.contains("\nOptions:\n"));
