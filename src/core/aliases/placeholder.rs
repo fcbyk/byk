@@ -532,14 +532,24 @@ mod tests {
             &["my file.json".into(), String::new(), "a; rm -rf /".into()],
             &[],
         );
-        assert_eq!(cmd, "probe 'my file.json' '' 'a; rm -rf /'");
+        // 引号形态随平台变化（POSIX 单引号 / cmd 双引号），期望值必须跟着走，
+        // 否则这条测试只能在 Linux 上过。
+        assert_eq!(
+            cmd,
+            format!(
+                "probe {} {} {}",
+                quote("my file.json"),
+                quote(""),
+                quote("a; rm -rf /")
+            )
+        );
     }
 
     #[test]
     fn parse_dollar_args_quotes_each_element() {
         let (cmd, _) =
             parse_alias_arguments_with_mapping("probe ${args}", &["a b".into(), "c".into()], &[]);
-        assert_eq!(cmd, "probe 'a b' c");
+        assert_eq!(cmd, format!("probe {} c", quote("a b")));
     }
 
     #[test]
@@ -549,7 +559,7 @@ mod tests {
             &["my file".into(), "dst".into()],
             &[],
         );
-        assert_eq!(cmd, "cp 'my file' dst");
+        assert_eq!(cmd, format!("cp {} dst", quote("my file")));
     }
 
     #[test]
@@ -559,7 +569,7 @@ mod tests {
             &["--src".into(), "a b".into()],
             &[],
         );
-        assert_eq!(cmd, "cp 'a b' /tmp");
+        assert_eq!(cmd, format!("cp {} /tmp", quote("a b")));
     }
 
     #[test]
