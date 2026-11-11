@@ -8,13 +8,15 @@ def test_help_lists_commands_and_options_without_file(runner):
     lines = result.stdout.splitlines()
     assert lines[0] == ""
     assert lines[1] == "File commands:"
-    assert "  @@ops..init     Create an empty alias file" in lines
+    assert "  @@ops..init     Create an alias file" in lines
     assert "  @@ops..destroy  Remove the alias file" in lines
     assert "  @@ops..json     Show the alias file JSON" in lines
     assert "  @@ops..path     Print the absolute path" in lines
     assert "  @@ops..rename   Rename the alias file" in lines
+    assert "  @@ops..link     Point this file at another alias file" in lines
     assert "  @@ops..help     Show this help" in lines
     assert "Options:" in lines
+    assert "  @@ops..init --link      Create as a link to another alias file" in lines
     assert "  @@ops..destroy --yes    Skip confirmation" in lines
     assert (
         "  @@ops..json --expand    Expand file variables and pretty-print" in lines

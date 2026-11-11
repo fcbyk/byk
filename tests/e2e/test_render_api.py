@@ -136,11 +136,12 @@ def test_api_complete_with_descriptions_file_command_verbs(runner):
     r = runner.run("__api__", "complete", "--with-descriptions", "@@ops..")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == [
-        "@@ops..init\tCreate an empty alias file",
+        "@@ops..init\tCreate an alias file",
         "@@ops..destroy\tRemove the alias file",
         "@@ops..json\tShow the alias file JSON",
         "@@ops..path\tPrint the absolute path",
         "@@ops..rename\tRename the alias file",
+        "@@ops..link\tPoint this file at another alias file",
         "@@ops..help\tShow this help",
     ]
 

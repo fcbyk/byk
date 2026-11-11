@@ -39,10 +39,7 @@ fn describe(candidate: &str) -> Option<&'static str> {
         "--help" | "-h" => Some("Print help"),
         "--version" | "-v" => Some("Print version"),
         "--paths" => Some("Print CLI paths and file locations"),
-        "--expand" => Some("Expand file variables and pretty-print"),
-        "--no-check" => Some("Skip JSON validation and print raw"),
-        "--yes" => Some("Skip confirmation"),
-        _ => filecmd::describe(candidate),
+        _ => filecmd::describe_option(candidate).or_else(|| filecmd::describe(candidate)),
     }
 }
 
@@ -376,6 +373,7 @@ mod tests {
                 "@@anything..json".to_string(),
                 "@@anything..path".to_string(),
                 "@@anything..rename".to_string(),
+                "@@anything..link".to_string(),
                 "@@anything..help".to_string()
             ]
         );
@@ -596,7 +594,7 @@ mod tests {
         assert_eq!(format_candidate("build", true), "build");
         assert_eq!(
             format_candidate("@@ops..init", true),
-            "@@ops..init\tCreate an empty alias file"
+            "@@ops..init\tCreate an alias file"
         );
     }
 

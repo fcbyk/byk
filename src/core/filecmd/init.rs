@@ -1,10 +1,10 @@
-//! `..init`：创建新的空别名文件。
+//! `..init`：创建新的别名文件（空文件或链接文件）。
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::{FileScope, target_path};
+use super::{FileScope, link, target_path};
 use crate::core::paths::PathLayout;
 
 /// 新建内容：空 JSON 对象加一个结尾换行。
@@ -16,9 +16,15 @@ pub(super) fn run(
     args: &[String],
     layout: &PathLayout,
 ) -> Result<PathBuf, String> {
-    if !args.is_empty() {
-        return Err("init takes no arguments".to_string());
-    }
+    let link_spec = parse_args(args)?;
+    let link_target = match &link_spec {
+        Some(spec) => Some(link::resolve_spec(spec)?),
+        None => None,
+    };
+    let content = match &link_target {
+        Some(target) => link::content(target)?.into_bytes(),
+        None => EMPTY_ALIAS_FILE.to_vec(),
+    };
 
     let base = match scope {
         FileScope::Local => std::env::current_dir()
@@ -36,11 +42,19 @@ pub(super) fn run(
     };
 
     let target = target_path(&base, stem);
-    create(&target)?;
+    create(&target, &content)?;
     Ok(target)
 }
 
-fn create(path: &Path) -> Result<(), String> {
+fn parse_args(args: &[String]) -> Result<Option<String>, String> {
+    match args {
+        [] => Ok(None),
+        [flag, spec] if flag == "--link" => Ok(Some(spec.clone())),
+        _ => Err("init accepts only --link <target>".to_string()),
+    }
+}
+
+fn create(path: &Path, content: &[u8]) -> Result<(), String> {
     let mut file = match OpenOptions::new().write(true).create_new(true).open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -51,7 +65,7 @@ fn create(path: &Path) -> Result<(), String> {
         }
     };
 
-    if let Err(e) = file.write_all(EMPTY_ALIAS_FILE) {
+    if let Err(e) = file.write_all(content) {
         drop(file);
         let _ = fs::remove_file(path);
         return Err(format!("Failed to write {}: {}", path.display(), e));
@@ -69,6 +83,10 @@ mod tests {
             root_dir: temp.path().to_path_buf(),
             alias_dir: temp.path().join(".byk").join("alias"),
         }
+    }
+
+    fn link_args(spec: &str) -> Vec<String> {
+        vec!["--link".to_string(), spec.to_string()]
     }
 
     #[test]
@@ -94,13 +112,63 @@ mod tests {
     }
 
     #[test]
+    fn run_link_creates_link_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        let source = temp.path().join("tool.byk.json");
+        fs::write(&source, "{}").unwrap();
+        let canonical = fs::canonicalize(&source).unwrap();
+
+        let path = run(
+            FileScope::Global,
+            "ops",
+            &link_args(source.to_str().unwrap()),
+            &layout,
+        )
+        .unwrap();
+
+        let raw = fs::read_to_string(&path).unwrap();
+        assert_eq!(raw, format!("[\"{}\"]\n", canonical.to_str().unwrap()));
+    }
+
+    #[test]
+    fn run_link_rejects_invalid_target_without_creating_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        let missing = temp.path().join("missing.byk.json");
+
+        let err = run(
+            FileScope::Global,
+            "ops",
+            &link_args(missing.to_str().unwrap()),
+            &layout,
+        )
+        .unwrap_err();
+
+        assert!(err.starts_with("Link target not found:"));
+        assert!(!layout.alias_dir.exists());
+    }
+
+    #[test]
+    fn parse_args_variants() {
+        assert_eq!(parse_args(&[]), Ok(None));
+        assert_eq!(
+            parse_args(&link_args("@tool")),
+            Ok(Some("@tool".to_string()))
+        );
+        assert!(parse_args(&["extra".to_string()]).is_err());
+        assert!(parse_args(&["--link".to_string()]).is_err());
+        assert!(parse_args(&["--bad".to_string(), "@tool".to_string()]).is_err());
+    }
+
+    #[test]
     fn run_rejects_arguments() {
         let temp = tempfile::tempdir().unwrap();
         let layout = test_layout(&temp);
 
         let err = run(FileScope::Global, "ops", &["extra".to_string()], &layout).unwrap_err();
 
-        assert_eq!(err, "init takes no arguments");
+        assert_eq!(err, "init accepts only --link <target>");
         assert!(!layout.alias_dir.join("ops.byk.json").exists());
     }
 
@@ -110,18 +178,18 @@ mod tests {
         let path = temp.path().join("ops.byk.json");
         fs::write(&path, "{\"keep\": true}").unwrap();
 
-        let err = create(&path).unwrap_err();
+        let err = create(&path, EMPTY_ALIAS_FILE).unwrap_err();
 
         assert_eq!(err, format!("File already exists: {}", path.display()));
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\"keep\": true}");
     }
 
     #[test]
-    fn create_writes_empty_object() {
+    fn create_writes_given_content() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("ops.byk.json");
 
-        create(&path).unwrap();
+        create(&path, EMPTY_ALIAS_FILE).unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "{}\n");
     }

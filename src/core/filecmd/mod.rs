@@ -7,6 +7,7 @@ mod destroy;
 mod help;
 mod init;
 mod json;
+mod link;
 mod path;
 mod rename;
 
@@ -32,6 +33,7 @@ enum Verb {
     Json,
     Path,
     Rename,
+    Link,
     Help,
 }
 
@@ -46,7 +48,7 @@ const VERBS: &[VerbInfo] = &[
     VerbInfo {
         name: "init",
         verb: Verb::Init,
-        description: "Create an empty alias file",
+        description: "Create an alias file",
     },
     VerbInfo {
         name: "destroy",
@@ -69,6 +71,11 @@ const VERBS: &[VerbInfo] = &[
         description: "Rename the alias file",
     },
     VerbInfo {
+        name: "link",
+        verb: Verb::Link,
+        description: "Point this file at another alias file",
+    },
+    VerbInfo {
         name: "help",
         verb: Verb::Help,
         description: "Show this help",
@@ -83,6 +90,11 @@ struct OptionInfo {
 
 /// 文件命令选项；顺序即补全与帮助输出顺序。
 const OPTIONS: &[OptionInfo] = &[
+    OptionInfo {
+        verb: Verb::Init,
+        flag: "--link",
+        description: "Create as a link to another alias file",
+    },
     OptionInfo {
         verb: Verb::Destroy,
         flag: "--yes",
@@ -295,6 +307,14 @@ pub(crate) fn describe(token: &str) -> Option<&'static str> {
     }
 }
 
+/// 文件命令选项的静态描述；未知选项返回 `None`。
+pub(crate) fn describe_option(flag: &str) -> Option<&'static str> {
+    OPTIONS
+        .iter()
+        .find(|info| info.flag == flag)
+        .map(|info| info.description)
+}
+
 fn write_stdout(content: &[u8]) -> Result<(), String> {
     let mut stdout = std::io::stdout().lock();
     stdout
@@ -329,6 +349,8 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
             .and_then(|text| write_stdout(text.as_bytes())),
         Verb::Rename => rename::run(command.scope, &command.stem, args, layout)
             .map(|(from, to)| eprintln!("Renamed {} to {}", from.display(), to.display())),
+        Verb::Link => link::run(command.scope, &command.stem, args, layout)
+            .map(|(path, target)| eprintln!("Linked {} to {}", path.display(), target.display())),
         Verb::Help => help::run(command.scope, &command.stem, args)
             .and_then(|text| write_stdout(text.as_bytes())),
     };
@@ -499,11 +521,15 @@ mod tests {
 
     #[test]
     fn describe_file_command_verbs() {
-        assert_eq!(describe("@@ops..init"), Some("Create an empty alias file"));
+        assert_eq!(describe("@@ops..init"), Some("Create an alias file"));
         assert_eq!(describe("@ops..destroy"), Some("Remove the alias file"));
         assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
         assert_eq!(describe("@@ops..path"), Some("Print the absolute path"));
         assert_eq!(describe("@@ops..rename"), Some("Rename the alias file"));
+        assert_eq!(
+            describe("@@ops..link"),
+            Some("Point this file at another alias file")
+        );
         assert_eq!(describe("@@ops..help"), Some("Show this help"));
         assert_eq!(describe("@@ops.init"), None);
         assert_eq!(describe("@ops"), None);
@@ -543,6 +569,7 @@ mod tests {
                 "@@ops..json".to_string(),
                 "@@ops..path".to_string(),
                 "@@ops..rename".to_string(),
+                "@@ops..link".to_string(),
                 "@@ops..help".to_string()
             ])
         );
@@ -566,6 +593,10 @@ mod tests {
             complete_verbs("@@ops..r"),
             Some(vec!["@@ops..rename".to_string()])
         );
+        assert_eq!(
+            complete_verbs("@@ops..l"),
+            Some(vec!["@@ops..link".to_string()])
+        );
         assert_eq!(complete_verbs("@..i"), Some(vec!["@..init".to_string()]));
     }
 
@@ -578,6 +609,14 @@ mod tests {
 
     #[test]
     fn complete_options_per_verb() {
+        assert_eq!(
+            complete_options("@@ops..init", "--"),
+            Some(vec!["--link".to_string()])
+        );
+        assert_eq!(
+            complete_options("@@ops..init", "--l"),
+            Some(vec!["--link".to_string()])
+        );
         assert_eq!(
             complete_options("@@ops..json", "--"),
             Some(vec!["--expand".to_string(), "--no-check".to_string()])
@@ -594,7 +633,7 @@ mod tests {
             complete_options("@@ops..destroy", "--"),
             Some(vec!["--yes".to_string()])
         );
-        assert_eq!(complete_options("@@ops..init", "--"), Some(Vec::new()));
+        assert_eq!(complete_options("@@ops..link", "--"), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..json", ""), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..json", "x"), Some(Vec::new()));
         assert_eq!(complete_options("normal", "--"), None);

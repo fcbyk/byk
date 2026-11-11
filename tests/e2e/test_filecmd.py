@@ -39,7 +39,7 @@ def test_init_rejects_arguments(runner):
     result = runner.run("@@ops..init", "extra")
 
     assert result.returncode == 1
-    assert "takes no arguments" in result.stderr
+    assert "accepts only --link" in result.stderr
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
 
