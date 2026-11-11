@@ -1,0 +1,70 @@
+# 把已发布 release 里的 wheel 上传到 PyPI。
+#
+# 触发点是 release 被 publish（人工点确认），不是 tag push —— PyPI 的版本号
+# 一旦上传就永久占用，发错了只能升版本号补救，所以中间必须有人看一眼。
+#
+# 认证走 Trusted Publishing（OIDC），不需要任何 PyPI token 或 secret。
+# PyPI 上登记的发布者必须与这个文件完全一致：
+#   Owner: fcbyk
+#   Repository: byk
+#   Workflow name: publish-pypi.yml
+#   Environment name: pypi
+# 改了文件名或 environment 名，PyPI 那边必须同步改，否则发布失败。
+
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  # 手动重试用：PyPI 偶发故障、或 release publish 之后需要补发。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已发布的 release tag，例如 v0.8.0'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  pypi:
+    name: upload to PyPI
+    runs-on: ubuntu-22.04
+    # 这个名字要与 PyPI 上登记的 Environment 一致；它同时也是配人工审批的地方。
+    environment: pypi
+    permissions:
+      contents: read      # 读 release 与 tag
+      actions: read       # 查 release.yml 那次运行，并下载它的 wheel artifact
+      id-token: write     # Trusted Publishing 必需，缺了无法向 PyPI 自证身份
+    steps:
+      # wheel 不在 release 资产里（release 是给用户装 CLI 的，wheel 只走 artifact），
+      # 所以按 tag → commit → release.yml 运行 的顺序找回来。
+      - name: Download wheels artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # release 事件用事件里的 tag；手动重试用输入的 tag。
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          sha=$(gh api "repos/${{ github.repository }}/commits/${TAG}" --jq .sha)
+          echo "tag ${TAG} -> commit ${sha}"
+
+          run_id=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/release.yml/runs?head_sha=${sha}&status=success&per_page=1" \
+            --jq '.workflow_runs[0].id')
+          if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+            echo "::error::找不到 ${TAG} 对应的 release.yml 成功运行（artifact 可能已过期，需重跑该 workflow）"
+            exit 1
+          fi
+          echo "release run: ${run_id}"
+
+          gh run download "$run_id" --repo "${{ github.repository }}" -n byk-wheels -D dist
+
+          # artifact 里装的是 byk-<version>-wheels.zip，再解一层才是 whl。
+          mkdir -p dist/whl
+          unzip -o dist/byk-*-wheels.zip -d dist/whl
+          ls -1 dist/whl
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/whl

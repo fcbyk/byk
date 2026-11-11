@@ -1,7 +1,12 @@
 # 构建发布产物。两种模式共用同一个构建矩阵，靠 event_name 分叉：
 #
-#   push tag v*  →  构建 tar/zip，生成校验和，创建 draft release
-#   手动触发      →  额外构建 wheel，只上传 artifact，不碰 release
+#   push tag v*  →  5 个 tar/zip，生成校验和，创建 draft release
+#   手动触发      →  同样 5 个 tar/zip，不碰 release
+#
+# wheel 只作为 Actions artifact，不进 release 资产：release 是给用户装 CLI 的，
+# 而 wheel 的消费者是本地测试和 PyPI。人工 publish draft 之后，publish-pypi.yml
+# 会回到那次运行的 artifact 里取 wheel 发 PyPI。
+# 顺序是刻意的：PyPI 的版本号一旦上传就永久占用，必须有人先看一眼再发。
 #
 # 手动模式的价值是在打 tag 之前先验证五个平台都编得出来、wheel 打得动。
 # 注意 draft release 不出现在 releases/latest 里，所以
@@ -90,8 +95,9 @@ jobs:
 
       # 手动模式下由 maturin 驱动 cargo，避免同一个 target 编译两遍。
       # 它产出的二进制和 cargo build 落在同一目录，下面打包照旧。
+      # 两种模式都要 wheel：手动模式供本地验证，tag 模式供 publish-pypi.yml 发 PyPI。
+      # tag 模式下 cargo build 已经编过，maturin 会复用产物，不会重编一遍。
       - name: Build wheel
-        if: github.event_name == 'workflow_dispatch'
         run: |
           pip install maturin
           maturin build --release --target ${{ matrix.target }} --out dist
@@ -111,16 +117,84 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path "target/${{ matrix.target }}/release/byk.exe" -DestinationPath "dist/byk-${{ matrix.artifact }}.zip"
 
-      - uses: actions/upload-artifact@v4
+      # 二进制和 wheel 分成两个 artifact：手动模式想单独下载某个 .whl 时，
+      # 不必先解开一个混装的包。
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
         with:
           name: byk-${{ matrix.artifact }}
-          path: dist/*
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
           if-no-files-found: error
           retention-days: 7
 
+      # 中间产物，下面 wheels job 会把它收拢成一个压缩包再删掉。
+      - name: Upload wheel
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.artifact }}
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  # 把五个平台的 wheel 收拢成一个压缩包：手动模式方便一次下载完，
+  # tag 模式下它是 publish-pypi.yml 发 PyPI 的输入（不进 release 资产）。
+  # 每平台的中间 artifact 用完即删。
+  wheels:
+    name: wheels bundle
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: write        # 删除中间 artifact 需要
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read version
+        run: echo "VERSION=$(awk -F'"' '/^version/{print $2; exit}' Cargo.toml)" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: wheels
+          # 五个平台的 whl 平铺到同一目录，打包时不用处理层级。
+          merge-multiple: true
+
+      - name: Bundle wheels
+        run: |
+          cd wheels
+          ls -1 ./*.whl
+          zip -j "../byk-${VERSION}-wheels.zip" ./*.whl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: byk-wheels
+          path: byk-*-wheels.zip
+          if-no-files-found: error
+          # 7 天够用：正常流程是当天打 tag、当天 publish。超时后 publish-pypi.yml
+          # 会明确报错，重跑一次 release.yml 即可补。
+          retention-days: 7
+
+      # 清理失败不该把整个 workflow 拖红——产物早就传好了。
+      - name: Remove per-platform wheel artifacts
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name | startswith("wheel-")) | .id' |
+          while read -r id; do
+            echo "deleting artifact ${id}"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/${id}"
+          done
+
   release:
     name: draft release
-    needs: build
+    # 等 wheels 收拢完再跑：那时中间 artifact 已被删除，下载目录里只剩
+    # 5 个二进制包和 1 个 wheel 包，不会有散落的 .whl 混进来。
+    needs: [build, wheels]
     # 手动触发时如果在界面上把 ref 选成了某个 tag，ref_type 同样会是 tag，
     # 所以必须连 event_name 一起判断，否则预发布演练会真的发一个草稿。
     if: github.event_name == 'push' && github.ref_type == 'tag'
