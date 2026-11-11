@@ -25,9 +25,35 @@ pub fn generate(shell: &str) {
 }
 
 /// 输出补全候选，一行一个。
-pub fn complete(args: &[String], layout: &PathLayout) {
+///
+/// `with_descriptions` 为 true 时，内置选项在候选后追加 tab 分隔的描述。
+pub fn complete(args: &[String], layout: &PathLayout, with_descriptions: bool) {
     for c in candidates(args, layout) {
-        println!("{}", c);
+        println!("{}", format_candidate(&c, with_descriptions));
+    }
+}
+
+/// 内置选项的静态描述；动态候选不在这里。
+fn describe(candidate: &str) -> Option<&'static str> {
+    match candidate {
+        "--help" | "-h" => Some("Print help"),
+        "--version" | "-v" => Some("Print version"),
+        "--paths" => Some("Print CLI paths and file locations"),
+        "--expand" => Some("Expand file variables and pretty-print"),
+        "--no-check" => Some("Skip JSON validation and print raw"),
+        "--yes" => Some("Skip confirmation"),
+        _ => filecmd::describe(candidate),
+    }
+}
+
+fn format_candidate(candidate: &str, with_descriptions: bool) -> String {
+    if !with_descriptions {
+        return candidate.to_string();
+    }
+
+    match describe(candidate) {
+        Some(description) => format!("{}\t{}", candidate, description),
+        None => candidate.to_string(),
     }
 }
 
@@ -106,9 +132,20 @@ fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> 
 fn print_zsh() {
     print!(
         r##"_byk() {{
-    local -a completions
-    completions=(${{(f)"$(byk __api__ complete "${{words[@]:1}}" 2>/dev/null)"}})
-    compadd -a completions
+    local -a items
+    local value desc
+    while IFS=$'\t' read -r value desc; do
+        [[ -z "$value" ]] && continue
+        if [[ -n "$desc" ]]; then
+            items+=("${{value//:/\\:}}:$desc")
+        else
+            items+=("$value")
+        fi
+    done < <(byk __api__ complete --with-descriptions "${{words[@]:1}}" 2>/dev/null)
+
+    if (( ${{#items}} )); then
+        _describe 'byk' items
+    fi
 }}
 
 compdef _byk byk
@@ -537,6 +574,27 @@ mod tests {
         assert!(candidates(&words(&["@@ops..json", ""]), &env.layout).is_empty());
         assert!(candidates(&words(&["@@ops..json", "--expand", ""]), &env.layout).is_empty());
         assert!(candidates(&words(&["hello", "--"]), &env.layout).is_empty());
+    }
+
+    #[test]
+    fn builtin_options_have_descriptions() {
+        for flag in GLOBAL_FLAGS {
+            assert!(describe(flag).is_some(), "{flag}");
+        }
+        for flag in ["--expand", "--no-check", "--yes"] {
+            assert!(describe(flag).is_some(), "{flag}");
+        }
+    }
+
+    #[test]
+    fn format_candidate_plain_and_described() {
+        assert_eq!(format_candidate("--help", false), "--help");
+        assert_eq!(format_candidate("--help", true), "--help\tPrint help");
+        assert_eq!(format_candidate("build", true), "build");
+        assert_eq!(
+            format_candidate("@@ops..init", true),
+            "@@ops..init\tCreate an empty alias file"
+        );
     }
 
     #[test]

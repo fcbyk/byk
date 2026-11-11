@@ -18,7 +18,7 @@ Three rules apply to every request:
 | Request | Output |
 |---------|--------|
 | `__api__ completion <shell>` | Shell registration script (zsh / bash / fish) |
-| `__api__ complete <words...>` | Completion candidates, one per line |
+| `__api__ complete [--with-descriptions] <words...>` | Completion candidates, one per line; the flag appends a tab-separated description for built-in options and file-command verbs |
 | `__api__ resolve <key> [args...]` | Resolved alias, JSON |
 | `__api__ paths` | The two CLI directories, JSON |
 | `__api__ paths <name>` | A single bare path (`root` / `alias`) |

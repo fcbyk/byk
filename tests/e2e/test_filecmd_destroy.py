@@ -166,6 +166,15 @@ def test_destroy_yes_option_is_completed(runner):
     assert result.stdout.splitlines() == ["--yes"]
 
 
+def test_destroy_yes_option_is_completed_with_description(runner):
+    result = runner.run(
+        "__api__", "complete", "--with-descriptions", "@@ops..destroy", "--"
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == ["--yes\tSkip confirmation"]
+
+
 def test_resolve_rejects_destroy_without_deleting(runner):
     path = runner.prepare_alias_json("ops", {})
 

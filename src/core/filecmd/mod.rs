@@ -212,6 +212,18 @@ pub(crate) fn claims(token: &str) -> bool {
     !matches!(parse(token), ParseResult::NotFileCommand)
 }
 
+/// 文件命令动词的静态描述；非文件命令或非法形式返回 `None`。
+pub(crate) fn describe(token: &str) -> Option<&'static str> {
+    match parse(token) {
+        ParseResult::Command(command) => Some(match command.verb {
+            Verb::Init => "Create an empty alias file",
+            Verb::Destroy => "Remove the alias file",
+            Verb::Json => "Show the alias file JSON",
+        }),
+        ParseResult::NotFileCommand | ParseResult::Error(_) => None,
+    }
+}
+
 pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayout) {
     let result = match command.verb {
         Verb::Init => init::run(command.scope, &command.stem, args, layout).map(|path| {
@@ -407,6 +419,15 @@ mod tests {
         assert!(claims("@@ops..explode"));
         assert!(!claims("@@ops.init"));
         assert!(!claims("normal"));
+    }
+
+    #[test]
+    fn describe_file_command_verbs() {
+        assert_eq!(describe("@@ops..init"), Some("Create an empty alias file"));
+        assert_eq!(describe("@ops..destroy"), Some("Remove the alias file"));
+        assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
+        assert_eq!(describe("@@ops.init"), None);
+        assert_eq!(describe("@ops"), None);
     }
 
     #[test]

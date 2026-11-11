@@ -201,6 +201,17 @@ def test_json_options_are_completed(runner):
     assert no_check.stdout.splitlines() == ["--no-check"]
 
 
+def test_json_options_are_completed_with_descriptions(runner):
+    result = runner.run(
+        "__api__", "complete", "--with-descriptions", "@@ops..json", "--"
+    )
+
+    assert result.stdout.splitlines() == [
+        "--expand\tExpand file variables and pretty-print",
+        "--no-check\tSkip JSON validation and print raw",
+    ]
+
+
 def test_json_options_are_not_offered_without_dash(runner):
     result = runner.run("__api__", "complete", "@@ops..json", "")
 

@@ -115,6 +115,47 @@ def test_api_complete_lists_aliases(runner):
     assert "beta" in lines
 
 
+def test_api_complete_default_has_no_descriptions(runner):
+    r = runner.run("__api__", "complete", "-")
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    assert "--help" in lines
+    assert not any("\t" in line for line in lines)
+
+
+def test_api_complete_with_descriptions_flags(runner):
+    r = runner.run("__api__", "complete", "--with-descriptions", "-")
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    assert "--help\tPrint help" in lines
+    assert "--version\tPrint version" in lines
+    assert "--paths\tPrint CLI paths and file locations" in lines
+
+
+def test_api_complete_with_descriptions_file_command_verbs(runner):
+    r = runner.run("__api__", "complete", "--with-descriptions", "@@ops..")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == [
+        "@@ops..init\tCreate an empty alias file",
+        "@@ops..destroy\tRemove the alias file",
+        "@@ops..json\tShow the alias file JSON",
+    ]
+
+
+def test_api_complete_with_descriptions_keeps_dynamic_candidates_plain(runner):
+    runner.prepare_alias_json("r", {"alpha": "echo a"})
+    r = runner.run("__api__", "complete", "--with-descriptions", "")
+    assert r.returncode == 0, r.stderr
+    assert "alpha" in r.stdout.splitlines()
+
+
+def test_api_completion_script_zsh_uses_descriptions(runner):
+    r = runner.run("__api__", "completion", "zsh")
+    assert r.returncode == 0, r.stderr
+    assert "--with-descriptions" in r.stdout
+    assert "_describe 'byk' items" in r.stdout
+
+
 def test_api_complete_at_prefix(runner):
     """@ 前缀只返回精确语法候选"""
     runner.prepare_alias_json("r", {"alpha": "echo a"})

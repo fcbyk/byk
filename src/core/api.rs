@@ -21,8 +21,8 @@ const REQUESTS: &[RequestInfo] = &[
     },
     RequestInfo {
         name: "complete",
-        args: "<words...>",
-        description: "print completion candidates, one per line",
+        args: "[--with-descriptions] <words...>",
+        description: "print completion candidates; the flag appends a tab-separated description",
     },
     RequestInfo {
         name: "resolve",
@@ -99,7 +99,12 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
             completion::generate(shell);
         }
         Some("complete") => {
-            completion::complete(&args[1..], layout);
+            let request = &args[1..];
+            let (with_descriptions, words) = match request.first().map(String::as_str) {
+                Some("--with-descriptions") => (true, &request[1..]),
+                _ => (false, request),
+            };
+            completion::complete(words, layout, with_descriptions);
         }
         Some("resolve") => {
             let key = match args.get(1) {

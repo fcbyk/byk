@@ -18,7 +18,7 @@ description: 隐藏的 byk __api__：给 shell 脚本与编辑器插件的只读
 | 请求 | 输出 |
 |------|------|
 | `__api__ completion <shell>` | 补全注册脚本（zsh / bash / fish） |
-| `__api__ complete <words...>` | 补全候选，一行一个 |
+| `__api__ complete [--with-descriptions] <words...>` | 补全候选，一行一个；带 flag 时内置选项和文件命令动词附带 tab 分隔的描述 |
 | `__api__ resolve <key> [args...]` | 别名的解析结果，JSON |
 | `__api__ paths` | CLI 两条目录，JSON |
 | `__api__ paths <name>` | 单个目录的裸路径（`root` / `alias`） |
