@@ -3,8 +3,10 @@
 //! 语法为 `@<file>..<verb>` / `@@<file>..<verb>`，`..` 是保留分隔符。
 //! 文件命令独立于别名扫描、合并与执行，不进入合并命名空间。
 
+mod destroy;
 mod init;
 
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use crate::core::aliases::validate_filename;
@@ -20,10 +22,11 @@ pub(crate) enum FileScope {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Verb {
     Init,
+    Destroy,
 }
 
 /// 已注册的动词；顺序即错误提示与补全顺序。
-const VERBS: &[(&str, Verb)] = &[("init", Verb::Init)];
+const VERBS: &[(&str, Verb)] = &[("init", Verb::Init), ("destroy", Verb::Destroy)];
 
 impl Verb {
     fn parse(raw: &str) -> Option<Self> {
@@ -95,6 +98,15 @@ fn split_prefix(token: &str) -> Option<(&'static str, &str)> {
     }
 }
 
+/// 文件命令的目标文件名：`<stem>.byk.json`，空 stem 为 `.byk.json`。
+fn target_path(base: &Path, stem: &str) -> PathBuf {
+    if stem.is_empty() {
+        base.join(".byk.json")
+    } else {
+        base.join(format!("{}.byk.json", stem))
+    }
+}
+
 pub(crate) fn parse(token: &str) -> ParseResult {
     let Some((prefix, rest)) = split_prefix(token) else {
         return ParseResult::NotFileCommand;
@@ -146,15 +158,29 @@ pub(crate) fn claims(token: &str) -> bool {
 
 pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayout) {
     let result = match command.verb {
-        Verb::Init => init::run(command.scope, &command.stem, args, layout),
+        Verb::Init => init::run(command.scope, &command.stem, args, layout).map(|path| {
+            eprintln!("Created {}", path.display());
+        }),
+        Verb::Destroy => {
+            destroy::run(command.scope, &command.stem, args, layout).map(|outcome| match outcome {
+                destroy::Outcome::Removed { path, symlink } => {
+                    if symlink {
+                        eprintln!("Removed symlink {}", path.display());
+                    } else {
+                        eprintln!("Removed {}", path.display());
+                    }
+                }
+                destroy::Outcome::Cancelled => eprintln!("Cancelled."),
+                destroy::Outcome::Mismatch => {
+                    eprintln!("Confirmation does not match. Cancelled.");
+                }
+            })
+        }
     };
 
-    match result {
-        Ok(path) => eprintln!("Created {}", path.display()),
-        Err(message) => {
-            eprintln!("{}", message);
-            exit(1);
-        }
+    if let Err(message) = result {
+        eprintln!("{}", message);
+        exit(1);
     }
 }
 
@@ -291,14 +317,45 @@ mod tests {
     }
 
     #[test]
+    fn parse_global_destroy() {
+        assert_eq!(
+            parse_ok("@@ops..destroy"),
+            FileCommand {
+                scope: FileScope::Global,
+                stem: "ops".into(),
+                verb: Verb::Destroy,
+            }
+        );
+    }
+
+    #[test]
+    fn target_path_named_and_anonymous() {
+        assert_eq!(
+            target_path(Path::new("/base"), "ops"),
+            PathBuf::from("/base/ops.byk.json")
+        );
+        assert_eq!(
+            target_path(Path::new("/base"), ""),
+            PathBuf::from("/base/.byk.json")
+        );
+    }
+
+    #[test]
     fn complete_after_two_dots() {
         assert_eq!(
             complete_verbs("@@ops.."),
-            Some(vec!["@@ops..init".to_string()])
+            Some(vec![
+                "@@ops..init".to_string(),
+                "@@ops..destroy".to_string()
+            ])
         );
         assert_eq!(
             complete_verbs("@@ops..i"),
             Some(vec!["@@ops..init".to_string()])
+        );
+        assert_eq!(
+            complete_verbs("@@ops..d"),
+            Some(vec!["@@ops..destroy".to_string()])
         );
         assert_eq!(complete_verbs("@..i"), Some(vec!["@..init".to_string()]));
     }

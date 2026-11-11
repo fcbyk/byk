@@ -330,7 +330,10 @@ mod tests {
         let env = TestEnv::new();
         assert_eq!(
             complete_at_prefix("@@anything..", &env.layout),
-            vec!["@@anything..init".to_string()]
+            vec![
+                "@@anything..init".to_string(),
+                "@@anything..destroy".to_string()
+            ]
         );
         assert_eq!(
             complete_at_prefix("@..i", &env.layout),

@@ -69,7 +69,7 @@ class BykRunner:
         master, slave = pty.openpty()
         proc = subprocess.Popen(
             argv,
-            stdin=None if input is not None else subprocess.DEVNULL,
+            stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=slave,
             text=True,

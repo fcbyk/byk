@@ -4,7 +4,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::FileScope;
+use super::{FileScope, target_path};
 use crate::core::paths::PathLayout;
 
 /// 新建内容：空 JSON 对象加一个结尾换行。
@@ -40,14 +40,6 @@ pub(super) fn run(
     Ok(target)
 }
 
-fn target_path(base: &Path, stem: &str) -> PathBuf {
-    if stem.is_empty() {
-        base.join(".byk.json")
-    } else {
-        base.join(format!("{}.byk.json", stem))
-    }
-}
-
 fn create(path: &Path) -> Result<(), String> {
     let mut file = match OpenOptions::new().write(true).create_new(true).open(path) {
         Ok(file) => file,
@@ -77,22 +69,6 @@ mod tests {
             root_dir: temp.path().to_path_buf(),
             alias_dir: temp.path().join(".byk").join("alias"),
         }
-    }
-
-    #[test]
-    fn target_path_named() {
-        assert_eq!(
-            target_path(Path::new("/base"), "ops"),
-            PathBuf::from("/base/ops.byk.json")
-        );
-    }
-
-    #[test]
-    fn target_path_anonymous() {
-        assert_eq!(
-            target_path(Path::new("/base"), ""),
-            PathBuf::from("/base/.byk.json")
-        );
     }
 
     #[test]
