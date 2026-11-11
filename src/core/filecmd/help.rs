@@ -102,6 +102,8 @@ mod tests {
         assert!(text.ends_with("\n\n"));
         assert!(text.contains("  @@ops..init"));
         assert!(text.contains("Create an alias file"));
+        assert!(text.contains("  @@ops..clear"));
+        assert!(text.contains("Reset this file to an empty object"));
         assert!(text.contains("  @@ops..path"));
         assert!(text.contains("Print the absolute path"));
         assert!(text.contains("  @@ops..rename"));
@@ -113,6 +115,7 @@ mod tests {
         assert!(text.contains("\nOptions:\n"));
         assert!(text.contains("  @@ops..init --link"));
         assert!(text.contains("Create as a link to another alias file"));
+        assert!(text.contains("  @@ops..clear --yes"));
         assert!(text.contains("  @@ops..destroy --yes"));
         assert!(text.contains("Skip confirmation"));
         assert!(text.contains("  @@ops..json --expand"));

@@ -10,6 +10,7 @@ def test_help_lists_commands_and_options_without_file(runner):
     assert lines[1] == "File commands:"
     assert "  @@ops..init     Create an alias file" in lines
     assert "  @@ops..destroy  Remove the alias file" in lines
+    assert "  @@ops..clear    Reset this file to an empty object" in lines
     assert "  @@ops..json     Show the alias file JSON" in lines
     assert "  @@ops..path     Print the absolute path" in lines
     assert "  @@ops..rename   Rename the alias file" in lines
@@ -18,6 +19,7 @@ def test_help_lists_commands_and_options_without_file(runner):
     assert "Options:" in lines
     assert "  @@ops..init --link      Create as a link to another alias file" in lines
     assert "  @@ops..destroy --yes    Skip confirmation" in lines
+    assert "  @@ops..clear --yes      Skip confirmation" in lines
     assert (
         "  @@ops..json --expand    Expand file variables and pretty-print" in lines
     )

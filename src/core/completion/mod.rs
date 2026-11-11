@@ -370,6 +370,7 @@ mod tests {
             vec![
                 "@@anything..init".to_string(),
                 "@@anything..destroy".to_string(),
+                "@@anything..clear".to_string(),
                 "@@anything..json".to_string(),
                 "@@anything..path".to_string(),
                 "@@anything..rename".to_string(),

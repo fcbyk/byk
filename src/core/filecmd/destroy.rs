@@ -1,12 +1,11 @@
 //! `..destroy`：删除别名文件。
 
 use std::fs;
-use std::io::{self, IsTerminal, Write};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::PathBuf;
 
-use colored::Colorize;
-use serde_json::Value;
-
+use super::prompt::{self, Confirmation};
+use super::summary::{self, ContentSummary};
 use super::{FileScope, not_found_message, resolve_target};
 use crate::core::paths::PathLayout;
 
@@ -44,19 +43,23 @@ pub(super) fn run(
     let symlink = metadata.file_type().is_symlink();
 
     if !yes {
-        if !io::stderr().is_terminal() {
-            return Err(format!(
-                "Refusing to remove {} without confirmation; pass --yes",
-                target.display()
-            ));
-        }
+        prompt::require_tty(&target, "remove")?;
 
-        let count = if symlink {
-            None
+        let (title, note) = if symlink {
+            (
+                "This will remove the symlink:",
+                "(the link target will not be touched)".to_string(),
+            )
         } else {
-            Some(count_aliases(&target))
+            let note = match summary::summarize(&target) {
+                ContentSummary::Empty => summary::aliases_label(0),
+                ContentSummary::Aliases(count) => summary::aliases_label(count),
+                ContentSummary::Link => "(link file; aliases are stored in its target)".to_string(),
+                ContentSummary::Unreadable => "(alias count unavailable)".to_string(),
+            };
+            ("This will permanently remove:", note)
         };
-        match confirm(&target, stem, count, symlink)? {
+        match prompt::confirm(&target, stem, title, Some(&note))? {
             Confirmation::Confirmed => {}
             Confirmation::Cancelled => return Ok(Outcome::Cancelled),
             Confirmation::Mismatch => return Ok(Outcome::Mismatch),
@@ -78,118 +81,6 @@ fn parse_args(args: &[String]) -> Result<bool, String> {
         [flag] if flag == "--yes" => Ok(true),
         _ => Err("destroy accepts only --yes".to_string()),
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AliasCount {
-    Known(usize),
-    Link,
-    Unknown,
-}
-
-impl AliasCount {
-    fn label(self) -> String {
-        match self {
-            Self::Known(1) => "(1 alias)".to_string(),
-            Self::Known(n) => format!("({} aliases)", n),
-            Self::Link => "(link file; aliases are stored in its target)".to_string(),
-            Self::Unknown => "(alias count unavailable)".to_string(),
-        }
-    }
-}
-
-/// 只统计文件自身定义的别名；链接文件不跟随目标。
-fn count_aliases(path: &Path) -> AliasCount {
-    let Ok(text) = fs::read_to_string(path) else {
-        return AliasCount::Unknown;
-    };
-    let Ok(value) = serde_json::from_str::<Value>(&text) else {
-        return AliasCount::Unknown;
-    };
-
-    match &value {
-        Value::Array(_) => AliasCount::Link,
-        Value::Object(map) => AliasCount::Known(count_object(map)),
-        _ => AliasCount::Known(0),
-    }
-}
-
-fn count_object(map: &serde_json::Map<String, Value>) -> usize {
-    match map.get("$cmd") {
-        Some(Value::String(_)) => 1 + count_children(map),
-        Some(_) => 0,
-        None => count_children(map),
-    }
-}
-
-fn count_children(map: &serde_json::Map<String, Value>) -> usize {
-    map.iter()
-        .filter(|(key, _)| !key.starts_with('$') && !key.contains('@') && !key.contains('.'))
-        .map(|(_, value)| count_value(value))
-        .sum()
-}
-
-fn count_value(value: &Value) -> usize {
-    match value {
-        Value::String(_) => 1,
-        Value::Object(map) => count_object(map),
-        _ => 0,
-    }
-}
-
-enum Confirmation {
-    Confirmed,
-    Cancelled,
-    Mismatch,
-}
-
-fn confirm(
-    path: &Path,
-    stem: &str,
-    count: Option<AliasCount>,
-    symlink: bool,
-) -> Result<Confirmation, String> {
-    eprintln!();
-    if symlink {
-        eprintln!("{}", "This will remove the symlink:".yellow());
-        eprintln!("  {}", path.display().to_string().dimmed());
-        eprintln!("  {}", "(the link target will not be touched)".dimmed());
-    } else {
-        eprintln!("{}", "This will permanently remove:".yellow());
-        eprintln!("  {}", path.display().to_string().dimmed());
-        if let Some(count) = count {
-            eprintln!("  {}", count.label().dimmed());
-        }
-    }
-    eprintln!();
-
-    let expected = confirm_token(stem);
-    eprint!("  {} {}: ", "Type".dimmed(), expected.yellow());
-    io::stderr()
-        .flush()
-        .map_err(|e| format!("Failed to write confirmation prompt: {}", e))?;
-
-    let mut input = String::new();
-    match io::stdin().read_line(&mut input) {
-        Ok(0) => {
-            eprintln!();
-            Ok(Confirmation::Cancelled)
-        }
-        Ok(_) if input.trim() == expected => Ok(Confirmation::Confirmed),
-        Ok(_) => {
-            eprintln!();
-            Ok(Confirmation::Mismatch)
-        }
-        Err(e) => {
-            eprintln!();
-            Err(format!("Failed to read confirmation: {}", e))
-        }
-    }
-}
-
-/// 匿名文件没有 stem，改为输入完整文件名确认。
-fn confirm_token(stem: &str) -> &str {
-    if stem.is_empty() { ".byk.json" } else { stem }
 }
 
 #[cfg(test)]
@@ -221,72 +112,6 @@ mod tests {
     fn parse_args_rejects_other_arguments() {
         assert!(parse_args(&["--force".to_string()]).is_err());
         assert!(parse_args(&["--yes".to_string(), "extra".to_string()]).is_err());
-    }
-
-    #[test]
-    fn confirm_token_uses_stem_or_anonymous_name() {
-        assert_eq!(confirm_token("ops"), "ops");
-        assert_eq!(confirm_token(""), ".byk.json");
-    }
-
-    #[test]
-    fn count_aliases_flat_and_nested() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("ops.byk.json");
-        fs::write(
-            &path,
-            r#"{
-                "build": "echo build",
-                "group": {"one": "echo one", "two": {"$cmd": "echo two"}},
-                "count": 42,
-                "flag": true,
-                "a.b": "ignored",
-                "$priority": 1
-            }"#,
-        )
-        .unwrap();
-
-        assert_eq!(count_aliases(&path), AliasCount::Known(3));
-    }
-
-    #[test]
-    fn count_aliases_meta_node_with_children() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("ops.byk.json");
-        fs::write(
-            &path,
-            r#"{"dev": {"$cmd": "echo dev", "inner": "echo inner"}}"#,
-        )
-        .unwrap();
-
-        assert_eq!(count_aliases(&path), AliasCount::Known(2));
-    }
-
-    #[test]
-    fn count_aliases_link_file_is_not_followed() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("ops.byk.json");
-        fs::write(&path, r#"["shared.byk.json"]"#).unwrap();
-
-        assert_eq!(count_aliases(&path), AliasCount::Link);
-    }
-
-    #[test]
-    fn count_aliases_invalid_json_is_unknown() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("ops.byk.json");
-        fs::write(&path, "{not json").unwrap();
-
-        assert_eq!(count_aliases(&path), AliasCount::Unknown);
-    }
-
-    #[test]
-    fn alias_count_labels() {
-        assert_eq!(AliasCount::Known(0).label(), "(0 aliases)");
-        assert_eq!(AliasCount::Known(1).label(), "(1 alias)");
-        assert_eq!(AliasCount::Known(3).label(), "(3 aliases)");
-        assert!(AliasCount::Link.label().contains("link file"));
-        assert!(AliasCount::Unknown.label().contains("unavailable"));
     }
 
     #[test]

@@ -8,7 +8,7 @@ use super::{FileScope, link, target_path};
 use crate::core::paths::PathLayout;
 
 /// 新建内容：空 JSON 对象加一个结尾换行。
-const EMPTY_ALIAS_FILE: &[u8] = b"{}\n";
+pub(super) const EMPTY_ALIAS_FILE: &[u8] = b"{}\n";
 
 pub(super) fn run(
     scope: FileScope,

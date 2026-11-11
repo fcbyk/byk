@@ -138,6 +138,7 @@ def test_api_complete_with_descriptions_file_command_verbs(runner):
     assert r.stdout.splitlines() == [
         "@@ops..init\tCreate an alias file",
         "@@ops..destroy\tRemove the alias file",
+        "@@ops..clear\tReset this file to an empty object",
         "@@ops..json\tShow the alias file JSON",
         "@@ops..path\tPrint the absolute path",
         "@@ops..rename\tRename the alias file",

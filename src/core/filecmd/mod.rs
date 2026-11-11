@@ -3,13 +3,16 @@
 //! 语法为 `@<file>..<verb>` / `@@<file>..<verb>`，`..` 是保留分隔符。
 //! 文件命令独立于别名扫描、合并与执行，不进入合并命名空间。
 
+mod clear;
 mod destroy;
 mod help;
 mod init;
 mod json;
 mod link;
 mod path;
+mod prompt;
 mod rename;
+mod summary;
 
 use std::fs;
 use std::io::Write;
@@ -30,6 +33,7 @@ pub(crate) enum FileScope {
 enum Verb {
     Init,
     Destroy,
+    Clear,
     Json,
     Path,
     Rename,
@@ -54,6 +58,11 @@ const VERBS: &[VerbInfo] = &[
         name: "destroy",
         verb: Verb::Destroy,
         description: "Remove the alias file",
+    },
+    VerbInfo {
+        name: "clear",
+        verb: Verb::Clear,
+        description: "Reset this file to an empty object",
     },
     VerbInfo {
         name: "json",
@@ -97,6 +106,11 @@ const OPTIONS: &[OptionInfo] = &[
     },
     OptionInfo {
         verb: Verb::Destroy,
+        flag: "--yes",
+        description: "Skip confirmation",
+    },
+    OptionInfo {
+        verb: Verb::Clear,
         flag: "--yes",
         description: "Skip confirmation",
     },
@@ -343,6 +357,18 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
                 }
             })
         }
+        Verb::Clear => {
+            clear::run(command.scope, &command.stem, args, layout).map(|outcome| match outcome {
+                clear::Outcome::Cleared(path) => eprintln!("Cleared {}", path.display()),
+                clear::Outcome::AlreadyEmpty(path) => {
+                    eprintln!("Already empty: {}", path.display());
+                }
+                clear::Outcome::Cancelled => eprintln!("Cancelled."),
+                clear::Outcome::Mismatch => {
+                    eprintln!("Confirmation does not match. Cancelled.");
+                }
+            })
+        }
         Verb::Json => json::run(command.scope, &command.stem, args, layout)
             .and_then(|content| write_stdout(&content)),
         Verb::Path => path::run(command.scope, &command.stem, args, layout)
@@ -523,6 +549,10 @@ mod tests {
     fn describe_file_command_verbs() {
         assert_eq!(describe("@@ops..init"), Some("Create an alias file"));
         assert_eq!(describe("@ops..destroy"), Some("Remove the alias file"));
+        assert_eq!(
+            describe("@@ops..clear"),
+            Some("Reset this file to an empty object")
+        );
         assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
         assert_eq!(describe("@@ops..path"), Some("Print the absolute path"));
         assert_eq!(describe("@@ops..rename"), Some("Rename the alias file"));
@@ -566,6 +596,7 @@ mod tests {
             Some(vec![
                 "@@ops..init".to_string(),
                 "@@ops..destroy".to_string(),
+                "@@ops..clear".to_string(),
                 "@@ops..json".to_string(),
                 "@@ops..path".to_string(),
                 "@@ops..rename".to_string(),
@@ -580,6 +611,10 @@ mod tests {
         assert_eq!(
             complete_verbs("@@ops..d"),
             Some(vec!["@@ops..destroy".to_string()])
+        );
+        assert_eq!(
+            complete_verbs("@@ops..c"),
+            Some(vec!["@@ops..clear".to_string()])
         );
         assert_eq!(
             complete_verbs("@@ops..j"),
@@ -631,6 +666,10 @@ mod tests {
         );
         assert_eq!(
             complete_options("@@ops..destroy", "--"),
+            Some(vec!["--yes".to_string()])
+        );
+        assert_eq!(
+            complete_options("@@ops..clear", "--"),
             Some(vec!["--yes".to_string()])
         );
         assert_eq!(complete_options("@@ops..link", "--"), Some(Vec::new()));
