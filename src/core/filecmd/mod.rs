@@ -5,7 +5,10 @@
 
 mod destroy;
 mod init;
+mod json;
 
+use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -23,10 +26,15 @@ pub(crate) enum FileScope {
 enum Verb {
     Init,
     Destroy,
+    Json,
 }
 
 /// 已注册的动词；顺序即错误提示与补全顺序。
-const VERBS: &[(&str, Verb)] = &[("init", Verb::Init), ("destroy", Verb::Destroy)];
+const VERBS: &[(&str, Verb)] = &[
+    ("init", Verb::Init),
+    ("destroy", Verb::Destroy),
+    ("json", Verb::Json),
+];
 
 impl Verb {
     fn parse(raw: &str) -> Option<Self> {
@@ -107,6 +115,54 @@ fn target_path(base: &Path, stem: &str) -> PathBuf {
     }
 }
 
+/// 按 scope 解析文件命令的目标路径。
+fn resolve_target(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<PathBuf, String> {
+    match scope {
+        FileScope::Local => {
+            let cwd = std::env::current_dir()
+                .map_err(|e| format!("Failed to resolve current directory: {}", e))?;
+            Ok(target_path(&cwd, stem))
+        }
+        FileScope::Global => Ok(target_path(&layout.alias_dir, stem)),
+    }
+}
+
+/// 目标不存在时的错误；另一 scope 有同名文件时给出切换提示。
+fn not_found_message(
+    scope: FileScope,
+    stem: &str,
+    target: &Path,
+    layout: &PathLayout,
+    verb: &str,
+) -> String {
+    let mut message = format!("File not found: {}", target.display());
+
+    let other = match scope {
+        FileScope::Local => target_path(&layout.alias_dir, stem),
+        FileScope::Global => match std::env::current_dir() {
+            Ok(cwd) => target_path(&cwd, stem),
+            Err(_) => return message,
+        },
+    };
+
+    if other != target && fs::symlink_metadata(&other).is_ok() {
+        let (label, prefix) = match scope {
+            FileScope::Local => ("global", "@@"),
+            FileScope::Global => ("local", "@"),
+        };
+        message.push_str(&format!(
+            "\nHint: a {} file exists at {}; use {}{}..{}",
+            label,
+            other.display(),
+            prefix,
+            stem,
+            verb
+        ));
+    }
+
+    message
+}
+
 pub(crate) fn parse(token: &str) -> ParseResult {
     let Some((prefix, rest)) = split_prefix(token) else {
         return ParseResult::NotFileCommand;
@@ -176,6 +232,13 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
                 }
             })
         }
+        Verb::Json => json::run(command.scope, &command.stem, args, layout).and_then(|content| {
+            let mut stdout = std::io::stdout().lock();
+            stdout
+                .write_all(&content)
+                .and_then(|_| stdout.flush())
+                .map_err(|e| format!("Failed to write output: {}", e))
+        }),
     };
 
     if let Err(message) = result {
@@ -202,6 +265,36 @@ pub(crate) fn complete_verbs(partial: &str) -> Option<Vec<String>> {
             .iter()
             .filter(|(name, _)| name.starts_with(verb_partial))
             .map(|(name, _)| format!("{}{}..{}", prefix, stem, name))
+            .collect(),
+    )
+}
+
+/// 补全文件命令后面的选项。
+///
+/// `None` 表示第一个词不是文件命令，交给原有逻辑；`Some(空)` 表示是文件命令
+/// 但当前位置没有候选。
+pub(crate) fn complete_options(command_token: &str, partial: &str) -> Option<Vec<String>> {
+    let command = match parse(command_token) {
+        ParseResult::Command(command) => command,
+        ParseResult::Error(_) => return Some(Vec::new()),
+        ParseResult::NotFileCommand => return None,
+    };
+
+    if !partial.starts_with('-') {
+        return Some(Vec::new());
+    }
+
+    let flags: &[&str] = match command.verb {
+        Verb::Init => &[],
+        Verb::Destroy => &["--yes"],
+        Verb::Json => &["--expand", "--no-check"],
+    };
+
+    Some(
+        flags
+            .iter()
+            .filter(|flag| flag.starts_with(partial))
+            .map(|flag| (*flag).to_string())
             .collect(),
     )
 }
@@ -346,7 +439,8 @@ mod tests {
             complete_verbs("@@ops.."),
             Some(vec![
                 "@@ops..init".to_string(),
-                "@@ops..destroy".to_string()
+                "@@ops..destroy".to_string(),
+                "@@ops..json".to_string()
             ])
         );
         assert_eq!(
@@ -357,6 +451,10 @@ mod tests {
             complete_verbs("@@ops..d"),
             Some(vec!["@@ops..destroy".to_string()])
         );
+        assert_eq!(
+            complete_verbs("@@ops..j"),
+            Some(vec!["@@ops..json".to_string()])
+        );
         assert_eq!(complete_verbs("@..i"), Some(vec!["@..init".to_string()]));
     }
 
@@ -365,6 +463,30 @@ mod tests {
         assert_eq!(complete_verbs("@@ops.init"), None);
         assert_eq!(complete_verbs("@@ops."), None);
         assert_eq!(complete_verbs("ops"), None);
+    }
+
+    #[test]
+    fn complete_options_per_verb() {
+        assert_eq!(
+            complete_options("@@ops..json", "--"),
+            Some(vec!["--expand".to_string(), "--no-check".to_string()])
+        );
+        assert_eq!(
+            complete_options("@@ops..json", "--e"),
+            Some(vec!["--expand".to_string()])
+        );
+        assert_eq!(
+            complete_options("@@ops..json", "--n"),
+            Some(vec!["--no-check".to_string()])
+        );
+        assert_eq!(
+            complete_options("@@ops..destroy", "--"),
+            Some(vec!["--yes".to_string()])
+        );
+        assert_eq!(complete_options("@@ops..init", "--"), Some(Vec::new()));
+        assert_eq!(complete_options("@@ops..json", ""), Some(Vec::new()));
+        assert_eq!(complete_options("@@ops..json", "x"), Some(Vec::new()));
+        assert_eq!(complete_options("normal", "--"), None);
     }
 
     #[test]

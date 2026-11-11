@@ -7,7 +7,7 @@ use colored::Colorize;
 
 use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
 use super::types::{AliasFile, Mode};
-use crate::core::vars::{FILE_DIR_VAR, VarIssue, VarTable, preprocess_vars};
+use crate::core::vars::{FILE_DIR_VAR, VarIssue, VarTable, describe_issue, preprocess_vars};
 use crate::utils::path::{canonical, dir_of, expand_home};
 
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> Vec<AliasFile> {
@@ -62,21 +62,12 @@ fn load_document(path: &Path, vars: &VarTable) -> Option<(serde_json::Value, Pat
 }
 
 fn report_var_issue(issue: &VarIssue, path: &Path) {
-    let detail = match issue {
-        VarIssue::InvalidName(n) => format!(
-            "variable '${{{}}}' has an invalid name (expected [A-Za-z_][A-Za-z0-9_]*), ignored",
-            n
-        ),
-        VarIssue::Reserved(n) => format!(
-            "variable '${{{}}}' collides with an alias placeholder, declaration ignored",
-            n
-        ),
-        VarIssue::SelfReference(n) => format!(
-            "variable '${{{}}}' references itself and cannot be resolved, left as-is",
-            n
-        ),
-    };
-    eprintln!("{} {} in {}", "Warning:".yellow(), detail, path.display());
+    eprintln!(
+        "{} {} in {}",
+        "Warning:".yellow(),
+        describe_issue(issue),
+        path.display()
+    );
 }
 
 /// 根是数组时跟随单导入指针，返回 `(目标文档, 目标路径)`。

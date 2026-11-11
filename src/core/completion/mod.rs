@@ -8,6 +8,7 @@ use at_prefix::{complete_at_prefix, complete_nested_alias};
 use at_prefix::collect_object_keys;
 
 use super::aliases;
+use super::filecmd;
 use super::paths::PathLayout;
 
 pub fn generate(shell: &str) {
@@ -44,6 +45,8 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
 
     if prev.is_empty() {
         get_completions(partial, layout)
+    } else if prev.len() == 1 {
+        filecmd::complete_options(&prev[0], partial).unwrap_or_default()
     } else {
         Vec::new()
     }
@@ -332,7 +335,8 @@ mod tests {
             complete_at_prefix("@@anything..", &env.layout),
             vec![
                 "@@anything..init".to_string(),
-                "@@anything..destroy".to_string()
+                "@@anything..destroy".to_string(),
+                "@@anything..json".to_string()
             ]
         );
         assert_eq!(
@@ -513,6 +517,26 @@ mod tests {
         );
         let completions = get_completions("deploy.pr", &env.layout);
         assert_eq!(completions, vec!["deploy.prod".to_string()]);
+    }
+
+    #[test]
+    fn candidates_file_command_options() {
+        let env = TestEnv::new();
+        assert_eq!(
+            candidates(&words(&["@@ops..json", "--"]), &env.layout),
+            vec!["--expand".to_string(), "--no-check".to_string()]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..json", "--n"]), &env.layout),
+            vec!["--no-check".to_string()]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..destroy", "--"]), &env.layout),
+            vec!["--yes".to_string()]
+        );
+        assert!(candidates(&words(&["@@ops..json", ""]), &env.layout).is_empty());
+        assert!(candidates(&words(&["@@ops..json", "--expand", ""]), &env.layout).is_empty());
+        assert!(candidates(&words(&["hello", "--"]), &env.layout).is_empty());
     }
 
     #[test]

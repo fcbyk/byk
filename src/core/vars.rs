@@ -56,6 +56,24 @@ pub enum VarIssue {
     SelfReference(String),
 }
 
+/// 面向用户的变量问题描述，不含 `Warning:` 前缀和文件路径。
+pub fn describe_issue(issue: &VarIssue) -> String {
+    match issue {
+        VarIssue::InvalidName(n) => format!(
+            "variable '${{{}}}' has an invalid name (expected [A-Za-z_][A-Za-z0-9_]*), ignored",
+            n
+        ),
+        VarIssue::Reserved(n) => format!(
+            "variable '${{{}}}' collides with an alias placeholder, declaration ignored",
+            n
+        ),
+        VarIssue::SelfReference(n) => format!(
+            "variable '${{{}}}' references itself and cannot be resolved, left as-is",
+            n
+        ),
+    }
+}
+
 /// 变量名合法性：与 shell 标识符一致。
 pub fn is_valid_var_name(name: &str) -> bool {
     let mut chars = name.chars();

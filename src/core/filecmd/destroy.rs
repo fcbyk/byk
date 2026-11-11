@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use colored::Colorize;
 use serde_json::Value;
 
-use super::{FileScope, target_path};
+use super::{FileScope, not_found_message, resolve_target};
 use crate::core::paths::PathLayout;
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ pub(super) fn run(
     let metadata = match fs::symlink_metadata(&target) {
         Ok(metadata) => metadata,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Err(not_found_message(scope, stem, &target, layout));
+            return Err(not_found_message(scope, stem, &target, layout, "destroy"));
         }
         Err(e) => return Err(format!("Failed to inspect {}: {}", target.display(), e)),
     };
@@ -78,45 +78,6 @@ fn parse_args(args: &[String]) -> Result<bool, String> {
         [flag] if flag == "--yes" => Ok(true),
         _ => Err("destroy accepts only --yes".to_string()),
     }
-}
-
-fn resolve_target(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<PathBuf, String> {
-    match scope {
-        FileScope::Local => {
-            let cwd = std::env::current_dir()
-                .map_err(|e| format!("Failed to resolve current directory: {}", e))?;
-            Ok(target_path(&cwd, stem))
-        }
-        FileScope::Global => Ok(target_path(&layout.alias_dir, stem)),
-    }
-}
-
-fn not_found_message(scope: FileScope, stem: &str, target: &Path, layout: &PathLayout) -> String {
-    let mut message = format!("File not found: {}", target.display());
-
-    let other = match scope {
-        FileScope::Local => target_path(&layout.alias_dir, stem),
-        FileScope::Global => match std::env::current_dir() {
-            Ok(cwd) => target_path(&cwd, stem),
-            Err(_) => return message,
-        },
-    };
-
-    if other != target && fs::symlink_metadata(&other).is_ok() {
-        let (label, prefix) = match scope {
-            FileScope::Local => ("global", "@@"),
-            FileScope::Global => ("local", "@"),
-        };
-        message.push_str(&format!(
-            "\nHint: a {} file exists at {}; use {}{}..destroy",
-            label,
-            other.display(),
-            prefix,
-            stem
-        ));
-    }
-
-    message
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
