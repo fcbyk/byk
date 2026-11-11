@@ -271,8 +271,8 @@ fn resolve_table(
 /// 返回被拒绝或冻结的声明，供调用方提示。
 pub fn preprocess_vars(root: &mut Value, builtin: &VarTable) -> Vec<VarIssue> {
     let Some(obj) = root.as_object() else {
-        // 根不是对象（单导入的索引数组）时没有 `$var` 可收集，
-        // 但内置变量仍要展开，否则导入路径里的 `${file_dir}` 会用不上。
+        // 根不是对象（单链接的数组）时没有 `$var` 可收集，
+        // 但内置变量仍要展开，否则链接路径里的 `${file_dir}` 会用不上。
         substitute_value(root, builtin);
         return Vec::new();
     };
@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn array_root_expands_builtin() {
-        // 索引文件根是数组，没有 $var，但 ${file_dir} 之类仍要展开
+        // 链接文件根是数组，没有 $var，但 ${file_dir} 之类仍要展开
         let (v, issues) = run(json!(["${byk_dir}/x.json", "${nope}/y.json"]));
         assert!(issues.is_empty());
         assert_eq!(v[0], json!("/home/u/.byk/x.json"));

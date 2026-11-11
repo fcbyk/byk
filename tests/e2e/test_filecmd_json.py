@@ -40,15 +40,15 @@ def test_json_does_not_add_trailing_newline(runner):
     assert result.stdout == content
 
 
-def test_json_does_not_follow_import_index(runner):
+def test_json_does_not_follow_link_file(runner):
     runner.prepare_alias_file("shared", "not json at all")
-    index = '["shared.byk.json"]\n'
-    runner.prepare_alias_file("ops", index)
+    content = '["shared.byk.json"]\n'
+    runner.prepare_alias_file("ops", content)
 
     result = runner.run("@@ops..json")
 
     assert result.returncode == 0
-    assert result.stdout == index
+    assert result.stdout == content
 
 
 def test_json_expand_substitutes_vars_and_removes_var_block(runner):
@@ -81,7 +81,7 @@ def test_json_expand_reports_variable_warnings(runner):
     assert "references itself" in result.stderr
 
 
-def test_json_expand_does_not_follow_import_index(runner):
+def test_json_expand_does_not_follow_link_file(runner):
     runner.prepare_alias_file("shared", "not json at all")
     runner.prepare_alias_file("ops", '["${byk_dir}/shared.byk.json"]')
 

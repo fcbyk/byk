@@ -83,7 +83,7 @@ fn parse_args(args: &[String]) -> Result<bool, String> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AliasCount {
     Known(usize),
-    Import,
+    Link,
     Unknown,
 }
 
@@ -92,13 +92,13 @@ impl AliasCount {
         match self {
             Self::Known(1) => "(1 alias)".to_string(),
             Self::Known(n) => format!("({} aliases)", n),
-            Self::Import => "(import file; aliases are stored in another file)".to_string(),
+            Self::Link => "(link file; aliases are stored in its target)".to_string(),
             Self::Unknown => "(alias count unavailable)".to_string(),
         }
     }
 }
 
-/// 只统计文件自身定义的别名；导入索引不跟随目标文件。
+/// 只统计文件自身定义的别名；链接文件不跟随目标。
 fn count_aliases(path: &Path) -> AliasCount {
     let Ok(text) = fs::read_to_string(path) else {
         return AliasCount::Unknown;
@@ -108,7 +108,7 @@ fn count_aliases(path: &Path) -> AliasCount {
     };
 
     match &value {
-        Value::Array(_) => AliasCount::Import,
+        Value::Array(_) => AliasCount::Link,
         Value::Object(map) => AliasCount::Known(count_object(map)),
         _ => AliasCount::Known(0),
     }
@@ -263,12 +263,12 @@ mod tests {
     }
 
     #[test]
-    fn count_aliases_import_index_is_not_followed() {
+    fn count_aliases_link_file_is_not_followed() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("ops.byk.json");
         fs::write(&path, r#"["shared.byk.json"]"#).unwrap();
 
-        assert_eq!(count_aliases(&path), AliasCount::Import);
+        assert_eq!(count_aliases(&path), AliasCount::Link);
     }
 
     #[test]
@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(AliasCount::Known(0).label(), "(0 aliases)");
         assert_eq!(AliasCount::Known(1).label(), "(1 alias)");
         assert_eq!(AliasCount::Known(3).label(), "(3 aliases)");
-        assert!(AliasCount::Import.label().contains("import file"));
+        assert!(AliasCount::Link.label().contains("link file"));
         assert!(AliasCount::Unknown.label().contains("unavailable"));
     }
 

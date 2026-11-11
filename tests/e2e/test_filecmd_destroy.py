@@ -108,14 +108,14 @@ def test_destroy_anonymous_interactive_token(runner):
     assert not path.exists()
 
 
-def test_destroy_import_index_keeps_target(runner):
+def test_destroy_link_file_keeps_target(runner):
     target = runner.prepare_alias_json("shared", {"build": "echo hi"})
-    index = runner.prepare_alias_file("ops", '["shared.byk.json"]')
+    link_file = runner.prepare_alias_file("ops", '["shared.byk.json"]')
 
     result = runner.run("@@ops..destroy", "--yes")
 
     assert result.returncode == 0
-    assert not index.exists()
+    assert not link_file.exists()
     assert target.exists()
 
 

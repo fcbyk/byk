@@ -8,7 +8,7 @@
       "$ref": "#/$defs/AliasFileObject"
     },
     {
-      "$ref": "#/$defs/ImportIndex"
+      "$ref": "#/$defs/LinkFile"
     }
   ],
   "$defs": {
@@ -73,9 +73,9 @@
         ]
       }
     },
-    "ImportIndex": {
-      "title": "单导入（数组模式）",
-      "description": "根是只含一个路径的数组：本文件放弃自己的别名，内容与一切声明都来自目标文件，相对路径以目标文件所在目录为基准。key 与默认优先级仍留在本文件上。只支持一层，目标文件不能再是数组。",
+    "LinkFile": {
+      "title": "单链接（数组模式）",
+      "description": "根是只含一个路径的数组：本文件是链接文件，放弃自己的别名，内容与一切声明都来自目标文件，相对路径以目标文件所在目录为基准。key 与默认优先级仍留在本文件上。只支持一层，目标文件不能再是数组。",
       "type": "array",
       "items": {
         "type": "string",

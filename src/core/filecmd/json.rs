@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn import_index_is_output_as_is() {
+    fn link_file_is_output_as_is() {
         let temp = tempfile::tempdir().unwrap();
         let layout = test_layout(&temp);
         let raw = "[\"shared.byk.json\"]\n";
@@ -173,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn expand_works_for_import_index_without_following() {
+    fn expand_works_for_link_file_without_following() {
         let temp = tempfile::tempdir().unwrap();
         let layout = test_layout(&temp);
         let raw = r#"["${byk_dir}/shared.byk.json"]"#;

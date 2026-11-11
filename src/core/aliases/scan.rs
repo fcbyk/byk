@@ -40,7 +40,7 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
 
 /// 读取一个别名文件：注入它自己的 `file_dir`，完成变量替换与告警。
 ///
-/// 返回 `(文档, 文件路径)`。索引文件和被导入的目标文件都走这里，所以两者
+/// 返回 `(文档, 文件路径)`。链接文件和链接目标都走这里，所以两者
 /// 的 `${file_dir}` 都指向各自所在目录。
 fn load_document(path: &Path, vars: &VarTable) -> Option<(serde_json::Value, PathBuf)> {
     let content = fs::read_to_string(path).ok()?;
@@ -70,59 +70,59 @@ fn report_var_issue(issue: &VarIssue, path: &Path) {
     );
 }
 
-/// 根是数组时跟随单导入指针，返回 `(目标文档, 目标路径)`。
+/// 根是数组时跟随链接指针，返回 `(目标文档, 目标路径)`。
 ///
-/// 语义是「放弃自己的身份」：`@file` 前缀、key、默认优先级都留在索引文件上，
+/// 语义是「放弃自己的身份」：`@file` 前缀、key、默认优先级都留在链接文件上，
 /// 内容与相对路径基准则完全来自目标。所以返回的路径会替换掉 `AliasFile.path`，
 /// 让 `$cwd` / `$paths` / `$var` 的相对基准都落到目标目录。
 ///
-/// 链深只允许一层：目标是数组（又一个导入文件）直接报错——索引本可以一步指到位，
+/// 链深只允许一层：目标是数组（又一个链接文件）直接报错——链接本可以一步指到位，
 /// 多一层只是隐藏真实文件的位置。
-fn follow_single_import(
+fn follow_link(
     data: serde_json::Value,
-    index_path: &Path,
+    link_path: &Path,
     vars: &VarTable,
 ) -> Option<(serde_json::Value, PathBuf)> {
     let serde_json::Value::Array(items) = &data else {
-        return Some((data, index_path.to_path_buf()));
+        return Some((data, link_path.to_path_buf()));
     };
 
     let Some(first) = items.first() else {
         eprintln!(
-            "{} import file lists no path, {} is skipped",
+            "{} link file lists no path, {} is skipped",
             "Warning:".yellow(),
-            index_path.display()
+            link_path.display()
         );
         return None;
     };
 
     if items.len() > 1 {
         eprintln!(
-            "{} only the first of {} import paths is used in {}",
+            "{} only the first of {} link paths is used in {}",
             "Warning:".yellow(),
             items.len(),
-            index_path.display()
+            link_path.display()
         );
     }
 
     let Some(spec) = first.as_str() else {
         eprintln!(
-            "{} import path must be a string in {}",
+            "{} link path must be a string in {}",
             "Warning:".yellow(),
-            index_path.display()
+            link_path.display()
         );
         return None;
     };
 
-    let target = resolve_import_path(spec, index_path);
+    let target = resolve_link_path(spec, link_path);
     let (target_data, target_path) = match load_document(&target, vars) {
         Some(loaded) => loaded,
         None => {
             eprintln!(
-                "{} cannot load import target {} (from {})",
+                "{} cannot load link target {} (from {})",
                 "Error:".red(),
                 target.display(),
-                index_path.display()
+                link_path.display()
             );
             return None;
         }
@@ -130,16 +130,16 @@ fn follow_single_import(
 
     if target_data.is_array() {
         eprintln!(
-            "{} import chains are limited to one level, {} points at another import file",
+            "{} link chains are limited to one level, {} points at another link file",
             "Error:".red(),
-            index_path.display()
+            link_path.display()
         );
         return None;
     }
 
     if !target_data.is_object() {
         eprintln!(
-            "{} import target must be a JSON object: {}",
+            "{} link target must be a JSON object: {}",
             "Error:".red(),
             target.display()
         );
@@ -149,11 +149,11 @@ fn follow_single_import(
     Some((target_data, target_path))
 }
 
-/// 导入路径：`~` 展开，相对路径按**索引文件所在目录**解析（与调用目录无关）。
-fn resolve_import_path(spec: &str, index_path: &Path) -> PathBuf {
+/// 链接路径：`~` 展开，相对路径按**链接文件所在目录**解析（与调用目录无关）。
+fn resolve_link_path(spec: &str, link_path: &Path) -> PathBuf {
     let expanded = expand_home(spec);
     let joined = if expanded.is_relative() {
-        index_path
+        link_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .join(expanded)
@@ -166,8 +166,8 @@ fn resolve_import_path(spec: &str, index_path: &Path) -> PathBuf {
 
 /// 解析单个文件；文件名非法、读取失败或 JSON 损坏时静默返回 None。
 ///
-/// 根是对象时按别名文件处理；根是数组时视为**单导入指针**，转去解析它指向的
-/// 文件（见 `follow_single_import`）。
+/// 根是对象时按别名文件处理；根是数组时视为**单链接指针**，转去解析它指向的
+/// 文件（见 `follow_link`）。
 fn parse_alias_file(
     path: &Path,
     is_global: bool,
@@ -183,10 +183,10 @@ fn parse_alias_file(
         return None;
     }
 
-    // 读索引文件本身，再顺着指针（如果有）拿到真正的别名文档
+    // 读链接文件本身，再顺着指针（如果有）拿到真正的别名文档
     let (mut data, source_path) = {
-        let (index_data, index_path) = load_document(path, vars)?;
-        follow_single_import(index_data, &index_path, vars)?
+        let (link_data, link_path) = load_document(path, vars)?;
+        follow_link(link_data, &link_path, vars)?
     };
 
     let obj = data.as_object_mut()?;

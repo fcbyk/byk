@@ -11,7 +11,7 @@
 
 - **`$mode`**: `silent` suppresses byk's hint lines; `interactive` keeps confirmation prompts; inheritable across files
 - **variables**: `$var` declarations can override built-in names; `\${...}` passes through to the shell literally
-- **import**: a `*.byk.json` root array with a single entry now points to another alias file (one level deep), so bundles can live beside their scripts
+- **link**: a `*.byk.json` root array with a single entry now points to another alias file (one level deep), so bundles can live beside their scripts
 - **`__api__ paths`**: prints CLI directories as JSON or bare strings for shell scripts
 
 ### Bug Fixes
