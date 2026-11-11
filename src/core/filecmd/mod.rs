@@ -1,0 +1,317 @@
+//! 文件命令：绑定到别名文件的保留命令。
+//!
+//! 语法为 `@<file>..<verb>` / `@@<file>..<verb>`，`..` 是保留分隔符。
+//! 文件命令独立于别名扫描、合并与执行，不进入合并命名空间。
+
+mod init;
+
+use std::process::exit;
+
+use crate::core::aliases::validate_filename;
+use crate::core::paths::PathLayout;
+
+/// `@` 指向当前目录，`@@` 指向全局别名目录。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FileScope {
+    Local,
+    Global,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Verb {
+    Init,
+}
+
+/// 已注册的动词；顺序即错误提示与补全顺序。
+const VERBS: &[(&str, Verb)] = &[("init", Verb::Init)];
+
+impl Verb {
+    fn parse(raw: &str) -> Option<Self> {
+        VERBS
+            .iter()
+            .find(|(name, _)| *name == raw)
+            .map(|(_, verb)| *verb)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct FileCommand {
+    scope: FileScope,
+    stem: String,
+    verb: Verb,
+}
+
+/// 解析结果。出现 `..` 即归文件命令处理，失败时不再回退到别名查找。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ParseResult {
+    NotFileCommand,
+    Command(FileCommand),
+    Error(FileCommandError),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum FileCommandError {
+    MissingVerb,
+    InvalidVerb(String),
+    UnknownVerb(String),
+    InvalidStem(String),
+}
+
+impl FileCommandError {
+    pub(crate) fn render(&self, token: &str) -> String {
+        match self {
+            Self::MissingVerb => {
+                format!(
+                    "Invalid file command: {}\nHint: missing verb after `..`",
+                    token
+                )
+            }
+            Self::InvalidVerb(verb) => format!(
+                "Invalid file command: {}\nHint: invalid verb {:?}",
+                token, verb
+            ),
+            Self::UnknownVerb(verb) => format!(
+                "Unknown file command: {:?}\nAvailable: {}",
+                verb,
+                verb_names().join(", ")
+            ),
+            Self::InvalidStem(stem) => format!(
+                "Invalid file name: {:?}\nHint: file name cannot contain `.`, `@`, `/` or spaces",
+                stem
+            ),
+        }
+    }
+}
+
+fn verb_names() -> Vec<&'static str> {
+    VERBS.iter().map(|(name, _)| *name).collect()
+}
+
+fn split_prefix(token: &str) -> Option<(&'static str, &str)> {
+    if let Some(rest) = token.strip_prefix("@@") {
+        Some(("@@", rest))
+    } else {
+        token.strip_prefix('@').map(|rest| ("@", rest))
+    }
+}
+
+pub(crate) fn parse(token: &str) -> ParseResult {
+    let Some((prefix, rest)) = split_prefix(token) else {
+        return ParseResult::NotFileCommand;
+    };
+
+    let Some(sep) = rest.find("..") else {
+        return ParseResult::NotFileCommand;
+    };
+
+    let scope = if prefix == "@@" {
+        FileScope::Global
+    } else {
+        FileScope::Local
+    };
+    let stem = &rest[..sep];
+    let verb = &rest[sep + 2..];
+
+    if verb.is_empty() {
+        return ParseResult::Error(FileCommandError::MissingVerb);
+    }
+    if !is_valid_verb(verb) {
+        return ParseResult::Error(FileCommandError::InvalidVerb(verb.to_string()));
+    }
+    if !validate_filename(stem) {
+        return ParseResult::Error(FileCommandError::InvalidStem(stem.to_string()));
+    }
+
+    match Verb::parse(verb) {
+        Some(verb) => ParseResult::Command(FileCommand {
+            scope,
+            stem: stem.to_string(),
+            verb,
+        }),
+        None => ParseResult::Error(FileCommandError::UnknownVerb(verb.to_string())),
+    }
+}
+
+fn is_valid_verb(verb: &str) -> bool {
+    verb.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// token 是否属于文件命令命名空间（含非法形式）。
+///
+/// 供只读接口判断：命中后不能继续当作别名解析或执行。
+pub(crate) fn claims(token: &str) -> bool {
+    !matches!(parse(token), ParseResult::NotFileCommand)
+}
+
+pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayout) {
+    let result = match command.verb {
+        Verb::Init => init::run(command.scope, &command.stem, args, layout),
+    };
+
+    match result {
+        Ok(path) => eprintln!("Created {}", path.display()),
+        Err(message) => {
+            eprintln!("{}", message);
+            exit(1);
+        }
+    }
+}
+
+/// 补全 `@prefix..verb`；不要求目标文件存在。
+///
+/// 返回 `None` 表示不是 `..` 形式，调用方继续按别名补全。
+pub(crate) fn complete_verbs(partial: &str) -> Option<Vec<String>> {
+    let (prefix, rest) = split_prefix(partial)?;
+    let sep = rest.find("..")?;
+    let stem = &rest[..sep];
+
+    if !validate_filename(stem) {
+        return Some(Vec::new());
+    }
+
+    let verb_partial = &rest[sep + 2..];
+    Some(
+        VERBS
+            .iter()
+            .filter(|(name, _)| name.starts_with(verb_partial))
+            .map(|(name, _)| format!("{}{}..{}", prefix, stem, name))
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_ok(token: &str) -> FileCommand {
+        match parse(token) {
+            ParseResult::Command(command) => command,
+            other => panic!("expected command, got {:?}", other),
+        }
+    }
+
+    fn parse_err(token: &str) -> FileCommandError {
+        match parse(token) {
+            ParseResult::Error(err) => err,
+            other => panic!("expected error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_global_init() {
+        assert_eq!(
+            parse_ok("@@ops..init"),
+            FileCommand {
+                scope: FileScope::Global,
+                stem: "ops".into(),
+                verb: Verb::Init,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_local_init() {
+        assert_eq!(
+            parse_ok("@ops..init"),
+            FileCommand {
+                scope: FileScope::Local,
+                stem: "ops".into(),
+                verb: Verb::Init,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_anonymous_files() {
+        assert_eq!(parse_ok("@@..init").stem, "");
+        assert_eq!(parse_ok("@..init").scope, FileScope::Local);
+    }
+
+    #[test]
+    fn parse_exact_alias_is_not_a_file_command() {
+        assert_eq!(parse("@@ops.init"), ParseResult::NotFileCommand);
+        assert_eq!(parse("@ops.init.prod"), ParseResult::NotFileCommand);
+        assert_eq!(parse("ops.init"), ParseResult::NotFileCommand);
+    }
+
+    #[test]
+    fn parse_missing_verb() {
+        assert_eq!(parse_err("@@ops.."), FileCommandError::MissingVerb);
+        assert_eq!(parse_err("@@.."), FileCommandError::MissingVerb);
+    }
+
+    #[test]
+    fn parse_invalid_verb() {
+        assert_eq!(
+            parse_err("@@ops...init"),
+            FileCommandError::InvalidVerb(".init".into())
+        );
+        assert_eq!(
+            parse_err("@@ops..init.prod"),
+            FileCommandError::InvalidVerb("init.prod".into())
+        );
+    }
+
+    #[test]
+    fn parse_unknown_verb() {
+        assert_eq!(
+            parse_err("@@ops..explode"),
+            FileCommandError::UnknownVerb("explode".into())
+        );
+    }
+
+    #[test]
+    fn parse_invalid_stem() {
+        assert_eq!(
+            parse_err("@@a/b..init"),
+            FileCommandError::InvalidStem("a/b".into())
+        );
+        assert_eq!(
+            parse_err("@@a.b..init"),
+            FileCommandError::InvalidStem("a.b".into())
+        );
+        assert_eq!(
+            parse_err("@@a b..init"),
+            FileCommandError::InvalidStem("a b".into())
+        );
+        assert_eq!(
+            parse_err("@@@ops..init"),
+            FileCommandError::InvalidStem("@ops".into())
+        );
+    }
+
+    #[test]
+    fn claims_file_command_namespace() {
+        assert!(claims("@@ops..init"));
+        assert!(claims("@@ops.."));
+        assert!(claims("@@ops..explode"));
+        assert!(!claims("@@ops.init"));
+        assert!(!claims("normal"));
+    }
+
+    #[test]
+    fn complete_after_two_dots() {
+        assert_eq!(
+            complete_verbs("@@ops.."),
+            Some(vec!["@@ops..init".to_string()])
+        );
+        assert_eq!(
+            complete_verbs("@@ops..i"),
+            Some(vec!["@@ops..init".to_string()])
+        );
+        assert_eq!(complete_verbs("@..i"), Some(vec!["@..init".to_string()]));
+    }
+
+    #[test]
+    fn complete_ignores_single_dot() {
+        assert_eq!(complete_verbs("@@ops.init"), None);
+        assert_eq!(complete_verbs("@@ops."), None);
+        assert_eq!(complete_verbs("ops"), None);
+    }
+
+    #[test]
+    fn complete_invalid_stem_is_empty() {
+        assert_eq!(complete_verbs("@@a/b.."), Some(Vec::new()));
+    }
+}

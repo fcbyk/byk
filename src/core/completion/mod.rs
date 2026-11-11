@@ -326,6 +326,27 @@ mod tests {
     }
 
     #[test]
+    fn at_prefix_completes_file_command_verbs_after_double_dot() {
+        let env = TestEnv::new();
+        assert_eq!(
+            complete_at_prefix("@@anything..", &env.layout),
+            vec!["@@anything..init".to_string()]
+        );
+        assert_eq!(
+            complete_at_prefix("@..i", &env.layout),
+            vec!["@..init".to_string()]
+        );
+    }
+
+    #[test]
+    fn at_prefix_single_dot_does_not_offer_file_commands() {
+        let env = TestEnv::new();
+        env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
+        let completions = complete_at_prefix("@@release.", &env.layout);
+        assert_eq!(completions, vec!["@@release.deploy".to_string()]);
+    }
+
+    #[test]
     fn nested_alias_completes_children() {
         let env = TestEnv::new();
         env.add_alias_file(

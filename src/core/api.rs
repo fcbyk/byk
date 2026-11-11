@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::core::aliases;
 use crate::core::completion;
+use crate::core::filecmd;
 use crate::core::paths::PathLayout;
 
 /// 全部请求；无参调用 `byk __api__` 时原样输出。
@@ -106,6 +107,12 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 _ => usage_error("resolve", "missing <key>"),
             };
             let command_args = &args[2..];
+
+            // 文件命令不是别名：只读接口绝不能执行或创建文件
+            if filecmd::claims(key) {
+                eprintln!("resolve: not an alias (file command): {}", key);
+                std::process::exit(1);
+            }
 
             // 与 main.rs 相同的查找顺序：精确语法优先，其次合并命名空间
             let (merged, files) = aliases::load_merged_aliases(layout);

@@ -18,3 +18,6 @@ pub use execution::{ResolvedCommand, execute_alias, resolve_alias};
 pub use merge::{collect_merged_paths, load_merged_aliases, resolve_merged_alias};
 pub use parse::to_alias_definition;
 pub use types::*;
+
+/// 文件命令与别名文件共用同一套文件名规则。
+pub(crate) use parse::validate_filename;

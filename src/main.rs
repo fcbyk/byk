@@ -8,6 +8,7 @@ use std::process::exit;
 
 use cli::{Cli, Commands, extract_options};
 use core::aliases;
+use core::filecmd;
 use core::paths::PathLayout;
 
 /// 管道下游提前关闭时（如 `byk -h | head`），按 Unix 惯例静默退出，
@@ -61,6 +62,19 @@ fn main() {
 
     let command_name = &cli.trailing[0];
     let command_args = &cli.trailing[1..];
+
+    // 文件命令：不扫描别名，先于合并命名空间处理
+    match filecmd::parse(command_name) {
+        filecmd::ParseResult::NotFileCommand => {}
+        filecmd::ParseResult::Command(command) => {
+            filecmd::dispatch(&command, command_args, &layout);
+            return;
+        }
+        filecmd::ParseResult::Error(err) => {
+            eprintln!("{}", err.render(command_name));
+            exit(1);
+        }
+    }
 
     // 别名数据只加载一次，精确执行与普通查找共用
     let (merged, files) = aliases::load_merged_aliases(&layout);

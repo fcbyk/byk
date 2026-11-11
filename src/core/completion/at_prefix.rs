@@ -3,12 +3,19 @@
 use std::collections::HashMap;
 
 use crate::core::aliases::{self, MergedNode};
+use crate::core::filecmd;
 
 /// 补全 `@` / `@@`：先补文件 key，输入点号后补该文件内的别名路径。
+///
+/// `..` 是文件命令分隔符，出现两个点后只补动词。
 pub(crate) fn complete_at_prefix(
     partial: &str,
     layout: &crate::core::paths::PathLayout,
 ) -> Vec<String> {
+    if let Some(verbs) = filecmd::complete_verbs(partial) {
+        return verbs;
+    }
+
     let (_, files) = aliases::load_merged_aliases(layout);
 
     // 查找 partial 中是否包含 '.' — 如果有，补全文件内的 key
