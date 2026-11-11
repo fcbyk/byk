@@ -10,6 +10,8 @@ use crate::core::paths::PathLayout;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UnsetField {
+    Priority,
+    Paths,
     Cwd,
     Mode,
     Description,
@@ -18,7 +20,9 @@ enum UnsetField {
 
 #[derive(Debug)]
 struct SetArgs {
-    key: String,
+    key: Option<String>,
+    priority: Option<i32>,
+    paths: Vec<String>,
     cmd: Option<String>,
     cwd: Option<String>,
     mode: Option<Mode>,
@@ -32,7 +36,7 @@ pub(super) fn run(
     stem: &str,
     args: &[String],
     layout: &PathLayout,
-) -> Result<(PathBuf, String), String> {
+) -> Result<(PathBuf, Option<String>), String> {
     let parsed = parse_args(args)?;
     let prefix = match scope {
         FileScope::Local => "@",
@@ -40,21 +44,31 @@ pub(super) fn run(
     };
     let hint = format!("Hint: create it with {}{}..init", prefix, stem);
 
-    edit::object(scope, stem, layout, Some(hint), "set", |object| {
-        let segments: Vec<&str> = parsed.key.split('.').collect();
-        set_path(object, &segments, &parsed)?;
-        Ok(parsed.key.clone())
-    })
+    edit::object(
+        scope,
+        stem,
+        layout,
+        Some(hint),
+        "set",
+        |object| match &parsed.key {
+            Some(key) => {
+                let segments: Vec<&str> = key.split('.').collect();
+                set_path(object, &segments, &parsed)?;
+                Ok(Some(key.clone()))
+            }
+            None => {
+                set_root(object, &parsed);
+                Ok(None)
+            }
+        },
+    )
 }
 
 fn parse_args(args: &[String]) -> Result<SetArgs, String> {
-    let Some(key) = args.first() else {
-        return Err("set requires an alias key".to_string());
-    };
-    key::validate(key)?;
-
     let mut parsed = SetArgs {
-        key: key.clone(),
+        key: None,
+        priority: None,
+        paths: Vec::new(),
         cmd: None,
         cwd: None,
         mode: None,
@@ -63,7 +77,16 @@ fn parse_args(args: &[String]) -> Result<SetArgs, String> {
         unset: Vec::new(),
     };
 
-    let mut rest = args[1..].iter();
+    // 有 key 时必须是第一个参数；只有选项则作用于文件根。
+    let mut rest = match args.first() {
+        Some(first) if !first.starts_with('-') => {
+            key::validate(first)?;
+            parsed.key = Some(first.clone());
+            args[1..].iter()
+        }
+        _ => args.iter(),
+    };
+
     while let Some(flag) = rest.next() {
         match flag.as_str() {
             "--cmd" => {
@@ -85,6 +108,20 @@ fn parse_args(args: &[String]) -> Result<SetArgs, String> {
                     return Err("Duplicate option: --mode".to_string());
                 }
                 parsed.mode = Some(parse_mode(raw)?);
+            }
+            "--priority" => {
+                let raw = next_value(&mut rest, "--priority")?;
+                if parsed.priority.is_some() {
+                    return Err("Duplicate option: --priority".to_string());
+                }
+                parsed.priority = Some(parse_priority(raw)?);
+            }
+            "--paths" => {
+                let raw = next_value(&mut rest, "--paths")?;
+                if raw.is_empty() {
+                    return Err("Option --paths requires a non-empty value".to_string());
+                }
+                parsed.paths.push(raw.to_string());
             }
             "--recursive" => {
                 if parsed.recursive.is_some() {
@@ -115,15 +152,18 @@ fn parse_args(args: &[String]) -> Result<SetArgs, String> {
         }
     }
 
+    validate_mode(&parsed)?;
     validate_conflicts(&parsed)?;
-    if parsed.cmd.is_none()
+    if parsed.priority.is_none()
+        && parsed.paths.is_empty()
+        && parsed.cmd.is_none()
         && parsed.cwd.is_none()
         && parsed.mode.is_none()
         && parsed.description.is_none()
         && parsed.recursive.is_none()
         && parsed.unset.is_empty()
     {
-        return Err("set requires --cmd or a metadata change".to_string());
+        return Err("set requires an alias key or a metadata change".to_string());
     }
 
     Ok(parsed)
@@ -158,10 +198,21 @@ fn parse_mode(raw: &str) -> Result<Mode, String> {
     }
 }
 
+fn parse_priority(raw: &str) -> Result<i32, String> {
+    raw.parse::<i32>().map_err(|_| {
+        format!(
+            "Invalid priority: {:?}\nHint: priority must be an integer",
+            raw
+        )
+    })
+}
+
 fn parse_unset(raw: &str) -> Result<Vec<UnsetField>, String> {
     let mut fields = Vec::new();
     for part in raw.split(',') {
         let field = match part.trim() {
+            "priority" => UnsetField::Priority,
+            "paths" => UnsetField::Paths,
             "cwd" => UnsetField::Cwd,
             "mode" => UnsetField::Mode,
             "description" => UnsetField::Description,
@@ -169,7 +220,7 @@ fn parse_unset(raw: &str) -> Result<Vec<UnsetField>, String> {
             "" => return Err("Option --unset requires a field".to_string()),
             other => {
                 return Err(format!(
-                    "Invalid unset field: {:?}\nAvailable: cwd, mode, description, recursive",
+                    "Invalid unset field: {:?}\nAvailable: priority, paths, cwd, mode, description, recursive",
                     other
                 ));
             }
@@ -181,9 +232,45 @@ fn parse_unset(raw: &str) -> Result<Vec<UnsetField>, String> {
     Ok(fields)
 }
 
+fn validate_mode(parsed: &SetArgs) -> Result<(), String> {
+    if parsed.key.is_some() {
+        if parsed.priority.is_some() {
+            return Err("--priority only applies to the file root; omit the key".to_string());
+        }
+        if !parsed.paths.is_empty() {
+            return Err("--paths only applies to the file root; omit the key".to_string());
+        }
+        if parsed.unset.contains(&UnsetField::Priority) || parsed.unset.contains(&UnsetField::Paths)
+        {
+            return Err(
+                "--unset priority and paths only apply to the file root; omit the key".to_string(),
+            );
+        }
+        return Ok(());
+    }
+
+    if parsed.cmd.is_some() {
+        return Err("File root has no command; pass an alias key with --cmd".to_string());
+    }
+    if parsed.description.is_some() {
+        return Err("--description requires an alias key".to_string());
+    }
+    if parsed.recursive.is_some() {
+        return Err("--recursive requires an alias key".to_string());
+    }
+    if parsed.unset.contains(&UnsetField::Description)
+        || parsed.unset.contains(&UnsetField::Recursive)
+    {
+        return Err("File root supports only --unset priority, cwd, mode".to_string());
+    }
+    Ok(())
+}
+
 fn validate_conflicts(parsed: &SetArgs) -> Result<(), String> {
     for field in &parsed.unset {
         let conflict = match field {
+            UnsetField::Priority => parsed.priority.is_some(),
+            UnsetField::Paths => !parsed.paths.is_empty(),
             UnsetField::Cwd => parsed.cwd.is_some(),
             UnsetField::Mode => parsed.mode.is_some(),
             UnsetField::Description => parsed.description.is_some(),
@@ -194,6 +281,35 @@ fn validate_conflicts(parsed: &SetArgs) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn set_root(object: &mut Map<String, Value>, args: &SetArgs) {
+    if let Some(priority) = args.priority {
+        object.insert("$priority".to_string(), Value::Number(priority.into()));
+    }
+    if !args.paths.is_empty() {
+        let paths = args.paths.iter().cloned().map(Value::String).collect();
+        object.insert("$paths".to_string(), Value::Array(paths));
+    }
+    if let Some(cwd) = &args.cwd {
+        object.insert("$cwd".to_string(), Value::String(cwd.clone()));
+    }
+    if let Some(mode) = args.mode {
+        object.insert(
+            "$mode".to_string(),
+            Value::String(mode.as_str().to_string()),
+        );
+    }
+    for field in &args.unset {
+        let key = match field {
+            UnsetField::Priority => "$priority",
+            UnsetField::Paths => "$paths",
+            UnsetField::Cwd => "$cwd",
+            UnsetField::Mode => "$mode",
+            UnsetField::Description | UnsetField::Recursive => continue,
+        };
+        object.remove(key);
+    }
 }
 
 fn set_path(
@@ -326,6 +442,7 @@ fn apply_metadata(
     }
     for field in &args.unset {
         let key = match field {
+            UnsetField::Priority | UnsetField::Paths => continue,
             UnsetField::Cwd => "$cwd",
             UnsetField::Mode => "$mode",
             UnsetField::Description => "$description",
@@ -378,6 +495,114 @@ mod tests {
     fn run_ok(layout: &PathLayout, values: &[&str]) -> Value {
         run(FileScope::Global, "ops", &args(values), layout).unwrap();
         read(&layout.alias_dir.join("ops.byk.json"))
+    }
+
+    #[test]
+    fn sets_root_metadata_without_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        prepare(&layout, r#"{"build":"echo hi"}"#);
+
+        let value = run_ok(
+            &layout,
+            &["--priority", "-1", "--cwd", "./src", "--mode", "silent"],
+        );
+
+        assert_eq!(value["$priority"], json!(-1));
+        assert_eq!(value["$cwd"], json!("./src"));
+        assert_eq!(value["$mode"], json!("silent"));
+        assert_eq!(value["build"], json!("echo hi"));
+    }
+
+    #[test]
+    fn unsets_root_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        prepare(
+            &layout,
+            r#"{"$priority":-1,"$cwd":"./src","$mode":"silent","build":"echo hi"}"#,
+        );
+
+        let value = run_ok(&layout, &["--unset", "priority,cwd,mode"]);
+
+        assert_eq!(value, json!({"build": "echo hi"}));
+    }
+
+    #[test]
+    fn sets_root_paths_and_replaces_old_list() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        prepare(&layout, r#"{"$paths":["./old"],"build":"echo hi"}"#);
+
+        let value = run_ok(&layout, &["--paths", "./bin", "--paths", "~/tools/bin"]);
+
+        assert_eq!(value["$paths"], json!(["./bin", "~/tools/bin"]));
+        assert_eq!(value["build"], json!("echo hi"));
+    }
+
+    #[test]
+    fn unsets_root_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        prepare(&layout, r#"{"$paths":["./bin"],"build":"echo hi"}"#);
+
+        let value = run_ok(&layout, &["--unset", "paths"]);
+
+        assert_eq!(value, json!({"build": "echo hi"}));
+    }
+
+    #[test]
+    fn paths_require_root_mode() {
+        let err = parse_args(&args(&["build", "--paths", "./bin"])).unwrap_err();
+        assert!(err.contains("--paths only applies to the file root"));
+    }
+
+    #[test]
+    fn rejects_set_and_unset_paths() {
+        let err = parse_args(&args(&["--paths", "./bin", "--unset", "paths"])).unwrap_err();
+        assert_eq!(err, "Cannot set and unset the same field");
+    }
+
+    #[test]
+    fn rejects_empty_path() {
+        let err = parse_args(&args(&["--paths", ""])).unwrap_err();
+        assert_eq!(err, "Option --paths requires a non-empty value");
+    }
+
+    #[test]
+    fn root_rejects_alias_only_flags() {
+        let err = parse_args(&args(&["--cmd", "echo hi"])).unwrap_err();
+        assert!(err.contains("File root has no command"));
+
+        let err = parse_args(&args(&["--description", "x"])).unwrap_err();
+        assert_eq!(err, "--description requires an alias key");
+
+        let err = parse_args(&args(&["--recursive"])).unwrap_err();
+        assert_eq!(err, "--recursive requires an alias key");
+
+        let err = parse_args(&args(&["--unset", "description"])).unwrap_err();
+        assert_eq!(err, "File root supports only --unset priority, cwd, mode");
+    }
+
+    #[test]
+    fn priority_requires_root_mode() {
+        let err = parse_args(&args(&["build", "--priority", "1"])).unwrap_err();
+        assert!(err.contains("--priority only applies to the file root"));
+
+        let err = parse_args(&args(&["build", "--unset", "priority"])).unwrap_err();
+        assert!(err.contains("--unset priority and paths only apply to the file root"));
+    }
+
+    #[test]
+    fn rejects_invalid_priority() {
+        let err = parse_args(&args(&["--priority", "high"])).unwrap_err();
+        assert!(err.starts_with("Invalid priority:"));
+    }
+
+    #[test]
+    fn root_requires_a_change() {
+        let err = parse_args(&[]).unwrap_err();
+        assert_eq!(err, "set requires an alias key or a metadata change");
     }
 
     #[test]
@@ -669,7 +894,7 @@ mod tests {
     #[test]
     fn parse_args_requires_key() {
         let err = parse_args(&[]).unwrap_err();
-        assert_eq!(err, "set requires an alias key");
+        assert_eq!(err, "set requires an alias key or a metadata change");
     }
 
     #[test]
@@ -727,6 +952,6 @@ mod tests {
     #[test]
     fn parse_args_requires_a_change() {
         let err = parse_args(&args(&["build"])).unwrap_err();
-        assert_eq!(err, "set requires --cmd or a metadata change");
+        assert_eq!(err, "set requires an alias key or a metadata change");
     }
 }

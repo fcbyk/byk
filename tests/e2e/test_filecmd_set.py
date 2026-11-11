@@ -219,6 +219,130 @@ def test_set_local_and_anonymous(runner, tmp_path):
     assert read(anonymous) == {"build": "echo anon"}
 
 
+def test_set_root_metadata_without_key(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    result = runner.run(
+        "@@ops..set", "--priority", "-1", "--cwd", "./src", "--mode", "silent"
+    )
+
+    assert result.returncode == 0
+    assert "Set file metadata in" in result.stderr
+    assert read(path) == {
+        "$priority": -1,
+        "$cwd": "./src",
+        "$mode": "silent",
+        "build": "echo hi",
+    }
+
+
+def test_set_root_unset_metadata(runner):
+    path = runner.prepare_alias_json(
+        "ops",
+        {"$priority": -1, "$cwd": "./src", "$mode": "silent", "build": "echo hi"},
+    )
+
+    result = runner.run("@@ops..set", "--unset", "priority,cwd,mode")
+
+    assert result.returncode == 0
+    assert read(path) == {"build": "echo hi"}
+
+
+def test_set_root_rejects_alias_flags(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    cases = [
+        (("--cmd", "echo x"), "File root has no command"),
+        (("--description", "x"), "--description requires an alias key"),
+        (("--recursive",), "--recursive requires an alias key"),
+        (("--unset", "description"), "File root supports only"),
+    ]
+    for extra, expected in cases:
+        result = runner.run("@@ops..set", *extra)
+        assert result.returncode == 1
+        assert expected in result.stderr
+
+    assert read(path) == {"build": "echo hi"}
+
+
+def test_set_priority_requires_root_mode(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    result = runner.run("@@ops..set", "build", "--priority", "1")
+
+    assert result.returncode == 1
+    assert "only applies to the file root" in result.stderr
+    assert read(path) == {"build": "echo hi"}
+
+
+def test_set_rejects_invalid_priority(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    result = runner.run("@@ops..set", "--priority", "high")
+
+    assert result.returncode == 1
+    assert "Invalid priority" in result.stderr
+    assert read(path) == {"build": "echo hi"}
+
+
+def test_set_root_requires_change(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    result = runner.run("@@ops..set")
+
+    assert result.returncode == 1
+    assert "requires an alias key or a metadata change" in result.stderr
+    assert read(path) == {"build": "echo hi"}
+
+
+def test_set_root_paths_replaces_existing_list(runner):
+    path = runner.prepare_alias_json(
+        "ops", {"$paths": ["./old"], "build": "echo hi"}
+    )
+
+    result = runner.run(
+        "@@ops..set", "--paths", "./bin", "--paths", "~/tools/bin"
+    )
+
+    assert result.returncode == 0
+    assert "Set file metadata in" in result.stderr
+    assert read(path) == {
+        "$paths": ["./bin", "~/tools/bin"],
+        "build": "echo hi",
+    }
+
+
+def test_set_root_unsets_paths(runner):
+    path = runner.prepare_alias_json(
+        "ops", {"$paths": ["./bin"], "build": "echo hi"}
+    )
+
+    result = runner.run("@@ops..set", "--unset", "paths")
+
+    assert result.returncode == 0
+    assert read(path) == {"build": "echo hi"}
+
+
+def test_set_paths_requires_root_mode(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    result = runner.run("@@ops..set", "build", "--paths", "./bin")
+
+    assert result.returncode == 1
+    assert "only applies to the file root" in result.stderr
+    assert read(path) == {"build": "echo hi"}
+
+
+def test_set_rejects_empty_path(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    result = runner.run("@@ops..set", "--paths", "")
+
+    assert result.returncode == 1
+    assert "requires a non-empty value" in result.stderr
+    assert read(path) == {"build": "echo hi"}
+
+
 def test_set_is_completed_with_description(runner):
     result = runner.run("__api__", "complete", "--with-descriptions", "@@ops..se")
 
@@ -242,6 +366,8 @@ def test_set_options_are_completed_with_descriptions(runner):
         "--recursive\tAllow re-entry on the call chain",
         "--no-recursive\tRemove the recursive flag",
         "--unset\tRemove metadata fields",
+        "--priority\tSet the file priority (omit key)",
+        "--paths\tPrepend directories to PATH (omit key)",
     ]
 
 
@@ -257,6 +383,8 @@ def test_set_options_are_completed_after_key(runner):
         "--recursive",
         "--no-recursive",
         "--unset",
+        "--priority",
+        "--paths",
     ]
 
 

@@ -81,7 +81,7 @@ const VERBS: &[VerbInfo] = &[
         name: "set",
         verb: Verb::Set,
         description: "Create or update an alias",
-        usage: "<key>",
+        usage: "[key]",
     },
     VerbInfo {
         name: "remove",
@@ -201,6 +201,18 @@ const OPTIONS: &[OptionInfo] = &[
         flag: "--unset",
         syntax: "--unset <fields>",
         description: "Remove metadata fields",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--priority",
+        syntax: "--priority <n>",
+        description: "Set the file priority (omit key)",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--paths",
+        syntax: "--paths <dir>",
+        description: "Prepend directories to PATH (omit key)",
     },
 ];
 
@@ -451,8 +463,12 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
                 }
             })
         }
-        Verb::Set => set::run(command.scope, &command.stem, args, layout)
-            .map(|(path, key)| eprintln!("Set {} in {}", key, path.display())),
+        Verb::Set => {
+            set::run(command.scope, &command.stem, args, layout).map(|(path, key)| match key {
+                Some(key) => eprintln!("Set {} in {}", key, path.display()),
+                None => eprintln!("Set file metadata in {}", path.display()),
+            })
+        }
         Verb::Remove => remove::run(command.scope, &command.stem, args, layout)
             .map(|(path, key)| eprintln!("Removed {} from {}", key, path.display())),
         Verb::Json => json::run(command.scope, &command.stem, args, layout)
@@ -872,7 +888,9 @@ mod tests {
                 "--description".to_string(),
                 "--recursive".to_string(),
                 "--no-recursive".to_string(),
-                "--unset".to_string()
+                "--unset".to_string(),
+                "--priority".to_string(),
+                "--paths".to_string()
             ])
         );
         assert_eq!(

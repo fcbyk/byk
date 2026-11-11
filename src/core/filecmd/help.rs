@@ -159,11 +159,13 @@ mod tests {
     fn command_help_shows_usage_and_options() {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["set"])).unwrap());
 
-        assert!(text.starts_with("\n@@ops..set <key> [options]\nCreate or update an alias\n"));
+        assert!(text.starts_with("\n@@ops..set [key] [options]\nCreate or update an alias\n"));
         assert!(text.ends_with("\n\n"));
         assert!(text.contains("\nOptions:\n"));
         assert!(text.contains("  --cmd <command>"));
         assert!(text.contains("Set the alias command"));
+        assert!(text.contains("  --priority <n>"));
+        assert!(text.contains("  --paths <dir>"));
         assert!(text.contains("  --unset <fields>"));
         assert!(!text.contains("@@ops..init"));
     }
@@ -200,10 +202,10 @@ mod tests {
         assert!(anonymous.contains("  @@..init"));
 
         let local_set = strip_ansi(&run(FileScope::Local, "ops", &args(&["set"])).unwrap());
-        assert!(local_set.contains("@ops..set <key> [options]"));
+        assert!(local_set.contains("@ops..set [key] [options]"));
 
         let anonymous_set = strip_ansi(&run(FileScope::Global, "", &args(&["set"])).unwrap());
-        assert!(anonymous_set.contains("@@..set <key> [options]"));
+        assert!(anonymous_set.contains("@@..set [key] [options]"));
     }
 
     #[test]

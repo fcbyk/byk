@@ -27,10 +27,10 @@ def test_help_for_command_shows_usage_and_options(runner):
 
     assert result.returncode == 0
     assert result.stderr == ""
-    assert result.stdout.startswith("\n@@ops..set <key> [options]\n")
+    assert result.stdout.startswith("\n@@ops..set [key] [options]\n")
     assert result.stdout.endswith("\n\n")
     lines = result.stdout.splitlines()
-    assert lines[1] == "@@ops..set <key> [options]"
+    assert lines[1] == "@@ops..set [key] [options]"
     assert lines[2] == "Create or update an alias"
     assert "Options:" in lines
     assert "  --cmd <command>       Set the alias command" in lines
@@ -40,6 +40,10 @@ def test_help_for_command_shows_usage_and_options(runner):
     assert "  --recursive           Allow re-entry on the call chain" in lines
     assert "  --no-recursive        Remove the recursive flag" in lines
     assert "  --unset <fields>      Remove metadata fields" in lines
+    assert "  --priority <n>        Set the file priority (omit key)" in lines
+    assert (
+        "  --paths <dir>         Prepend directories to PATH (omit key)" in lines
+    )
     assert not any("@@ops..init" in line for line in lines)
 
 
@@ -64,9 +68,9 @@ def test_help_local_and_anonymous_prefixes(runner):
     local_set = runner.run("@ops..help", "set")
     anonymous_set = runner.run("@@..help", "set")
     assert local_set.returncode == 0
-    assert "@ops..set <key> [options]" in local_set.stdout
+    assert "@ops..set [key] [options]" in local_set.stdout
     assert anonymous_set.returncode == 0
-    assert "@@..set <key> [options]" in anonymous_set.stdout
+    assert "@@..set [key] [options]" in anonymous_set.stdout
 
 
 def test_help_rejects_extra_arguments(runner):

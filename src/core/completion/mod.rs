@@ -28,13 +28,24 @@ pub fn generate(shell: &str) {
 ///
 /// `with_descriptions` 为 true 时，内置选项在候选后追加 tab 分隔的描述。
 pub fn complete(args: &[String], layout: &PathLayout, with_descriptions: bool) {
+    let prefer_file_option = args.len() >= 2
+        && args.first().is_some_and(|token| filecmd::claims(token))
+        && args.last().is_some_and(|partial| partial.starts_with('-'));
+
     for c in candidates(args, layout) {
-        println!("{}", format_candidate(&c, with_descriptions));
+        println!(
+            "{}",
+            format_candidate(&c, with_descriptions, prefer_file_option)
+        );
     }
 }
 
 /// 内置选项的静态描述；动态候选不在这里。
-fn describe(candidate: &str) -> Option<&'static str> {
+fn describe_in(candidate: &str, prefer_file_option: bool) -> Option<&'static str> {
+    if prefer_file_option && let Some(description) = filecmd::describe_option(candidate) {
+        return Some(description);
+    }
+
     match candidate {
         "--help" | "-h" => Some("Print help"),
         "--version" | "-v" => Some("Print version"),
@@ -43,12 +54,12 @@ fn describe(candidate: &str) -> Option<&'static str> {
     }
 }
 
-fn format_candidate(candidate: &str, with_descriptions: bool) -> String {
+fn format_candidate(candidate: &str, with_descriptions: bool, prefer_file_option: bool) -> String {
     if !with_descriptions {
         return candidate.to_string();
     }
 
-    match describe(candidate) {
+    match describe_in(candidate, prefer_file_option) {
         Some(description) => format!("{}\t{}", candidate, description),
         None => candidate.to_string(),
     }
@@ -616,7 +627,9 @@ mod tests {
                 "--description".to_string(),
                 "--recursive".to_string(),
                 "--no-recursive".to_string(),
-                "--unset".to_string()
+                "--unset".to_string(),
+                "--priority".to_string(),
+                "--paths".to_string()
             ]
         );
         assert_eq!(
@@ -651,21 +664,32 @@ mod tests {
     #[test]
     fn builtin_options_have_descriptions() {
         for flag in GLOBAL_FLAGS {
-            assert!(describe(flag).is_some(), "{flag}");
+            assert!(describe_in(flag, false).is_some(), "{flag}");
         }
         for flag in ["--expand", "--no-check", "--yes"] {
-            assert!(describe(flag).is_some(), "{flag}");
+            assert!(describe_in(flag, false).is_some(), "{flag}");
         }
     }
 
     #[test]
     fn format_candidate_plain_and_described() {
-        assert_eq!(format_candidate("--help", false), "--help");
-        assert_eq!(format_candidate("--help", true), "--help\tPrint help");
-        assert_eq!(format_candidate("build", true), "build");
+        assert_eq!(format_candidate("--help", false, false), "--help");
         assert_eq!(
-            format_candidate("@@ops..init", true),
+            format_candidate("--help", true, false),
+            "--help\tPrint help"
+        );
+        assert_eq!(format_candidate("build", true, false), "build");
+        assert_eq!(
+            format_candidate("@@ops..init", true, false),
             "@@ops..init\tCreate an alias file"
+        );
+        assert_eq!(
+            format_candidate("--paths", true, false),
+            "--paths\tPrint CLI paths and file locations"
+        );
+        assert_eq!(
+            format_candidate("--paths", true, true),
+            "--paths\tPrepend directories to PATH (omit key)"
         );
     }
 
