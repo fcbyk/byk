@@ -4,6 +4,7 @@
 //! 文件命令独立于别名扫描、合并与执行，不进入合并命名空间。
 
 mod destroy;
+mod help;
 mod init;
 mod json;
 
@@ -27,22 +28,78 @@ enum Verb {
     Init,
     Destroy,
     Json,
+    Help,
 }
 
-/// 已注册的动词；顺序即错误提示与补全顺序。
-const VERBS: &[(&str, Verb)] = &[
-    ("init", Verb::Init),
-    ("destroy", Verb::Destroy),
-    ("json", Verb::Json),
+struct VerbInfo {
+    name: &'static str,
+    verb: Verb,
+    description: &'static str,
+}
+
+/// 已注册的动词；顺序即错误提示、补全与帮助输出顺序。
+const VERBS: &[VerbInfo] = &[
+    VerbInfo {
+        name: "init",
+        verb: Verb::Init,
+        description: "Create an empty alias file",
+    },
+    VerbInfo {
+        name: "destroy",
+        verb: Verb::Destroy,
+        description: "Remove the alias file",
+    },
+    VerbInfo {
+        name: "json",
+        verb: Verb::Json,
+        description: "Show the alias file JSON",
+    },
+    VerbInfo {
+        name: "help",
+        verb: Verb::Help,
+        description: "Show this help",
+    },
+];
+
+struct OptionInfo {
+    verb: Verb,
+    flag: &'static str,
+    description: &'static str,
+}
+
+/// 文件命令选项；顺序即补全与帮助输出顺序。
+const OPTIONS: &[OptionInfo] = &[
+    OptionInfo {
+        verb: Verb::Destroy,
+        flag: "--yes",
+        description: "Skip confirmation",
+    },
+    OptionInfo {
+        verb: Verb::Json,
+        flag: "--expand",
+        description: "Expand file variables and pretty-print",
+    },
+    OptionInfo {
+        verb: Verb::Json,
+        flag: "--no-check",
+        description: "Skip JSON validation and print raw",
+    },
 ];
 
 impl Verb {
     fn parse(raw: &str) -> Option<Self> {
         VERBS
             .iter()
-            .find(|(name, _)| *name == raw)
-            .map(|(_, verb)| *verb)
+            .find(|info| info.name == raw)
+            .map(|info| info.verb)
     }
+}
+
+fn verb_info(verb: Verb) -> &'static VerbInfo {
+    VERBS
+        .iter()
+        .find(|info| info.verb == verb)
+        .expect("registered verb")
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -95,7 +152,7 @@ impl FileCommandError {
 }
 
 fn verb_names() -> Vec<&'static str> {
-    VERBS.iter().map(|(name, _)| *name).collect()
+    VERBS.iter().map(|info| info.name).collect()
 }
 
 fn split_prefix(token: &str) -> Option<(&'static str, &str)> {
@@ -215,13 +272,17 @@ pub(crate) fn claims(token: &str) -> bool {
 /// 文件命令动词的静态描述；非文件命令或非法形式返回 `None`。
 pub(crate) fn describe(token: &str) -> Option<&'static str> {
     match parse(token) {
-        ParseResult::Command(command) => Some(match command.verb {
-            Verb::Init => "Create an empty alias file",
-            Verb::Destroy => "Remove the alias file",
-            Verb::Json => "Show the alias file JSON",
-        }),
+        ParseResult::Command(command) => Some(verb_info(command.verb).description),
         ParseResult::NotFileCommand | ParseResult::Error(_) => None,
     }
+}
+
+fn write_stdout(content: &[u8]) -> Result<(), String> {
+    let mut stdout = std::io::stdout().lock();
+    stdout
+        .write_all(content)
+        .and_then(|_| stdout.flush())
+        .map_err(|e| format!("Failed to write output: {}", e))
 }
 
 pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayout) {
@@ -244,13 +305,10 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
                 }
             })
         }
-        Verb::Json => json::run(command.scope, &command.stem, args, layout).and_then(|content| {
-            let mut stdout = std::io::stdout().lock();
-            stdout
-                .write_all(&content)
-                .and_then(|_| stdout.flush())
-                .map_err(|e| format!("Failed to write output: {}", e))
-        }),
+        Verb::Json => json::run(command.scope, &command.stem, args, layout)
+            .and_then(|content| write_stdout(&content)),
+        Verb::Help => help::run(command.scope, &command.stem, args)
+            .and_then(|text| write_stdout(text.as_bytes())),
     };
 
     if let Err(message) = result {
@@ -275,8 +333,8 @@ pub(crate) fn complete_verbs(partial: &str) -> Option<Vec<String>> {
     Some(
         VERBS
             .iter()
-            .filter(|(name, _)| name.starts_with(verb_partial))
-            .map(|(name, _)| format!("{}{}..{}", prefix, stem, name))
+            .filter(|info| info.name.starts_with(verb_partial))
+            .map(|info| format!("{}{}..{}", prefix, stem, info.name))
             .collect(),
     )
 }
@@ -296,17 +354,13 @@ pub(crate) fn complete_options(command_token: &str, partial: &str) -> Option<Vec
         return Some(Vec::new());
     }
 
-    let flags: &[&str] = match command.verb {
-        Verb::Init => &[],
-        Verb::Destroy => &["--yes"],
-        Verb::Json => &["--expand", "--no-check"],
-    };
-
     Some(
-        flags
+        OPTIONS
             .iter()
+            .filter(|info| info.verb == command.verb)
+            .map(|info| info.flag)
             .filter(|flag| flag.starts_with(partial))
-            .map(|flag| (*flag).to_string())
+            .map(|flag| flag.to_string())
             .collect(),
     )
 }
@@ -426,6 +480,7 @@ mod tests {
         assert_eq!(describe("@@ops..init"), Some("Create an empty alias file"));
         assert_eq!(describe("@ops..destroy"), Some("Remove the alias file"));
         assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
+        assert_eq!(describe("@@ops..help"), Some("Show this help"));
         assert_eq!(describe("@@ops.init"), None);
         assert_eq!(describe("@ops"), None);
     }
@@ -461,7 +516,8 @@ mod tests {
             Some(vec![
                 "@@ops..init".to_string(),
                 "@@ops..destroy".to_string(),
-                "@@ops..json".to_string()
+                "@@ops..json".to_string(),
+                "@@ops..help".to_string()
             ])
         );
         assert_eq!(

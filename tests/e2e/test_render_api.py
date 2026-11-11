@@ -139,6 +139,7 @@ def test_api_complete_with_descriptions_file_command_verbs(runner):
         "@@ops..init\tCreate an empty alias file",
         "@@ops..destroy\tRemove the alias file",
         "@@ops..json\tShow the alias file JSON",
+        "@@ops..help\tShow this help",
     ]
 
 
