@@ -140,6 +140,7 @@ def test_api_complete_with_descriptions_file_command_verbs(runner):
         "@@ops..destroy\tRemove the alias file",
         "@@ops..clear\tReset this file to an empty object",
         "@@ops..set\tCreate or update an alias",
+        "@@ops..remove\tRemove an alias or group",
         "@@ops..json\tShow the alias file JSON",
         "@@ops..path\tPrint the absolute path",
         "@@ops..rename\tRename the alias file",

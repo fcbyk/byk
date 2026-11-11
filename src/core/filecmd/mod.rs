@@ -5,12 +5,15 @@
 
 mod clear;
 mod destroy;
+mod edit;
 mod help;
 mod init;
 mod json;
+mod key;
 mod link;
 mod path;
 mod prompt;
+mod remove;
 mod rename;
 mod set;
 mod summary;
@@ -19,6 +22,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::exit;
+
+use serde_json::{Map, Value};
 
 use crate::core::aliases::validate_filename;
 use crate::core::paths::PathLayout;
@@ -36,6 +41,7 @@ enum Verb {
     Destroy,
     Clear,
     Set,
+    Remove,
     Json,
     Path,
     Rename,
@@ -75,6 +81,12 @@ const VERBS: &[VerbInfo] = &[
         name: "set",
         verb: Verb::Set,
         description: "Create or update an alias",
+        usage: "<key>",
+    },
+    VerbInfo {
+        name: "remove",
+        verb: Verb::Remove,
+        description: "Remove an alias or group",
         usage: "<key>",
     },
     VerbInfo {
@@ -441,6 +453,8 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
         }
         Verb::Set => set::run(command.scope, &command.stem, args, layout)
             .map(|(path, key)| eprintln!("Set {} in {}", key, path.display())),
+        Verb::Remove => remove::run(command.scope, &command.stem, args, layout)
+            .map(|(path, key)| eprintln!("Removed {} from {}", key, path.display())),
         Verb::Json => json::run(command.scope, &command.stem, args, layout)
             .and_then(|content| write_stdout(&content)),
         Verb::Path => path::run(command.scope, &command.stem, args, layout)
@@ -536,6 +550,69 @@ pub(crate) fn complete_help_args(
             .map(str::to_string)
             .collect(),
     )
+}
+
+/// 补全 `..remove` 后面的已有 key 路径。
+///
+/// 只有第一个参数位置有候选；链接文件、缺失或非法文件不补。
+pub(crate) fn complete_remove_args(
+    command_token: &str,
+    arg_index: usize,
+    partial: &str,
+    layout: &PathLayout,
+) -> Option<Vec<String>> {
+    let command = match parse(command_token) {
+        ParseResult::Command(command) => command,
+        _ => return None,
+    };
+    if command.verb != Verb::Remove {
+        return None;
+    }
+    if arg_index != 1 {
+        return Some(Vec::new());
+    }
+    if partial.starts_with('-') {
+        return None;
+    }
+
+    let Ok(path) = resolve_target(command.scope, &command.stem, layout) else {
+        return Some(Vec::new());
+    };
+    let Ok(text) = fs::read_to_string(path) else {
+        return Some(Vec::new());
+    };
+    let Ok(Value::Object(object)) = serde_json::from_str::<Value>(&text) else {
+        return Some(Vec::new());
+    };
+
+    let mut keys = Vec::new();
+    collect_removable_keys(&object, "", &mut keys);
+    Some(
+        keys.into_iter()
+            .filter(|key| key.starts_with(partial))
+            .collect(),
+    )
+}
+
+fn collect_removable_keys(object: &Map<String, Value>, prefix: &str, out: &mut Vec<String>) {
+    for (key, value) in object {
+        if key.starts_with('$') {
+            continue;
+        }
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{}.{}", prefix, key)
+        };
+        match value {
+            Value::Object(inner) => {
+                out.push(path.clone());
+                collect_removable_keys(inner, &path, out);
+            }
+            Value::String(_) | Value::Bool(_) => out.push(path),
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -657,6 +734,7 @@ mod tests {
             Some("Reset this file to an empty object")
         );
         assert_eq!(describe("@@ops..set"), Some("Create or update an alias"));
+        assert_eq!(describe("@@ops..remove"), Some("Remove an alias or group"));
         assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
         assert_eq!(describe("@@ops..path"), Some("Print the absolute path"));
         assert_eq!(describe("@@ops..rename"), Some("Rename the alias file"));
@@ -702,6 +780,7 @@ mod tests {
                 "@@ops..destroy".to_string(),
                 "@@ops..clear".to_string(),
                 "@@ops..set".to_string(),
+                "@@ops..remove".to_string(),
                 "@@ops..json".to_string(),
                 "@@ops..path".to_string(),
                 "@@ops..rename".to_string(),
@@ -735,7 +814,10 @@ mod tests {
         );
         assert_eq!(
             complete_verbs("@@ops..r"),
-            Some(vec!["@@ops..rename".to_string()])
+            Some(vec![
+                "@@ops..remove".to_string(),
+                "@@ops..rename".to_string()
+            ])
         );
         assert_eq!(
             complete_verbs("@@ops..l"),
@@ -798,6 +880,7 @@ mod tests {
             Some(vec!["--cmd".to_string(), "--cwd".to_string()])
         );
         assert_eq!(complete_options("@@ops..link", "--"), Some(Vec::new()));
+        assert_eq!(complete_options("@@ops..remove", "--"), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..json", ""), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..json", "x"), Some(Vec::new()));
         assert_eq!(complete_options("normal", "--"), None);
@@ -809,7 +892,7 @@ mod tests {
             complete_help_args("@@ops..help", 1, ""),
             Some(
                 [
-                    "init", "destroy", "clear", "set", "json", "path", "rename", "link"
+                    "init", "destroy", "clear", "set", "remove", "json", "path", "rename", "link"
                 ]
                 .iter()
                 .map(|name| name.to_string())
@@ -823,6 +906,60 @@ mod tests {
         assert_eq!(complete_help_args("@@ops..help", 2, ""), Some(Vec::new()));
         assert_eq!(complete_help_args("@@ops..set", 1, ""), None);
         assert_eq!(complete_help_args("bogus", 1, ""), None);
+    }
+
+    #[test]
+    fn complete_remove_args_lists_keys_and_groups() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = PathLayout {
+            root_dir: temp.path().to_path_buf(),
+            alias_dir: temp.path().join("alias"),
+        };
+        fs::create_dir_all(&layout.alias_dir).unwrap();
+        fs::write(
+            layout.alias_dir.join("ops.byk.json"),
+            r#"{"build":"echo hi","web":{"$cwd":".","deploy":"echo d"},"$ignored":"x"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            complete_remove_args("@@ops..remove", 1, "", &layout),
+            Some(vec![
+                "build".to_string(),
+                "web".to_string(),
+                "web.deploy".to_string()
+            ])
+        );
+        assert_eq!(
+            complete_remove_args("@@ops..remove", 1, "web.", &layout),
+            Some(vec!["web.deploy".to_string()])
+        );
+        assert_eq!(
+            complete_remove_args("@@ops..remove", 2, "", &layout),
+            Some(Vec::new())
+        );
+        assert_eq!(complete_remove_args("@@ops..set", 1, "", &layout), None);
+        assert_eq!(complete_remove_args("bogus", 1, "", &layout), None);
+    }
+
+    #[test]
+    fn complete_remove_args_skips_link_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = PathLayout {
+            root_dir: temp.path().to_path_buf(),
+            alias_dir: temp.path().join("alias"),
+        };
+        fs::create_dir_all(&layout.alias_dir).unwrap();
+        fs::write(
+            layout.alias_dir.join("ops.byk.json"),
+            r#"["shared.byk.json"]"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            complete_remove_args("@@ops..remove", 1, "", &layout),
+            Some(Vec::new())
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ def test_help_lists_commands_without_options(runner):
     assert "  @@ops..destroy  Remove the alias file" in lines
     assert "  @@ops..clear    Reset this file to an empty object" in lines
     assert "  @@ops..set      Create or update an alias" in lines
+    assert "  @@ops..remove   Remove an alias or group" in lines
     assert "  @@ops..json     Show the alias file JSON" in lines
     assert "  @@ops..path     Print the absolute path" in lines
     assert "  @@ops..rename   Rename the alias file" in lines
@@ -81,7 +82,7 @@ def test_help_rejects_unknown_command(runner):
     assert result.returncode == 1
     assert 'Unknown file command: "bogus"' in result.stderr
     assert (
-        "Available: init, destroy, clear, set, json, path, rename, link, help"
+        "Available: init, destroy, clear, set, remove, json, path, rename, link, help"
         in result.stderr
     )
 
@@ -102,6 +103,7 @@ def test_help_argument_completes_command_names(runner):
         "destroy",
         "clear",
         "set",
+        "remove",
         "json",
         "path",
         "rename",

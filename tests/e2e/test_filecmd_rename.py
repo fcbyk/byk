@@ -124,7 +124,10 @@ def test_rename_is_completed_with_description(runner):
     result = runner.run("__api__", "complete", "--with-descriptions", "@@ops..r")
 
     assert result.returncode == 0
-    assert result.stdout.splitlines() == ["@@ops..rename\tRename the alias file"]
+    assert result.stdout.splitlines() == [
+        "@@ops..remove\tRemove an alias or group",
+        "@@ops..rename\tRename the alias file",
+    ]
 
 
 def test_resolve_rejects_rename(runner):

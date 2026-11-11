@@ -1,12 +1,10 @@
 //! `..set`：在当前文件中创建或更新一个别名。
 
-use std::fs;
-use std::io;
 use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 
-use super::{FileScope, resolve_target};
+use super::{FileScope, edit, key};
 use crate::core::aliases::Mode;
 use crate::core::paths::PathLayout;
 
@@ -36,64 +34,24 @@ pub(super) fn run(
     layout: &PathLayout,
 ) -> Result<(PathBuf, String), String> {
     let parsed = parse_args(args)?;
-    let path = resolve_target(scope, stem, layout)?;
-
-    let metadata = match fs::symlink_metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            let prefix = match scope {
-                FileScope::Local => "@",
-                FileScope::Global => "@@",
-            };
-            return Err(format!(
-                "File not found: {}\nHint: create it with {}{}..init",
-                path.display(),
-                prefix,
-                stem
-            ));
-        }
-        Err(e) => return Err(format!("Failed to inspect {}: {}", path.display(), e)),
+    let prefix = match scope {
+        FileScope::Local => "@",
+        FileScope::Global => "@@",
     };
+    let hint = format!("Hint: create it with {}{}..init", prefix, stem);
 
-    if metadata.file_type().is_symlink() {
-        return Err(format!("Refusing to rewrite symlink: {}", path.display()));
-    }
-    if metadata.file_type().is_dir() {
-        return Err(format!("Refusing to edit directory: {}", path.display()));
-    }
-
-    let text = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-    let mut root: Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
-
-    let object = match &mut root {
-        Value::Object(object) => object,
-        Value::Array(_) => {
-            return Err(format!(
-                "Cannot set aliases in a link file: {}\nHint: edit the link target directly",
-                path.display()
-            ));
-        }
-        _ => return Err(format!("Not an alias file: {}", path.display())),
-    };
-
-    let segments: Vec<&str> = parsed.key.split('.').collect();
-    set_path(object, &segments, &parsed)?;
-
-    let mut output = serde_json::to_string_pretty(&root)
-        .map_err(|e| format!("Failed to encode {}: {}", path.display(), e))?;
-    output.push('\n');
-    fs::write(&path, output).map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
-
-    Ok((path, parsed.key))
+    edit::object(scope, stem, layout, Some(hint), "set", |object| {
+        let segments: Vec<&str> = parsed.key.split('.').collect();
+        set_path(object, &segments, &parsed)?;
+        Ok(parsed.key.clone())
+    })
 }
 
 fn parse_args(args: &[String]) -> Result<SetArgs, String> {
     let Some(key) = args.first() else {
         return Err("set requires an alias key".to_string());
     };
-    validate_key(key)?;
+    key::validate(key)?;
 
     let mut parsed = SetArgs {
         key: key.clone(),
@@ -221,33 +179,6 @@ fn parse_unset(raw: &str) -> Result<Vec<UnsetField>, String> {
         }
     }
     Ok(fields)
-}
-
-fn validate_key(key: &str) -> Result<(), String> {
-    if key.is_empty() {
-        return Err("Alias key must not be empty".to_string());
-    }
-    if key.starts_with('-') {
-        return Err(
-            "Alias key must not start with '-'\nHint: place the alias key before options"
-                .to_string(),
-        );
-    }
-    for segment in key.split('.') {
-        if segment.is_empty() {
-            return Err(format!("Invalid alias key: {:?} has an empty segment", key));
-        }
-        if segment.contains('@') {
-            return Err(format!("Invalid alias key: {:?} contains `@`", key));
-        }
-        if segment.starts_with('$') {
-            return Err(format!(
-                "Invalid alias key: {:?} uses a reserved `$` prefix",
-                key
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn validate_conflicts(parsed: &SetArgs) -> Result<(), String> {
@@ -420,6 +351,7 @@ fn collapse(node: Map<String, Value>) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
 
     fn test_layout(temp: &tempfile::TempDir) -> PathLayout {
         PathLayout {

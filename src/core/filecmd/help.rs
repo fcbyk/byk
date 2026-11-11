@@ -141,6 +141,8 @@ mod tests {
         assert!(text.contains("Reset this file to an empty object"));
         assert!(text.contains("  @@ops..set"));
         assert!(text.contains("Create or update an alias"));
+        assert!(text.contains("  @@ops..remove"));
+        assert!(text.contains("Remove an alias or group"));
         assert!(text.contains("  @@ops..path"));
         assert!(text.contains("Print the absolute path"));
         assert!(text.contains("  @@ops..rename"));
@@ -184,6 +186,9 @@ mod tests {
 
         let init = strip_ansi(&run(FileScope::Global, "ops", &args(&["init"])).unwrap());
         assert!(init.contains("@@ops..init [options]"));
+
+        let remove = strip_ansi(&run(FileScope::Global, "ops", &args(&["remove"])).unwrap());
+        assert!(remove.contains("@@ops..remove <key>"));
     }
 
     #[test]
@@ -206,9 +211,9 @@ mod tests {
         let err = run(FileScope::Global, "ops", &args(&["bogus"])).unwrap_err();
 
         assert!(err.starts_with("Unknown file command: \"bogus\""));
-        assert!(
-            err.contains("Available: init, destroy, clear, set, json, path, rename, link, help")
-        );
+        assert!(err.contains(
+            "Available: init, destroy, clear, set, remove, json, path, rename, link, help"
+        ));
     }
 
     #[test]

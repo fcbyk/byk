@@ -68,6 +68,9 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     if let Some(verbs) = filecmd::complete_help_args(&prev[0], prev.len(), partial) {
         return verbs;
     }
+    if let Some(keys) = filecmd::complete_remove_args(&prev[0], prev.len(), partial, layout) {
+        return keys;
+    }
     filecmd::complete_options(&prev[0], partial).unwrap_or_default()
 }
 
@@ -368,6 +371,7 @@ mod tests {
                 "@@anything..destroy".to_string(),
                 "@@anything..clear".to_string(),
                 "@@anything..set".to_string(),
+                "@@anything..remove".to_string(),
                 "@@anything..json".to_string(),
                 "@@anything..path".to_string(),
                 "@@anything..rename".to_string(),
@@ -585,6 +589,7 @@ mod tests {
                 "destroy".to_string(),
                 "clear".to_string(),
                 "set".to_string(),
+                "remove".to_string(),
                 "json".to_string(),
                 "path".to_string(),
                 "rename".to_string(),
@@ -618,6 +623,29 @@ mod tests {
             candidates(&words(&["@@ops..set", "build", "--c"]), &env.layout),
             vec!["--cmd".to_string(), "--cwd".to_string()]
         );
+    }
+
+    #[test]
+    fn candidates_remove_completes_existing_keys() {
+        let env = TestEnv::new();
+        env.add_alias_file(
+            "ops",
+            &json!({"build": "echo hi", "web": {"deploy": "echo d"}}),
+        );
+
+        assert_eq!(
+            candidates(&words(&["@@ops..remove", ""]), &env.layout),
+            vec![
+                "build".to_string(),
+                "web".to_string(),
+                "web.deploy".to_string()
+            ]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..remove", "web."]), &env.layout),
+            vec!["web.deploy".to_string()]
+        );
+        assert!(candidates(&words(&["@@ops..remove", "build", ""]), &env.layout).is_empty());
     }
 
     #[test]
