@@ -24,6 +24,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # 与 ci.yml 保持一致：产物要可复现，工具链就不能是移动靶。
+  RUST_VERSION: "1.99.0"
 
 jobs:
   verify:
@@ -64,8 +66,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2

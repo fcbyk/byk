@@ -1,0 +1,11 @@
+# 本地与 CI 使用同一个 Rust 版本。
+#
+# 少了这个文件，本地和 CI 会各用各的：CI 跟 stable 漂移，本地停在旧版，
+# 于是「本地 clippy 干净、推上去却红」——clippy 每出新版本都可能加新 lint，
+# 这次就撞上了 clippy::question_mark（1.99 新增）。
+#
+# 与 .github/workflows/{ci,release}.yml 里的 env.RUST_VERSION 保持一致。
+# 升级时两处一起改，然后在本地跑一遍：
+#   cargo clippy --all-targets -- -D warnings && cargo test --all-targets
+[toolchain]
+channel = "1.99.0"

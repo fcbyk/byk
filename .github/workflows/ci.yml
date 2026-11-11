@@ -22,6 +22,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # 固定 Rust 版本，不让 stable 自己漂移。新 stable 常带新 lint，会让
+  # 「只改了文档的提交」突然变红——本次的 clippy::question_mark 就是这么来的。
+  # 升级时只改这一行，并在本地 rustup 同步后再提交。
+  RUST_VERSION: "1.99.0"
 
 jobs:
   lint:
@@ -30,8 +34,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
@@ -53,7 +58,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - uses: Swatinem/rust-cache@v2
 
@@ -70,8 +77,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_VERSION }}
           components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
@@ -130,7 +138,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - uses: Swatinem/rust-cache@v2
 
