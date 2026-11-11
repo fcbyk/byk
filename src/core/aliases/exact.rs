@@ -10,10 +10,8 @@ use super::types::{AliasFile, Mode, ResolvedAlias};
 pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
     let (prefix, rest) = if let Some(rest) = input.strip_prefix("@@") {
         ("@@", rest)
-    } else if let Some(rest) = input.strip_prefix('@') {
-        ("@", rest)
     } else {
-        return None;
+        ("@", input.strip_prefix('@')?)
     };
 
     let dot_idx = rest.find('.')?;
