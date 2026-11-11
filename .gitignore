@@ -7,6 +7,10 @@ __pycache__
 .coverage
 .pytest_cache
 
+# 覆盖率产物（cargo llvm-cov）
+lcov.info
+coverage-html/
+
 .obsidian
 node_modules
 .DS_Store

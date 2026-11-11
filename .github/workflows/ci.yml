@@ -1,0 +1,147 @@
+# 测试与静态检查。
+#
+# 不监听 tag：tag 只是给一个提交打标记，而覆盖率是按 commit 存储的，
+# 同一个提交重复上传只是幂等覆盖，不会多出任何信息。要发版的那个提交
+# 早就随着 push main 跑过这里了。
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # PR 或主干连推时取消上一次，只保留最新的运行。
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    # linux 上的测试由 coverage job 兼任，这里只跑另外两个平台，
+    # 让每个平台各自只编译一次。Windows 是唯一真正编译
+    # `#[cfg(windows)]` 分支的地方，别为了省时间去掉。
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo test --all-targets
+
+  coverage:
+    name: coverage (linux)
+    runs-on: ubuntu-22.04
+    # OIDC 上传需要 id-token: write。job 级 permissions 会整体覆盖顶层，
+    # 所以 contents 要跟着写一遍。
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      # 这一步同时就是 linux 的测试：cargo llvm-cov 内部调用 cargo test，
+      # 测试失败会以非零码退出。
+      - name: Run tests with coverage
+        run: cargo llvm-cov --lcov --output-path lcov.info
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo '### Coverage'
+            echo ''
+            echo '```'
+            cargo llvm-cov report --summary-only 2>/dev/null || echo 'no coverage data'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: HTML report
+        if: always()
+        continue-on-error: true
+        run: cargo llvm-cov report --html --output-dir coverage-html
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-html
+          # cargo-llvm-cov 会在 --output-dir 下再建一层 html/，
+          # 取到这一层，下载解压后就是 index.html，不用多点一次。
+          path: coverage-html/html/
+          retention-days: 14
+
+      # 每次都上传：PR 上 Codecov 会算出 patch 覆盖率并自动在 PR 里评论，
+      # 主干上刷新 baseline 与徽章。
+      #
+      # 用 OIDC 而不是 token：不必管理 CODECOV_TOKEN secret，也不需要为
+      # fork PR 单独判断——action 检测到是 fork 时会自动禁用 OIDC 并改走
+      # tokenless 上传（Codecov 对公开仓库的 fork PR 原生支持这条路径）。
+      # fail_ci_if_error 仍设 false：覆盖率是观测手段，不是门禁。
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          slug: fcbyk/byk
+          files: lcov.info
+          fail_ci_if_error: false
+
+  e2e:
+    # 只能跑 POSIX：tests/e2e/conftest.py 依赖 `pty` 模块，Windows 上没有。
+    name: e2e (ubuntu)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install pytest
+
+      # conftest 里的 byk_binary fixture 自己也会 cargo build，这里先编一次
+      # 是为了让失败归因更清楚（编译问题不会伪装成测试问题）。
+      - run: cargo build
+
+      - run: pytest -q

@@ -1,0 +1,148 @@
+# 构建发布产物。两种模式共用同一个构建矩阵，靠 event_name 分叉：
+#
+#   push tag v*  →  构建 tar/zip，生成校验和，创建 draft release
+#   手动触发      →  额外构建 wheel，只上传 artifact，不碰 release
+#
+# 手动模式的价值是在打 tag 之前先验证五个平台都编得出来、wheel 打得动。
+# 注意 draft release 不出现在 releases/latest 里，所以
+# scripts/install.sh 只有在手动 publish 之后才会指向新版本。
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  # 发布构建宁可排队也不能被中断。
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: verify version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # 手动触发时 ref 通常是分支，没有可比的版本号，跳过。
+      # 放在 build 之前独立成 job：版本对不上时一个平台都不编。
+      - name: Check tag matches Cargo.toml
+        if: github.ref_type == 'tag'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(awk -F'"' '/^version/{print $2; exit}' Cargo.toml)
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::tag v${tag} does not match Cargo.toml version ${ver}"
+            exit 1
+          fi
+          echo "version ${ver} ok"
+
+  build:
+    name: ${{ matrix.artifact }}
+    needs: verify
+    strategy:
+      # 五个平台都跑完再收工，一次就能看到所有失败原因。
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu,  os: ubuntu-22.04,     artifact: linux-x86_64 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm, artifact: linux-arm64 }
+          - { target: aarch64-apple-darwin,      os: macos-latest,     artifact: darwin-arm64 }
+          # Intel 版由 arm 设备交叉编译。rustc 会自动给 apple target 传
+          # `-arch x86_64`，不需要额外配置 linker。
+          - { target: x86_64-apple-darwin,       os: macos-latest,     artifact: darwin-x86_64 }
+          - { target: x86_64-pc-windows-msvc,    os: windows-2022,     artifact: windows-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # 交叉编译到 aarch64 时 cargo 默认仍用宿主机的 cc，装了 gcc 也没用，
+      # 必须显式指定 linker，否则链接阶段直接失败。
+      - name: Install ARM64 Linux linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - name: Build binary
+        if: github.event_name == 'push'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # 手动模式下由 maturin 驱动 cargo，避免同一个 target 编译两遍。
+      # 它产出的二进制和 cargo build 落在同一目录，下面打包照旧。
+      - name: Build wheel
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          pip install maturin
+          maturin build --release --target ${{ matrix.target }} --out dist
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          tar czf "dist/byk-${{ matrix.artifact }}.tar.gz" \
+            -C "target/${{ matrix.target }}/release" byk
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "target/${{ matrix.target }}/release/byk.exe" -DestinationPath "dist/byk-${{ matrix.artifact }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: byk-${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: draft release
+    needs: build
+    # 手动触发时如果在界面上把 ref 选成了某个 tag，ref_type 同样会是 tag，
+    # 所以必须连 event_name 一起判断，否则预发布演练会真的发一个草稿。
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      # merge-multiple 把所有 artifact 平铺到一个目录，省掉手动搬运。
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      # 在 assets 里生成，校验和文件记录的是不带目录前缀的文件名，
+      # 用户下载后在同目录 `sha256sum -c checksums.txt` 即可。
+      - name: Generate checksums
+        run: |
+          cd assets
+          sha256sum byk-*.tar.gz byk-*.zip | tee checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            assets/byk-*.tar.gz
+            assets/byk-*.zip
+            assets/checksums.txt
+          generate_release_notes: true
