@@ -54,12 +54,7 @@ fn format_candidate(candidate: &str, with_descriptions: bool) -> String {
     }
 }
 
-/// 只有第一个词位置可补。
-///
-/// 别名只认点号单 token（`发布.maturin`）。词一旦被空格终结，后面敲的都是
-/// 原样传给目标命令的参数，byk 无从得知它们该是什么；分组名也不能像子命令
-/// 那样展开——`byk 发布 maturin` 不成立，能补的只有 `byk 发布.<TAB>`。
-/// 所以除了补第一个词，其余位置一律返回空。
+/// 第一个词是别名时只在第一词位置补；文件命令的参数按动词单独补。
 fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     let Some((partial, prev)) = args.split_last() else {
         // 无参数：焦点在第一个词
@@ -67,12 +62,13 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     };
 
     if prev.is_empty() {
-        get_completions(partial, layout)
-    } else if prev.len() == 1 {
-        filecmd::complete_options(&prev[0], partial).unwrap_or_default()
-    } else {
-        Vec::new()
+        return get_completions(partial, layout);
     }
+
+    if let Some(verbs) = filecmd::complete_help_args(&prev[0], prev.len(), partial) {
+        return verbs;
+    }
+    filecmd::complete_options(&prev[0], partial).unwrap_or_default()
 }
 
 const GLOBAL_FLAGS: &[&str] = &["--version", "-v", "--help", "-h", "--paths"];
@@ -371,6 +367,7 @@ mod tests {
                 "@@anything..init".to_string(),
                 "@@anything..destroy".to_string(),
                 "@@anything..clear".to_string(),
+                "@@anything..set".to_string(),
                 "@@anything..json".to_string(),
                 "@@anything..path".to_string(),
                 "@@anything..rename".to_string(),
@@ -576,6 +573,51 @@ mod tests {
         assert!(candidates(&words(&["@@ops..json", ""]), &env.layout).is_empty());
         assert!(candidates(&words(&["@@ops..json", "--expand", ""]), &env.layout).is_empty());
         assert!(candidates(&words(&["hello", "--"]), &env.layout).is_empty());
+    }
+
+    #[test]
+    fn candidates_help_completes_command_names() {
+        let env = TestEnv::new();
+        assert_eq!(
+            candidates(&words(&["@@ops..help", ""]), &env.layout),
+            vec![
+                "init".to_string(),
+                "destroy".to_string(),
+                "clear".to_string(),
+                "set".to_string(),
+                "json".to_string(),
+                "path".to_string(),
+                "rename".to_string(),
+                "link".to_string()
+            ]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..help", "s"]), &env.layout),
+            vec!["set".to_string()]
+        );
+        assert!(candidates(&words(&["@@ops..help", "help"]), &env.layout).is_empty());
+        assert!(candidates(&words(&["@@ops..help", "set", ""]), &env.layout).is_empty());
+    }
+
+    #[test]
+    fn candidates_file_command_options_after_positional() {
+        let env = TestEnv::new();
+        assert_eq!(
+            candidates(&words(&["@@ops..set", "build", "--"]), &env.layout),
+            vec![
+                "--cmd".to_string(),
+                "--cwd".to_string(),
+                "--mode".to_string(),
+                "--description".to_string(),
+                "--recursive".to_string(),
+                "--no-recursive".to_string(),
+                "--unset".to_string()
+            ]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..set", "build", "--c"]), &env.layout),
+            vec!["--cmd".to_string(), "--cwd".to_string()]
+        );
     }
 
     #[test]

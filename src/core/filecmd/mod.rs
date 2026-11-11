@@ -12,6 +12,7 @@ mod link;
 mod path;
 mod prompt;
 mod rename;
+mod set;
 mod summary;
 
 use std::fs;
@@ -34,6 +35,7 @@ enum Verb {
     Init,
     Destroy,
     Clear,
+    Set,
     Json,
     Path,
     Rename,
@@ -45,6 +47,8 @@ struct VerbInfo {
     name: &'static str,
     verb: Verb,
     description: &'static str,
+    /// 位置参数片段；`[options]` 由是否有选项自动追加。
+    usage: &'static str,
 }
 
 /// 已注册的动词；顺序即错误提示、补全与帮助输出顺序。
@@ -53,47 +57,62 @@ const VERBS: &[VerbInfo] = &[
         name: "init",
         verb: Verb::Init,
         description: "Create an alias file",
+        usage: "",
     },
     VerbInfo {
         name: "destroy",
         verb: Verb::Destroy,
         description: "Remove the alias file",
+        usage: "",
     },
     VerbInfo {
         name: "clear",
         verb: Verb::Clear,
         description: "Reset this file to an empty object",
+        usage: "",
+    },
+    VerbInfo {
+        name: "set",
+        verb: Verb::Set,
+        description: "Create or update an alias",
+        usage: "<key>",
     },
     VerbInfo {
         name: "json",
         verb: Verb::Json,
         description: "Show the alias file JSON",
+        usage: "",
     },
     VerbInfo {
         name: "path",
         verb: Verb::Path,
         description: "Print the absolute path",
+        usage: "",
     },
     VerbInfo {
         name: "rename",
         verb: Verb::Rename,
         description: "Rename the alias file",
+        usage: "<new-name>",
     },
     VerbInfo {
         name: "link",
         verb: Verb::Link,
         description: "Point this file at another alias file",
+        usage: "<target>",
     },
     VerbInfo {
         name: "help",
         verb: Verb::Help,
         description: "Show this help",
+        usage: "[command]",
     },
 ];
 
 struct OptionInfo {
     verb: Verb,
     flag: &'static str,
+    syntax: &'static str,
     description: &'static str,
 }
 
@@ -102,27 +121,74 @@ const OPTIONS: &[OptionInfo] = &[
     OptionInfo {
         verb: Verb::Init,
         flag: "--link",
+        syntax: "--link",
         description: "Create as a link to another alias file",
     },
     OptionInfo {
         verb: Verb::Destroy,
         flag: "--yes",
+        syntax: "--yes",
         description: "Skip confirmation",
     },
     OptionInfo {
         verb: Verb::Clear,
         flag: "--yes",
+        syntax: "--yes",
         description: "Skip confirmation",
     },
     OptionInfo {
         verb: Verb::Json,
         flag: "--expand",
+        syntax: "--expand",
         description: "Expand file variables and pretty-print",
     },
     OptionInfo {
         verb: Verb::Json,
         flag: "--no-check",
+        syntax: "--no-check",
         description: "Skip JSON validation and print raw",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--cmd",
+        syntax: "--cmd <command>",
+        description: "Set the alias command",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--cwd",
+        syntax: "--cwd <path>",
+        description: "Set the working directory",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--mode",
+        syntax: "--mode <mode>",
+        description: "Set the execution mode",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--description",
+        syntax: "--description <text>",
+        description: "Set the description",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--recursive",
+        syntax: "--recursive",
+        description: "Allow re-entry on the call chain",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--no-recursive",
+        syntax: "--no-recursive",
+        description: "Remove the recursive flag",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--unset",
+        syntax: "--unset <fields>",
+        description: "Remove metadata fields",
     },
 ];
 
@@ -178,11 +244,7 @@ impl FileCommandError {
                 "Invalid file command: {}\nHint: invalid verb {:?}",
                 token, verb
             ),
-            Self::UnknownVerb(verb) => format!(
-                "Unknown file command: {:?}\nAvailable: {}",
-                verb,
-                verb_names().join(", ")
-            ),
+            Self::UnknownVerb(verb) => unknown_verb_message(verb),
             Self::InvalidStem(stem) => invalid_stem_message(stem),
         }
     }
@@ -197,6 +259,14 @@ fn invalid_stem_message(stem: &str) -> String {
 
 fn verb_names() -> Vec<&'static str> {
     VERBS.iter().map(|info| info.name).collect()
+}
+
+pub(super) fn unknown_verb_message(verb: &str) -> String {
+    format!(
+        "Unknown file command: {:?}\nAvailable: {}",
+        verb,
+        verb_names().join(", ")
+    )
 }
 
 fn split_prefix(token: &str) -> Option<(&'static str, &str)> {
@@ -369,6 +439,8 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
                 }
             })
         }
+        Verb::Set => set::run(command.scope, &command.stem, args, layout)
+            .map(|(path, key)| eprintln!("Set {} in {}", key, path.display())),
         Verb::Json => json::run(command.scope, &command.stem, args, layout)
             .and_then(|content| write_stdout(&content)),
         Verb::Path => path::run(command.scope, &command.stem, args, layout)
@@ -431,6 +503,37 @@ pub(crate) fn complete_options(command_token: &str, partial: &str) -> Option<Vec
             .map(|info| info.flag)
             .filter(|flag| flag.starts_with(partial))
             .map(|flag| flag.to_string())
+            .collect(),
+    )
+}
+
+/// 补全 `..help` 后面的命令名。
+///
+/// `arg_index` 是当前词之前的词数；只有第一个参数位置有候选。
+/// 返回 `None` 表示第一个词不是 `..help`。
+pub(crate) fn complete_help_args(
+    command_token: &str,
+    arg_index: usize,
+    partial: &str,
+) -> Option<Vec<String>> {
+    let command = match parse(command_token) {
+        ParseResult::Command(command) => command,
+        _ => return None,
+    };
+    if command.verb != Verb::Help {
+        return None;
+    }
+    if arg_index != 1 {
+        return Some(Vec::new());
+    }
+
+    Some(
+        VERBS
+            .iter()
+            .filter(|info| info.verb != Verb::Help)
+            .map(|info| info.name)
+            .filter(|name| name.starts_with(partial))
+            .map(str::to_string)
             .collect(),
     )
 }
@@ -553,6 +656,7 @@ mod tests {
             describe("@@ops..clear"),
             Some("Reset this file to an empty object")
         );
+        assert_eq!(describe("@@ops..set"), Some("Create or update an alias"));
         assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
         assert_eq!(describe("@@ops..path"), Some("Print the absolute path"));
         assert_eq!(describe("@@ops..rename"), Some("Rename the alias file"));
@@ -597,6 +701,7 @@ mod tests {
                 "@@ops..init".to_string(),
                 "@@ops..destroy".to_string(),
                 "@@ops..clear".to_string(),
+                "@@ops..set".to_string(),
                 "@@ops..json".to_string(),
                 "@@ops..path".to_string(),
                 "@@ops..rename".to_string(),
@@ -615,6 +720,10 @@ mod tests {
         assert_eq!(
             complete_verbs("@@ops..c"),
             Some(vec!["@@ops..clear".to_string()])
+        );
+        assert_eq!(
+            complete_verbs("@@ops..s"),
+            Some(vec!["@@ops..set".to_string()])
         );
         assert_eq!(
             complete_verbs("@@ops..j"),
@@ -672,10 +781,48 @@ mod tests {
             complete_options("@@ops..clear", "--"),
             Some(vec!["--yes".to_string()])
         );
+        assert_eq!(
+            complete_options("@@ops..set", "--"),
+            Some(vec![
+                "--cmd".to_string(),
+                "--cwd".to_string(),
+                "--mode".to_string(),
+                "--description".to_string(),
+                "--recursive".to_string(),
+                "--no-recursive".to_string(),
+                "--unset".to_string()
+            ])
+        );
+        assert_eq!(
+            complete_options("@@ops..set", "--c"),
+            Some(vec!["--cmd".to_string(), "--cwd".to_string()])
+        );
         assert_eq!(complete_options("@@ops..link", "--"), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..json", ""), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..json", "x"), Some(Vec::new()));
         assert_eq!(complete_options("normal", "--"), None);
+    }
+
+    #[test]
+    fn complete_help_args_lists_verbs_without_help() {
+        assert_eq!(
+            complete_help_args("@@ops..help", 1, ""),
+            Some(
+                [
+                    "init", "destroy", "clear", "set", "json", "path", "rename", "link"
+                ]
+                .iter()
+                .map(|name| name.to_string())
+                .collect()
+            )
+        );
+        assert_eq!(
+            complete_help_args("@@ops..help", 1, "s"),
+            Some(vec!["set".to_string()])
+        );
+        assert_eq!(complete_help_args("@@ops..help", 2, ""), Some(Vec::new()));
+        assert_eq!(complete_help_args("@@ops..set", 1, ""), None);
+        assert_eq!(complete_help_args("bogus", 1, ""), None);
     }
 
     #[test]
