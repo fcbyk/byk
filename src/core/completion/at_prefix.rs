@@ -17,26 +17,23 @@ pub(crate) fn complete_at_prefix(
         return verbs;
     }
 
-    let (_, files) = aliases::load_merged_aliases(layout);
-
-    // 查找 partial 中是否包含 '.' — 如果有，补全文件内的 key
+    // 点号之后只需要目标文件：直接解析它，不扫描其余文件
     if let Some(dot_idx) = partial.find('.') {
         let file_key = &partial[..dot_idx];
         let key_partial = &partial[dot_idx + 1..];
 
-        for f in &files {
-            if f.key == file_key {
-                return collect_object_keys(&f.aliases, "")
-                    .into_iter()
-                    .filter(|k| k.starts_with(key_partial))
-                    .map(|k| format!("{}.{}", file_key, k))
-                    .collect();
-            }
-        }
-        return Vec::new();
+        let Some(file) = aliases::load_file_by_key(layout, file_key) else {
+            return Vec::new();
+        };
+        return collect_object_keys(&file.aliases, "")
+            .into_iter()
+            .filter(|k| k.starts_with(key_partial))
+            .map(|k| format!("{}.{}", file_key, k))
+            .collect();
     }
 
-    // 补全文件 key（@xxx 或 @@xxx 格式）
+    // 补全文件 key（@xxx 或 @@xxx 格式）：需要知道哪些文件能解析，只能全量扫描
+    let files = aliases::load_scanned_aliases(layout).files;
     let mut candidates: Vec<String> = files
         .iter()
         .map(|f| f.key.clone())

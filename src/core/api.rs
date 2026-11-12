@@ -120,17 +120,17 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 std::process::exit(1);
             }
 
-            // 与 main.rs 相同的查找顺序：精确语法优先，其次合并命名空间
-            let (merged, files) = aliases::load_merged_aliases(layout);
+            // 与 main.rs 相同的查找顺序：精确语法优先（只解析目标文件），其次合并命名空间
             let resolved = if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(key) {
-                match aliases::lookup_exact_alias(&files, &file_key, &alias_key) {
-                    Some((r, _)) => r,
-                    None => {
+                match aliases::resolve_exact_alias(layout, &file_key, &alias_key) {
+                    aliases::ExactLookup::Found { resolved, .. } => resolved,
+                    _ => {
                         eprintln!("resolve: alias not found: {}", key);
                         std::process::exit(1);
                     }
                 }
             } else {
+                let (merged, _files) = aliases::load_merged_aliases(layout);
                 match aliases::resolve_merged_alias(&merged, key) {
                     Some(r) => r.clone(),
                     None => {

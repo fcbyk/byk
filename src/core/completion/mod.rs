@@ -58,8 +58,8 @@ pub fn complete(args: &[String], layout: &PathLayout, with_descriptions: bool) {
 
 /// 文件 key → 展示用别名文件路径。
 ///
-/// 只在候选里真的出现文件 key 时二次扫描，避免普通补全为描述多付一次扫描。
 /// 文件 key 不含点号；带 `..` 的是文件命令，带 `.` 的是精确别名路径。
+/// 候选已经来自解析成功的文件，描述只需要文件名枚举，不必再解析一遍 JSON。
 fn file_key_descriptions(candidates: &[String], layout: &PathLayout) -> HashMap<String, String> {
     let mentions_file_key = candidates
         .iter()
@@ -69,10 +69,11 @@ fn file_key_descriptions(candidates: &[String], layout: &PathLayout) -> HashMap<
         return HashMap::new();
     }
 
-    let (_, files) = aliases::load_merged_aliases(layout);
-    files
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    aliases::list_alias_files(&cwd, false)
         .into_iter()
-        .map(|file| (file.key, display_path(&file.path)))
+        .chain(aliases::list_alias_files(&layout.alias_dir, true))
+        .map(|(key, path)| (key, display_path(&path)))
         .collect()
 }
 

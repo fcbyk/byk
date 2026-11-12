@@ -21,7 +21,7 @@ pub(crate) struct ScanResult {
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> ScanResult {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
     // 只想给本文件用（仅 @file.key 可达）时写 `$private: true`。
-    let default_priority = if is_global { 0 } else { 1 };
+    let default_priority = default_priority(is_global);
     let mut result = ScanResult::default();
 
     let entries = match fs::read_dir(dir) {
@@ -51,6 +51,32 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
     }
 
     result
+}
+
+/// 直接加载单个文件（按文件名 stem），不扫描目录。
+///
+/// 精确执行只需要目标文件，跳过其余文件的读取、解析与合并。解析仍走
+/// [`parse_alias_file`]，链接文件、`$var` / `${file_dir}`、继承的
+/// `$cwd` / `$mode` / `$paths` 都与扫描路径一致。
+pub(crate) fn load_alias_file(
+    dir: &Path,
+    is_global: bool,
+    stem: &str,
+    vars: &VarTable,
+) -> Option<AliasFile> {
+    let path = dir.join(format!("{}.byk.json", stem));
+    let mut diagnostics = Vec::new();
+    parse_alias_file(
+        &path,
+        is_global,
+        default_priority(is_global),
+        vars,
+        &mut diagnostics,
+    )
+}
+
+fn default_priority(is_global: bool) -> i32 {
+    if is_global { 0 } else { 1 }
 }
 
 /// 只枚举目录里的别名文件，不读取内容。

@@ -6,20 +6,20 @@ use std::path::Path;
 
 use colored::Colorize;
 
-use crate::core::aliases::{self, LoadedAliases};
+use crate::core::aliases::{self, ScannedAliases};
 use crate::core::config::{Diagnostic, DiagnosticReport, Level};
 use crate::core::paths::PathLayout;
 
 /// 渲染检查报告；返回进程退出码（有问题为 1）。
 pub fn render(layout: &PathLayout) -> i32 {
-    let loaded = aliases::load_merged_aliases_report(layout);
+    let scanned = aliases::load_scanned_aliases(layout);
     let mut stdout = std::io::stdout().lock();
-    let _ = stdout.write_all(format_report(&loaded).as_bytes());
+    let _ = stdout.write_all(format_report(&scanned).as_bytes());
     let _ = stdout.flush();
-    if loaded.report.is_clean() { 0 } else { 1 }
+    if scanned.report.is_clean() { 0 } else { 1 }
 }
 
-fn format_report(loaded: &LoadedAliases) -> String {
+fn format_report(loaded: &ScannedAliases) -> String {
     let report = &loaded.report;
     let mut output = String::new();
 
@@ -99,12 +99,10 @@ fn counts_phrase(report: &DiagnosticReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use std::path::PathBuf;
 
-    fn loaded(scanned: usize, items: Vec<Diagnostic>) -> LoadedAliases {
-        LoadedAliases {
-            merged: HashMap::new(),
+    fn loaded(scanned: usize, items: Vec<Diagnostic>) -> ScannedAliases {
+        ScannedAliases {
             files: Vec::new(),
             report: DiagnosticReport { scanned, items },
         }

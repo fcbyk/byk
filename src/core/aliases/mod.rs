@@ -11,10 +11,10 @@ mod quote;
 mod scan;
 
 // 统一出口：其他模块只从这里使用别名引擎能力；共享词汇在 core::config
-pub use exact::{lookup_exact_alias, parse_exact_syntax};
+pub use exact::{ExactLookup, load_file_by_key, parse_exact_syntax, resolve_exact_alias};
 pub use execution::{ResolvedCommand, execute_alias, resolve_alias};
 pub use merge::{
-    LoadedAliases, collect_merged_paths, load_merged_aliases, load_merged_aliases_report,
-    resolve_merged_alias,
+    ScannedAliases, collect_merged_paths, load_merged_aliases, load_merged_aliases_report,
+    load_scanned_aliases, resolve_merged_alias,
 };
 pub(crate) use scan::list_alias_files;

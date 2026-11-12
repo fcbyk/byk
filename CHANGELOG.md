@@ -13,6 +13,12 @@
 - **`--check`**: diagnostic report; unreadable files, invalid JSON, bad metadata types, and link problems are summarized in the help banner instead of being printed during normal runs
 - **`--paths`**: now also prints the working directory and lists alias files in the global alias directory and the current working directory; file names are validated, contents are not parsed
 
+### Performance
+
+- **execution**: `@file.key` / `@@file.key` parse only the target alias file instead of scanning and merging every alias file
+- **`--check` / completion**: scanning no longer builds the merged alias tree when only files or diagnostics are needed
+- **completion**: `@file.` completes from the target file only, and file-key descriptions use a name-only directory listing instead of parsing every alias file
+
 ## v0.7.0 (2026-11-08)
 
 ### Breaking Changes

@@ -1,8 +1,13 @@
 //! 精确执行语法：@file.key 和 @@file.key。
 
+use std::path::PathBuf;
+
+use super::scan::load_alias_file;
 use crate::core::config::{
-    AliasFile, Mode, ResolvedAlias, apply_inherited, is_alias_value, to_alias_value,
+    AliasFile, Mode, ResolvedAlias, apply_inherited, build_builtin_table, is_alias_value,
+    to_alias_value, validate_filename,
 };
+use crate::core::paths::PathLayout;
 
 /// 解析 `@file.key` / `@@file.key`，返回 (file_key, alias_key)。
 ///
@@ -23,6 +28,58 @@ pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
     }
 
     Some((format!("{}{}", prefix, file_name), alias_key.to_string()))
+}
+
+/// 精确执行结果。
+pub enum ExactLookup {
+    Found {
+        resolved: ResolvedAlias,
+        display_source: String,
+    },
+    FileNotFound,
+    KeyNotFound,
+}
+
+/// 按 `@file` / `@@file` 加载并解析目标文件，不扫描目录、不建合并树。
+///
+/// `@` 指向当前目录，`@@` 指向全局别名目录；文件 key 与扫描阶段的命名规则一致。
+/// 文件名不合法时视作文件不存在，避免 `@../x` 这类路径穿越。
+pub fn load_file_by_key(layout: &PathLayout, file_key: &str) -> Option<AliasFile> {
+    let (is_global, stem) = split_file_key(file_key)?;
+    if !validate_filename(stem) {
+        return None;
+    }
+
+    let dir = if is_global {
+        layout.alias_dir.clone()
+    } else {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    };
+    let vars = build_builtin_table(&layout.root_dir);
+    load_alias_file(&dir, is_global, stem, &vars)
+}
+
+/// 只解析目标文件来响应 `@file.key` / `@@file.key`。
+pub fn resolve_exact_alias(layout: &PathLayout, file_key: &str, alias_key: &str) -> ExactLookup {
+    let Some(file) = load_file_by_key(layout, file_key) else {
+        return ExactLookup::FileNotFound;
+    };
+
+    match lookup_exact_alias(std::slice::from_ref(&file), file_key, alias_key) {
+        Some((resolved, display_source)) => ExactLookup::Found {
+            resolved,
+            display_source,
+        },
+        None => ExactLookup::KeyNotFound,
+    }
+}
+
+fn split_file_key(file_key: &str) -> Option<(bool, &str)> {
+    if let Some(stem) = file_key.strip_prefix("@@") {
+        Some((true, stem))
+    } else {
+        file_key.strip_prefix('@').map(|stem| (false, stem))
+    }
 }
 
 /// 按 file_key 在文件列表里查找别名，返回 (别名, 展示用来源串)。
@@ -78,6 +135,94 @@ pub fn lookup_exact_alias(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::AliasValue;
+    use std::fs;
+
+    fn temp_layout() -> (tempfile::TempDir, PathLayout) {
+        let tmp = tempfile::tempdir().unwrap();
+        let alias_dir = tmp.path().join("alias");
+        fs::create_dir_all(&alias_dir).unwrap();
+        let layout = PathLayout {
+            root_dir: tmp.path().to_path_buf(),
+            alias_dir,
+        };
+        (tmp, layout)
+    }
+
+    #[test]
+    fn resolve_global_exact_alias() {
+        let (_tmp, layout) = temp_layout();
+        fs::write(
+            layout.alias_dir.join("ops.byk.json"),
+            r#"{"build": "make build"}"#,
+        )
+        .unwrap();
+
+        let ExactLookup::Found {
+            resolved,
+            display_source,
+        } = resolve_exact_alias(&layout, "@@ops", "build")
+        else {
+            panic!("expected the alias to resolve");
+        };
+        assert_eq!(resolved.source, "@@ops");
+        assert_eq!(
+            resolved.source_path.as_deref(),
+            Some(layout.alias_dir.join("ops.byk.json").as_path())
+        );
+        assert_eq!(display_source, "@@ops.build");
+        let AliasValue::Str(command) = resolved.value else {
+            panic!("expected a string command");
+        };
+        assert_eq!(command, "make build");
+    }
+
+    #[test]
+    fn resolve_exact_bypasses_private() {
+        let (_tmp, layout) = temp_layout();
+        fs::write(
+            layout.alias_dir.join("ops.byk.json"),
+            r#"{"$private": true, "deploy": "echo private"}"#,
+        )
+        .unwrap();
+
+        let ExactLookup::Found { resolved, .. } = resolve_exact_alias(&layout, "@@ops", "deploy")
+        else {
+            panic!("exact calls must reach private files");
+        };
+        let AliasValue::Str(command) = resolved.value else {
+            panic!("expected a string command");
+        };
+        assert_eq!(command, "echo private");
+    }
+
+    #[test]
+    fn resolve_exact_missing_file() {
+        let (_tmp, layout) = temp_layout();
+        assert!(matches!(
+            resolve_exact_alias(&layout, "@@nope", "build"),
+            ExactLookup::FileNotFound
+        ));
+    }
+
+    #[test]
+    fn resolve_exact_missing_key() {
+        let (_tmp, layout) = temp_layout();
+        fs::write(layout.alias_dir.join("ops.byk.json"), r#"{"other": "x"}"#).unwrap();
+        assert!(matches!(
+            resolve_exact_alias(&layout, "@@ops", "build"),
+            ExactLookup::KeyNotFound
+        ));
+    }
+
+    #[test]
+    fn resolve_exact_rejects_path_traversal() {
+        let (_tmp, layout) = temp_layout();
+        assert!(matches!(
+            resolve_exact_alias(&layout, "@@../evil", "build"),
+            ExactLookup::FileNotFound
+        ));
+    }
 
     #[test]
     fn parse_at_file_dot_key() {

@@ -86,29 +86,29 @@ fn main() {
         }
     }
 
-    // 别名数据只加载一次，精确执行与普通查找共用
-    let (merged, files) = aliases::load_merged_aliases(&layout);
-
-    // 精确执行：@file.key / @@file.key
+    // 精确执行：@file.key / @@file.key，只解析目标文件，不扫描目录、不建合并树
     if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(command_name) {
-        match aliases::lookup_exact_alias(&files, &file_key, &alias_key) {
-            Some((resolved, display_source)) => {
+        match aliases::resolve_exact_alias(&layout, &file_key, &alias_key) {
+            aliases::ExactLookup::Found {
+                resolved,
+                display_source,
+            } => {
                 aliases::execute_alias(&resolved, command_args, &display_source);
                 return;
             }
-            None => {
-                let file_exists = files.iter().any(|f| f.key == file_key);
-                if file_exists {
-                    eprintln!("Alias key not found in file {}: {}", file_key, alias_key);
-                } else {
-                    eprintln!("Alias file not found: {}", file_key);
-                }
+            aliases::ExactLookup::KeyNotFound => {
+                eprintln!("Alias key not found in file {}: {}", file_key, alias_key);
+                exit(1);
+            }
+            aliases::ExactLookup::FileNotFound => {
+                eprintln!("Alias file not found: {}", file_key);
                 exit(1);
             }
         }
     }
 
-    // 普通别名：在合并后的 key 空间里找
+    // 普通别名：全量扫描后合并，在合并后的 key 空间里找
+    let (merged, _files) = aliases::load_merged_aliases(&layout);
     match aliases::resolve_merged_alias(&merged, command_name) {
         Some(resolved) => {
             let display_source = format!("{}.{}", resolved.source, command_name);

@@ -132,6 +132,12 @@ fn prune_empty(nodes: &mut MergedConfig) {
     });
 }
 
+/// 一次只扫描的结果：文件列表与诊断报告，不含合并树。
+pub struct ScannedAliases {
+    pub files: Vec<AliasFile>,
+    pub report: DiagnosticReport,
+}
+
 /// 一次完整扫描的结果：合并树、文件列表与诊断报告。
 pub struct LoadedAliases {
     pub merged: MergedConfig,
@@ -153,6 +159,12 @@ pub fn load_merged_aliases_report(layout: &PathLayout) -> LoadedAliases {
     load_report_at(layout, &cwd)
 }
 
+/// 只扫描不合并：`--check` 与文件作用域补全只需要文件与诊断。
+pub fn load_scanned_aliases(layout: &PathLayout) -> ScannedAliases {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    scan_at(layout, &cwd)
+}
+
 /// 指定工作目录加载（测试与需要显式 cwd 的调用方使用）。
 #[cfg(test)]
 pub(crate) fn load_merged_aliases_at(
@@ -163,7 +175,7 @@ pub(crate) fn load_merged_aliases_at(
     (loaded.merged, loaded.files)
 }
 
-fn load_report_at(layout: &PathLayout, cwd: &Path) -> LoadedAliases {
+fn scan_at(layout: &PathLayout, cwd: &Path) -> ScannedAliases {
     // 内置变量在扫描期展开：byk_dir 是固定的资源根，file_dir 由扫描阶段逐文件注入
     let vars = build_builtin_table(&layout.root_dir);
     let local = scan_alias_files(cwd, false, &vars);
@@ -201,27 +213,37 @@ fn load_report_at(layout: &PathLayout, cwd: &Path) -> LoadedAliases {
     files.extend(global.files);
     sort_alias_files(&mut files);
 
+    ScannedAliases {
+        files,
+        report: DiagnosticReport {
+            scanned,
+            items: diagnostics,
+        },
+    }
+}
+
+fn load_report_at(layout: &PathLayout, cwd: &Path) -> LoadedAliases {
+    let scanned = scan_at(layout, cwd);
+
     // cwd 恰好是全局目录时，同一批文件会被扫两次（@f 与 @@f）。
     // 两个身份都保留——这个文件确实同时可通过两种前缀访问；
     // 但合并只做一次，按全局身份参与，避免同一份声明被合并两遍。
     let merged = if same_dir(cwd, &layout.alias_dir) {
-        let global_only: Vec<AliasFile> = files
+        let global_only: Vec<AliasFile> = scanned
+            .files
             .iter()
             .filter(|f| f.key.starts_with("@@"))
             .cloned()
             .collect();
         build_merged_aliases(&global_only)
     } else {
-        build_merged_aliases(&files)
+        build_merged_aliases(&scanned.files)
     };
 
     LoadedAliases {
         merged,
-        files,
-        report: DiagnosticReport {
-            scanned,
-            items: diagnostics,
-        },
+        files: scanned.files,
+        report: scanned.report,
     }
 }
 
