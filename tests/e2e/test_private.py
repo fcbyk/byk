@@ -86,7 +86,7 @@ def test_private_aliases_are_not_completed(runner, tmp_path):
     result = runner.run("__api__", "complete", "", cwd=str(tmp_path))
 
     assert result.returncode == 0
-    assert result.stdout.splitlines() == ["@@ops", "shown"]
+    assert result.stdout.splitlines() == ["shown"]
     assert runner.run("secret", cwd=str(tmp_path)).returncode == 1
     assert runner.run("group.hidden", cwd=str(tmp_path)).returncode == 1
 

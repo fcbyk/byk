@@ -106,13 +106,14 @@ def test_api_paths_rejects_extra_args(runner):
 
 
 def test_api_complete_lists_aliases(runner):
-    """complete 输出候选，一行一个"""
+    """complete 输出候选，一行一个；空输入不混入文件作用域"""
     runner.prepare_alias_json("r", {"alpha": "echo a", "beta": "echo b"})
     r = runner.run("__api__", "complete", "")
     assert r.returncode == 0, r.stderr
     lines = r.stdout.split("\n")
     assert "alpha" in lines
     assert "beta" in lines
+    assert not any(line.startswith("@") for line in lines)
 
 
 def test_api_complete_default_has_no_descriptions(runner):
@@ -172,6 +173,26 @@ def test_api_complete_at_prefix(runner):
     lines = [line for line in r.stdout.split("\n") if line]
     assert lines, "expected at least one @ candidate"
     assert all(line.startswith("@") for line in lines)
+
+
+def test_api_complete_file_keys_include_source_path(runner):
+    """文件作用域候选附带别名文件路径，家目录显示为 ~"""
+    runner.prepare_alias_json("ops", {"build": "echo hi"})
+    r = runner.run("__api__", "complete", "--with-descriptions", "@")
+    assert r.returncode == 0, r.stderr
+    assert "@@ops\t~/.byk/alias/ops.byk.json" in r.stdout.splitlines()
+
+
+def test_api_complete_local_file_key_includes_absolute_path(runner, tmp_path):
+    """当前目录的文件 key 附带绝对路径"""
+    (tmp_path / "p.byk.json").write_text(
+        json.dumps({"build": "echo hi"}), encoding="utf-8"
+    )
+    r = runner.run(
+        "__api__", "complete", "--with-descriptions", "@p", cwd=str(tmp_path)
+    )
+    assert r.returncode == 0, r.stderr
+    assert f"@p\t{tmp_path}/p.byk.json" in r.stdout.splitlines()
 
 
 def test_api_completion_script_zsh(runner):

@@ -37,11 +37,13 @@ pub(crate) fn complete_at_prefix(
     }
 
     // 补全文件 key（@xxx 或 @@xxx 格式）
-    files
+    let mut candidates: Vec<String> = files
         .iter()
         .map(|f| f.key.clone())
         .filter(|k| k.starts_with(partial))
-        .collect()
+        .collect();
+    candidates.sort();
+    candidates
 }
 
 /// 补全嵌套别名（含点号的路径，如 "部署.打"）。

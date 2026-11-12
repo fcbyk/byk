@@ -18,7 +18,7 @@ description: 隐藏的 byk __api__：给 shell 脚本与编辑器插件的只读
 | 请求 | 输出 |
 |------|------|
 | `__api__ completion <shell>` | 补全注册脚本（zsh / bash / fish） |
-| `__api__ complete [--with-descriptions] <words...>` | 补全候选，一行一个；带 flag 时内置选项和文件命令动词附带 tab 分隔的描述 |
+| `__api__ complete [--with-descriptions] <words...>` | 补全候选，一行一个；带 flag 时内置选项、文件命令动词和文件 key（别名文件路径）附带 tab 分隔的描述 |
 | `__api__ resolve <key> [args...]` | 别名的解析结果，JSON |
 | `__api__ paths` | CLI 两条目录，JSON |
 | `__api__ paths <name>` | 单个目录的裸路径（`root` / `alias`） |
@@ -70,7 +70,7 @@ Unsupported shell: pwsh
 
 ## complete `<words...>`
 
-把命令行上已经敲下的词原样传进去，返回候选，一行一个。带 `@` / `@@` 前缀时只返回文件 key，带分组前缀时只返回该组的子项。
+把命令行上已经敲下的词原样传进去，返回候选，一行一个。带 `@` / `@@` 前缀时只返回文件 key，带分组前缀时只返回该组的子项。空输入只列合并别名——文件 key 要等词以 `@` / `@@` 开头才出现。带 `--with-descriptions` 时，文件 key 会附带别名文件路径，家目录显示为 `~`。
 
 ```bash
 $ byk __api__ complete grp.

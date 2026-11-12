@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::core::aliases;
 use crate::core::config::{MergedConfig, to_alias_definition};
 use crate::utils::display;
+use crate::utils::path::display_path;
 
 /// 输出 Aliases 区块：按名排序、统一对齐。
 pub fn render(merged: &MergedConfig) {
@@ -122,12 +123,7 @@ pub(crate) fn resolve_cwd_display(cwd: &str, base_dir: Option<&Path>) -> String 
     } else {
         normalize(cwd_path)
     };
-    if let Some(home) = dirs::home_dir()
-        && let Ok(rest) = resolved.strip_prefix(&home)
-    {
-        return format!("~/{}", rest.display().to_string().replace('\\', "/"));
-    }
-    resolved.display().to_string().replace('\\', "/")
+    display_path(&resolved)
 }
 
 /// 手动标准化路径，消除 `.` 和 `..` 组件。

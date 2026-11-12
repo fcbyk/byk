@@ -8,6 +8,8 @@
 
 - **`$private`**: new inheritable field that keeps a file, group, or alias out of the merged space while exact calls still work; it replaces `$priority: -1`
 - **`..set`**: add `--private` / `--no-private` for both the file root and a single alias
+- **completion**: file-scope keys (`@file` / `@@file`) are offered only after typing `@` / `@@`; an empty Tab now lists merged aliases only
+- **completion**: file keys now carry their alias file path as the description under `--with-descriptions`
 - **`--check`**: diagnostic report; unreadable files, invalid JSON, bad metadata types, and link problems are summarized in the help banner instead of being printed during normal runs
 
 ## v0.7.0 (2026-11-08)

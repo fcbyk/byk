@@ -7,9 +7,12 @@ use at_prefix::{complete_at_prefix, complete_nested_alias};
 #[cfg(test)]
 use at_prefix::collect_object_keys;
 
+use std::collections::HashMap;
+
 use super::aliases;
 use super::filecmd;
 use super::paths::PathLayout;
+use crate::utils::path::display_path;
 
 pub fn generate(shell: &str) {
     match shell {
@@ -26,18 +29,51 @@ pub fn generate(shell: &str) {
 
 /// 输出补全候选，一行一个。
 ///
-/// `with_descriptions` 为 true 时，内置选项在候选后追加 tab 分隔的描述。
+/// `with_descriptions` 为 true 时，内置选项、文件命令动词和文件 key 在候选后
+/// 追加 tab 分隔的描述；文件 key 的描述是别名文件路径。
 pub fn complete(args: &[String], layout: &PathLayout, with_descriptions: bool) {
     let prefer_file_option = args.len() >= 2
         && args.first().is_some_and(|token| filecmd::claims(token))
         && args.last().is_some_and(|partial| partial.starts_with('-'));
 
-    for c in candidates(args, layout) {
+    let candidates = candidates(args, layout);
+    let file_descriptions = if with_descriptions {
+        file_key_descriptions(&candidates, layout)
+    } else {
+        HashMap::new()
+    };
+
+    for candidate in &candidates {
         println!(
             "{}",
-            format_candidate(&c, with_descriptions, prefer_file_option)
+            format_candidate(
+                candidate,
+                with_descriptions,
+                prefer_file_option,
+                file_descriptions.get(candidate).map(String::as_str),
+            )
         );
     }
+}
+
+/// 文件 key → 展示用别名文件路径。
+///
+/// 只在候选里真的出现文件 key 时二次扫描，避免普通补全为描述多付一次扫描。
+/// 文件 key 不含点号；带 `..` 的是文件命令，带 `.` 的是精确别名路径。
+fn file_key_descriptions(candidates: &[String], layout: &PathLayout) -> HashMap<String, String> {
+    let mentions_file_key = candidates
+        .iter()
+        .any(|candidate| candidate.starts_with('@') && !candidate.contains('.'));
+
+    if !mentions_file_key {
+        return HashMap::new();
+    }
+
+    let (_, files) = aliases::load_merged_aliases(layout);
+    files
+        .into_iter()
+        .map(|file| (file.key, display_path(&file.path)))
+        .collect()
 }
 
 /// 内置选项的静态描述；动态候选不在这里。
@@ -55,12 +91,17 @@ fn describe_in(candidate: &str, prefer_file_option: bool) -> Option<&'static str
     }
 }
 
-fn format_candidate(candidate: &str, with_descriptions: bool, prefer_file_option: bool) -> String {
+fn format_candidate(
+    candidate: &str,
+    with_descriptions: bool,
+    prefer_file_option: bool,
+    dynamic_description: Option<&str>,
+) -> String {
     if !with_descriptions {
         return candidate.to_string();
     }
 
-    match describe_in(candidate, prefer_file_option) {
+    match dynamic_description.or_else(|| describe_in(candidate, prefer_file_option)) {
         Some(description) => format!("{}\t{}", candidate, description),
         None => candidate.to_string(),
     }
@@ -117,17 +158,15 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     get_top_level_completions(partial, layout)
 }
 
-/// 补全顶级命令：全部别名文件的命名空间 + 合并树里的顶层 key。
+/// 补全顶级命令：只列合并树里的顶层 key。
+///
+/// 文件命名空间（`@file`）属于精确执行语法，只在词以 `@` / `@@` 开头时
+/// 由 `complete_at_prefix` 提供，避免和可执行别名混在同一张菜单里。
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
-    let (merged, files) = aliases::load_merged_aliases(layout);
+    let (merged, _) = aliases::load_merged_aliases(layout);
 
-    // 按前缀 @ 的文件命名空间（匿名文件 .byk.json 的顶 key 不通过 @ 展示）
-    let scope_files: Vec<_> = files.iter().map(|f| f.key.clone()).collect();
-    candidates.extend(scope_files);
-
-    // 合并树中的顶 key
     for key in merged.keys() {
         candidates.push(key.clone());
     }
@@ -324,16 +363,16 @@ mod tests {
     }
 
     #[test]
-    fn top_level_includes_alias_files() {
+    fn top_level_excludes_file_namespaces() {
         let env = TestEnv::new();
         env.add_alias_file(
             "release",
             &json!({"deploy": "echo deploy", "build": "echo build"}),
         );
         let completions = get_top_level_completions("", &env.layout);
-        // alias_dir 中的文件是全局文件，key 为 @@ 前缀
-        assert!(completions.contains(&"@@release".to_string()));
-        // merge 树中的顶 key
+        // 文件 key 属于精确执行语法，只在 @ 前缀下出现
+        assert!(!completions.iter().any(|c| c.starts_with('@')));
+        // merge 树中的顶 key 仍然列出
         assert!(completions.contains(&"deploy".to_string()));
         assert!(completions.contains(&"build".to_string()));
     }
@@ -355,6 +394,17 @@ mod tests {
         // alias_dir 中是全局文件，key 为 @@ 前缀
         let completions = complete_at_prefix("@@r", &env.layout);
         assert_eq!(completions, vec!["@@release".to_string()]);
+    }
+
+    #[test]
+    fn at_prefix_file_keys_are_sorted() {
+        let env = TestEnv::new();
+        env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
+        env.add_alias_file("debug", &json!({"build": "echo build"}));
+        assert_eq!(
+            complete_at_prefix("@@", &env.layout),
+            vec!["@@debug".to_string(), "@@release".to_string()]
+        );
     }
 
     #[test]
@@ -538,8 +588,9 @@ mod tests {
         let env = TestEnv::new();
         env.add_alias_file("demo", &json!({"hello": "echo hi"}));
         let result = get_completions("", &env.layout);
-        // 内置命令已清空：顶级只剩别名与文件命名空间
+        // 内置命令已清空：顶级只剩别名，文件作用域不在空输入里出现
         assert!(result.contains(&"hello".to_string()));
+        assert!(!result.iter().any(|c| c.starts_with('@')));
         assert!(!result.contains(&"add".to_string()));
         assert!(!result.contains(&"show".to_string()));
     }
@@ -697,24 +748,55 @@ mod tests {
 
     #[test]
     fn format_candidate_plain_and_described() {
-        assert_eq!(format_candidate("--help", false, false), "--help");
+        assert_eq!(format_candidate("--help", false, false, None), "--help");
         assert_eq!(
-            format_candidate("--help", true, false),
+            format_candidate("--help", true, false, None),
             "--help\tPrint help"
         );
-        assert_eq!(format_candidate("build", true, false), "build");
+        assert_eq!(format_candidate("build", true, false, None), "build");
         assert_eq!(
-            format_candidate("@@ops..init", true, false),
+            format_candidate("@@ops..init", true, false, None),
             "@@ops..init\tCreate an alias file"
         );
         assert_eq!(
-            format_candidate("--paths", true, false),
+            format_candidate("--paths", true, false, None),
             "--paths\tPrint CLI paths and file locations"
         );
         assert_eq!(
-            format_candidate("--paths", true, true),
+            format_candidate("--paths", true, true, None),
             "--paths\tPrepend directories to PATH (omit key)"
         );
+        assert_eq!(
+            format_candidate(
+                "@@release",
+                true,
+                false,
+                Some("~/.byk/alias/release.byk.json")
+            ),
+            "@@release\t~/.byk/alias/release.byk.json"
+        );
+        assert_eq!(
+            format_candidate("@@release", false, false, Some("ignored")),
+            "@@release"
+        );
+    }
+
+    #[test]
+    fn file_key_descriptions_use_display_path() {
+        let env = TestEnv::new();
+        env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
+        let descriptions = file_key_descriptions(&["@@release".to_string()], &env.layout);
+        let path = descriptions.get("@@release").expect("path for @@release");
+        assert!(path.ends_with("release.byk.json"));
+        assert!(!path.contains('\\'));
+    }
+
+    #[test]
+    fn file_key_descriptions_skip_unrelated_candidates() {
+        let env = TestEnv::new();
+        env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
+        assert!(file_key_descriptions(&["build".to_string()], &env.layout).is_empty());
+        assert!(file_key_descriptions(&["@release.deploy".to_string()], &env.layout).is_empty());
     }
 
     #[test]

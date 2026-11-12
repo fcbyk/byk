@@ -18,7 +18,7 @@ Three rules apply to every request:
 | Request | Output |
 |---------|--------|
 | `__api__ completion <shell>` | Shell registration script (zsh / bash / fish) |
-| `__api__ complete [--with-descriptions] <words...>` | Completion candidates, one per line; the flag appends a tab-separated description for built-in options and file-command verbs |
+| `__api__ complete [--with-descriptions] <words...>` | Completion candidates, one per line; the flag appends a tab-separated description for built-in options, file-command verbs, and file keys (their alias file path) |
 | `__api__ resolve <key> [args...]` | Resolved alias, JSON |
 | `__api__ paths` | The two CLI directories, JSON |
 | `__api__ paths <name>` | A single bare path (`root` / `alias`) |
@@ -70,7 +70,7 @@ This request exists for the install script; day to day you only need one line (s
 
 ## complete `<words...>`
 
-Hand it the words already typed on the command line and it returns candidates, one per line. With an `@` / `@@` prefix it returns file keys only; with a group prefix it returns that group's children.
+Hand it the words already typed on the command line and it returns candidates, one per line. With an `@` / `@@` prefix it returns file keys only; with a group prefix it returns that group's children. An empty word lists merged aliases only — file keys appear once the word starts with `@` / `@@`. With `--with-descriptions`, each file key carries its alias file path, with the home directory shown as `~`.
 
 ```bash
 $ byk __api__ complete grp.

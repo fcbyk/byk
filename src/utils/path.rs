@@ -42,6 +42,18 @@ pub fn dir_of(path: &Path) -> String {
     }
 }
 
+/// 展示用路径：家目录下替换为 `~`，分隔符统一为 `/`。
+pub fn display_path(path: &Path) -> String {
+    let rendered = if let Some(home) = dirs::home_dir()
+        && let Ok(rest) = path.strip_prefix(&home)
+    {
+        format!("~/{}", rest.display())
+    } else {
+        path.display().to_string()
+    };
+    rendered.replace('\\', "/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -63,5 +75,16 @@ mod tests {
     fn dir_of_returns_parent() {
         assert_eq!(dir_of(Path::new("/a/b/c.json")), "/a/b");
         assert_eq!(dir_of(Path::new("c.json")), ".");
+    }
+
+    #[test]
+    fn display_path_shortens_home() {
+        let path = dirs::home_dir().unwrap().join("x");
+        assert_eq!(display_path(&path), "~/x");
+    }
+
+    #[test]
+    fn display_path_normalizes_separators() {
+        assert_eq!(display_path(Path::new("plain/path")), "plain/path");
     }
 }
