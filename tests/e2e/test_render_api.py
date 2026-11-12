@@ -43,14 +43,81 @@ def test_help_lists_nested_groups(runner):
     assert "dev.sub.deep" in r.stdout
 
 
+SEPARATOR = "-" * 27
+
+
+def assert_blank_padded(stdout):
+    """--paths 输出前后各一空行，内部不留空行"""
+    lines = stdout.splitlines()
+    assert lines[0] == ""
+    assert lines[-1] == ""
+    assert all(line for line in lines[1:-1])
+    return lines
+
+
 def test_paths_option(runner):
-    """--paths 输出 CLI 根目录与别名目录"""
+    """--paths 输出 CLI 根目录、别名目录与工作目录"""
     r = runner.run("--paths")
     assert r.returncode == 0, r.stderr
-    assert "CLI Home:" in r.stdout
+    lines = assert_blank_padded(r.stdout)
+    assert any(line.startswith("CLI Home: ") for line in lines)
     assert str(runner.byk_dir) in r.stdout
-    assert "Alias:" in r.stdout
+    assert any(line.startswith("Alias: ") for line in lines)
     assert str(runner.byk_dir / "alias") in r.stdout
+    assert any(line.startswith("Workdir: ") for line in lines)
+
+
+def test_paths_lists_global_and_local_alias_files(runner, tmp_path):
+    """--paths 列出两处目录下的别名文件，只校验文件名不解析内容"""
+    global_file = runner.prepare_alias_json("g", {"build": "echo g"})
+    local_file = tmp_path / "l.byk.json"
+    local_file.write_text(json.dumps({"run": "echo l"}), encoding="utf-8")
+    (tmp_path / "broken.byk.json").write_text("not json", encoding="utf-8")
+    (tmp_path / "bad.name.byk.json").write_text("{}", encoding="utf-8")
+
+    r = runner.run("--paths", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    lines = assert_blank_padded(r.stdout)
+
+    assert f"Workdir: {tmp_path}" in lines
+    assert lines.count(SEPARATOR) == 2
+    global_idx = lines.index(f"@@g: {global_file}")
+    local_idx = lines.index(f"@l: {local_file}")
+    assert lines.index(SEPARATOR) < global_idx
+    assert lines.index(SEPARATOR, global_idx) < local_idx
+    # 内容损坏的文件仍然列出；文件名非法的文件不列出
+    assert any(
+        line.startswith("@broken: ") and "broken.byk.json" in line for line in lines
+    )
+    assert "bad.name" not in r.stdout
+
+
+def test_paths_omits_empty_alias_file_groups(runner, tmp_path):
+    """没有别名文件时整组都不打印"""
+    r = runner.run("--paths", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    lines = assert_blank_padded(r.stdout)
+    assert SEPARATOR not in lines
+    assert len(lines) == 5
+
+
+def test_paths_omits_only_missing_group(runner, tmp_path):
+    """只有一边有文件时，只打印那一边的分隔线"""
+    (tmp_path / "l.byk.json").write_text("{}", encoding="utf-8")
+    r = runner.run("--paths", cwd=str(tmp_path))
+    lines = assert_blank_padded(r.stdout)
+    assert lines.count(SEPARATOR) == 1
+    assert any(line.startswith("@l: ") for line in lines)
+    assert not any(line.startswith("@@") for line in lines)
+
+    runner.prepare_alias_json("g", {"build": "echo g"})
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    r = runner.run("--paths", cwd=str(empty))
+    lines = assert_blank_padded(r.stdout)
+    assert lines.count(SEPARATOR) == 1
+    assert any(line.startswith("@@g: ") for line in lines)
+    assert not any(line.startswith("@") and not line.startswith("@@") for line in lines)
 
 
 def test_api_lists_requests(runner):

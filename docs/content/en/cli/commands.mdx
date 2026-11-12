@@ -17,7 +17,7 @@ Usage: byk [OPTIONS] [ALIAS] [ARGS]...
 |--------|-------------|
 | `-h, --help` | Help: banner + Usage + Options + aliases in the merged space |
 | `-v, --version` | Version, build info, and install path |
-| `--paths` | Print the directories the CLI uses |
+| `--paths` | Print CLI directories and alias files |
 | `--check` | Check alias files and report scan problems per file |
 
 Running `byk` with no arguments produces exactly the same output as `byk -h`. The first line is always `byk <version> (<commit> <build date>) [<platform>]`, so you can safely grab the version with `byk -v | head -1`.
@@ -33,9 +33,18 @@ $ byk --paths
 
 CLI Home: /Users/coke/.byk
 Alias: /Users/coke/.byk/alias
+Workdir: /Users/coke/proj
+---------------------------
+@@ops: /Users/coke/.byk/alias/ops.byk.json
+---------------------------
+@: /Users/coke/proj/.byk.json
+@www: /Users/coke/proj/www.byk.json
+
 ```
 
-`CLI Home` is byk's home directory and `Alias` is where global alias files live — drop `*.byk.json` files there and they join the `byk <key>` lookup space.
+`CLI Home` is byk's home directory, `Alias` is where global alias files live, and `Workdir` is the current directory scanned for local files. Drop `*.byk.json` files into either directory and they join the lookup space.
+
+`--paths` also lists the top-level alias files in the global alias directory and the current working directory, one group per source. The `@@` / `@` key prefix tells global from local. File names are validated, but contents are not parsed: a file with broken JSON still appears here, and `$private` files appear too. Use `--check` to find content problems. Empty groups are omitted, including their separator.
 
 The alias list in the help page covers the **merged space** only: aliases marked `$private: true` never appear, since they are reachable through `@file.key` alone. An alias with a `$cwd` gets its effective directory appended, as in `deploy  deploy.sh (/Users/me/proj)`.
 

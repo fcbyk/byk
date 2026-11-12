@@ -17,7 +17,7 @@ Usage: byk [OPTIONS] [ALIAS] [ARGS]...
 |------|------|
 | `-h, --help` | 帮助：banner + Usage + Options + 合并空间里的别名 |
 | `-v, --version` | 版本、构建信息与安装路径 |
-| `--paths` | 打印 CLI 用到的目录位置 |
+| `--paths` | 打印 CLI 目录与别名文件 |
 | `--check` | 检查别名文件，按文件汇总扫描发现的问题 |
 
 `byk` 不带参数与 `byk -h` 输出完全一致。第一行固定为 `byk <版本> (<commit> <构建日期>) [<平台>]`，可以安全地用 `byk -v | head -1` 取版本号。
@@ -33,9 +33,18 @@ $ byk --paths
 
 CLI Home: /Users/coke/.byk
 Alias: /Users/coke/.byk/alias
+Workdir: /Users/coke/proj
+---------------------------
+@@ops: /Users/coke/.byk/alias/ops.byk.json
+---------------------------
+@: /Users/coke/proj/.byk.json
+@www: /Users/coke/proj/www.byk.json
+
 ```
 
-`CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录——把 `*.byk.json` 放进去，它就会进入 `byk <key>` 的查找空间。
+`CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录，`Workdir` 是扫描本地文件时使用的当前目录。把 `*.byk.json` 放进这两处目录，它就会进入查找空间。
+
+`--paths` 还会列出全局别名目录和当前工作目录顶层的别名文件，每个来源一组。`@@` / `@` 前缀区分全局与本地。只校验文件名，不解析内容：JSON 损坏的文件、标了 `$private` 的文件也会出现在这里。内容问题用 `--check` 查。空分组连同分隔线一起不打印。
 
 帮助页里的别名列表只包含**合并空间**中的别名：标了 `$private: true` 的别名不出现在这里，因为它们本来就只能通过 `@file.key` 调用。设了 `$cwd` 的别名后面会附上生效目录，形如 `deploy  deploy.sh (/Users/me/proj)`。
 

@@ -152,7 +152,7 @@ A wrong name lists the valid ones and exits 1:
 __api__ paths: unknown name "bin" (expected one of: root, alias)
 ```
 
-`paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal, rendered from the same path layout.
+`paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal, rendered from the same path layout; it additionally lists the alias files found in both directories, while the machine-facing request stays directory-only.
 
 ## How completion hooks up
 

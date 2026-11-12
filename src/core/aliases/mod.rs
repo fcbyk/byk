@@ -17,3 +17,4 @@ pub use merge::{
     LoadedAliases, collect_merged_paths, load_merged_aliases, load_merged_aliases_report,
     resolve_merged_alias,
 };
+pub(crate) use scan::list_alias_files;

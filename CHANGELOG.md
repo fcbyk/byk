@@ -11,6 +11,7 @@
 - **completion**: file-scope keys (`@file` / `@@file`) are offered only after typing `@` / `@@`; an empty Tab now lists merged aliases only
 - **completion**: file keys now carry their alias file path as the description under `--with-descriptions`
 - **`--check`**: diagnostic report; unreadable files, invalid JSON, bad metadata types, and link problems are summarized in the help banner instead of being printed during normal runs
+- **`--paths`**: now also prints the working directory and lists alias files in the global alias directory and the current working directory; file names are validated, contents are not parsed
 
 ## v0.7.0 (2026-11-08)
 

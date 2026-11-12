@@ -152,7 +152,7 @@ ALIAS_DIR="$(byk __api__ paths alias)"
 __api__ paths: unknown name "bin" (expected one of: root, alias)
 ```
 
-之所以不给 `paths <name>` 也套 JSON：它的调用方是 shell 脚本，套一层就得靠 `jq` 或 `sed` 剥引号，而 `"$(...)"` 天然拿到干净的值；需要结构化数据的程序走无参 `paths`。人读的版本仍然是 `byk --paths`——带标签和空行，终端里一眼看清，两者共用同一份路径布局。
+之所以不给 `paths <name>` 也套 JSON：它的调用方是 shell 脚本，套一层就得靠 `jq` 或 `sed` 剥引号，而 `"$(...)"` 天然拿到干净的值；需要结构化数据的程序走无参 `paths`。人读的版本仍然是 `byk --paths`——带标签和空行，终端里一眼看清，两者共用同一份路径布局；`--paths` 还会额外列出两处目录下的别名文件，而机器接口仍然只返回目录。
 
 ## 补全是怎么接上的
 

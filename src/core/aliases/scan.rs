@@ -53,6 +53,36 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
     result
 }
 
+/// 只枚举目录里的别名文件，不读取内容。
+///
+/// 与 [`scan_alias_files`] 的区别：这里只做文件名层面的检查，JSON 损坏、
+/// 链接目标缺失之类的文件照样返回。`--paths` 需要展示“文件在哪”，
+/// 内容是否可用交给 `--check`。返回 `(file key, path)`，按 key 排序。
+pub(crate) fn list_alias_files(dir: &Path, is_global: bool) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    let mut files: Vec<(String, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_file() {
+                return None;
+            }
+            let name = path.file_name()?.to_str()?;
+            let stem = name.strip_suffix(".byk.json")?;
+            if !validate_filename(stem) {
+                return None;
+            }
+            Some((build_file_key(stem, is_global), path))
+        })
+        .collect();
+
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
 /// 读取一个别名文件：注入它自己的 `file_dir`，完成变量替换与告警。
 ///
 /// 返回 `(文档, 文件路径)`。链接文件和链接目标都走这里，所以两者
@@ -635,5 +665,35 @@ mod tests {
         let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(!files[0].aliases.contains_key("$paths"));
+    }
+
+    #[test]
+    fn list_alias_files_lists_valid_names_without_reading_content() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("b.byk.json"), "not json").unwrap();
+        std::fs::write(dir.path().join("a.byk.json"), "{}").unwrap();
+        std::fs::write(dir.path().join(".byk.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("bad.name.byk.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "{}").unwrap();
+        std::fs::create_dir(dir.path().join("nested.byk.json")).unwrap();
+
+        let files = list_alias_files(dir.path(), false);
+        assert_eq!(
+            files
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["@", "@a", "@b"]
+        );
+    }
+
+    #[test]
+    fn list_alias_files_uses_global_prefix_and_missing_dir_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("ops.byk.json"), "{}").unwrap();
+
+        let files = list_alias_files(dir.path(), true);
+        assert_eq!(files[0].0, "@@ops");
+        assert!(list_alias_files(Path::new("/nonexistent/byk-test-dir"), true).is_empty());
     }
 }
