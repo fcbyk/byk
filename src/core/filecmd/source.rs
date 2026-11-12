@@ -8,7 +8,7 @@ use std::process::Command;
 use serde_json::Value;
 
 use super::{invalid_stem_message, target_path};
-use crate::core::aliases::validate_filename;
+use crate::core::config::validate_filename;
 use crate::core::paths::PathLayout;
 use crate::utils::path::{canonical, expand_home};
 

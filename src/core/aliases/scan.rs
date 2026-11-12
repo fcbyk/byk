@@ -3,13 +3,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::diagnostic::{Diagnostic, Level};
-use super::parse::{
-    build_file_key, filter_invalid_keys, is_valid_private, parse_priority, parse_private,
+use crate::core::config::{
+    AliasFile, Diagnostic, FILE_DIR_VAR, Level, Mode, VarTable, build_file_key, describe_issue,
+    filter_invalid_keys, is_valid_private, parse_priority, parse_private, preprocess_vars,
     validate_filename,
 };
-use super::types::{AliasFile, Mode};
-use crate::core::vars::{FILE_DIR_VAR, VarTable, describe_issue, preprocess_vars};
 use crate::utils::path::{canonical, dir_of, expand_home};
 
 /// 一次目录扫描的结果：成功解析的文件、诊断、以及实际检查过的候选文件。

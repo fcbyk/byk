@@ -28,7 +28,7 @@ use std::process::exit;
 
 use serde_json::{Map, Value};
 
-use crate::core::aliases::validate_filename;
+use crate::core::config::validate_filename;
 use crate::core::paths::PathLayout;
 
 /// `@` 指向当前目录，`@@` 指向全局别名目录。

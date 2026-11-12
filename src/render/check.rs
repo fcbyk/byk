@@ -6,7 +6,8 @@ use std::path::Path;
 
 use colored::Colorize;
 
-use crate::core::aliases::{self, Diagnostic, DiagnosticReport, Level, LoadedAliases};
+use crate::core::aliases::{self, LoadedAliases};
+use crate::core::config::{Diagnostic, DiagnosticReport, Level};
 use crate::core::paths::PathLayout;
 
 /// 渲染检查报告；返回进程退出码（有问题为 1）。

@@ -6,10 +6,9 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, exit};
 
-use super::parse::to_alias_definition;
 use super::placeholder::{collect_placeholders, parse_alias_arguments_with_mapping, split_ternary};
 use super::quote::quote;
-use super::types::{Mode, ResolvedAlias};
+use crate::core::config::{Mode, ResolvedAlias, to_alias_definition};
 use crate::utils::path::{canonical, expand_home};
 
 /// 把 `$paths` 里的相对条目按配置文件目录展开为绝对路径。
@@ -1301,7 +1300,7 @@ mod tests {
     // ---------- resolve_alias ----------
 
     fn resolved_str(cmd: &str) -> ResolvedAlias {
-        use crate::core::aliases::AliasValue;
+        use crate::core::config::AliasValue;
         ResolvedAlias {
             value: AliasValue::Str(cmd.into()),
             source: "@t".into(),
@@ -1332,7 +1331,7 @@ mod tests {
 
     #[test]
     fn resolve_interactive_returns_template() {
-        use crate::core::aliases::AliasValue;
+        use crate::core::config::AliasValue;
         let resolved = ResolvedAlias {
             value: AliasValue::Meta {
                 cmd: "deploy --env {env}".into(),
@@ -1353,7 +1352,7 @@ mod tests {
 
     #[test]
     fn resolve_carries_silent() {
-        use crate::core::aliases::AliasValue;
+        use crate::core::config::AliasValue;
         let resolved = ResolvedAlias {
             value: AliasValue::Meta {
                 cmd: "echo quiet".into(),
@@ -1372,7 +1371,7 @@ mod tests {
 
     #[test]
     fn resolve_meta_cwd_and_paths() {
-        use crate::core::aliases::AliasValue;
+        use crate::core::config::AliasValue;
         let dir = tempfile::tempdir().unwrap();
         let nm_bin = dir.path().join("node_modules").join(".bin");
         std::fs::create_dir_all(&nm_bin).unwrap();

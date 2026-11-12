@@ -5,7 +5,7 @@ use std::io;
 use std::path::PathBuf;
 
 use super::{FileScope, invalid_stem_message, not_found_message, resolve_target};
-use crate::core::aliases::validate_filename;
+use crate::core::config::validate_filename;
 use crate::core::paths::PathLayout;
 
 pub(super) fn run(

@@ -7,8 +7,8 @@ use colored::Colorize;
 use serde_json::Value;
 
 use super::{FileScope, not_found_message, resolve_target};
+use crate::core::config::{FILE_DIR_VAR, build_builtin_table, describe_issue, preprocess_vars};
 use crate::core::paths::PathLayout;
-use crate::core::vars::{FILE_DIR_VAR, build_builtin_table, describe_issue, preprocess_vars};
 use crate::utils::path::dir_of;
 
 pub(super) fn run(

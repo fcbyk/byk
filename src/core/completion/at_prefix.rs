@@ -2,7 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::core::aliases::{self, MergedNode};
+use crate::core::aliases;
+use crate::core::config::MergedNode;
 use crate::core::filecmd;
 
 /// 补全 `@` / `@@`：先补文件 key，输入点号后补该文件内的别名路径。

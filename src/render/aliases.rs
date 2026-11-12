@@ -3,7 +3,8 @@
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
-use crate::core::aliases::{self, MergedConfig};
+use crate::core::aliases;
+use crate::core::config::{MergedConfig, to_alias_definition};
 use crate::utils::display;
 
 /// 输出 Aliases 区块：按名排序、统一对齐。
@@ -36,7 +37,7 @@ fn collect_alias_entries(merged: &MergedConfig) -> Vec<(String, String)> {
         .iter()
         .filter_map(|path| {
             let resolved = aliases::resolve_merged_alias(merged, path)?;
-            let definition = aliases::to_alias_definition(&resolved.value)?;
+            let definition = to_alias_definition(&resolved.value)?;
             // cwd 相对路径以别名来源文件所在目录为基准解析，
             // 无 source_path 时回退到 ~/.byk/alias/
             let base_dir = resolved.source_path.as_deref().and_then(|p| p.parent());
@@ -148,7 +149,7 @@ fn normalize(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::aliases::{MergedNode, ResolvedAlias};
+    use crate::core::config::{AliasValue, MergedNode, ResolvedAlias};
     use std::collections::HashMap;
     use std::path::Path;
 
@@ -157,7 +158,7 @@ mod tests {
 
     fn make_resolved_alias(cmd: &str) -> ResolvedAlias {
         ResolvedAlias {
-            value: aliases::AliasValue::Str(cmd.into()),
+            value: AliasValue::Str(cmd.into()),
             source: "@test".into(),
             source_path: None,
             paths: Vec::new(),
@@ -166,7 +167,7 @@ mod tests {
 
     fn make_resolved_alias_with_cwd(cmd: &str, cwd: &str) -> ResolvedAlias {
         ResolvedAlias {
-            value: aliases::AliasValue::Meta {
+            value: AliasValue::Meta {
                 cmd: cmd.into(),
                 cwd: Some(cwd.into()),
                 mode: None,
@@ -276,7 +277,7 @@ mod tests {
         let mut merged: MergedConfig = HashMap::new();
         let node = MergedNode {
             alias: Some(ResolvedAlias {
-                value: aliases::AliasValue::Meta {
+                value: AliasValue::Meta {
                     cmd: "echo hello".into(),
                     cwd: None,
                     mode: None,

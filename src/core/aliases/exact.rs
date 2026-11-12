@@ -1,8 +1,7 @@
 //! 精确执行语法：@file.key 和 @@file.key。
 
 use super::merge::apply_inherited;
-use super::parse::{is_alias_value, to_alias_value};
-use super::types::{AliasFile, Mode, ResolvedAlias};
+use crate::core::config::{AliasFile, Mode, ResolvedAlias, is_alias_value, to_alias_value};
 
 /// 解析 `@file.key` / `@@file.key`，返回 (file_key, alias_key)。
 ///

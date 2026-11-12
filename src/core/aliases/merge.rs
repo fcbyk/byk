@@ -3,12 +3,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use super::diagnostic::{Diagnostic, DiagnosticReport, Level};
-use super::parse::{is_alias_value, parse_private, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
-use super::types::{AliasFile, AliasValue, MergedConfig, Mode, ResolvedAlias};
+use crate::core::config::{
+    AliasFile, AliasValue, Diagnostic, DiagnosticReport, Level, MergedConfig, Mode, ResolvedAlias,
+    build_builtin_table, is_alias_value, parse_private, to_alias_value,
+};
 use crate::core::paths::PathLayout;
-use crate::core::vars::build_builtin_table;
 use crate::utils::path::canonical;
 
 /// 深度合并上下文，打包所有跨递归传递的参数。
@@ -311,7 +311,7 @@ pub fn resolve_merged_alias<'a>(merged: &'a MergedConfig, name: &str) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::aliases::types::MergedNode;
+    use crate::core::config::MergedNode;
     use std::fs;
 
     /// 构造一个 root/alias 布局，返回 (临时目录, 布局, 工作目录)

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use serde_json::{Map, Value};
 
 use super::{FileScope, edit, key};
-use crate::core::aliases::Mode;
+use crate::core::config::Mode;
 use crate::core::paths::PathLayout;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

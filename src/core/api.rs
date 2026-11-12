@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::core::aliases;
 use crate::core::completion;
+use crate::core::config::Mode;
 use crate::core::filecmd;
 use crate::core::paths::PathLayout;
 
@@ -149,7 +150,7 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 cwd: rc.cwd,
                 paths: rc.paths,
                 mode: rc.mode.as_str(),
-                interactive: rc.mode == aliases::Mode::Interactive,
+                interactive: rc.mode == Mode::Interactive,
                 description: rc.description,
             };
 
