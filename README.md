@@ -46,6 +46,7 @@ through `@file.key`.
 | `-h, --help` | usage, options and the full alias list |
 | `-v, --version` | version, commit, platform, install path |
 | `--paths` | the two directories byk uses: home and alias |
+| `--check` | check alias files and report scan problems per file |
 | `__api__ <request>` | read-only interface for shells and editors (hidden) |
 
 `byk __api__ completion zsh` prints the shell registration script;

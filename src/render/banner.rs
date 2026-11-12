@@ -1,23 +1,26 @@
 //! Banner 渲染。
 //!
-//! 形态：两条等宽虚线夹住版本号与文档地址，作为 `--help` 的顶部区块。
+//! 正常：两条等宽虚线夹住版本号与文档地址。
+//! 扫描有问题：同样的框，中间换成问题数量与 `--check` 提示。
 
 use colored::Colorize;
 
-/// 虚线宽度。
+use crate::utils::display::get_display_width;
+
+/// 虚线最小宽度。
 const SEPARATOR_WIDTH: usize = 29;
 
 /// 文档地址。
 const DOCS_URL: &str = "https://cli.fcbyk.com";
 
-fn separator() -> String {
-    "-".repeat(SEPARATOR_WIDTH)
+fn separator(width: usize) -> String {
+    "-".repeat(width)
 }
 
-/// 默认 banner：虚线 / 版本号 / 文档地址 / 虚线。
-pub fn render() {
+/// 渲染 banner；`problem_files` 为存在诊断的别名文件数。
+pub fn render(problem_files: usize) {
     println!();
-    for line in lines() {
+    for line in lines(problem_files) {
         println!("{}", line);
     }
 }
@@ -25,17 +28,55 @@ pub fn render() {
 /// banner 的文本行（含颜色，不含首尾空行）。
 ///
 /// 独立出来便于断言，`render` 只负责打印。
-fn lines() -> Vec<String> {
-    vec![
-        separator().dimmed().to_string(),
-        format!(
-            "{} {}",
-            "BYK".green().bold(),
-            format!("v{}", env!("CARGO_PKG_VERSION")).cyan().bold()
-        ),
-        format!("Docs {}", DOCS_URL).dimmed().to_string(),
-        separator().dimmed().to_string(),
-    ]
+fn lines(problem_files: usize) -> Vec<String> {
+    let (plain, colored): (Vec<String>, Vec<String>) = if problem_files == 0 {
+        (
+            vec![
+                format!("BYK v{}", env!("CARGO_PKG_VERSION")),
+                format!("Docs {}", DOCS_URL),
+            ],
+            vec![
+                format!(
+                    "{} {}",
+                    "BYK".green().bold(),
+                    format!("v{}", env!("CARGO_PKG_VERSION")).cyan().bold()
+                ),
+                format!("Docs {}", DOCS_URL).dimmed().to_string(),
+            ],
+        )
+    } else {
+        let plural = if problem_files == 1 { "" } else { "s" };
+        let has = if problem_files == 1 { "has" } else { "have" };
+        (
+            vec![
+                format!("{} alias file{} {} problems", problem_files, plural, has),
+                "Run byk --check for details".to_string(),
+            ],
+            vec![
+                format!(
+                    "{} alias file{} {} {}",
+                    problem_files,
+                    plural,
+                    has,
+                    "problems".yellow().bold()
+                ),
+                format!("Run {} for details", "byk --check".cyan().bold()),
+            ],
+        )
+    };
+
+    let width = plain
+        .iter()
+        .map(|line| get_display_width(line))
+        .max()
+        .unwrap_or(0)
+        .max(SEPARATOR_WIDTH);
+    let separator = separator(width).dimmed().to_string();
+
+    let mut output = vec![separator.clone()];
+    output.extend(colored);
+    output.push(separator);
+    output
 }
 
 #[cfg(test)]
@@ -68,32 +109,44 @@ mod tests {
 
     #[test]
     fn render_runs_without_panic() {
-        render();
+        render(0);
+        render(3);
     }
 
     #[test]
-    fn separator_is_29_dashes() {
-        assert_eq!(separator().len(), SEPARATOR_WIDTH);
-        assert_eq!(separator(), "-----------------------------");
-    }
-
-    #[test]
-    fn banner_is_wrapped_by_two_separators() {
-        let lines = lines();
+    fn clean_banner_keeps_version_and_docs() {
+        let lines = lines(0);
         assert_eq!(lines.len(), 4);
 
         let plain: Vec<String> = lines.iter().map(|l| strip_ansi(l)).collect();
-        assert_eq!(plain[0], separator());
-        assert_eq!(plain[3], separator());
+        assert_eq!(plain[1], format!("BYK v{}", env!("CARGO_PKG_VERSION")));
+        assert_eq!(plain[2], format!("Docs {}", DOCS_URL));
     }
 
     #[test]
-    fn banner_middle_holds_version_and_docs() {
-        let lines = lines();
-        let version = strip_ansi(&lines[1]);
-        let docs = strip_ansi(&lines[2]);
+    fn problem_banner_has_no_version_or_docs() {
+        let lines = lines(4);
+        assert_eq!(lines.len(), 4);
 
-        assert_eq!(version, format!("BYK v{}", env!("CARGO_PKG_VERSION")));
-        assert_eq!(docs, format!("Docs {}", DOCS_URL));
+        let plain: Vec<String> = lines.iter().map(|l| strip_ansi(l)).collect();
+        assert_eq!(plain[1], "4 alias files have problems");
+        assert_eq!(plain[2], "Run byk --check for details");
+        assert!(!plain.iter().any(|line| line.contains("BYK")));
+        assert!(!plain.iter().any(|line| line.contains("Docs")));
+    }
+
+    #[test]
+    fn problem_banner_uses_singular_forms() {
+        let plain: Vec<String> = lines(1).iter().map(|l| strip_ansi(l)).collect();
+        assert_eq!(plain[1], "1 alias file has problems");
+    }
+
+    #[test]
+    fn separator_expands_to_the_longest_line() {
+        let lines = lines(1000);
+        let plain: Vec<String> = lines.iter().map(|l| strip_ansi(l)).collect();
+        let width = get_display_width(&plain[1]);
+        assert_eq!(plain[0], "-".repeat(width));
+        assert_eq!(plain[3], "-".repeat(width));
     }
 }

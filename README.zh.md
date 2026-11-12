@@ -41,6 +41,7 @@ byk deploy          # 先问 {env}，然后执行
 | `-h, --help` | 用法、选项与完整别名列表 |
 | `-v, --version` | 版本、commit、平台、安装路径 |
 | `--paths` | byk 用到的两个目录：家目录与别名目录 |
+| `--check` | 检查别名文件，按文件汇总扫描发现的问题 |
 | `__api__ <request>` | 给 shell 和编辑器用的只读接口（隐藏） |
 
 `byk __api__ completion zsh` 打印 shell 注册脚本；`byk __api__ complete <words...>` 为 Tab 补全提供候选。

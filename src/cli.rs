@@ -17,6 +17,10 @@ pub struct Cli {
     #[arg(long = "paths")]
     pub paths: bool,
 
+    /// Check alias files for problems
+    #[arg(long = "check")]
+    pub check: bool,
+
     /// 隐藏接口
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -40,7 +44,7 @@ pub enum Commands {
 /// 供帮助页输出：只取非位置参数。
 pub fn extract_options(cmd: &clap::Command) -> Vec<(String, String)> {
     cmd.get_arguments()
-        .filter(|a| !a.is_positional())
+        .filter(|a| !a.is_positional() && !a.is_hide_set())
         .map(|a| {
             let flag = match (a.get_long(), a.get_short()) {
                 (Some(l), Some(s)) => format!("--{}, -{}", l, s),

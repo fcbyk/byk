@@ -47,6 +47,16 @@ fn main() {
         render::help::render_all(&layout, &options);
         return;
     }
+    if cli.check {
+        if !cli.trailing.is_empty() {
+            eprintln!("check takes no arguments");
+            exit(1);
+        }
+        if render::check::render(&layout) != 0 {
+            exit(1);
+        }
+        return;
+    }
     if cli.paths {
         render::paths::render(&layout);
         return;

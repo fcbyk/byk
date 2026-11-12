@@ -18,6 +18,7 @@ Usage: byk [OPTIONS] [ALIAS] [ARGS]...
 | `-h, --help` | 帮助：banner + Usage + Options + 合并空间里的别名 |
 | `-v, --version` | 版本、构建信息与安装路径 |
 | `--paths` | 打印 CLI 用到的目录位置 |
+| `--check` | 检查别名文件，按文件汇总扫描发现的问题 |
 
 `byk` 不带参数与 `byk -h` 输出完全一致。第一行固定为 `byk <版本> (<commit> <构建日期>) [<平台>]`，可以安全地用 `byk -v | head -1` 取版本号。
 
@@ -37,6 +38,28 @@ Alias: /Users/coke/.byk/alias
 `CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录——把 `*.byk.json` 放进去，它就会进入 `byk <key>` 的查找空间。
 
 帮助页里的别名列表只包含**合并空间**中的别名：标了 `$private: true` 的别名不出现在这里，因为它们本来就只能通过 `@file.key` 调用。设了 `$cwd` 的别名后面会附上生效目录，形如 `deploy  deploy.sh (/Users/me/proj)`。
+
+### 诊断 `--check`
+
+扫描别名文件时发现的问题不再在普通执行时直接输出。只要有问题，`-h` 顶部的 banner 会变成：
+
+```text
+-----------------------------
+1 alias file has problems
+Run byk --check for details
+-----------------------------
+```
+
+用 `byk --check` 查看按文件分组的明细：
+
+```text
+Scanned 2 alias files; 1 has problems (1 error).
+
+/Users/me/.byk/alias/gone.byk.json
+  error: cannot load link target /Users/me/.byk/alias/missing.byk.json
+```
+
+没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、`$mode`、`$var` 等。
 
 ## 执行别名
 

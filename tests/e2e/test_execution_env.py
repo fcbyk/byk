@@ -217,10 +217,15 @@ def test_interactive_overridden_to_normal(runner):
 
 
 def test_mode_invalid_value_warns_and_falls_back_to_normal(runner):
-    """非法 $mode 值告警并回落 normal，别名不会整条消失"""
+    """非法 $mode 值在 --check 中告警并回落 normal，别名不会整条消失"""
     runner.prepare_alias_json("env", {"hi": {"$cmd": "echo hello", "$mode": "interactiv"}})
+
     r = runner.run("hi")
     assert r.returncode == 0, r.stderr
     assert "hello" in r.stdout
-    assert "$mode must be one of" in r.stderr
-    assert "interactiv" in r.stderr
+    assert r.stderr == ""
+
+    check = runner.run("--check")
+    assert check.returncode == 1
+    assert "$mode must be one of" in check.stdout
+    assert "interactiv" in check.stdout

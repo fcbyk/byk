@@ -1,13 +1,15 @@
 //! 按优先级把多个 AliasFile 合并成一棵 MergedConfig 树，并支持路径收集与查找。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use super::diagnostic::{Diagnostic, DiagnosticReport, Level};
 use super::parse::{is_alias_value, parse_private, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, Mode, ResolvedAlias};
 use crate::core::paths::PathLayout;
 use crate::core::vars::build_builtin_table;
+use crate::utils::path::canonical;
 
 /// 深度合并上下文，打包所有跨递归传递的参数。
 #[derive(Copy, Clone)]
@@ -172,23 +174,73 @@ fn prune_empty(nodes: &mut MergedConfig) {
     });
 }
 
+/// 一次完整扫描的结果：合并树、文件列表与诊断报告。
+pub struct LoadedAliases {
+    pub merged: MergedConfig,
+    pub files: Vec<AliasFile>,
+    pub report: DiagnosticReport,
+}
+
 /// 扫描当前目录与全局目录，返回合并配置和文件列表。
 ///
 /// 每次调用都重新扫描：几十个文件的扫描以毫秒计，不值得为此维护缓存状态。
 pub fn load_merged_aliases(layout: &PathLayout) -> (MergedConfig, Vec<AliasFile>) {
+    let loaded = load_merged_aliases_report(layout);
+    (loaded.merged, loaded.files)
+}
+
+/// 同 [`load_merged_aliases`]，但保留扫描诊断供 banner 与 `--check` 使用。
+pub fn load_merged_aliases_report(layout: &PathLayout) -> LoadedAliases {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    load_merged_aliases_at(layout, &cwd)
+    load_report_at(layout, &cwd)
 }
 
 /// 指定工作目录加载（测试与需要显式 cwd 的调用方使用）。
+#[cfg(test)]
 pub(crate) fn load_merged_aliases_at(
     layout: &PathLayout,
     cwd: &Path,
 ) -> (MergedConfig, Vec<AliasFile>) {
+    let loaded = load_report_at(layout, cwd);
+    (loaded.merged, loaded.files)
+}
+
+fn load_report_at(layout: &PathLayout, cwd: &Path) -> LoadedAliases {
     // 内置变量在扫描期展开：byk_dir 是固定的资源根，file_dir 由扫描阶段逐文件注入
     let vars = build_builtin_table(&layout.root_dir);
-    let mut files = scan_alias_files(cwd, false, &vars);
-    files.extend(scan_alias_files(&layout.alias_dir, true, &vars));
+    let local = scan_alias_files(cwd, false, &vars);
+    let global = scan_alias_files(&layout.alias_dir, true, &vars);
+
+    let scanned = local
+        .seen
+        .iter()
+        .chain(global.seen.iter())
+        .map(|path| canonical(path))
+        .collect::<HashSet<_>>()
+        .len();
+
+    // cwd 恰好是全局目录时同一批文件会扫两次，诊断也重复；按规范化路径去重。
+    let mut seen_diagnostics: HashSet<(PathBuf, Level, String)> = HashSet::new();
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    for diagnostic in local.diagnostics.into_iter().chain(global.diagnostics) {
+        let key = (
+            canonical(&diagnostic.path),
+            diagnostic.level,
+            diagnostic.message.clone(),
+        );
+        if seen_diagnostics.insert(key) {
+            diagnostics.push(diagnostic);
+        }
+    }
+    diagnostics.sort_by(|a, b| {
+        a.path
+            .cmp(&b.path)
+            .then(a.level.cmp(&b.level))
+            .then(a.message.cmp(&b.message))
+    });
+
+    let mut files = local.files;
+    files.extend(global.files);
     sort_alias_files(&mut files);
 
     // cwd 恰好是全局目录时，同一批文件会被扫两次（@f 与 @@f）。
@@ -205,7 +257,14 @@ pub(crate) fn load_merged_aliases_at(
         build_merged_aliases(&files)
     };
 
-    (merged, files)
+    LoadedAliases {
+        merged,
+        files,
+        report: DiagnosticReport {
+            scanned,
+            items: diagnostics,
+        },
+    }
 }
 
 /// 两个路径是否指向同一目录（规范化后比较，符号链接也视作相同）。

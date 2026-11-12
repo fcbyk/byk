@@ -95,48 +95,68 @@ def test_link_target_var_expands(runner):
 
 
 def test_link_multiple_uses_first_and_warns(runner):
-    """多个路径只取第一个，并在 stderr 告知"""
+    """多个路径只取第一个，并在 --check 中告警"""
     bundle(runner, "proj/web/a.byk.json", {"hi": "echo first"})
     bundle(runner, "proj/web/b.byk.json", {"hi": "echo second"})
     runner.prepare_alias_file(
         "ops", '["../../proj/web/a.byk.json", "../../proj/web/b.byk.json"]'
     )
+
     r = runner.run("hi")
     assert r.returncode == 0, r.stderr
     assert "first" in r.stdout
-    assert "only the first of 2 link paths" in r.stderr
+    assert r.stderr == ""
+
+    check = runner.run("--check")
+    assert check.returncode == 1
+    assert "only the first of 2 link paths" in check.stdout
 
 
 def test_link_empty_array_is_skipped(runner):
     """空数组告警并跳过，不影响其他别名"""
     runner.prepare_alias_file("ok", '{"hi": "echo still-works"}')
     runner.prepare_alias_file("empty", "[]")
+
     r = runner.run("hi")
     assert r.returncode == 0, r.stderr
     assert "still-works" in r.stdout
-    assert "lists no path" in r.stderr
+    assert r.stderr == ""
+
+    check = runner.run("--check")
+    assert check.returncode == 1
+    assert "lists no path" in check.stdout
 
 
 def test_link_chain_is_rejected(runner):
-    """目标文件也是链接 → 报错，但其他文件照常可用"""
+    """目标文件也是链接 → 在 --check 中报错，但其他文件照常可用"""
     runner.prepare_alias_file("ok", '{"hi": "echo still-works"}')
     bundle(runner, "proj/web/run.byk.json", {"hi": "echo from-bundle"})
     runner.prepare_alias_file("layer1", '["../../proj/web/run.byk.json"]')
     runner.prepare_alias_file("layer2", '["layer1.byk.json"]')
+
     r = runner.run("hi")
     assert r.returncode == 0, r.stderr
     assert "still-works" in r.stdout
-    assert "limited to one level" in r.stderr
+    assert r.stderr == ""
+
+    check = runner.run("--check")
+    assert check.returncode == 1
+    assert "limited to one level" in check.stdout
 
 
 def test_link_missing_target_reports_error(runner):
-    """目标不存在时报错并跳过该文件"""
+    """目标不存在时在 --check 中报错并跳过该文件"""
     runner.prepare_alias_file("ok", '{"hi": "echo still-works"}')
     runner.prepare_alias_file("gone", '["../../nope/missing.byk.json"]')
+
     r = runner.run("hi")
     assert r.returncode == 0, r.stderr
     assert "still-works" in r.stdout
-    assert "cannot load link target" in r.stderr
+    assert r.stderr == ""
+
+    check = runner.run("--check")
+    assert check.returncode == 1
+    assert "cannot load link target" in check.stdout
 
 
 def test_link_target_private_honored(runner):

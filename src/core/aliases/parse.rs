@@ -66,6 +66,19 @@ pub(crate) fn parse_private(raw: &serde_json::Value) -> bool {
     }
 }
 
+/// `$private` 是否是合法写法；非法值按 `false` 处理，由调用方负责告警。
+pub(crate) fn is_valid_private(raw: &serde_json::Value) -> bool {
+    match raw {
+        serde_json::Value::Bool(_) => true,
+        serde_json::Value::Number(n) => n.as_f64().is_some(),
+        serde_json::Value::String(s) => matches!(
+            s.trim().to_ascii_lowercase().as_str(),
+            "1" | "0" | "true" | "false" | "yes" | "no" | "on" | "off"
+        ),
+        _ => false,
+    }
+}
+
 /// 递归过滤：丢掉 key 含 `@`/`.` 的条目与非法的值类型。
 ///
 /// 含 `$` 前缀 key 的 object 是别名元数据，整体保留；其余 object 视为分组继续递归。
@@ -257,6 +270,18 @@ mod tests {
         assert!(!parse_private(&json!(0)));
         assert!(!parse_private(&json!("no")));
         assert!(!parse_private(&json!(null)));
+    }
+
+    #[test]
+    fn private_validity_rejects_typos() {
+        assert!(is_valid_private(&json!(true)));
+        assert!(is_valid_private(&json!(0)));
+        assert!(is_valid_private(&json!("false")));
+        assert!(is_valid_private(&json!("OFF")));
+        assert!(!is_valid_private(&json!("ture")));
+        assert!(!is_valid_private(&json!(null)));
+        assert!(!is_valid_private(&json!({})));
+        assert!(!is_valid_private(&json!([])));
     }
 
     #[test]

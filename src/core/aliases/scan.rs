@@ -3,24 +3,32 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use colored::Colorize;
-
+use super::diagnostic::{Diagnostic, Level};
 use super::parse::{
-    build_file_key, filter_invalid_keys, parse_priority, parse_private, validate_filename,
+    build_file_key, filter_invalid_keys, is_valid_private, parse_priority, parse_private,
+    validate_filename,
 };
 use super::types::{AliasFile, Mode};
-use crate::core::vars::{FILE_DIR_VAR, VarIssue, VarTable, describe_issue, preprocess_vars};
+use crate::core::vars::{FILE_DIR_VAR, VarTable, describe_issue, preprocess_vars};
 use crate::utils::path::{canonical, dir_of, expand_home};
 
-pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> Vec<AliasFile> {
+/// 一次目录扫描的结果：成功解析的文件、诊断、以及实际检查过的候选文件。
+#[derive(Debug, Default)]
+pub(crate) struct ScanResult {
+    pub files: Vec<AliasFile>,
+    pub diagnostics: Vec<Diagnostic>,
+    pub seen: Vec<PathBuf>,
+}
+
+pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> ScanResult {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
     // 只想给本文件用（仅 @file.key 可达）时写 `$private: true`。
     let default_priority = if is_global { 0 } else { 1 };
-    let mut files: Vec<AliasFile> = Vec::new();
+    let mut result = ScanResult::default();
 
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return files,
+        Err(_) => return result,
     };
 
     for entry in entries.flatten() {
@@ -32,21 +40,34 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
         if !file_name.ends_with(".byk.json") {
             continue;
         }
-        if let Some(alias_file) = parse_alias_file(&path, is_global, default_priority, vars) {
-            files.push(alias_file);
+        result.seen.push(path.clone());
+        if let Some(alias_file) = parse_alias_file(
+            &path,
+            is_global,
+            default_priority,
+            vars,
+            &mut result.diagnostics,
+        ) {
+            result.files.push(alias_file);
         }
     }
 
-    files
+    result
 }
 
 /// 读取一个别名文件：注入它自己的 `file_dir`，完成变量替换与告警。
 ///
 /// 返回 `(文档, 文件路径)`。链接文件和链接目标都走这里，所以两者
 /// 的 `${file_dir}` 都指向各自所在目录。
-fn load_document(path: &Path, vars: &VarTable) -> Option<(serde_json::Value, PathBuf)> {
-    let content = fs::read_to_string(path).ok()?;
-    let mut data: serde_json::Value = serde_json::from_str(&content).ok()?;
+fn load_document(
+    path: &Path,
+    vars: &VarTable,
+    owner: &Path,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<(serde_json::Value, PathBuf), String> {
+    let content = fs::read_to_string(path).map_err(|e| format!("cannot read file: {}", e))?;
+    let mut data: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("invalid JSON: {}", e))?;
 
     // 内置表是全局共用的，file_dir 逐文件不同：克隆一份局部表再注入
     let mut file_vars = vars.clone();
@@ -54,22 +75,38 @@ fn load_document(path: &Path, vars: &VarTable) -> Option<(serde_json::Value, Pat
 
     // 变量替换：内置变量与文件 $var 合成一张表，扫描期一次替换完成
     for issue in preprocess_vars(&mut data, &file_vars) {
-        report_var_issue(&issue, path);
+        push_doc_diagnostic(
+            diagnostics,
+            Level::Warning,
+            owner,
+            path,
+            describe_issue(&issue),
+        );
     }
 
-    warn_invalid_modes(&data, path);
-    warn_retired_vars(&data, path);
+    warn_invalid_modes(&data, path, owner, diagnostics);
 
-    Some((data, path.to_path_buf()))
+    Ok((data, path.to_path_buf()))
 }
 
-fn report_var_issue(issue: &VarIssue, path: &Path) {
-    eprintln!(
-        "{} {} in {}",
-        "Warning:".yellow(),
-        describe_issue(issue),
-        path.display()
-    );
+/// 记录一条归属于扫描文件的诊断；链接目标的内部问题补上目标路径。
+fn push_doc_diagnostic(
+    diagnostics: &mut Vec<Diagnostic>,
+    level: Level,
+    owner: &Path,
+    doc: &Path,
+    message: String,
+) {
+    let message = if doc != owner {
+        format!("{} (in {})", message, doc.display())
+    } else {
+        message
+    };
+    diagnostics.push(Diagnostic {
+        level,
+        path: owner.to_path_buf(),
+        message,
+    });
 }
 
 /// 根是数组时跟随链接指针，返回 `(目标文档, 目标路径)`。
@@ -84,67 +121,60 @@ fn follow_link(
     data: serde_json::Value,
     link_path: &Path,
     vars: &VarTable,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<(serde_json::Value, PathBuf)> {
     let serde_json::Value::Array(items) = &data else {
         return Some((data, link_path.to_path_buf()));
     };
 
     let Some(first) = items.first() else {
-        eprintln!(
-            "{} link file lists no path, {} is skipped",
-            "Warning:".yellow(),
-            link_path.display()
-        );
+        diagnostics.push(Diagnostic::error(
+            link_path,
+            "link file lists no path; file skipped",
+        ));
         return None;
     };
 
     if items.len() > 1 {
-        eprintln!(
-            "{} only the first of {} link paths is used in {}",
-            "Warning:".yellow(),
-            items.len(),
-            link_path.display()
-        );
+        diagnostics.push(Diagnostic::warning(
+            link_path,
+            format!("only the first of {} link paths is used", items.len()),
+        ));
     }
 
     let Some(spec) = first.as_str() else {
-        eprintln!(
-            "{} link path must be a string in {}",
-            "Warning:".yellow(),
-            link_path.display()
-        );
+        diagnostics.push(Diagnostic::error(link_path, "link path must be a string"));
         return None;
     };
 
     let target = resolve_link_path(spec, link_path);
-    let (target_data, target_path) = match load_document(&target, vars) {
-        Some(loaded) => loaded,
-        None => {
-            eprintln!(
-                "{} cannot load link target {} (from {})",
-                "Error:".red(),
-                target.display(),
-                link_path.display()
-            );
+    let (target_data, target_path) = match load_document(&target, vars, link_path, diagnostics) {
+        Ok(loaded) => loaded,
+        Err(reason) => {
+            diagnostics.push(Diagnostic::error(
+                link_path,
+                format!("cannot load link target {}: {}", target.display(), reason),
+            ));
             return None;
         }
     };
 
     if target_data.is_array() {
-        eprintln!(
-            "{} link chains are limited to one level, {} points at another link file",
-            "Error:".red(),
-            link_path.display()
-        );
+        diagnostics.push(Diagnostic::error(
+            link_path,
+            format!(
+                "link chains are limited to one level; target is another link file: {}",
+                target.display()
+            ),
+        ));
         return None;
     }
 
     if !target_data.is_object() {
-        eprintln!(
-            "{} link target must be a JSON object: {}",
-            "Error:".red(),
-            target.display()
-        );
+        diagnostics.push(Diagnostic::error(
+            link_path,
+            format!("link target must be a JSON object: {}", target.display()),
+        ));
         return None;
     }
 
@@ -175,6 +205,7 @@ fn parse_alias_file(
     is_global: bool,
     default_priority: i32,
     vars: &VarTable,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<AliasFile> {
     let name = path.file_name()?.to_str()?;
 
@@ -187,40 +218,114 @@ fn parse_alias_file(
 
     // 读链接文件本身，再顺着指针（如果有）拿到真正的别名文档
     let (mut data, source_path) = {
-        let (link_data, link_path) = load_document(path, vars)?;
-        follow_link(link_data, &link_path, vars)?
+        let (link_data, link_path) = match load_document(path, vars, path, diagnostics) {
+            Ok(loaded) => loaded,
+            Err(reason) => {
+                diagnostics.push(Diagnostic::error(path, reason));
+                return None;
+            }
+        };
+        follow_link(link_data, &link_path, vars, diagnostics)?
     };
 
-    let obj = data.as_object_mut()?;
+    let owner = path;
+    let doc = source_path.as_path();
 
-    let priority_raw = obj.remove("$priority");
-    let priority = priority_raw
-        .as_ref()
-        .map_or(default_priority, |v| parse_priority(v, default_priority));
+    let Some(obj) = data.as_object_mut() else {
+        diagnostics.push(Diagnostic::error(
+            owner,
+            "root must be a JSON object (or a link array)",
+        ));
+        return None;
+    };
+
+    let priority = match obj.remove("$priority") {
+        None => default_priority,
+        Some(raw) if raw.is_number() => parse_priority(&raw, default_priority),
+        Some(_) => {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                "$priority must be an integer; using the default".to_string(),
+            );
+            default_priority
+        }
+    };
 
     // $var 为文件级变量声明（已在变量替换阶段生效），移除避免泄漏为别名
     obj.remove("$var");
 
-    let inherited_cwd = obj
-        .remove("$cwd")
-        .and_then(|v| v.as_str().map(String::from));
+    let inherited_cwd = match obj.remove("$cwd") {
+        None => None,
+        Some(serde_json::Value::String(cwd)) => Some(cwd),
+        Some(_) => {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                "$cwd must be a string; ignored".to_string(),
+            );
+            None
+        }
+    };
 
     let inherited_mode = obj.remove("$mode").map(|v| Mode::from_json(&v));
 
-    let inherited_private = obj
-        .remove("$private")
-        .map(|v| parse_private(&v))
-        .unwrap_or(false);
+    let inherited_private = match obj.remove("$private") {
+        None => false,
+        Some(raw) if is_valid_private(&raw) => parse_private(&raw),
+        Some(raw) => {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                format!("$private must be a boolean; {} is treated as false", raw),
+            );
+            false
+        }
+    };
 
-    let inherited_paths = obj
-        .remove("$paths")
-        .and_then(|v| v.as_array().cloned())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let inherited_paths = match obj.remove("$paths") {
+        None => Vec::new(),
+        Some(serde_json::Value::Array(items)) => {
+            let total = items.len();
+            let paths: Vec<String> = items
+                .iter()
+                .filter_map(|item| item.as_str().map(String::from))
+                .collect();
+            let dropped = total - paths.len();
+            if dropped > 0 {
+                push_doc_diagnostic(
+                    diagnostics,
+                    Level::Warning,
+                    owner,
+                    doc,
+                    format!(
+                        "$paths contains {} non-string {}; ignored",
+                        dropped,
+                        if dropped == 1 { "entry" } else { "entries" }
+                    ),
+                );
+            }
+            paths
+        }
+        Some(_) => {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                "$paths must be an array of strings; ignored".to_string(),
+            );
+            Vec::new()
+        }
+    };
+
+    validate_aliases(obj, "", doc, owner, diagnostics);
 
     let filtered = filter_invalid_keys(obj);
 
@@ -236,6 +341,98 @@ fn parse_alias_file(
     })
 }
 
+/// 校验别名树里的字段类型；这些错误会被后续解析静默丢弃，所以必须在这里报告。
+///
+/// 在 `filter_invalid_keys` 之前调用，否则错误类型已经被过滤掉，无法诊断。
+fn validate_aliases(
+    object: &serde_json::Map<String, serde_json::Value>,
+    prefix: &str,
+    doc: &Path,
+    owner: &Path,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for (key, value) in object {
+        if key.starts_with('$') {
+            continue;
+        }
+        let serde_json::Value::Object(inner) = value else {
+            continue;
+        };
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{}.{}", prefix, key)
+        };
+        let is_alias = inner.contains_key("$cmd");
+
+        if is_alias {
+            if let Some(cmd) = inner.get("$cmd")
+                && !cmd.is_string()
+            {
+                push_doc_diagnostic(
+                    diagnostics,
+                    Level::Error,
+                    owner,
+                    doc,
+                    format!("alias \"{}\": $cmd must be a string; alias ignored", path),
+                );
+            }
+            if let Some(cwd) = inner.get("$cwd")
+                && !cwd.is_string()
+            {
+                push_doc_diagnostic(
+                    diagnostics,
+                    Level::Error,
+                    owner,
+                    doc,
+                    format!("alias \"{}\": $cwd must be a string; alias ignored", path),
+                );
+            }
+            if let Some(description) = inner.get("$description")
+                && !description.is_string()
+            {
+                push_doc_diagnostic(
+                    diagnostics,
+                    Level::Error,
+                    owner,
+                    doc,
+                    format!(
+                        "alias \"{}\": $description must be a string; alias ignored",
+                        path
+                    ),
+                );
+            }
+        } else if let Some(cwd) = inner.get("$cwd")
+            && !cwd.is_string()
+        {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                format!("group \"{}\": $cwd must be a string; ignored", path),
+            );
+        }
+
+        if let Some(private) = inner.get("$private")
+            && !is_valid_private(private)
+        {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                format!(
+                    "\"{}\": $private must be a boolean; {} is treated as false",
+                    path, private
+                ),
+            );
+        }
+
+        validate_aliases(inner, &path, doc, owner, diagnostics);
+    }
+}
+
 /// `$mode` 只认三个值；写错时告警并回落 `normal`。
 ///
 /// 必须在这里喊一声：把它拼成 `"interactiv"` 会让一条本该确认的危险命令
@@ -243,7 +440,12 @@ fn parse_alias_file(
 ///
 /// 只走 object：数组在 `filter_invalid_keys` 里本来就会被整段丢掉，
 /// 里面的 `$mode` 属于死配置，不值得为它再递归一层。
-fn warn_invalid_modes(value: &serde_json::Value, path: &Path) {
+fn warn_invalid_modes(
+    value: &serde_json::Value,
+    doc: &Path,
+    owner: &Path,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let serde_json::Value::Object(obj) = value else {
         return;
     };
@@ -254,56 +456,20 @@ fn warn_invalid_modes(value: &serde_json::Value, path: &Path) {
             Some("normal") | Some("interactive") | Some("silent")
         )
     {
-        eprintln!(
-            "{} $mode must be one of normal|interactive|silent, got {} in {} (treated as normal)",
-            "Warning:".yellow(),
-            raw,
-            path.display()
+        push_doc_diagnostic(
+            diagnostics,
+            Level::Warning,
+            owner,
+            doc,
+            format!(
+                "$mode must be one of normal|interactive|silent, got {} (treated as normal)",
+                raw
+            ),
         );
     }
 
     for child in obj.values() {
-        warn_invalid_modes(child, path);
-    }
-}
-
-/// 已退役的内置变量（名字, 替代写法）。
-///
-/// 退役后它们不再命中变量表，会原样透传给 shell，而 shell 把未定义变量展开成**空串**：
-/// `cd ${workdir}/x` 静默变成 `cd /x`。这是最不该悄悄发生的一类错误，所以扫描期喊一声。
-const RETIRED_VARS: &[(&str, &str)] = &[
-    ("${byk}", "${byk_dir}"),
-    ("${workdir}", "the shell's $PWD, or ${file_dir}"),
-];
-
-fn warn_retired_vars(value: &serde_json::Value, path: &Path) {
-    let mut hits: Vec<&'static str> = Vec::new();
-    collect_retired(value, &mut hits);
-    for &(retired, replacement) in RETIRED_VARS {
-        if hits.contains(&retired) {
-            eprintln!(
-                "{} {} is no longer a built-in variable, use {} in {}",
-                "Warning:".yellow(),
-                retired,
-                replacement,
-                path.display()
-            );
-        }
-    }
-}
-
-fn collect_retired(value: &serde_json::Value, hits: &mut Vec<&'static str>) {
-    match value {
-        serde_json::Value::String(s) => {
-            for &(retired, _) in RETIRED_VARS {
-                if s.contains(retired) && !hits.contains(&retired) {
-                    hits.push(retired);
-                }
-            }
-        }
-        serde_json::Value::Object(obj) => obj.values().for_each(|v| collect_retired(v, hits)),
-        serde_json::Value::Array(arr) => arr.iter().for_each(|v| collect_retired(v, hits)),
-        _ => {}
+        warn_invalid_modes(child, doc, owner, diagnostics);
     }
 }
 
@@ -404,7 +570,7 @@ mod tests {
             r#"{"$paths": ["./scripts", "~/tools/bin"], "build": "make build"}"#,
         )
         .unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].inherited_paths, vec!["./scripts", "~/tools/bin"]);
     }
@@ -414,7 +580,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"build": "make build"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_paths.is_empty());
     }
@@ -428,7 +594,7 @@ mod tests {
             r#"{"$paths": ["./good", 42, null, "./also-good"], "build": "echo"}"#,
         )
         .unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].inherited_paths, vec!["./good", "./also-good"]);
     }
@@ -438,7 +604,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"$paths": "not-an-array", "build": "echo"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_paths.is_empty());
     }
@@ -448,7 +614,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"$private": true, "build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_private);
         assert!(!files[0].aliases.contains_key("$private"));
@@ -459,7 +625,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
         assert!(!files[0].inherited_private);
     }
 
@@ -468,7 +634,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"$paths": ["./bin"], "build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(!files[0].aliases.contains_key("$paths"));
     }

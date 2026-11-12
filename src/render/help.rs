@@ -11,14 +11,13 @@ use crate::core::paths::PathLayout;
 ///
 /// `byk`、`byk -h`、`byk --help` 三条入口输出完全一致，banner 在最上方。
 pub fn render_all(layout: &PathLayout, options: &[(String, String)]) {
-    super::banner::render();
+    let loaded = aliases::load_merged_aliases_report(layout);
+    super::banner::render(loaded.report.problem_file_count());
     println!();
     render_usage();
     println!();
     render_options(options);
-
-    let (merged, _files) = aliases::load_merged_aliases(layout);
-    super::aliases::render(&merged);
+    super::aliases::render(&loaded.merged);
 
     println!();
 }

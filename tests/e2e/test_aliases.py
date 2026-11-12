@@ -111,12 +111,17 @@ def test_args_placeholder_not_shadowed(runner):
 
 
 def test_invalid_var_name_warns(runner):
-    """非法变量名被忽略并提示（不参与替换）"""
+    """非法变量名被忽略并在 --check 中提示（不参与替换）"""
     runner.prepare_alias_file("vars", '{"$var": {"9bad": "x"}, "h": "echo ok"}')
+
     r = runner.run("h")
     assert r.returncode == 0
-    assert "9bad" in r.stderr
+    assert r.stderr == ""
     assert "ok" in r.stdout
+
+    check = runner.run("--check")
+    assert check.returncode == 1
+    assert "9bad" in check.stdout
 
 
 def test_install_blocks_ignored(runner):
@@ -174,21 +179,18 @@ def test_private_file_needs_scope(runner):
     assert "hidden" in r2.stdout
 
 
-def test_retired_builtin_warns(runner):
-    """退役的 ${byk} / ${workdir} 会静默变成空串，所以扫描期要告警"""
-    runner.prepare_alias_file("vars", '{"a": "echo ${workdir}/x", "b": "cd ${byk}/bin"}')
+def test_retired_builtin_names_are_not_checked(runner):
+    """退役变量检查已移除；未定义变量原样交给 shell，${byk_dir} 照常展开"""
+    runner.prepare_alias_file("vars", '{"a": "echo ${workdir}/x", "h": "echo ${byk_dir}"}')
+
     r = runner.run("a")
     assert r.returncode == 0, r.stderr
-    assert "${byk}" in r.stderr
-    assert "${workdir}" in r.stderr
-    assert "${byk_dir}" in r.stderr
-    # 未定义但没有退役的变量不告警，仍原样交给 shell
-    assert "${nope}" not in r.stderr
+    assert "/x" in r.stdout
 
+    check = runner.run("--check")
+    assert check.returncode == 0
+    assert "no longer a built-in" not in check.stdout
 
-def test_byk_dir_does_not_trip_retired_warning(runner):
-    """${byk_dir} 不该被 ${byk} 的告警误伤"""
-    runner.prepare_alias_file("vars", '{"h": "echo ${byk_dir}"}')
-    r = runner.run("h")
-    assert r.returncode == 0, r.stderr
-    assert r.stderr == ""
+    h = runner.run("h")
+    assert h.returncode == 0, h.stderr
+    assert str(runner.byk_dir) in h.stdout

@@ -50,6 +50,7 @@ fn describe_in(candidate: &str, prefer_file_option: bool) -> Option<&'static str
         "--help" | "-h" => Some("Print help"),
         "--version" | "-v" => Some("Print version"),
         "--paths" => Some("Print CLI paths and file locations"),
+        "--check" => Some("Check alias files for problems"),
         _ => filecmd::describe_option(candidate).or_else(|| filecmd::describe(candidate)),
     }
 }
@@ -88,7 +89,7 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     filecmd::complete_options(&prev[0], partial).unwrap_or_default()
 }
 
-const GLOBAL_FLAGS: &[&str] = &["--version", "-v", "--help", "-h", "--paths"];
+const GLOBAL_FLAGS: &[&str] = &["--version", "-v", "--help", "-h", "--paths", "--check"];
 
 fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     if partial.starts_with('-') {
@@ -548,6 +549,10 @@ mod tests {
         let env = TestEnv::new();
         let result = get_completions("--p", &env.layout);
         assert_eq!(result, vec!["--paths".to_string()]);
+        assert_eq!(
+            get_completions("--c", &env.layout),
+            vec!["--check".to_string()]
+        );
     }
 
     #[test]
