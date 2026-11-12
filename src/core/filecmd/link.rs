@@ -6,10 +6,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{FileScope, invalid_stem_message, resolve_target, target_path};
-use crate::core::aliases::validate_filename;
+use super::{FileScope, resolve_target, source};
 use crate::core::paths::PathLayout;
-use crate::utils::path::{canonical, expand_home};
+use crate::utils::path::canonical;
 
 pub(super) fn run(
     scope: FileScope,
@@ -20,7 +19,7 @@ pub(super) fn run(
     let [spec] = args else {
         return Err("link takes exactly one target".to_string());
     };
-    let target = resolve_spec(spec)?;
+    let target = source::resolve(spec, layout)?;
 
     let path = resolve_target(scope, stem, layout)?;
     let metadata = match fs::symlink_metadata(&path) {
@@ -72,73 +71,7 @@ pub(super) fn run(
     Ok((path, target))
 }
 
-/// 解析并校验 link 目标：`@<name>` 指 cwd 的局部别名，其余按路径处理。
-pub(super) fn resolve_spec(spec: &str) -> Result<PathBuf, String> {
-    if spec.is_empty() {
-        return Err("Link target is empty".to_string());
-    }
-
-    let raw = if let Some(stem) = spec.strip_prefix('@') {
-        if stem.starts_with('@') {
-            return Err("Link target must be @<name> or a path".to_string());
-        }
-        if !validate_filename(stem) {
-            return Err(invalid_stem_message(stem));
-        }
-        let cwd = std::env::current_dir()
-            .map_err(|e| format!("Failed to resolve current directory: {}", e))?;
-        target_path(&cwd, stem)
-    } else {
-        let expanded = expand_home(spec);
-        if expanded.is_relative() {
-            let cwd = std::env::current_dir()
-                .map_err(|e| format!("Failed to resolve current directory: {}", e))?;
-            cwd.join(expanded)
-        } else {
-            expanded
-        }
-    };
-
-    let metadata = match fs::metadata(&raw) {
-        Ok(metadata) => metadata,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Err(format!("Link target not found: {}", raw.display()));
-        }
-        Err(e) => return Err(format!("Failed to inspect {}: {}", raw.display(), e)),
-    };
-    if !metadata.is_file() {
-        return Err(format!("Link target is not a file: {}", raw.display()));
-    }
-
-    let target = canonical(&raw);
-    let data = fs::read(&target)
-        .map_err(|e| format!("Failed to read link target {}: {}", target.display(), e))?;
-    match serde_json::from_slice::<Value>(&data) {
-        Ok(Value::Object(_)) => {}
-        Ok(Value::Array(_)) => {
-            return Err(format!(
-                "Link target is itself a link: {}",
-                target.display()
-            ));
-        }
-        Ok(_) => {
-            return Err(format!(
-                "Link target must be a JSON object: {}",
-                target.display()
-            ));
-        }
-        Err(e) => {
-            return Err(format!(
-                "Failed to parse link target {}: {}",
-                target.display(),
-                e
-            ));
-        }
-    }
-
-    Ok(target)
-}
-
+/// 生成链接文件内容：单元素数组。
 pub(super) fn content(target: &Path) -> Result<String, String> {
     let spec = target
         .to_str()
@@ -168,73 +101,6 @@ mod tests {
 
     fn spec(path: &Path) -> String {
         path.to_str().unwrap().to_string()
-    }
-
-    #[test]
-    fn resolve_spec_accepts_object() {
-        let temp = tempfile::tempdir().unwrap();
-        let target = object_file(temp.path(), "tool.byk.json");
-
-        let resolved = resolve_spec(&spec(&target)).unwrap();
-
-        assert_eq!(resolved, canonical(&target));
-    }
-
-    #[test]
-    fn resolve_spec_rejects_empty() {
-        assert_eq!(resolve_spec("").unwrap_err(), "Link target is empty");
-    }
-
-    #[test]
-    fn resolve_spec_rejects_missing() {
-        let temp = tempfile::tempdir().unwrap();
-        let missing = temp.path().join("missing.byk.json");
-
-        let err = resolve_spec(&spec(&missing)).unwrap_err();
-
-        assert!(err.starts_with("Link target not found:"));
-    }
-
-    #[test]
-    fn resolve_spec_rejects_directory() {
-        let temp = tempfile::tempdir().unwrap();
-
-        let err = resolve_spec(&spec(temp.path())).unwrap_err();
-
-        assert!(err.starts_with("Link target is not a file:"));
-    }
-
-    #[test]
-    fn resolve_spec_rejects_invalid_json() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("bad.byk.json");
-        fs::write(&path, "{not json").unwrap();
-
-        let err = resolve_spec(&spec(&path)).unwrap_err();
-
-        assert!(err.starts_with("Failed to parse link target"));
-    }
-
-    #[test]
-    fn resolve_spec_rejects_link_target() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("chain.byk.json");
-        fs::write(&path, r#"["other.byk.json"]"#).unwrap();
-
-        let err = resolve_spec(&spec(&path)).unwrap_err();
-
-        assert!(err.starts_with("Link target is itself a link:"));
-    }
-
-    #[test]
-    fn resolve_spec_rejects_non_object() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("scalar.byk.json");
-        fs::write(&path, "42").unwrap();
-
-        let err = resolve_spec(&spec(&path)).unwrap_err();
-
-        assert!(err.starts_with("Link target must be a JSON object:"));
     }
 
     #[test]

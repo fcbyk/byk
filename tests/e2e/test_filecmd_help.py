@@ -16,6 +16,10 @@ def test_help_lists_commands_without_options(runner):
     assert "  @@ops..json     Show the alias file JSON" in lines
     assert "  @@ops..path     Print the absolute path" in lines
     assert "  @@ops..rename   Rename the alias file" in lines
+    assert (
+        "  @@ops..clone    Copy a local or remote alias file into this file"
+        in lines
+    )
     assert "  @@ops..link     Point this file at another alias file" in lines
     assert "  @@ops..help     Show this help" in lines
     assert "Options:" not in lines
@@ -86,7 +90,7 @@ def test_help_rejects_unknown_command(runner):
     assert result.returncode == 1
     assert 'Unknown file command: "bogus"' in result.stderr
     assert (
-        "Available: init, destroy, clear, set, remove, json, path, rename, link, help"
+        "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, help"
         in result.stderr
     )
 
@@ -111,6 +115,7 @@ def test_help_argument_completes_command_names(runner):
         "json",
         "path",
         "rename",
+        "clone",
         "link",
     ]
 

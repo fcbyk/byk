@@ -178,7 +178,8 @@ def test_clear_is_completed_with_description(runner):
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == [
-        "@@ops..clear\tReset this file to an empty object"
+        "@@ops..clear\tReset this file to an empty object",
+        "@@ops..clone\tCopy a local or remote alias file into this file",
     ]
 
 

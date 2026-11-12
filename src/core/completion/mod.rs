@@ -82,6 +82,9 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     if let Some(keys) = filecmd::complete_remove_args(&prev[0], prev.len(), partial, layout) {
         return keys;
     }
+    if let Some(sources) = filecmd::complete_source_args(&prev[0], prev, partial, layout) {
+        return sources;
+    }
     filecmd::complete_options(&prev[0], partial).unwrap_or_default()
 }
 
@@ -386,6 +389,7 @@ mod tests {
                 "@@anything..json".to_string(),
                 "@@anything..path".to_string(),
                 "@@anything..rename".to_string(),
+                "@@anything..clone".to_string(),
                 "@@anything..link".to_string(),
                 "@@anything..help".to_string()
             ]
@@ -604,6 +608,7 @@ mod tests {
                 "json".to_string(),
                 "path".to_string(),
                 "rename".to_string(),
+                "clone".to_string(),
                 "link".to_string()
             ]
         );
@@ -659,6 +664,18 @@ mod tests {
             vec!["web.deploy".to_string()]
         );
         assert!(candidates(&words(&["@@ops..remove", "build", ""]), &env.layout).is_empty());
+    }
+
+    #[test]
+    fn candidates_clone_completes_source_files() {
+        let env = TestEnv::new();
+        env.add_alias_file("src", &json!({"build": "echo hi"}));
+
+        assert_eq!(
+            candidates(&words(&["@@ops..clone", "@@"]), &env.layout),
+            vec!["@@src".to_string()]
+        );
+        assert!(candidates(&words(&["@@ops..clone", "./x"]), &env.layout).is_empty());
     }
 
     #[test]

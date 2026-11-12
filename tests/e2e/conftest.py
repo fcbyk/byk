@@ -25,6 +25,7 @@ class BykRunner:
         input: str | None = None,
         cwd: str | None = None,
         tty_stderr: bool = False,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """执行 byk 命令，HOME 指向隔离的临时目录
 
@@ -37,18 +38,21 @@ class BykRunner:
         tty_stderr: 把 stderr 接到伪终端，模拟「有人坐在终端前」。
                 byk 的提示行只在 stderr 是终端时打印，验证它必须给个 tty；
                 此时 stdout 仍是管道，正好用来确认提示没有污染数据流。
+        env:    覆盖子进程环境变量（如用假的 curl 控制 PATH）。
         """
-        env = {**os.environ, "HOME": str(self.home)}
+        process_env = {**os.environ, "HOME": str(self.home)}
+        if env:
+            process_env.update(env)
         argv = [str(self.binary), *args]
         if tty_stderr:
-            return self._run_with_tty(argv, input=input, cwd=cwd, env=env)
+            return self._run_with_tty(argv, input=input, cwd=cwd, env=process_env)
         return subprocess.run(
             argv,
             capture_output=True,
             text=True,
             input=input,
             stdin=None if input is not None else subprocess.DEVNULL,
-            env=env,
+            env=process_env,
             cwd=cwd,
             timeout=120,
         )

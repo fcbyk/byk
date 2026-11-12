@@ -1,10 +1,8 @@
 //! `..init`：创建新的别名文件（空文件或链接文件）。
 
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use super::{FileScope, link, target_path};
+use super::{FileScope, create, link, source};
 use crate::core::paths::PathLayout;
 
 /// 新建内容：空 JSON 对象加一个结尾换行。
@@ -18,7 +16,7 @@ pub(super) fn run(
 ) -> Result<PathBuf, String> {
     let link_spec = parse_args(args)?;
     let link_target = match &link_spec {
-        Some(spec) => Some(link::resolve_spec(spec)?),
+        Some(spec) => Some(source::resolve(spec, layout)?),
         None => None,
     };
     let content = match &link_target {
@@ -26,23 +24,8 @@ pub(super) fn run(
         None => EMPTY_ALIAS_FILE.to_vec(),
     };
 
-    let base = match scope {
-        FileScope::Local => std::env::current_dir()
-            .map_err(|e| format!("Failed to resolve current directory: {}", e))?,
-        FileScope::Global => {
-            fs::create_dir_all(&layout.alias_dir).map_err(|e| {
-                format!(
-                    "Failed to create directory {}: {}",
-                    layout.alias_dir.display(),
-                    e
-                )
-            })?;
-            layout.alias_dir.clone()
-        }
-    };
-
-    let target = target_path(&base, stem);
-    create(&target, &content)?;
+    let target = create::destination(scope, stem, layout)?;
+    create::create(&target, &content)?;
     Ok(target)
 }
 
@@ -54,29 +37,10 @@ fn parse_args(args: &[String]) -> Result<Option<String>, String> {
     }
 }
 
-fn create(path: &Path, content: &[u8]) -> Result<(), String> {
-    let mut file = match OpenOptions::new().write(true).create_new(true).open(path) {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(format!("File already exists: {}", path.display()));
-        }
-        Err(e) => {
-            return Err(format!("Failed to create {}: {}", path.display(), e));
-        }
-    };
-
-    if let Err(e) = file.write_all(content) {
-        drop(file);
-        let _ = fs::remove_file(path);
-        return Err(format!("Failed to write {}: {}", path.display(), e));
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn test_layout(temp: &tempfile::TempDir) -> PathLayout {
         PathLayout {
@@ -146,7 +110,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(err.starts_with("Link target not found:"));
+        assert!(err.starts_with("Source not found:"));
         assert!(!layout.alias_dir.exists());
     }
 
@@ -179,7 +143,7 @@ mod tests {
         let path = temp.path().join("ops.byk.json");
         fs::write(&path, "{\"keep\": true}").unwrap();
 
-        let err = create(&path, EMPTY_ALIAS_FILE).unwrap_err();
+        let err = create::create(&path, EMPTY_ALIAS_FILE).unwrap_err();
 
         assert_eq!(err, format!("File already exists: {}", path.display()));
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\"keep\": true}");
@@ -190,7 +154,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("ops.byk.json");
 
-        create(&path, EMPTY_ALIAS_FILE).unwrap();
+        create::create(&path, EMPTY_ALIAS_FILE).unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "{}\n");
     }

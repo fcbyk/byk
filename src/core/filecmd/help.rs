@@ -147,6 +147,8 @@ mod tests {
         assert!(text.contains("Print the absolute path"));
         assert!(text.contains("  @@ops..rename"));
         assert!(text.contains("Rename the alias file"));
+        assert!(text.contains("  @@ops..clone"));
+        assert!(text.contains("Copy a local or remote alias file into this file"));
         assert!(text.contains("  @@ops..link"));
         assert!(text.contains("Point this file at another alias file"));
         assert!(text.contains("  @@ops..help"));
@@ -186,11 +188,27 @@ mod tests {
         let link = strip_ansi(&run(FileScope::Global, "ops", &args(&["link"])).unwrap());
         assert!(link.contains("@@ops..link <target>"));
 
+        let clone = strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"])).unwrap());
+        assert!(clone.contains("@@ops..clone <source>"));
+
         let init = strip_ansi(&run(FileScope::Global, "ops", &args(&["init"])).unwrap());
         assert!(init.contains("@@ops..init [options]"));
 
         let remove = strip_ansi(&run(FileScope::Global, "ops", &args(&["remove"])).unwrap());
         assert!(remove.contains("@@ops..remove <key>"));
+    }
+
+    #[test]
+    fn command_help_for_clone_shows_github_option() {
+        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"])).unwrap());
+
+        assert!(text.contains("@@ops..clone <source> [options]"));
+        assert!(text.contains("-gh, --github <spec>"));
+        assert!(text.contains("Clone from a GitHub repository"));
+        assert!(text.contains("-ge, --gitee <spec>"));
+        assert!(text.contains("Clone from a Gitee repository"));
+        assert!(text.contains("-jd, --jsdelivr <spec>"));
+        assert!(text.contains("Clone a GitHub file through jsDelivr"));
     }
 
     #[test]
@@ -214,7 +232,7 @@ mod tests {
 
         assert!(err.starts_with("Unknown file command: \"bogus\""));
         assert!(err.contains(
-            "Available: init, destroy, clear, set, remove, json, path, rename, link, help"
+            "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, help"
         ));
     }
 

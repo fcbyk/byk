@@ -1,3 +1,7 @@
+import json
+import os
+
+
 def test_init_global_creates_dir_and_file(runner):
     result = runner.run("@@ops..init")
 
@@ -33,6 +37,16 @@ def test_init_anonymous_files(runner, tmp_path):
     assert local_result.returncode == 0
     assert (runner.byk_dir / "alias" / ".byk.json").read_text() == "{}\n"
     assert (tmp_path / ".byk.json").read_text() == "{}\n"
+
+
+def test_init_link_accepts_global_name(runner):
+    source = runner.prepare_alias_json("src", {"build": "echo hi"})
+
+    result = runner.run("@@ops..init", "--link", "@@src")
+
+    assert result.returncode == 0
+    path = runner.byk_dir / "alias" / "ops.byk.json"
+    assert json.loads(path.read_text()) == [os.path.realpath(source)]
 
 
 def test_init_rejects_arguments(runner):

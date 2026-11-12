@@ -144,6 +144,7 @@ def test_api_complete_with_descriptions_file_command_verbs(runner):
         "@@ops..json\tShow the alias file JSON",
         "@@ops..path\tPrint the absolute path",
         "@@ops..rename\tRename the alias file",
+        "@@ops..clone\tCopy a local or remote alias file into this file",
         "@@ops..link\tPoint this file at another alias file",
         "@@ops..help\tShow this help",
     ]

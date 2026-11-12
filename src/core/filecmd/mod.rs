@@ -4,6 +4,8 @@
 //! 文件命令独立于别名扫描、合并与执行，不进入合并命名空间。
 
 mod clear;
+mod clone;
+mod create;
 mod destroy;
 mod edit;
 mod help;
@@ -16,6 +18,7 @@ mod prompt;
 mod remove;
 mod rename;
 mod set;
+mod source;
 mod summary;
 
 use std::fs;
@@ -45,6 +48,7 @@ enum Verb {
     Json,
     Path,
     Rename,
+    Clone,
     Link,
     Help,
 }
@@ -106,6 +110,12 @@ const VERBS: &[VerbInfo] = &[
         verb: Verb::Rename,
         description: "Rename the alias file",
         usage: "<new-name>",
+    },
+    VerbInfo {
+        name: "clone",
+        verb: Verb::Clone,
+        description: "Copy a local or remote alias file into this file",
+        usage: "<source>",
     },
     VerbInfo {
         name: "link",
@@ -214,6 +224,31 @@ const OPTIONS: &[OptionInfo] = &[
         syntax: "--paths <dir>",
         description: "Prepend directories to PATH (omit key)",
     },
+    OptionInfo {
+        verb: Verb::Clone,
+        flag: "--github",
+        syntax: "-gh, --github <spec>",
+        description: "Clone from a GitHub repository",
+    },
+    OptionInfo {
+        verb: Verb::Clone,
+        flag: "--gitee",
+        syntax: "-ge, --gitee <spec>",
+        description: "Clone from a Gitee repository",
+    },
+    OptionInfo {
+        verb: Verb::Clone,
+        flag: "--jsdelivr",
+        syntax: "-jd, --jsdelivr <spec>",
+        description: "Clone a GitHub file through jsDelivr",
+    },
+];
+
+/// 选项别名：短写 → 完整 flag；帮助里的展示由 `syntax` 负责。
+const OPTION_ALIASES: &[(&str, &str)] = &[
+    ("-gh", "--github"),
+    ("-ge", "--gitee"),
+    ("-jd", "--jsdelivr"),
 ];
 
 impl Verb {
@@ -417,9 +452,15 @@ pub(crate) fn describe(token: &str) -> Option<&'static str> {
 
 /// 文件命令选项的静态描述；未知选项返回 `None`。
 pub(crate) fn describe_option(flag: &str) -> Option<&'static str> {
+    let canonical = OPTION_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == flag)
+        .map(|(_, flag)| *flag)
+        .unwrap_or(flag);
+
     OPTIONS
         .iter()
-        .find(|info| info.flag == flag)
+        .find(|info| info.flag == canonical)
         .map(|info| info.description)
 }
 
@@ -477,6 +518,8 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
             .and_then(|text| write_stdout(text.as_bytes())),
         Verb::Rename => rename::run(command.scope, &command.stem, args, layout)
             .map(|(from, to)| eprintln!("Renamed {} to {}", from.display(), to.display())),
+        Verb::Clone => clone::run(command.scope, &command.stem, args, layout)
+            .map(|(path, source)| eprintln!("Cloned {} to {}", source, path.display())),
         Verb::Link => link::run(command.scope, &command.stem, args, layout)
             .map(|(path, target)| eprintln!("Linked {} to {}", path.display(), target.display())),
         Verb::Help => help::run(command.scope, &command.stem, args)
@@ -526,15 +569,18 @@ pub(crate) fn complete_options(command_token: &str, partial: &str) -> Option<Vec
         return Some(Vec::new());
     }
 
-    Some(
-        OPTIONS
-            .iter()
-            .filter(|info| info.verb == command.verb)
-            .map(|info| info.flag)
-            .filter(|flag| flag.starts_with(partial))
-            .map(|flag| flag.to_string())
-            .collect(),
-    )
+    let mut candidates = Vec::new();
+    for info in OPTIONS.iter().filter(|info| info.verb == command.verb) {
+        for (alias, flag) in OPTION_ALIASES {
+            if *flag == info.flag && alias.starts_with(partial) {
+                candidates.push((*alias).to_string());
+            }
+        }
+        if info.flag.starts_with(partial) {
+            candidates.push(info.flag.to_string());
+        }
+    }
+    Some(candidates)
 }
 
 /// 补全 `..help` 后面的命令名。
@@ -566,6 +612,80 @@ pub(crate) fn complete_help_args(
             .map(str::to_string)
             .collect(),
     )
+}
+
+/// 补全 clone/link 的来源参数，以及 `init --link` 的值。
+///
+/// `@` 开头给别名文件候选；其他形态返回空，让 shell 回退到路径补全。
+pub(crate) fn complete_source_args(
+    command_token: &str,
+    prev: &[String],
+    partial: &str,
+    layout: &PathLayout,
+) -> Option<Vec<String>> {
+    let command = match parse(command_token) {
+        ParseResult::Command(command) => command,
+        _ => return None,
+    };
+
+    match command.verb {
+        Verb::Clone | Verb::Link => {
+            if prev.len() != 1 {
+                return Some(Vec::new());
+            }
+        }
+        Verb::Init => {
+            if !(prev.len() == 2 && prev[1] == "--link") {
+                return None;
+            }
+        }
+        _ => return None,
+    }
+
+    if partial.starts_with('-') {
+        return None;
+    }
+    if !partial.starts_with('@') {
+        return Some(Vec::new());
+    }
+    Some(source_candidates(partial, layout))
+}
+
+fn source_candidates(partial: &str, layout: &PathLayout) -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    if partial.starts_with("@@") {
+        candidates.extend(alias_file_tokens(&layout.alias_dir, "@@"));
+    } else if partial.starts_with('@') {
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.extend(alias_file_tokens(&cwd, "@"));
+        }
+        candidates.extend(alias_file_tokens(&layout.alias_dir, "@@"));
+    }
+
+    candidates.retain(|candidate| candidate.starts_with(partial));
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn alias_file_tokens(dir: &Path, prefix: &str) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            let stem = name.strip_suffix(".byk.json")?;
+            if stem.is_empty() || !validate_filename(stem) {
+                return None;
+            }
+            Some(format!("{}{}", prefix, stem))
+        })
+        .collect()
 }
 
 /// 补全 `..remove` 后面的已有 key 路径。
@@ -634,6 +754,10 @@ fn collect_removable_keys(object: &Map<String, Value>, prefix: &str, out: &mut V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn words(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
 
     fn parse_ok(token: &str) -> FileCommand {
         match parse(token) {
@@ -755,6 +879,10 @@ mod tests {
         assert_eq!(describe("@@ops..path"), Some("Print the absolute path"));
         assert_eq!(describe("@@ops..rename"), Some("Rename the alias file"));
         assert_eq!(
+            describe("@@ops..clone"),
+            Some("Copy a local or remote alias file into this file")
+        );
+        assert_eq!(
             describe("@@ops..link"),
             Some("Point this file at another alias file")
         );
@@ -800,6 +928,7 @@ mod tests {
                 "@@ops..json".to_string(),
                 "@@ops..path".to_string(),
                 "@@ops..rename".to_string(),
+                "@@ops..clone".to_string(),
                 "@@ops..link".to_string(),
                 "@@ops..help".to_string()
             ])
@@ -814,7 +943,7 @@ mod tests {
         );
         assert_eq!(
             complete_verbs("@@ops..c"),
-            Some(vec!["@@ops..clear".to_string()])
+            Some(vec!["@@ops..clear".to_string(), "@@ops..clone".to_string()])
         );
         assert_eq!(
             complete_verbs("@@ops..s"),
@@ -899,6 +1028,33 @@ mod tests {
         );
         assert_eq!(complete_options("@@ops..link", "--"), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..remove", "--"), Some(Vec::new()));
+        assert_eq!(
+            complete_options("@@ops..clone", "-"),
+            Some(vec![
+                "-gh".to_string(),
+                "--github".to_string(),
+                "-ge".to_string(),
+                "--gitee".to_string(),
+                "-jd".to_string(),
+                "--jsdelivr".to_string()
+            ])
+        );
+        assert_eq!(
+            complete_options("@@ops..clone", "--"),
+            Some(vec![
+                "--github".to_string(),
+                "--gitee".to_string(),
+                "--jsdelivr".to_string()
+            ])
+        );
+        assert_eq!(
+            complete_options("@@ops..clone", "-g"),
+            Some(vec!["-gh".to_string(), "-ge".to_string()])
+        );
+        assert_eq!(
+            complete_options("@@ops..clone", "-j"),
+            Some(vec!["-jd".to_string()])
+        );
         assert_eq!(complete_options("@@ops..json", ""), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..json", "x"), Some(Vec::new()));
         assert_eq!(complete_options("normal", "--"), None);
@@ -910,7 +1066,8 @@ mod tests {
             complete_help_args("@@ops..help", 1, ""),
             Some(
                 [
-                    "init", "destroy", "clear", "set", "remove", "json", "path", "rename", "link"
+                    "init", "destroy", "clear", "set", "remove", "json", "path", "rename", "clone",
+                    "link"
                 ]
                 .iter()
                 .map(|name| name.to_string())
@@ -924,6 +1081,69 @@ mod tests {
         assert_eq!(complete_help_args("@@ops..help", 2, ""), Some(Vec::new()));
         assert_eq!(complete_help_args("@@ops..set", 1, ""), None);
         assert_eq!(complete_help_args("bogus", 1, ""), None);
+    }
+
+    #[test]
+    fn complete_source_args_offers_alias_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = PathLayout {
+            root_dir: temp.path().to_path_buf(),
+            alias_dir: temp.path().join("alias"),
+        };
+        fs::create_dir_all(&layout.alias_dir).unwrap();
+        fs::write(layout.alias_dir.join("ops.byk.json"), "{}").unwrap();
+        fs::write(layout.alias_dir.join("src.byk.json"), "{}").unwrap();
+        fs::write(layout.alias_dir.join("bad.name.byk.json"), "{}").unwrap();
+
+        assert_eq!(
+            complete_source_args("@@ops..clone", &words(&["@@ops..clone"]), "@@", &layout),
+            Some(vec!["@@ops".to_string(), "@@src".to_string()])
+        );
+        assert_eq!(
+            complete_source_args("@@ops..link", &words(&["@@ops..link"]), "@@s", &layout),
+            Some(vec!["@@src".to_string()])
+        );
+        assert_eq!(
+            complete_source_args(
+                "@@ops..init",
+                &words(&["@@ops..init", "--link"]),
+                "@@",
+                &layout
+            ),
+            Some(vec!["@@ops".to_string(), "@@src".to_string()])
+        );
+    }
+
+    #[test]
+    fn complete_source_args_falls_back_to_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = PathLayout {
+            root_dir: temp.path().to_path_buf(),
+            alias_dir: temp.path().join("alias"),
+        };
+        fs::create_dir_all(&layout.alias_dir).unwrap();
+
+        assert_eq!(
+            complete_source_args("@@ops..clone", &words(&["@@ops..clone"]), "./x", &layout),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            complete_source_args(
+                "@@ops..clone",
+                &words(&["@@ops..clone", "src"]),
+                "",
+                &layout
+            ),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            complete_source_args("@@ops..init", &words(&["@@ops..init"]), "--", &layout),
+            None
+        );
+        assert_eq!(
+            complete_source_args("@@ops..set", &words(&["@@ops..set"]), "@", &layout),
+            None
+        );
     }
 
     #[test]

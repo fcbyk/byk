@@ -12,6 +12,18 @@ def link_target(path):
     return os.path.realpath(json.loads(path.read_text())[0])
 
 
+def test_link_accepts_global_name(runner):
+    source = runner.prepare_alias_json("src", {"build": "echo hi"})
+    ops = runner.prepare_alias_file("ops", "{}\n")
+
+    result = runner.run("@@ops..link", "@@src")
+
+    assert result.returncode == 0
+    assert os.path.realpath(json.loads(ops.read_text())[0]) == os.path.realpath(
+        source
+    )
+
+
 def test_init_link_creates_global_link_usable_anywhere(runner, tmp_path):
     repo = tmp_path / "repo"
     elsewhere = tmp_path / "elsewhere"
@@ -91,7 +103,7 @@ def test_init_link_refuses_missing_target(runner, tmp_path):
     result = runner.run("@@tools..init", "--link", "@missing", cwd=str(tmp_path))
 
     assert result.returncode == 1
-    assert "Link target not found" in result.stderr
+    assert "Source not found" in result.stderr
     assert not (runner.byk_dir / "alias" / "tools.byk.json").exists()
 
 
@@ -123,7 +135,7 @@ def test_init_link_refuses_invalid_json_target(runner, tmp_path):
     result = runner.run("@@tools..init", "--link", "@broken", cwd=str(tmp_path))
 
     assert result.returncode == 1
-    assert "Failed to parse link target" in result.stderr
+    assert "Failed to parse source" in result.stderr
 
 
 def test_init_link_rejects_invalid_alias_target(runner, tmp_path):
