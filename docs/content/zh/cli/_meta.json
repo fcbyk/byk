@@ -11,6 +11,11 @@
   },
   {
     "type": "file",
+    "name": "file-commands",
+    "label": "文件命令"
+  },
+  {
+    "type": "file",
     "name": "api",
     "label": "程序接口"
   },

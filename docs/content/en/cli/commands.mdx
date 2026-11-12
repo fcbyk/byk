@@ -56,6 +56,8 @@ byk @@work.deploy        # deploy from ~/.byk/alias/work.byk.json
 
 The exact syntax is pure file routing with no fallback: a missing file reports `Alias file not found: @run` (`@@run` for the global side), a missing key reports `Alias key not found in file @run: build`, and both exit with code 1.
 
+Every alias file also has a set of reserved **file commands**: `@file..command` / `@@file..command` create, edit, clone, and inspect the file itself. See [File Commands](/cli/file-commands).
+
 ## The `__api__` Program Interface
 
 `byk __api__` is a read-only interface for programs and editor plugins: **it never executes an alias and never writes to disk**, so you can call it as often as you like. It does not appear in `-h`.

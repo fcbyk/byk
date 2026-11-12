@@ -56,6 +56,8 @@ byk @@work.deploy        # ~/.byk/alias/work.byk.json 的 deploy
 
 精确语法只做文件路由，不做 fallback：文件不存在报 `Alias file not found: @run`（全局是 `@@run`），key 不存在报 `Alias key not found in file @run: build`，两者都以退出码 1 结束。
 
+每个别名文件还带一组保留的**文件命令**：用 `@文件..命令` / `@@文件..命令` 创建、编辑、克隆和查看文件本身。完整列表见 [文件命令](/cli/file-commands)。
+
 ## 程序接口 `__api__`
 
 `byk __api__` 是给程序和编辑器插件用的只读接口：**从不执行别名，从不写磁盘**，可以任意频率调用。它不出现在 `-h` 里。

@@ -11,6 +11,11 @@
   },
   {
     "type": "file",
+    "name": "file-commands",
+    "label": "File Commands"
+  },
+  {
+    "type": "file",
     "name": "api",
     "label": "Program Interface"
   },

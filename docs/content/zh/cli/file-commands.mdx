@@ -1,0 +1,259 @@
+---
+title: 文件命令
+description: 绑定在别名文件上的保留命令：创建、修改、克隆、链接与查看
+---
+
+# 文件命令
+
+每个别名文件都自带一组保留命令，用来创建、修改和查看这个文件本身：
+
+```bash
+byk @文件..命令 [参数...]     # 当前目录
+byk @@文件..命令 [参数...]    # 全局目录 ~/.byk/alias/
+```
+
+`..` 是保留分隔符。以 `@` / `@@` 开头且含 `..` 的形式不会再被当作别名，所以 `byk @@ops..set` 永远走文件命令，不会去找一个叫 `@@ops..set` 的别名。
+
+```bash
+byk @@ops..init                            # 创建 ~/.byk/alias/ops.byk.json
+byk @@ops..set build --cmd "pnpm build"    # 写入 build 别名
+byk @@ops..json                            # 查看文件内容
+byk @@ops..help                            # 列出全部文件命令
+```
+
+## 寻址
+
+| 写法 | 目标文件 |
+|------|----------|
+| `@ops..json` | 当前目录 `./ops.byk.json` |
+| `@@ops..json` | 全局目录 `~/.byk/alias/ops.byk.json` |
+| `@..json` | 当前目录匿名文件 `./.byk.json` |
+| `@@..json` | 全局匿名文件 `~/.byk/alias/.byk.json` |
+
+- 文件名不能包含 `.`、`@`、`/` 或空格；支持字母、数字、`-`、`_` 与中文。
+- `..` 取第一个出现的位置；后面的命令名只允许字母、数字、`-`、`_`。
+- 改写类命令只写被寻址的这个文件；`clone`、`link`、`init --link` 的来源只读。
+- `..set` 与 `..remove` 拒绝改写链接文件（单元素数组）；要改内容请直接编辑链接目标。`..clear` 清空的是链接文件自身。
+- 需要文件存在的命令在目标缺失时，如果另一侧（当前目录 / 全局目录）有同名文件，会提示换用 `@` 或 `@@`；`..path` 不要求文件存在。
+- 修改类命令的提示写 stderr；`json`、`path`、`help` 的数据写 stdout，方便管道和 `$(...)`。
+
+## 命令一览
+
+| 命令 | 作用 |
+|------|------|
+| `..init` | 创建空别名文件或链接文件 |
+| `..destroy` | 删除别名文件 |
+| `..clear` | 重置为空对象 `{}` |
+| `..set` | 创建或修改别名、文件级元数据 |
+| `..remove` | 删除别名或整个分组 |
+| `..json` | 输出文件内容 |
+| `..path` | 输出文件绝对路径 |
+| `..rename` | 重命名别名文件 |
+| `..clone` | 从本地或远程复制一份别名文件 |
+| `..link` | 把当前文件改为指向另一个文件的链接 |
+| `..help` | 查看命令列表、用法与选项 |
+
+## 创建与删除
+
+### `..init`
+
+```bash
+byk @@ops..init                      # 创建空文件 {}
+byk @ops..init --link @shared        # 创建指向 ./shared.byk.json 的链接
+```
+
+- 内容固定为 `{}` 加一个结尾换行；不会覆盖已存在的文件。
+- `--link <source>` 创建**链接文件**（单元素数组），保存来源文件的规范化绝对路径。
+- 来源可以是 `@name`（当前目录）、`@@name`（全局目录）或路径（`~` 展开，相对路径按当前目录解析）。来源必须是已存在的对象别名文件；指向链接文件时会被拒绝，链接只支持一层。
+- 创建全局文件时，`~/.byk/alias/` 不存在会自动创建。
+
+### `..destroy`
+
+```bash
+byk @@ops..destroy        # 交互确认
+byk @@ops..destroy --yes  # 跳过确认
+```
+
+- 删除被寻址的文件。交互确认要求输入文件名；非 TTY 环境必须带 `--yes`。
+- 符号链接只删除链接本身，不碰目标；目录会被拒绝。
+
+### `..clear`
+
+```bash
+byk @@ops..clear --yes
+```
+
+- 把文件重置为 `{}`。已经为空时只提示 `Already empty`，不写盘。
+- 链接文件清空的是链接文件自身，目标内容不动。
+- 拒绝清空符号链接，需要删除链接时用 `..destroy`。
+- 与 `..destroy` 一样，非 TTY 环境需要 `--yes`。
+
+## 编辑别名
+
+### `..set`
+
+```bash
+byk @@ops..set <key> [选项...]    # 编辑某个别名
+byk @@ops..set [选项...]          # 编辑文件级元数据
+```
+
+第一个不以 `-` 开头的参数是别名 key；带点号表示分组路径，不存在的中间分组会自动创建。
+
+```bash
+byk @@ops..set build --cmd "pnpm build"
+byk @@ops..set web.deploy --cmd "deploy.sh" --cwd ./web --mode interactive
+byk @@ops..set build --unset mode
+```
+
+别名级选项：
+
+| 选项 | 说明 |
+|------|------|
+| `--cmd <command>` | 设置命令；新建别名时必填 |
+| `--cwd <path>` | 工作目录 |
+| `--mode <mode>` | `normal` / `interactive` / `silent` |
+| `--description <text>` | 帮助页描述 |
+| `--recursive` / `--no-recursive` | 放行 / 取消调用链上的重复进入 |
+| `--private` / `--no-private` | 移出 / 重新放回合并空间 |
+| `--unset <fields>` | 删除元数据，可组合 `cwd,mode,description,recursive` |
+
+文件根选项（不写 key）：
+
+| 选项 | 说明 |
+|------|------|
+| `--priority <n>` | 排序优先级；小于 0 按 0 处理 |
+| `--paths <dir>` | 前置到 PATH 的目录；可重复，**整体覆盖**旧的 `$paths` |
+| `--cwd <path>` | 文件级工作目录 |
+| `--mode <mode>` | 文件级执行方式 |
+| `--private` / `--no-private` | 整个文件移出 / 重新放回合并空间 |
+| `--unset <fields>` | 删除元数据，可组合 `priority,paths,cwd,mode` |
+
+```bash
+byk @@ops..set --priority 10 --paths ./bin --paths ~/tools/bin --private
+```
+
+- 给字符串别名加元数据时，会转成 `{ "$cmd": ... }` 对象形式；删掉多余的元数据后会自动折叠回字符串。
+- `--private` 可继承；`--no-private` 在子级写入 `false`，用来重新暴露 private 分组里的别名。详见 [可见性](/cli/alias/config#可见性)。
+- key 不能以 `$` 开头；元数据字段请用上面的选项，不要直接写进 key。
+
+### `..remove`
+
+```bash
+byk @@ops..remove build
+byk @@ops..remove web.deploy
+```
+
+- 按点号路径删除别名或整个子树。
+- 删除后只剩 `$` 元数据的空分组会一并剪掉。
+- key 不存在会报错，不会静默成功。
+- 删除单个元数据字段用 `..set <key> --unset <fields>`。
+
+## 查看
+
+### `..json`
+
+```bash
+byk @@ops..json               # 校验后原样输出
+byk @@ops..json --no-check    # 不校验，原样输出
+byk @@ops..json --expand      # 展开变量并格式化
+```
+
+- 默认只校验 JSON，输出**精确的原始字节**：不重排、不补换行。
+- `--no-check` 连校验都跳过，非法 JSON 也原样输出。
+- `--expand` 展开内置变量和文件 `$var`，删除 `$var` 后缩进输出；变量问题写 stderr。
+- `--expand` 与 `--no-check` 不能同时使用。
+- 链接文件输出数组本身，不跟随目标。
+
+### `..path`
+
+```bash
+byk @@ops..path
+# /Users/me/.byk/alias/ops.byk.json
+```
+
+输出绝对路径，不要求文件存在，也不接受参数。
+
+### `..rename`
+
+```bash
+byk @@ops..rename tools
+```
+
+- 在同一个作用域内改名（`@` 只改当前目录，`@@` 只改全局目录）。
+- 新名字遵循同样的文件名规则；目标已存在时拒绝。
+- 链接文件改的是链接文件本身，目标不动。
+
+### `..help`
+
+```bash
+byk @@ops..help           # 命令列表
+byk @@ops..help set       # set 的用法与选项
+```
+
+未知命令会列出全部可用命令。
+
+## 克隆与链接
+
+### `..clone <source>`
+
+```bash
+byk @@ops..clone @shared
+byk @@ops..clone ~/src/tool.byk.json
+byk @@ops..clone https://example.com/tool.byk.json
+byk @@ops..clone -gh user/repo@main/tools/release.byk.json
+```
+
+来源可以是：
+
+| 来源 | 说明 |
+|------|------|
+| `@name` / `@@name` | 当前目录 / 全局目录里的别名文件 |
+| 路径 | 支持 `~`；相对路径按当前目录解析 |
+| `http://` / `https://` | 通过外部 `curl` 下载 |
+| `-gh` / `--github` | 从 GitHub 仓库读取 |
+| `-ge` / `--gitee` | 从 Gitee 仓库读取 |
+| `-jd` / `--jsdelivr` | 通过 jsDelivr 读取 GitHub 文件 |
+
+仓库简写的格式：
+
+```
+<user>/<repo>@<ref>/<path>
+```
+
+- `@<ref>` 可省略，默认 `HEAD`。
+- `<path>` 指向目录时以 `/` 结尾，表示读取该目录的 `.byk.json`。
+- 最后一段是文件名；`.byk.json` 后缀可写可不写。
+- 仓库根目录要写成 `user/repo/`。
+
+| 简写 | 结果 |
+|------|------|
+| `-gh user/repo@v1/tools/release` | `tools/release.byk.json` |
+| `-gh user/repo@v1/tools/` | `tools/.byk.json` |
+| `-gh user/repo@v1/` | 仓库根 `.byk.json` |
+
+- 目标文件必须不存在，`..clone` 不会覆盖。
+- 本地来源会先校验：必须是 JSON 对象；链接文件（数组）会被拒绝。
+- 内容是独立副本，与来源不再有关系。想要实时引用请用 `..link`。
+- 远程来源依赖 `curl`；缺少时会提示先安装。
+
+### `..link <target>`
+
+```bash
+byk @@ops..link @shared
+```
+
+- 把被寻址的文件改写为单元素数组，指向目标文件的规范化绝对路径。
+- 只能作用于空对象 `{}` 或已经是链接的文件；有内容的普通别名文件会被拒绝。
+- 目标必须是本地的对象别名文件；URL 会被拒绝并提示改用 `..clone`。
+- 拒绝指向自己，也拒绝改写符号链接。
+- 被寻址文件不存在时，会提示用 `..init --link` 创建。
+- 链接后的行为、路径基准与身份归属见 [单链接](/cli/alias/config#单链接)。
+
+## 补全
+
+文件命令的补全覆盖：
+
+- `@` / `@@` 后的文件名，输入 `..` 后补命令名；
+- 命令后的选项（如 `..set --`）；
+- `..help` 后面的命令名；
+- `..clone`、`..link`、`..init --link` 的来源参数（以 `@` 开头的别名文件）。

@@ -1,0 +1,259 @@
+---
+title: File Commands
+description: Reserved commands attached to every alias file — create, edit, clone, link, and inspect
+---
+
+# File Commands
+
+Every alias file carries a set of reserved commands for creating, editing, and inspecting the file itself:
+
+```bash
+byk @file..command [args...]     # current directory
+byk @@file..command [args...]    # global directory ~/.byk/alias/
+```
+
+`..` is the reserved separator. A token that starts with `@` / `@@` and contains `..` is never treated as an alias, so `byk @@ops..set` always runs a file command instead of looking up an alias named `@@ops..set`.
+
+```bash
+byk @@ops..init                            # create ~/.byk/alias/ops.byk.json
+byk @@ops..set build --cmd "pnpm build"    # add the build alias
+byk @@ops..json                            # inspect the file
+byk @@ops..help                            # list all file commands
+```
+
+## Addressing
+
+| Form | Target file |
+|------|-------------|
+| `@ops..json` | `./ops.byk.json` in the current directory |
+| `@@ops..json` | `~/.byk/alias/ops.byk.json` |
+| `@..json` | anonymous file `./.byk.json` |
+| `@@..json` | anonymous global file `~/.byk/alias/.byk.json` |
+
+- A file name cannot contain `.`, `@`, `/`, or spaces; letters, digits, `-`, `_`, and CJK are allowed.
+- The first `..` is the separator; the command name after it may only contain letters, digits, `-`, and `_`.
+- Mutating commands only write the addressed file; sources of `clone`, `link`, and `init --link` are read-only.
+- `..set` and `..remove` refuse to rewrite a link file (single-element array); edit the link target instead. `..clear` empties the link file itself.
+- When a command that requires the file finds it missing but the other side (current or global directory) has a file with the same name, the error suggests switching the prefix; `..path` does not require the file to exist.
+- Mutating commands print status to stderr; `json`, `path`, and `help` write data to stdout, so pipes and `$(...)` work as expected.
+
+## Command Index
+
+| Command | Purpose |
+|---------|---------|
+| `..init` | Create an empty alias file or a link file |
+| `..destroy` | Delete the alias file |
+| `..clear` | Reset the file to `{}` |
+| `..set` | Create or edit an alias, or file-level metadata |
+| `..remove` | Delete an alias or a whole group |
+| `..json` | Print the file contents |
+| `..path` | Print the absolute file path |
+| `..rename` | Rename the alias file |
+| `..clone` | Copy a local or remote alias file |
+| `..link` | Turn the current file into a link to another file |
+| `..help` | Show commands, usage, and options |
+
+## Creating and Deleting
+
+### `..init`
+
+```bash
+byk @@ops..init                      # create an empty file {}
+byk @ops..init --link @shared        # link to ./shared.byk.json
+```
+
+- Contents are always `{}` plus a trailing newline; an existing file is never overwritten.
+- `--link <source>` creates a **link file** (a single-element array) holding the source's canonical absolute path.
+- The source may be `@name` (current directory), `@@name` (global directory), or a path (`~` expands, relative paths resolve from the current directory). It must be an existing object alias file; a link file is rejected because links support only one level.
+- Creating a global file creates `~/.byk/alias/` when it does not exist.
+
+### `..destroy`
+
+```bash
+byk @@ops..destroy        # interactive confirmation
+byk @@ops..destroy --yes  # skip confirmation
+```
+
+- Deletes the addressed file. Interactive confirmation asks you to type the file name; non-TTY environments must pass `--yes`.
+- A symlink removes only the link itself, leaving its target untouched; directories are refused.
+
+### `..clear`
+
+```bash
+byk @@ops..clear --yes
+```
+
+- Resets the file to `{}`. An already-empty file only reports `Already empty` and is left alone.
+- Clearing a link file empties the link file itself; the target is untouched.
+- Clearing a symlink is refused — use `..destroy` to remove the link.
+- Like `..destroy`, non-TTY environments require `--yes`.
+
+## Editing Aliases
+
+### `..set`
+
+```bash
+byk @@ops..set <key> [options...]    # edit one alias
+byk @@ops..set [options...]          # edit file-level metadata
+```
+
+The first argument that does not start with `-` is the alias key; dots express group paths, and missing intermediate groups are created automatically.
+
+```bash
+byk @@ops..set build --cmd "pnpm build"
+byk @@ops..set web.deploy --cmd "deploy.sh" --cwd ./web --mode interactive
+byk @@ops..set build --unset mode
+```
+
+Alias options:
+
+| Option | Description |
+|--------|-------------|
+| `--cmd <command>` | Set the command; required when creating an alias |
+| `--cwd <path>` | Working directory |
+| `--mode <mode>` | `normal` / `interactive` / `silent` |
+| `--description <text>` | Help-page description |
+| `--recursive` / `--no-recursive` | Allow / disallow re-entry on the call chain |
+| `--private` / `--no-private` | Move out of / back into the merged space |
+| `--unset <fields>` | Remove metadata; combine `cwd,mode,description,recursive` |
+
+File-root options (no key):
+
+| Option | Description |
+|--------|-------------|
+| `--priority <n>` | Ordering priority; values below 0 are treated as 0 |
+| `--paths <dir>` | Prepend a directory to PATH; repeatable, **replaces** the whole `$paths` list |
+| `--cwd <path>` | File-level working directory |
+| `--mode <mode>` | File-level execution mode |
+| `--private` / `--no-private` | Move the whole file out of / back into the merged space |
+| `--unset <fields>` | Remove metadata; combine `priority,paths,cwd,mode` |
+
+```bash
+byk @@ops..set --priority 10 --paths ./bin --paths ~/tools/bin --private
+```
+
+- Adding metadata to a string alias converts it to the `{ "$cmd": ... }` object form; removing the extra metadata folds it back to a string.
+- `--private` is inheritable; `--no-private` writes `false` on a child to re-expose it inside a private group. See [Visibility](/cli/alias/config#visibility).
+- A key cannot start with `$`; use the options above for metadata instead of writing it into the key.
+
+### `..remove`
+
+```bash
+byk @@ops..remove build
+byk @@ops..remove web.deploy
+```
+
+- Removes an alias or an entire subtree by dotted path.
+- A group left with only `$` metadata is pruned as well.
+- A missing key is an error, never a silent success.
+- To remove a single metadata field, use `..set <key> --unset <fields>`.
+
+## Inspecting
+
+### `..json`
+
+```bash
+byk @@ops..json               # validate, then print raw bytes
+byk @@ops..json --no-check    # print raw bytes without validation
+byk @@ops..json --expand      # expand variables and pretty-print
+```
+
+- The default validates JSON but prints the **exact original bytes**: no reordering and no added newline.
+- `--no-check` skips validation entirely and prints even invalid JSON.
+- `--expand` expands built-in and file `$var` variables, removes `$var`, and pretty-prints; variable problems go to stderr.
+- `--expand` and `--no-check` cannot be combined.
+- A link file prints the array itself; the target is not followed.
+
+### `..path`
+
+```bash
+byk @@ops..path
+# /Users/me/.byk/alias/ops.byk.json
+```
+
+Prints the absolute path. The file does not need to exist, and the command takes no arguments.
+
+### `..rename`
+
+```bash
+byk @@ops..rename tools
+```
+
+- Renames within the same scope (`@` only affects the current directory, `@@` only the global one).
+- The new name follows the same file-name rules; an existing target is refused.
+- For a link file, only the link file is renamed; its target is untouched.
+
+### `..help`
+
+```bash
+byk @@ops..help           # command index
+byk @@ops..help set       # usage and options for set
+```
+
+An unknown command lists every available file command.
+
+## Cloning and Linking
+
+### `..clone <source>`
+
+```bash
+byk @@ops..clone @shared
+byk @@ops..clone ~/src/tool.byk.json
+byk @@ops..clone https://example.com/tool.byk.json
+byk @@ops..clone -gh user/repo@main/tools/release.byk.json
+```
+
+Sources:
+
+| Source | Description |
+|--------|-------------|
+| `@name` / `@@name` | An alias file in the current / global directory |
+| Path | `~` expands; relative paths resolve from the current directory |
+| `http://` / `https://` | Fetched through external `curl` |
+| `-gh` / `--github` | Read from a GitHub repository |
+| `-ge` / `--gitee` | Read from a Gitee repository |
+| `-jd` / `--jsdelivr` | Read a GitHub file through jsDelivr |
+
+Repository shorthand shape:
+
+```
+<user>/<repo>@<ref>/<path>
+```
+
+- `@<ref>` is optional and defaults to `HEAD`.
+- A `<path>` pointing at a directory must end with `/`, meaning that directory's `.byk.json`.
+- The last segment is the file name; the `.byk.json` suffix is optional.
+- The repository root is written as `user/repo/`.
+
+| Shorthand | Result |
+|-----------|--------|
+| `-gh user/repo@v1/tools/release` | `tools/release.byk.json` |
+| `-gh user/repo@v1/tools/` | `tools/.byk.json` |
+| `-gh user/repo@v1/` | the repository root `.byk.json` |
+
+- The destination must not exist; `..clone` never overwrites.
+- A local source is validated first: it must be a JSON object, and a link file (array) is rejected.
+- The result is an independent copy with no relationship to the source. Use `..link` for a live reference.
+- Remote sources require `curl`; without it you get an install hint.
+
+### `..link <target>`
+
+```bash
+byk @@ops..link @shared
+```
+
+- Rewrites the addressed file into a single-element array pointing at the target's canonical absolute path.
+- Works only on an empty `{}` object or a file that is already a link; a non-empty alias file is refused.
+- The target must be a local object alias file; a URL is rejected with a hint to use `..clone`.
+- Pointing at itself is refused, and symlinks are not rewritten.
+- When the addressed file is missing, the error suggests `..init --link`.
+- For link behaviour, path resolution, and identity rules, see [Single Link](/cli/alias/config#single-link).
+
+## Completion
+
+File-command completion covers:
+
+- file names after `@` / `@@`, and command names after `..`;
+- options after a command (for example `..set --`);
+- command names after `..help`;
+- source arguments for `..clone`, `..link`, and `..init --link` (alias files starting with `@`).
