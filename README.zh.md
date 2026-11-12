@@ -27,9 +27,9 @@ byk build           # pnpm build
 byk deploy          # 先问 {env}，然后执行
 ```
 
-`{env}` 是占位符，`$cwd` / `$mode` / `$description` 是可继承的元数据（`$mode` 取 `normal` / `interactive` / `silent`），`@文件.key` / `@@文件.key` 精确路由到某一个文件。
+`{env}` 是占位符，`$cwd` / `$mode` / `$private` 是可继承的元数据（`$mode` 取 `normal` / `interactive` / `silent`），`$description` 提供帮助文本，`@文件.key` / `@@文件.key` 精确路由到某一个文件。
 
-当前目录里的别名文件以优先级 1 加入合并空间，全局的（`~/.byk/alias/`）以优先级 0——所以 `cd` 进一个项目，它的名字就能直接用，并覆盖同名的全局别名。写 `"$priority": -1` 可以让一个文件不进入合并空间，只保留通过 `@文件.key` 调用的能力。
+当前目录里的别名文件以优先级 1 加入合并空间，全局的（`~/.byk/alias/`）以优先级 0——所以 `cd` 进一个项目，它的名字就能直接用，并覆盖同名的全局别名。给文件、分组或别名标上 `"$private": true`，它就不会进入合并空间，只保留通过 `@文件.key` 调用的能力。
 
 ## 命令行
 

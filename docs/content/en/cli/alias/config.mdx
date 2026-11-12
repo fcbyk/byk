@@ -1,6 +1,6 @@
 ---
 title: Alias Configuration
-description: Field definitions, inheritance rules, file organization, priority, and exact-execution syntax for aliases
+description: Field definitions, inheritance rules, file organization, priority, visibility, and exact-execution syntax for aliases
 ---
 
 import { Tab, Tabs } from '@rspress/core/theme';
@@ -17,15 +17,17 @@ type AliasObject = {
   $mode?: 'normal' | 'interactive' | 'silent';
   $description?: string;
   $recursive?: boolean;
+  $private?: boolean;
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
 // A single *.byk.json file: an alias object, or a one-entry link array
 type AliasFileJSON =
   | {
-      $priority?: number;      // priority; defaults to 1 in the current directory, 0 globally
+      $priority?: number;      // ordering priority; defaults to 1 in the current directory, 0 globally; negatives become 0
       $cwd?: string;           // file- or group-level working directory, inherited by child aliases
       $mode?: 'normal' | 'interactive' | 'silent';  // file- or group-level mode, inherited by child aliases
+      $private?: boolean;      // file- or group-level visibility, inherited by child aliases; private aliases stay out of the merged space
       $paths?: string[];       // file-level PATH directories, inherited by child aliases
       $var?: Record<string, string | Record<string, string>>;  // file-level variables
       [key: string]: string | AliasObject | number | boolean | undefined;
@@ -33,7 +35,7 @@ type AliasFileJSON =
   | [string];  // single link: an array holding exactly one path
 ```
 
-Only these five `$`-prefixed keys are recognized; any other `$xxx` is passed through to the shell verbatim (or expanded by [variables](#variables)).
+Only these six `$`-prefixed keys are recognized; any other `$xxx` is passed through to the shell verbatim (or expanded by [variables](#variables)).
 
 ## Alias Objects
 
@@ -65,9 +67,10 @@ byk 开发.测试
 | `$mode` | `'normal'` \| `'interactive'` \| `'silent'` | How to run the alias (inheritable), defaults to `normal` |
 | `$description` | string | Help-page description text (not inheritable) |
 | `$recursive` | boolean | Allow re-entering this alias on the call chain (not inheritable), defaults to `false` — see [Recursion Guard](#recursion-guard) |
+| `$private` | boolean | Keep this subtree out of the merged space, reachable only through exact calls (inheritable), defaults to `false` — see [Visibility](#visibility) |
 
 :::note
-An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$mode` but no `$cmd` is a **group with inherited properties** and is not executable itself.
+An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$mode` / `$private` but no `$cmd` is a **group with inherited properties** and is not executable itself.
 :::
 
 ### Working Directory (cwd)
@@ -470,7 +473,7 @@ byk @@ops.build     # exact call goes through the link's key
 | Path base | Relative paths resolve against the **link file's** directory; `~` and `${...}` work |
 | One level | The target may not itself be an array; that is an error and the file is skipped |
 | Identity | Key, `@` / `@@` prefix and default priority come from the link; everything else from the target |
-| `$priority` | Still honoured: a target with `-1` pulls the link out of the merged namespace, leaving exact calls only |
+| `$private` | Still honoured: a target with `true` pulls the link out of the merged namespace, leaving exact calls only |
 
 :::note
 A missing target, broken JSON or an empty array only skips that one file — other aliases keep working.
@@ -497,18 +500,7 @@ Files at the same priority load in alphabetical order by filename, and the anony
 When the cwd happens to be `~/.byk/alias/`, the files there belong to both the "current directory" and the "global directory". They are scanned in both roles (`@f` and `@@f` both work), but they participate in the merge **only once, as the global role** — they are never merged twice.
 :::
 
-#### Custom Priority
-
-To keep a file for its own use only, out of the shared space, write `-1`:
-
-```json title="run.byk.json"
-{
-  "$priority": -1,
-  "deploy": "deploy --env {env}"
-}
-```
-
-Now `byk deploy` won't find it; only `byk @run.deploy` will.
+#### Custom Ordering
 
 Only write a number when you need to outrank other files in the same directory:
 
@@ -519,8 +511,41 @@ Only write a number when you need to outrank other files in the same directory:
 }
 ```
 
+`$priority` only orders same-name collisions; values below 0 are treated as 0. Whether a subtree enters the merged space is controlled by `$private`.
+
 :::note
-`$priority` is a reserved field and is never treated as an alias key. Day to day you only need two values: **omitted (1 / 0, near-first)** and **-1 (exact syntax only)**.
+`$priority` is a reserved field and is never treated as an alias key. When omitted, the current directory uses 1 and the global directory uses 0.
+:::
+
+### Visibility
+
+`$private: true` keeps a subtree **out of the merged space**; it stays reachable through exact syntax `@file.key` / `@@file.key`.
+
+Like `$cwd` and `$mode`, it has three levels of inheritance: file → group → alias, with the closest level winning. A child can set `false` to expose its subtree again.
+
+```json title="run.byk.json"
+{
+  "shared": "echo everyone-can-run-this",
+  "scratch": {
+    "$private": true,
+    "deploy": "deploy --env {env}"
+  }
+}
+```
+
+`byk shared` still works; `byk scratch.deploy` is not found and only `byk @run.scratch.deploy` reaches it.
+
+To keep a whole file out of the merged space, put `$private` at the file root:
+
+```json title="local.byk.json"
+{
+  "$private": true,
+  "deploy": "deploy --env {env}"
+}
+```
+
+:::note
+`$private` only affects the merged space; exact calls always work, including aliases inside a private group.
 :::
 
 ### Exact Execution Syntax

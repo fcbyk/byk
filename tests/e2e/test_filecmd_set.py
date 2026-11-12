@@ -122,6 +122,58 @@ def test_set_no_recursive_removes_flag(runner):
     assert read(path) == {"build": "echo hi"}
 
 
+def test_set_marks_alias_private(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    result = runner.run("@@ops..set", "build", "--private")
+
+    assert result.returncode == 0
+    assert read(path) == {"build": {"$cmd": "echo hi", "$private": True}}
+
+
+def test_set_no_private_reexposes_alias(runner):
+    path = runner.prepare_alias_json(
+        "ops", {"group": {"$private": True, "build": "echo hi"}}
+    )
+
+    result = runner.run("@@ops..set", "group.build", "--no-private")
+
+    assert result.returncode == 0
+    assert read(path) == {
+        "group": {
+            "$private": True,
+            "build": {"$cmd": "echo hi", "$private": False},
+        }
+    }
+
+
+def test_set_private_removes_alias_from_merged_lookup(runner):
+    runner.prepare_alias_json("ops", {"build": "echo hi"})
+    assert runner.run("build").returncode == 0
+
+    result = runner.run("@@ops..set", "build", "--private")
+
+    assert result.returncode == 0
+    assert runner.run("build").returncode == 1
+    exact = runner.run("@@ops.build")
+    assert exact.returncode == 0
+    assert "hi" in exact.stdout
+
+
+def test_set_root_private_and_priority_clamp(runner):
+    path = runner.prepare_alias_json("ops", {"build": "echo hi"})
+
+    result = runner.run("@@ops..set", "--private", "--priority", "-1")
+
+    assert result.returncode == 0
+    assert read(path) == {"$priority": 0, "$private": True, "build": "echo hi"}
+
+    result = runner.run("@@ops..set", "--no-private")
+
+    assert result.returncode == 0
+    assert read(path) == {"$priority": 0, "build": "echo hi"}
+
+
 def test_set_accepts_command_starting_with_dash(runner):
     path = runner.prepare_alias_file("ops", "{}\n")
 
@@ -223,13 +275,13 @@ def test_set_root_metadata_without_key(runner):
     path = runner.prepare_alias_json("ops", {"build": "echo hi"})
 
     result = runner.run(
-        "@@ops..set", "--priority", "-1", "--cwd", "./src", "--mode", "silent"
+        "@@ops..set", "--priority", "10", "--cwd", "./src", "--mode", "silent"
     )
 
     assert result.returncode == 0
     assert "Set file metadata in" in result.stderr
     assert read(path) == {
-        "$priority": -1,
+        "$priority": 10,
         "$cwd": "./src",
         "$mode": "silent",
         "build": "echo hi",
@@ -365,6 +417,8 @@ def test_set_options_are_completed_with_descriptions(runner):
         "--description\tSet the description",
         "--recursive\tAllow re-entry on the call chain",
         "--no-recursive\tRemove the recursive flag",
+        "--private\tKeep this file or alias out of merged lookup",
+        "--no-private\tExpose it to merged lookup again",
         "--unset\tRemove metadata fields",
         "--priority\tSet the file priority (omit key)",
         "--paths\tPrepend directories to PATH (omit key)",
@@ -382,6 +436,8 @@ def test_set_options_are_completed_after_key(runner):
         "--description",
         "--recursive",
         "--no-recursive",
+        "--private",
+        "--no-private",
         "--unset",
         "--priority",
         "--paths",

@@ -36,7 +36,7 @@ Alias: /Users/coke/.byk/alias
 
 `CLI Home` is byk's home directory and `Alias` is where global alias files live — drop `*.byk.json` files there and they join the `byk <key>` lookup space.
 
-The alias list in the help page covers the **merged space** only: files marked `$priority: -1` never appear, since they are reachable through `@file.key` alone. An alias with a `$cwd` gets its effective directory appended, as in `deploy  deploy.sh (/Users/me/proj)`.
+The alias list in the help page covers the **merged space** only: aliases marked `$private: true` never appear, since they are reachable through `@file.key` alone. An alias with a `$cwd` gets its effective directory appended, as in `deploy  deploy.sh (/Users/me/proj)`.
 
 ## Running Aliases
 

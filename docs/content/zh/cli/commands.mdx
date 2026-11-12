@@ -36,7 +36,7 @@ Alias: /Users/coke/.byk/alias
 
 `CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录——把 `*.byk.json` 放进去，它就会进入 `byk <key>` 的查找空间。
 
-帮助页里的别名列表只包含**合并空间**中的别名：`$priority: -1` 的文件不出现在这里，因为它们本来就只能通过 `@file.key` 调用。设了 `$cwd` 的别名后面会附上生效目录，形如 `deploy  deploy.sh (/Users/me/proj)`。
+帮助页里的别名列表只包含**合并空间**中的别名：标了 `$private: true` 的别名不出现在这里，因为它们本来就只能通过 `@file.key` 调用。设了 `$cwd` 的别名后面会附上生效目录，形如 `deploy  deploy.sh (/Users/me/proj)`。
 
 ## 执行别名
 

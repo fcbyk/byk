@@ -1,3 +1,14 @@
+## Unreleased
+
+### Breaking Changes
+
+- **`$priority`**: negative values no longer keep a file out of the merged namespace; they are treated as `0`
+
+### Features
+
+- **`$private`**: new inheritable field that keeps a file, group, or alias out of the merged space while exact calls still work; it replaces `$priority: -1`
+- **`..set`**: add `--private` / `--no-private` for both the file root and a single alias
+
 ## v0.7.0 (2026-11-08)
 
 ### Breaking Changes

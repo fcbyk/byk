@@ -32,21 +32,37 @@ pub(crate) fn build_file_key(stem: &str, is_global: bool) -> String {
 /// 解析 $priority 字段，失败时返回默认值。
 ///
 /// 规则：
-/// - 整数：直接使用（负数不参与优先级合并）
-/// - 浮点数 → 向下取整
+/// - 整数：直接使用；小于 0 按 0 处理
+/// - 浮点数 → 向下取整，同样不小于 0
 /// - bool、字符串、null 等 → 默认值
 pub(crate) fn parse_priority(raw: &serde_json::Value, default: i32) -> i32 {
     match raw {
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                i as i32
+                (i as i32).max(0)
             } else if let Some(f) = n.as_f64() {
-                f as i32
+                (f as i32).max(0)
             } else {
                 default
             }
         }
         _ => default,
+    }
+}
+
+/// 解析 `$private`：布尔为准，`"true"` / `1` 之类也认，其余按假处理。
+///
+/// 与 `$recursive` 同一套宽容规则——写错不该让别名从合并空间里莫名消失
+/// 或莫名出现，布尔语义以最直观的写法为准。
+pub(crate) fn parse_private(raw: &serde_json::Value) -> bool {
+    match raw {
+        serde_json::Value::Bool(b) => *b,
+        serde_json::Value::String(s) => matches!(
+            s.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        serde_json::Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        _ => false,
     }
 }
 
@@ -222,13 +238,25 @@ mod tests {
     #[test]
     fn priority_integer() {
         assert_eq!(parse_priority(&json!(42), 10), 42);
-        assert_eq!(parse_priority(&json!(-5), 10), -5);
+        assert_eq!(parse_priority(&json!(-5), 10), 0);
     }
 
     #[test]
     fn priority_float_truncated() {
         assert_eq!(parse_priority(&json!(3.7), 10), 3);
-        assert_eq!(parse_priority(&json!(-2.5), 10), -2);
+        assert_eq!(parse_priority(&json!(-2.5), 10), 0);
+    }
+
+    #[test]
+    fn private_accepts_truthy_shapes() {
+        assert!(parse_private(&json!(true)));
+        assert!(parse_private(&json!(1)));
+        assert!(parse_private(&json!("true")));
+        assert!(parse_private(&json!("YES")));
+        assert!(!parse_private(&json!(false)));
+        assert!(!parse_private(&json!(0)));
+        assert!(!parse_private(&json!("no")));
+        assert!(!parse_private(&json!(null)));
     }
 
     #[test]

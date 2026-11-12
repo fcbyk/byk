@@ -35,11 +35,11 @@ byk deploy            # interactive: asks for env first, confirms, then runs
 
 ### Keep It Out of the Directory
 
-Some files belong to a single script and shouldn't show up under `byk <key>`. Write one line of `-1`:
+Some files belong to a single script and shouldn't show up under `byk <key>`. Add `$private: true`:
 
 ```json title="run.byk.json"
 {
-  "$priority": -1,
+  "$private": true,
   "dev": "pnpm dev"
 }
 ```

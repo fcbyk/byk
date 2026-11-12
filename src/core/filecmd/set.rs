@@ -28,6 +28,7 @@ struct SetArgs {
     mode: Option<Mode>,
     description: Option<String>,
     recursive: Option<bool>,
+    private: Option<bool>,
     unset: Vec<UnsetField>,
 }
 
@@ -74,6 +75,7 @@ fn parse_args(args: &[String]) -> Result<SetArgs, String> {
         mode: None,
         description: None,
         recursive: None,
+        private: None,
         unset: Vec::new(),
     };
 
@@ -135,6 +137,18 @@ fn parse_args(args: &[String]) -> Result<SetArgs, String> {
                 }
                 parsed.recursive = Some(false);
             }
+            "--private" => {
+                if parsed.private.is_some() {
+                    return Err("Duplicate option: --private".to_string());
+                }
+                parsed.private = Some(true);
+            }
+            "--no-private" => {
+                if parsed.private.is_some() {
+                    return Err("Duplicate option: --no-private".to_string());
+                }
+                parsed.private = Some(false);
+            }
             "--unset" => {
                 let raw = next_value(&mut rest, "--unset")?;
                 for field in parse_unset(raw)? {
@@ -161,6 +175,7 @@ fn parse_args(args: &[String]) -> Result<SetArgs, String> {
         && parsed.mode.is_none()
         && parsed.description.is_none()
         && parsed.recursive.is_none()
+        && parsed.private.is_none()
         && parsed.unset.is_empty()
     {
         return Err("set requires an alias key or a metadata change".to_string());
@@ -199,7 +214,7 @@ fn parse_mode(raw: &str) -> Result<Mode, String> {
 }
 
 fn parse_priority(raw: &str) -> Result<i32, String> {
-    raw.parse::<i32>().map_err(|_| {
+    raw.parse::<i32>().map(|n| n.max(0)).map_err(|_| {
         format!(
             "Invalid priority: {:?}\nHint: priority must be an integer",
             raw
@@ -300,6 +315,13 @@ fn set_root(object: &mut Map<String, Value>, args: &SetArgs) {
             Value::String(mode.as_str().to_string()),
         );
     }
+    if let Some(private) = args.private {
+        if private {
+            object.insert("$private".to_string(), Value::Bool(true));
+        } else {
+            object.remove("$private");
+        }
+    }
     for field in &args.unset {
         let key = match field {
             UnsetField::Priority => "$priority",
@@ -346,7 +368,8 @@ fn set_node(object: &mut Map<String, Value>, key: &str, args: &SetArgs) -> Resul
             let wants_object = args.cwd.is_some()
                 || args.mode.is_some()
                 || args.description.is_some()
-                || args.recursive == Some(true);
+                || args.recursive == Some(true)
+                || args.private.is_some();
             if wants_object {
                 let mut node = Map::new();
                 node.insert("$cmd".to_string(), Value::String(cmd.clone()));
@@ -362,6 +385,7 @@ fn set_node(object: &mut Map<String, Value>, key: &str, args: &SetArgs) -> Resul
                     || args.mode.is_some()
                     || args.description.is_some()
                     || args.recursive.is_some()
+                    || args.private.is_some()
                     || !args.unset.is_empty();
                 if !has_metadata {
                     *value = Value::String(args.cmd.clone().expect("validated change"));
@@ -372,6 +396,7 @@ fn set_node(object: &mut Map<String, Value>, key: &str, args: &SetArgs) -> Resul
                     && args.mode.is_none()
                     && args.description.is_none()
                     && args.recursive.is_none()
+                    && args.private.is_none()
                 {
                     return Err("String aliases have no metadata to unset".to_string());
                 }
@@ -440,6 +465,9 @@ fn apply_metadata(
             node.remove("$recursive");
         }
     }
+    if let Some(private) = args.private {
+        node.insert("$private".to_string(), Value::Bool(private));
+    }
     for field in &args.unset {
         let key = match field {
             UnsetField::Priority | UnsetField::Paths => continue,
@@ -505,10 +533,10 @@ mod tests {
 
         let value = run_ok(
             &layout,
-            &["--priority", "-1", "--cwd", "./src", "--mode", "silent"],
+            &["--priority", "10", "--cwd", "./src", "--mode", "silent"],
         );
 
-        assert_eq!(value["$priority"], json!(-1));
+        assert_eq!(value["$priority"], json!(10));
         assert_eq!(value["$cwd"], json!("./src"));
         assert_eq!(value["$mode"], json!("silent"));
         assert_eq!(value["build"], json!("echo hi"));
@@ -778,6 +806,53 @@ mod tests {
         let value = run_ok(&layout, &["build", "--no-recursive"]);
 
         assert_eq!(value["build"], json!("echo hi"));
+    }
+
+    #[test]
+    fn negative_priority_is_stored_as_zero() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        prepare(&layout, r#"{"build":"echo hi"}"#);
+
+        let value = run_ok(&layout, &["--priority", "-1"]);
+
+        assert_eq!(value["$priority"], json!(0));
+    }
+
+    #[test]
+    fn sets_root_private_and_removes_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        prepare(&layout, r#"{"build":"echo hi"}"#);
+
+        let value = run_ok(&layout, &["--private"]);
+        assert_eq!(value["$private"], json!(true));
+
+        let value = run_ok(&layout, &["--no-private"]);
+        assert!(value.get("$private").is_none());
+    }
+
+    #[test]
+    fn marks_existing_string_alias_private() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        prepare(&layout, r#"{"build":"echo hi"}"#);
+
+        let value = run_ok(&layout, &["build", "--private"]);
+
+        assert_eq!(value["build"], json!({"$cmd": "echo hi", "$private": true}));
+    }
+
+    #[test]
+    fn no_private_reexposes_alias_in_private_group() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        prepare(&layout, r#"{"group":{"$private":true,"build":"echo hi"}}"#);
+
+        let value = run_ok(&layout, &["group.build", "--no-private"]);
+
+        assert_eq!(value["group"]["build"]["$private"], json!(false));
+        assert_eq!(value["group"]["build"]["$cmd"], json!("echo hi"));
     }
 
     #[test]

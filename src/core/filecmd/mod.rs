@@ -208,6 +208,18 @@ const OPTIONS: &[OptionInfo] = &[
     },
     OptionInfo {
         verb: Verb::Set,
+        flag: "--private",
+        syntax: "--private",
+        description: "Keep this file or alias out of merged lookup",
+    },
+    OptionInfo {
+        verb: Verb::Set,
+        flag: "--no-private",
+        syntax: "--no-private",
+        description: "Expose it to merged lookup again",
+    },
+    OptionInfo {
+        verb: Verb::Set,
         flag: "--unset",
         syntax: "--unset <fields>",
         description: "Remove metadata fields",
@@ -1017,6 +1029,8 @@ mod tests {
                 "--description".to_string(),
                 "--recursive".to_string(),
                 "--no-recursive".to_string(),
+                "--private".to_string(),
+                "--no-private".to_string(),
                 "--unset".to_string(),
                 "--priority".to_string(),
                 "--paths".to_string()

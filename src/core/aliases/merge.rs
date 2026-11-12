@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::parse::{is_alias_value, to_alias_value};
+use super::parse::{is_alias_value, parse_private, to_alias_value};
 use super::scan::{scan_alias_files, sort_alias_files};
 use super::types::{AliasFile, AliasValue, MergedConfig, Mode, ResolvedAlias};
 use crate::core::paths::PathLayout;
@@ -16,6 +16,7 @@ struct MergeContext<'a> {
     source_path: Option<&'a Path>,
     inherited_cwd: Option<&'a str>,
     inherited_mode: Option<Mode>,
+    inherited_private: bool,
     inherited_paths: &'a [String],
 }
 
@@ -37,44 +38,61 @@ fn deep_merge_dict(
         .get("$mode")
         .map(Mode::from_json)
         .or(ctx.inherited_mode);
+    // private 与 mode 一样逐层继承；子级显式写 false 可重新暴露
+    let group_private = source
+        .get("$private")
+        .map(parse_private)
+        .unwrap_or(ctx.inherited_private);
 
     for (key, val) in source {
         if key.starts_with('$') {
             continue;
         }
 
+        // 节点自己的 $private 优先于分组继承值；字符串节点只能随继承
+        let node_private = match val {
+            serde_json::Value::Object(inner) => inner
+                .get("$private")
+                .map(parse_private)
+                .unwrap_or(group_private),
+            _ => group_private,
+        };
+
         if is_alias_value(val) {
             let alias_val = to_alias_value(val);
             if let Some(av) = alias_val {
-                let av = apply_inherited(av, group_cwd, group_mode);
-                let entry = target.entry(key.clone()).or_default();
-                entry.alias = Some(ResolvedAlias {
-                    value: av,
-                    source: ctx.file_key.to_string(),
-                    source_path: ctx.source_path.map(|p| p.to_path_buf()),
-                    paths: ctx.inherited_paths.to_vec(),
-                });
+                if !node_private {
+                    let av = apply_inherited(av, group_cwd, group_mode);
+                    let entry = target.entry(key.clone()).or_default();
+                    entry.alias = Some(ResolvedAlias {
+                        value: av,
+                        source: ctx.file_key.to_string(),
+                        source_path: ctx.source_path.map(|p| p.to_path_buf()),
+                        paths: ctx.inherited_paths.to_vec(),
+                    });
+                }
 
                 if let serde_json::Value::Object(inner) = val {
                     deep_merge_dict(
-                        &mut entry.children,
+                        &mut target.entry(key.clone()).or_default().children,
                         inner,
                         &MergeContext {
                             inherited_cwd: group_cwd,
                             inherited_mode: group_mode,
+                            inherited_private: node_private,
                             ..*ctx
                         },
                     );
                 }
             }
         } else if let serde_json::Value::Object(inner) = val {
-            let entry = target.entry(key.clone()).or_default();
             deep_merge_dict(
-                &mut entry.children,
+                &mut target.entry(key.clone()).or_default().children,
                 inner,
                 &MergeContext {
                     inherited_cwd: group_cwd,
                     inherited_mode: group_mode,
+                    inherited_private: node_private,
                     ..*ctx
                 },
             );
@@ -124,13 +142,10 @@ pub(crate) fn apply_inherited(
     }
 }
 
-/// 负数 priority 的文件不参与合并（只能 `@file.key` 精确调用）。
+/// 按优先级把文件合并进公共命名空间；`$private` 子树在合并阶段跳过。
 pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
     let mut merged: MergedConfig = HashMap::new();
     for f in files {
-        if f.priority < 0 {
-            continue;
-        }
         deep_merge_dict(
             &mut merged,
             &f.aliases,
@@ -139,11 +154,22 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
                 source_path: Some(f.path.as_path()),
                 inherited_cwd: f.inherited_cwd.as_deref(),
                 inherited_mode: f.inherited_mode,
+                inherited_private: f.inherited_private,
                 inherited_paths: &f.inherited_paths,
             },
         );
     }
+    prune_empty(&mut merged);
     merged
+}
+
+/// 私有子树可能整段被跳过，只留下空节点；剪掉它们，
+/// 免得补全把不可调用的名字当成顶层候选暴露出来。
+fn prune_empty(nodes: &mut MergedConfig) {
+    nodes.retain(|_, node| {
+        prune_empty(&mut node.children);
+        node.alias.is_some() || !node.children.is_empty()
+    });
 }
 
 /// 扫描当前目录与全局目录，返回合并配置和文件列表。
@@ -541,6 +567,7 @@ mod tests {
             path: PathBuf::from("/fake/test.byk.json"),
             inherited_cwd: None,
             inherited_mode: None,
+            inherited_private: false,
             inherited_paths: vec!["./scripts".into(), "~/tools/bin".into()],
         }];
         let merged = build_merged_aliases(&files);
@@ -562,6 +589,7 @@ mod tests {
             path: PathBuf::from("/fake/test.byk.json"),
             inherited_cwd: None,
             inherited_mode: None,
+            inherited_private: false,
             inherited_paths: Vec::new(),
         }];
         let merged = build_merged_aliases(&files);
@@ -585,11 +613,11 @@ mod tests {
     }
 
     #[test]
-    fn negative_priority_opts_out_of_merge() {
+    fn negative_priority_is_treated_as_zero() {
         let (_tmp, layout, cwd) = project();
         fs::write(
             layout.alias_dir.join("g.byk.json"),
-            r#"{"dev": "echo global"}"#,
+            r#"{"$priority": 5, "dev": "echo global"}"#,
         )
         .unwrap();
         fs::write(
@@ -600,8 +628,79 @@ mod tests {
 
         let (merged, files) = load_merged_aliases_at(&layout, &cwd);
         let resolved = resolve_merged_alias(&merged, "dev").unwrap();
-        assert_eq!(resolved.source, "@@g", "-1 的文件不应参与合并");
-        // 但文件本身仍被扫描到，@p.dev 可精确调用
+        assert_eq!(resolved.source, "@@g", "负数按 0 处理，不应压过优先级 5");
+        let local = files.iter().find(|f| f.key == "@p").unwrap();
+        assert_eq!(local.priority, 0);
+    }
+
+    #[test]
+    fn private_file_skips_merge_but_stays_scannable() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            layout.alias_dir.join("g.byk.json"),
+            r#"{"dev": "echo global"}"#,
+        )
+        .unwrap();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{"$private": true, "dev": "echo local"}"#,
+        )
+        .unwrap();
+
+        let (merged, files) = load_merged_aliases_at(&layout, &cwd);
+        let resolved = resolve_merged_alias(&merged, "dev").unwrap();
+        assert_eq!(resolved.source, "@@g", "private 文件不应参与合并");
+        assert!(files.iter().any(|f| f.key == "@p"));
+    }
+
+    #[test]
+    fn private_group_hides_subtree_and_child_can_reexpose() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{
+                "open": "echo open",
+                "group": {
+                    "$private": true,
+                    "hidden": "echo hidden",
+                    "shown": { "$private": false, "deep": "echo deep" }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        assert!(resolve_merged_alias(&merged, "open").is_some());
+        assert!(resolve_merged_alias(&merged, "group.hidden").is_none());
+        assert!(resolve_merged_alias(&merged, "group.shown.deep").is_some());
+    }
+
+    #[test]
+    fn private_alias_hides_only_itself() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{"hidden": { "$cmd": "echo hidden", "$private": true }, "open": "echo open"}"#,
+        )
+        .unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        assert!(resolve_merged_alias(&merged, "hidden").is_none());
+        assert!(!merged.contains_key("hidden"), "私有节点不应残留在合并树里");
+        assert!(resolve_merged_alias(&merged, "open").is_some());
+    }
+
+    #[test]
+    fn fully_private_file_leaves_no_merged_nodes() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{"$private": true, "hidden": "echo hidden", "group": {"deep": "echo deep"}}"#,
+        )
+        .unwrap();
+
+        let (merged, files) = load_merged_aliases_at(&layout, &cwd);
+        assert!(merged.is_empty(), "整份 private 文件的合并树应为空");
         assert!(files.iter().any(|f| f.key == "@p"));
     }
 

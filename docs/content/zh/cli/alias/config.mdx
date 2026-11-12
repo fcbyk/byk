@@ -1,6 +1,6 @@
 ---
 title: 别名配置
-description: 别名的字段定义、继承规则、文件组织、优先级与精确执行语法
+description: 别名的字段定义、继承规则、文件组织、优先级、可见性与精确执行语法
 ---
 
 import { Tab, Tabs } from '@rspress/core/theme';
@@ -17,15 +17,17 @@ type AliasObject = {
   $mode?: 'normal' | 'interactive' | 'silent';
   $description?: string;
   $recursive?: boolean;
+  $private?: boolean;
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
 // 一个 *.byk.json 文件：别名对象，或单链接数组
 type AliasFileJSON =
   | {
-      $priority?: number;      // 优先级，默认当前目录 = 1、全局 = 0
+      $priority?: number;      // 排序优先级，默认当前目录 = 1、全局 = 0；小于 0 按 0 处理
       $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
       $mode?: 'normal' | 'interactive' | 'silent';  // 文件级 / 分组级执行方式，子别名自动继承
+      $private?: boolean;      // 文件级 / 分组级私有，子别名自动继承；私有别名不进合并空间
       $paths?: string[];       // 文件级 PATH 目录列表，子别名自动继承
       $var?: Record<string, string | Record<string, string>>;  // 文件级变量
       [key: string]: string | AliasObject | number | boolean | undefined;
@@ -33,7 +35,7 @@ type AliasFileJSON =
   | [string];  // 单链接：只含一个路径的数组
 ```
 
-文件里只认这五个 `$` 开头的键，其余 `$xxx` 一律原样透传给 shell（或由 [变量](#变量) 展开）。
+文件里只认这六个 `$` 开头的键，其余 `$xxx` 一律原样透传给 shell（或由 [变量](#变量) 展开）。
 
 ## 别名对象
 
@@ -52,9 +54,10 @@ type AliasFileJSON =
 | `$mode` | `'normal'` \| `'interactive'` \| `'silent'` | 执行方式（可继承），默认 `normal` |
 | `$description` | string | 帮助页描述文本（不可继承） |
 | `$recursive` | boolean | 放行调用链上的重复进入（不可继承），默认 `false`，见[递归保护](#递归保护) |
+| `$private` | boolean | 不进入合并空间，只能精确调用（可继承），默认 `false`，见[可见性](#可见性) |
 
 :::note
-含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$mode` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
+含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$mode` / `$private` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
 :::
 
 ### 工作目录 cwd
@@ -465,7 +468,7 @@ byk @@ops.build     # 精确调用走链接的 key
 | 路径基准 | 相对**链接文件所在目录**解析，支持 `~` 和 `${...}` 变量 |
 | 只允许一层 | 目标文件本身不能也是数组，否则报错并跳过该文件 |
 | 身份 | key、`@`/`@@` 前缀、默认优先级来自链接；其余全部来自目标 |
-| `$priority` | 照常生效：目标写 `-1` 会让链接一起退出合并命名空间，只剩精确调用 |
+| `$private` | 照常生效：目标写 `true` 会让链接一起退出合并命名空间，只剩精确调用 |
 
 :::note
 目标缺失、JSON 损坏、数组为空时，只跳过该文件，其他别名照常可用。
@@ -492,18 +495,7 @@ byk @@ops.build     # 精确调用走链接的 key
 当 cwd 恰好是 `~/.byk/alias/` 时，那里的文件同时属于「当前目录」和「全局目录」。它会以两个身份被扫描（`@f` 与 `@@f` 都能精确调用），但**只按全局身份参与一次合并**，不会被合并两遍。
 :::
 
-#### 自定义
-
-只想给本文件用、不想进公共空间，写 `-1`：
-
-```json title="run.byk.json"
-{
-  "$priority": -1,
-  "deploy": "deploy --env {env}"
-}
-```
-
-这时 `byk deploy` 找不到它，只能 `byk @run.deploy`。
+#### 自定义顺序
 
 需要压过同目录的其他文件时，才需要写数字：
 
@@ -514,8 +506,41 @@ byk @@ops.build     # 精确调用走链接的 key
 }
 ```
 
+`$priority` 只负责同名冲突时的排序；小于 0 的值按 0 处理。是否进入合并空间由 `$private` 决定。
+
 :::note
-`$priority` 是保留字段，不会被当成别名 key。日常只需要记住两个取值：**不写（1 / 0，就近优先）** 和 **-1（只用精确语法）**。
+`$priority` 是保留字段，不会被当成别名 key。不写时当前目录为 1、全局为 0。
+:::
+
+### 可见性
+
+`$private: true` 让一段别名**不进入合并空间**，只能通过精确语法 `@文件.key` / `@@文件.key` 调用。
+
+它和 `$cwd` / `$mode` 一样支持三级继承：文件级 → 分组级 → 别名级，越靠近别名优先级越高；子级写 `false` 可以重新暴露。
+
+```json title="run.byk.json"
+{
+  "shared": "echo everyone-can-run-this",
+  "scratch": {
+    "$private": true,
+    "deploy": "deploy --env {env}"
+  }
+}
+```
+
+`byk shared` 照常可用；`byk scratch.deploy` 找不到，只能 `byk @run.scratch.deploy`。
+
+整个文件都不进合并空间时，把 `$private` 写在文件根：
+
+```json title="local.byk.json"
+{
+  "$private": true,
+  "deploy": "deploy --env {env}"
+}
+```
+
+:::note
+`$private` 只影响合并空间；精确调用始终可用，包括 private 分组里的别名。
 :::
 
 ### 精确执行语法

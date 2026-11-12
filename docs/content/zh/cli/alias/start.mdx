@@ -35,11 +35,11 @@ byk deploy            # 交互：先问 env，确认后再执行
 
 ### 不想让它在目录里生效
 
-有些文件只属于某个脚本，不该出现在 `byk <key>` 里。写一行 `-1`：
+有些文件只属于某个脚本，不该出现在 `byk <key>` 里。写一行 `$private: true`：
 
 ```json title="run.byk.json"
 {
-  "$priority": -1,
+  "$private": true,
   "dev": "pnpm dev"
 }
 ```

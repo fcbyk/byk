@@ -27,14 +27,14 @@ byk build           # pnpm build
 byk deploy          # asks for {env}, then runs
 ```
 
-`{env}` is a placeholder, `$cwd` / `$mode` / `$description` are inheritable
-metadata (`$mode` is `normal` / `interactive` / `silent`), `@file.key` / `@@file.key` route to one exact file.
+`{env}` is a placeholder, `$cwd` / `$mode` / `$private` are inheritable
+metadata (`$mode` is `normal` / `interactive` / `silent`), `$description` sets help text, `@file.key` / `@@file.key` route to one exact file.
 
 Alias files in the current directory join the merged namespace with priority
 1, global ones in `~/.byk/alias/` with 0 — so `cd` into a project and its
-names just work, overriding same-named global aliases. Write
-`"$priority": -1` to keep a file out of the namespace, reachable only through
-`@file.key`.
+names just work, overriding same-named global aliases. Mark a file, group, or
+alias with `"$private": true` to keep it out of the namespace, reachable only
+through `@file.key`.
 
 ## CLI
 

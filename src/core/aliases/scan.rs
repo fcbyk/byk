@@ -5,14 +5,16 @@ use std::path::{Path, PathBuf};
 
 use colored::Colorize;
 
-use super::parse::{build_file_key, filter_invalid_keys, parse_priority, validate_filename};
+use super::parse::{
+    build_file_key, filter_invalid_keys, parse_priority, parse_private, validate_filename,
+};
 use super::types::{AliasFile, Mode};
 use crate::core::vars::{FILE_DIR_VAR, VarIssue, VarTable, describe_issue, preprocess_vars};
 use crate::utils::path::{canonical, dir_of, expand_home};
 
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> Vec<AliasFile> {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
-    // 只想给本文件用（仅 @file.key 可达）时显式写 `$priority: -1`。
+    // 只想给本文件用（仅 @file.key 可达）时写 `$private: true`。
     let default_priority = if is_global { 0 } else { 1 };
     let mut files: Vec<AliasFile> = Vec::new();
 
@@ -205,6 +207,11 @@ fn parse_alias_file(
 
     let inherited_mode = obj.remove("$mode").map(|v| Mode::from_json(&v));
 
+    let inherited_private = obj
+        .remove("$private")
+        .map(|v| parse_private(&v))
+        .unwrap_or(false);
+
     let inherited_paths = obj
         .remove("$paths")
         .and_then(|v| v.as_array().cloned())
@@ -224,6 +231,7 @@ fn parse_alias_file(
         path: source_path,
         inherited_cwd,
         inherited_mode,
+        inherited_private,
         inherited_paths,
     })
 }
@@ -327,6 +335,7 @@ mod tests {
             path: PathBuf::from(format!("/fake/{}.byk.json", key.trim_start_matches('@'))),
             inherited_cwd: None,
             inherited_mode: None,
+            inherited_private: false,
             inherited_paths: Vec::new(),
         }
     }
@@ -432,6 +441,26 @@ mod tests {
         let files = scan_alias_files(dir.path(), false, &VarTable::new());
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_paths.is_empty());
+    }
+
+    #[test]
+    fn private_extracted_from_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(&file, r#"{"$private": true, "build": "make"}"#).unwrap();
+        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        assert_eq!(files.len(), 1);
+        assert!(files[0].inherited_private);
+        assert!(!files[0].aliases.contains_key("$private"));
+    }
+
+    #[test]
+    fn private_defaults_to_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(&file, r#"{"build": "make"}"#).unwrap();
+        let files = scan_alias_files(dir.path(), false, &VarTable::new());
+        assert!(!files[0].inherited_private);
     }
 
     #[test]

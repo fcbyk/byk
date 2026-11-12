@@ -139,12 +139,12 @@ def test_link_missing_target_reports_error(runner):
     assert "cannot load link target" in r.stderr
 
 
-def test_link_target_priority_honored(runner):
-    """目标文件的 $priority 不剥：-1 会让链接一起退出合并命名空间"""
+def test_link_target_private_honored(runner):
+    """目标文件的 $private 不剥：true 会让链接一起退出合并命名空间"""
     bundle(
         runner,
         "proj/web/run.byk.json",
-        {"$priority": -1, "priv": "echo private-ok"},
+        {"$private": True, "priv": "echo private-ok"},
     )
     runner.prepare_alias_file("ops", '["../../proj/web/run.byk.json"]')
     merged = runner.run("priv")

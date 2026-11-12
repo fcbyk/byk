@@ -1,5 +1,5 @@
 {
-  "$priority": -1,
+  "$private": true,
   "mac":{
     "创建软链接": "ln -sf \"$(pwd)/target/debug/byk\" /opt/homebrew/bin/byk",
     "移除软链接": "rm -f /opt/homebrew/bin/byk",

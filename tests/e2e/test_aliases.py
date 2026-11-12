@@ -158,12 +158,12 @@ def test_local_overrides_global(runner):
     assert "global-hi" in r2.stdout
 
 
-def test_negative_priority_needs_scope(runner):
-    """$priority: -1 的文件不参与合并，只能 @file.key 精确调用"""
+def test_private_file_needs_scope(runner):
+    """$private: true 的文件不参与合并，只能 @file.key 精确调用"""
     work = runner.home / "proj3"
     work.mkdir(parents=True, exist_ok=True)
     (work / "p.byk.json").write_text(
-        '{"$priority": -1, "hidden": "echo hidden"}', encoding="utf-8"
+        '{"$private": true, "hidden": "echo hidden"}', encoding="utf-8"
     )
 
     r = runner.run("hidden", cwd=str(work))

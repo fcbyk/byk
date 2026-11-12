@@ -17,8 +17,12 @@
       "type": "object",
       "properties": {
         "$priority": {
-          "description": "优先级，默认当前目录=1、全局目录=0（数字大的覆盖小的，即就近优先）。写 -1 表示不参与合并，只能用 @filename.key 精确调用。",
+          "description": "排序优先级，默认当前目录=1、全局目录=0（数字大的覆盖小的，即就近优先）。只决定同名冲突时谁生效，小于 0 按 0 处理；是否进入合并空间请用 $private。",
           "type": "integer"
+        },
+        "$private": {
+          "description": "为 true 时不进入合并空间，只能通过 @文件名.key 精确调用。子别名自动继承；子级写 false 可重新暴露。默认 false。",
+          "type": "boolean"
         },
         "$cwd": {
           "description": "文件级工作目录，所有子别名未单独指定 $cwd 时会自动继承。",
@@ -75,7 +79,7 @@
     },
     "LinkFile": {
       "title": "单链接（数组模式）",
-      "description": "根是只含一个路径的数组：本文件是链接文件，放弃自己的别名，内容与一切声明都来自目标文件，相对路径以目标文件所在目录为基准。key 与默认优先级仍留在本文件上。只支持一层，目标文件不能再是数组。",
+      "description": "根是只含一个路径的数组：本文件是链接文件，放弃自己的别名，内容与一切声明都来自目标文件，相对路径以目标文件所在目录为基准。key 与默认优先级仍留在本文件上，目标文件的 $private 照常生效。只支持一层，目标文件不能再是数组。",
       "type": "array",
       "items": {
         "type": "string",
@@ -85,12 +89,16 @@
     },
     "AliasObject": {
       "title": "别名对象（对象模式）",
-      "description": "使用 $cmd / $cwd / $mode / $description 系统字段配置别名，可嵌套子别名。",
+      "description": "使用 $cmd / $cwd / $mode / $private / $description 系统字段配置别名，可嵌套子别名。",
       "type": "object",
       "properties": {
         "$cmd": {
           "description": "执行命令（可选）。示例：\"npm i\"",
           "type": "string"
+        },
+        "$private": {
+          "description": "为 true 时不进入合并空间，只能精确调用；子级自动继承，写 false 可重新暴露。",
+          "type": "boolean"
         },
         "$cwd": {
           "description": "工作目录（可选），覆盖继承的 $cwd。示例：\"/project/web\"",

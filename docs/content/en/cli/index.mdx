@@ -45,7 +45,7 @@ When you need to target "which alias in which file" precisely, use `@file.key` (
 byk @hello.hello
 ```
 
-If a file should only ever be invoked explicitly and never appear under `byk <key>`, add `"$priority": -1` inside it. See [Alias Configuration - Priority](/cli/alias/config).
+If a subtree should only ever be invoked explicitly and never appear under `byk <key>`, add `"$private": true` there. See [Alias Configuration - Visibility](/cli/alias/config#visibility).
 
 ## How a Command Runs
 

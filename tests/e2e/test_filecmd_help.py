@@ -43,6 +43,10 @@ def test_help_for_command_shows_usage_and_options(runner):
     assert "  --description <text>  Set the description" in lines
     assert "  --recursive           Allow re-entry on the call chain" in lines
     assert "  --no-recursive        Remove the recursive flag" in lines
+    assert (
+        "  --private             Keep this file or alias out of merged lookup" in lines
+    )
+    assert "  --no-private          Expose it to merged lookup again" in lines
     assert "  --unset <fields>      Remove metadata fields" in lines
     assert "  --priority <n>        Set the file priority (omit key)" in lines
     assert (

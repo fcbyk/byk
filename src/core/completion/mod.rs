@@ -632,6 +632,8 @@ mod tests {
                 "--description".to_string(),
                 "--recursive".to_string(),
                 "--no-recursive".to_string(),
+                "--private".to_string(),
+                "--no-private".to_string(),
                 "--unset".to_string(),
                 "--priority".to_string(),
                 "--paths".to_string()

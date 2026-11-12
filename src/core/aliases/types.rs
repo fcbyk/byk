@@ -115,7 +115,7 @@ pub struct AliasFile {
     /// 文件 key: "@release" | "@@release" | "@" | "@@"
     pub key: String,
     pub priority: i32,
-    /// 过滤后的原始 JSON（已去除 $priority/$cwd/$mode/$paths/$var，已过滤非法 key）
+    /// 过滤后的原始 JSON（已去除 $priority/$cwd/$mode/$private/$paths/$var，已过滤非法 key）
     pub aliases: serde_json::Map<String, serde_json::Value>,
     /// 文件路径
     pub path: PathBuf,
@@ -123,6 +123,8 @@ pub struct AliasFile {
     pub inherited_cwd: Option<String>,
     /// 文件级 $mode，所有子别名自动继承（除非自行指定）
     pub inherited_mode: Option<Mode>,
+    /// 文件级 $private：为真时不进入合并空间，只能精确调用
+    pub inherited_private: bool,
     /// 文件级 $paths，需要前置到 PATH 环境变量的目录列表
     pub inherited_paths: Vec<String>,
 }

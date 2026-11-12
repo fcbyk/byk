@@ -45,7 +45,7 @@ byk hello
 byk @hello.hello
 ```
 
-如果某个文件只想被精确调用、不要出现在 `byk <key>` 里，在它里面写 `"$priority": -1`。详见 [别名配置 - 优先级](/cli/alias/config)。
+如果某段别名只想被精确调用、不要出现在 `byk <key>` 里，在对应位置写 `"$private": true`。详见 [别名配置 - 可见性](/cli/alias/config#可见性)。
 
 ## 一个命令是怎么执行的
 
