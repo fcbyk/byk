@@ -5,14 +5,16 @@
 
 mod diagnostic;
 mod format;
+mod inherit;
 mod types;
 mod vars;
 
 pub use diagnostic::{Diagnostic, DiagnosticReport, Level};
+pub use format::to_alias_definition;
 pub(crate) use format::{
     build_file_key, filter_invalid_keys, is_alias_value, is_valid_private, parse_priority,
     parse_private, to_alias_value, validate_filename,
 };
-pub use format::to_alias_definition;
+pub(crate) use inherit::apply_inherited;
 pub use types::*;
 pub use vars::{FILE_DIR_VAR, VarTable, build_builtin_table, describe_issue, preprocess_vars};
