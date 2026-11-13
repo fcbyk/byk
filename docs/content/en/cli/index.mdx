@@ -31,6 +31,8 @@ Write an alias file:
 }
 ```
 
+The copy in your project is quickest to hand-write. For the global directory `~/.byk/alias/` there is no editor to open: `byk @@hello..init` creates the file, then `byk @@hello..set hello --cmd "echo hello world"` adds the entry. See [File Commands](/cli/file-commands).
+
 Run it:
 
 ```bash
@@ -58,7 +60,8 @@ If a subtree should only ever be invoked explicitly and never appear under `byk 
 
 ## Where to Read Next
 
-- [Options & Commands](/cli/commands) — `-h` / `-v` / `--paths`, execution forms, and the reserved words
+- [Options & Commands](/cli/commands) — `-h` / `-v` / `--paths` / `--check`, execution forms, and the reserved words
+- [File Commands](/cli/file-commands) — the built-in `..init` / `..set` / `..clone` that edit an alias file itself
 - [Program Interface](/cli/api) — the hidden `byk __api__`: the page to read when writing a script or a plugin
 - [Quick Start](/cli/alias/start) — write your first alias file in three minutes
 - [Alias Configuration](/cli/alias/config) — fields, inheritance, priority, exact execution

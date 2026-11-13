@@ -1,11 +1,11 @@
 ---
 title: 选项与命令
-description: byk 的全部命令行表面：三个选项、两种执行形式、一个隐藏的程序接口与保留字
+description: byk 的全部命令行表面：四个选项、两种执行形式、文件命令、一个隐藏的程序接口与保留字
 ---
 
 # 选项与命令
 
-byk 的命令行只有三层：**选项**、**别名**、**程序接口**。除了 §保留字 里的几个词，其余任何一个词都会被当作别名去查找——所以想到什么名字都能用。
+byk 的命令行只有四层：**选项**、**别名**、**文件命令**、**程序接口**。除了 §保留字 里的几个词，其余任何一个词都会被当作别名去查找——所以想到什么名字都能用。
 
 ```
 Usage: byk [OPTIONS] [ALIAS] [ARGS]...
@@ -24,9 +24,11 @@ Usage: byk [OPTIONS] [ALIAS] [ARGS]...
 
 ```bash title="-v"
 $ byk -v
-byk 0.6.0 (a1b2c3d4e 2026-11-08) [darwin-arm64]
+byk 0.7.0 (a1b2c3d4e 2026-11-08) [darwin-arm64]
 installed at /opt/homebrew/bin/byk
 ```
+
+`installed at` 那行在可执行文件是符号链接时会追加 `-> 目标路径`，用来确认真正执行的是哪一份。
 
 ```bash title="--paths"
 $ byk --paths
@@ -68,7 +70,7 @@ Scanned 2 alias files; 1 has problems (1 error).
   error: cannot load link target /Users/me/.byk/alias/missing.byk.json
 ```
 
-没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、`$mode`、`$var` 等。
+没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、`$mode`、`$var` 等。`--check` 不带别名参数，多写会报 `check takes no arguments`。
 
 ## 执行别名
 
@@ -110,6 +112,7 @@ byk __api__ paths root   # 免解析地拿一个目录
 | `-h` / `--help` | 选项 |
 | `-v` / `--version` | 选项 |
 | `--paths` | 选项 |
+| `--check` | 选项 |
 | `__api__` | 隐藏接口 |
 
 除此之外都是自由的——连 `version`、`paths` 这样的词也能当别名，只要不带前导 `-`。
@@ -119,8 +122,10 @@ byk __api__ paths root   # 免解析地拿一个目录
 输入 `byk <word> ...` 时按以下顺序判断，第一个命中即返回：
 
 1. `__api__` 隐藏接口
-2. `-h` / `-v` / `--paths` 等选项
+2. `-h` / `-v` / `--paths` / `--check` 等选项
 3. `@file.key` / `@@file.key` 精确执行
 4. 合并空间里的别名
+
+文件命令在步骤 3 之前就地处理：含 `..` 的 `@文件..命令` 不会走到别名查找。同时给出多个选项时，`-h` 优先，其次是 `--check`、`--paths`、`-v`。
 
 全部未命中时，输出 `Unrecognized command or alias: <word>`，并附上候选建议，退出码 1。

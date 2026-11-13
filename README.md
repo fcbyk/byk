@@ -8,10 +8,13 @@ byk does two things — **find an alias, run it**. One binary, one config format
 
 ## Use
 
+byk scans every `*.byk.json` in the **current directory** and in the global `~/.byk/alias/` — each key in those files is a command you can run.
+
+Write a `run.byk.json` in your project by hand:
+
 ```json
 // run.byk.json
 {
-  "$cwd": "~/project/web",
   "dev": "pnpm dev",
   "build": "pnpm build",
   "deploy": {
@@ -22,35 +25,33 @@ byk does two things — **find an alias, run it**. One binary, one config format
 ```
 
 ```bash
-byk dev             # pnpm dev, run in ~/project/web
+byk dev             # pnpm dev
 byk build           # pnpm build
-byk deploy          # asks for {env}, then runs
+byk deploy          # asks for {env}, confirms, then runs
 ```
 
-`{env}` is a placeholder, `$cwd` / `$mode` / `$private` are inheritable
-metadata (`$mode` is `normal` / `interactive` / `silent`), `$description` sets help text, `@file.key` / `@@file.key` route to one exact file.
+`{env}` is a placeholder — `byk deploy` asks what to put there, then splices it in; `$mode: "interactive"` means it confirms before running; commands run in the directory you invoke byk from. For the other fields see [Alias Configuration](https://cli.fcbyk.com/cli/alias/config).
 
-Alias files in the current directory join the merged namespace with priority
-1, global ones in `~/.byk/alias/` with 0 — so `cd` into a project and its
-names just work, overriding same-named global aliases. Mark a file, group, or
-alias with `"$private": true` to keep it out of the namespace, reachable only
-through `@file.key`.
+To use it from any directory, put the file in `~/.byk/alias/`. Opening an editor there is awkward, so let byk edit it (`@@` targets the global directory):
+
+```bash
+byk @@ops..init                          # create ~/.byk/alias/ops.byk.json
+byk @@ops..set clean --cmd "cargo clean" # add one entry
+byk @@ops..json                          # look at what is there now
+```
+
+Already have one in a project? `byk @@run..clone @run` copies it over.
 
 ## CLI
 
-| Form | What it does |
-|---|---|
-| `byk <alias> [args...]` | run an alias from the merged space |
-| `byk @file.key [args...]` | exact call in the current directory |
-| `byk @@file.key [args...]` | exact call in `~/.byk/alias/` |
-| `-h, --help` | usage, options and the full alias list |
-| `-v, --version` | version, commit, platform, install path |
-| `--paths` | CLI home, alias directory, working directory, and alias files |
-| `--check` | check alias files and report scan problems per file |
-| `__api__ <request>` | read-only interface for shells and editors (hidden) |
+Four invocation forms:
 
-`byk __api__ completion zsh` prints the shell registration script;
-`byk __api__ complete <words...>` powers Tab completion.
+- `byk <alias> [args...]` — look it up across the current and global directories, then run it
+- `byk @file.key` / `@@file.key` — route straight to one exact file
+- `byk @file..command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `destroy`, `clear`, `help`; `byk @file..help` lists them all
+- `byk __api__` — read-only interface for shell completion and editor plugins (hidden)
+
+Options: `--paths` lists the alias files byk scans, `--check` validates them, `-h` shows help and every alias, `-v` shows the version. Full descriptions live in [Options & Commands](https://cli.fcbyk.com/cli/commands) and [File Commands](https://cli.fcbyk.com/cli/file-commands).
 
 ## Installation
 
@@ -74,6 +75,7 @@ powershell -c "irm https://cli.fcbyk.com/install.ps1 | iex"
 
 - [Overview](https://cli.fcbyk.com/cli)
 - [Options and commands](https://cli.fcbyk.com/cli/commands)
+- [File commands](https://cli.fcbyk.com/cli/file-commands)
 - [Alias configuration](https://cli.fcbyk.com/cli/alias/config)
 - [Placeholders](https://cli.fcbyk.com/cli/alias/placeholders)
 

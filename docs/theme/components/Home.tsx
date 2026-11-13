@@ -136,29 +136,21 @@ export function BykHome() {
             <pre className="b-term__body">
               <code>
                 <span className="t-p">$ </span>
-                <span className="t-c">byk dev</span>
+                <span className="t-c">byk @@hi..init</span>
                 {'\n'}
-                <span className="t-o">pnpm dev</span>
-                <span className="t-x"> ← in ~/project/web</span>
+                <span className="t-x">Created ~/.byk/alias/hi.byk.json</span>
                 {'\n\n'}
                 <span className="t-p">$ </span>
-                <span className="t-c">byk deploy</span>
+                <span className="t-c">byk @@hi..set hello</span>{' '}
+                <span className="t-a">--cmd</span>{' '}
+                <span className="t-v">{'"echo hello world"'}</span>
                 {'\n'}
-                <span className="t-x">? env › </span>
-                <span className="t-a">staging</span>
-                {'\n'}
-                <span className="t-s">✓</span> <span className="t-o">deploy --env staging</span>
+                <span className="t-x">Set hello in ~/.byk/alias/hi.byk.json</span>
                 {'\n\n'}
                 <span className="t-p">$ </span>
-                <span className="t-c">byk -h</span>
+                <span className="t-c">byk hello</span>
                 {'\n'}
-                <span className="t-x">Aliases:</span>
-                {'\n'}
-                <span className="t-x">  build  </span>
-                <span className="t-o">pnpm build</span>
-                {'\n'}
-                <span className="t-x">  dev    </span>
-                <span className="t-o">pnpm dev</span>
+                <span className="t-o">hello world</span>
               </code>
             </pre>
           </div>
@@ -182,7 +174,7 @@ export function BykHome() {
               {t('homeFeat1DescA')}
               <span className="b-ic">$cwd</span>
               {t('homeFeat1Sep')}
-              <span className="b-ic">$interactive</span>{' '}
+              <span className="b-ic">$mode</span>{' '}
               {t('homeFeat1DescB')}
               <span className="b-ic">$var</span>{' '}
               {t('homeFeat1DescC')}
@@ -192,13 +184,15 @@ export function BykHome() {
             </span>
           </Link>
 
-          <Link href={`${langPrefix}/cli/commands`} className="b-feature">
-            <span className="b-feature__mark">byk @run.build</span>
+          <Link href={`${langPrefix}/cli/file-commands`} className="b-feature">
+            <span className="b-feature__mark">byk @run..set</span>
             <h3 className="b-feature__title">{t('homeFeat2Title')}</h3>
             <p className="b-feature__desc">
               {t('homeFeat2DescA')}{' '}
-              <span className="b-ic">{t('homeFeat2Token')}</span>
-              {t('homeFeat2DescB')}
+              <span className="b-ic">{t('homeFeat2Token')}</span>{' '}
+              {t('homeFeat2DescB')}{' '}
+              <span className="b-ic">{t('homeFeat2Token2')}</span>{' '}
+              {t('homeFeat2DescC')}
             </p>
             <span className="b-feature__more">
               {t('homeFeat2More')} <Arrow />
@@ -218,33 +212,7 @@ export function BykHome() {
         <div className="b-duo">
           <div className="b-duo__col">
             <p className="b-duo__caption">
-              <span className="b-tag">config</span> · run.byk.json
-            </p>
-            <div className="b-term">
-              <div className="b-term__bar">
-                <span className="b-term__dot b-term__dot--r" />
-                <span className="b-term__dot b-term__dot--y" />
-                <span className="b-term__dot b-term__dot--g" />
-                <span className="b-term__title">run.byk.json</span>
-              </div>
-              <pre className="b-term__body b-term__body--sm">
-                <code>{'{'}<br />
-{`  `}<span className="t-k">{`"$cwd"`}</span>{`: `}<span className="t-v">{`"~/project/web"`}</span>{`,`}<br />
-{`  `}<span className="t-k">{`"dev"`}</span>{`:   `}<span className="t-v">{`"pnpm dev"`}</span>{`,`}<br />
-{`  `}<span className="t-k">{`"build"`}</span>{`: `}<span className="t-v">{`"pnpm build"`}</span>{`,`}<br />
-{`  `}<span className="t-k">{`"deploy"`}</span>{`: {`}<br />
-{`    `}<span className="t-k">{`"$cmd"`}</span>{`: `}<span className="t-v">{`"deploy --env {env}"`}</span>{`,`}<br />
-{`    `}<span className="t-k">{`"$interactive"`}</span>{`: `}<span className="t-n">{`true`}</span><br />
-{`  }`}<br />
-{`}`}
-                </code>
-              </pre>
-            </div>
-          </div>
-
-          <div className="b-duo__col">
-            <p className="b-duo__caption">
-              <span className="b-tag">terminal</span> · {t('homeShowOutput')}
+              <span className="b-tag">terminal</span> · {t('homeShowCommands')}
             </p>
             <div className="b-term">
               <div className="b-term__bar">
@@ -256,19 +224,46 @@ export function BykHome() {
               <pre className="b-term__body b-term__body--sm">
                 <code>
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk dev</span>
-                  {'\n'}
-                  <span className="t-x"># running pnpm dev in ~/project/web</span>
+                  <span className="t-c">byk @@ops..init</span>
                   {'\n\n'}
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk deploy</span>
-                  {'\n'}
-                  <span className="t-x"># prompts for env, then executes</span>
+                  <span className="t-c">byk @@ops..set clean</span> <span className="t-a">--cmd</span>{' '}
+                  <span className="t-v">{'"cargo clean"'}</span>
                   {'\n\n'}
                   <span className="t-p">$ </span>
-                  <span className="t-c">byk build</span> <span className="t-a">--mode prod</span>
+                  <span className="t-c">byk @@ops..set serve</span> <span className="t-a">--cmd</span>{' '}
+                  <span className="t-v">{'"cargo run --release"'}</span>
+                  {'\n\n'}
+                  <span className="t-p">$ </span>
+                  <span className="t-c">byk @@ops..set deploy</span> <span className="t-a">--cmd</span>{' '}
+                  <span className="t-v">{'"deploy --env {env}"'}</span> {'\\'}
                   {'\n'}
-                  <span className="t-x"># args are appended to the command</span>
+                  <span className="t-a">{'    --mode interactive'}</span>
+                </code>
+              </pre>
+            </div>
+          </div>
+
+          <div className="b-duo__col">
+            <p className="b-duo__caption">
+              <span className="b-tag">config</span> · ~/.byk/alias/ops.byk.json
+            </p>
+            <div className="b-term">
+              <div className="b-term__bar">
+                <span className="b-term__dot b-term__dot--r" />
+                <span className="b-term__dot b-term__dot--y" />
+                <span className="b-term__dot b-term__dot--g" />
+                <span className="b-term__title">ops.byk.json</span>
+              </div>
+              <pre className="b-term__body b-term__body--sm">
+                <code>{'{'}<br />
+{`  `}<span className="t-k">{`"clean"`}</span>{`: `}<span className="t-v">{`"cargo clean"`}</span>{`,`}<br />
+{`  `}<span className="t-k">{`"deploy"`}</span>{`: {`}<br />
+{`    `}<span className="t-k">{`"$cmd"`}</span>{`: `}<span className="t-v">{`"deploy --env {env}"`}</span>{`,`}<br />
+{`    `}<span className="t-k">{`"$mode"`}</span>{`: `}<span className="t-v">{`"interactive"`}</span><br />
+{`  }`}<br />
+{`  `}<span className="t-k">{`"serve"`}</span>{`: `}<span className="t-v">{`"cargo run --release"`}</span><br />
+{`}`}
                 </code>
               </pre>
             </div>
@@ -299,6 +294,16 @@ export function BykHome() {
             <span className="b-tile__label">{t('homeTile3Label')}</span>
             <p className="b-tile__cmd">byk --paths</p>
             <p className="b-tile__desc">{t('homeTile3Desc')}</p>
+          </div>
+          <div className="b-tile">
+            <span className="b-tile__label">{t('homeTile5Label')}</span>
+            <p className="b-tile__cmd">byk --check</p>
+            <p className="b-tile__desc">{t('homeTile5Desc')}</p>
+          </div>
+          <div className="b-tile">
+            <span className="b-tile__label">{t('homeTile6Label')}</span>
+            <p className="b-tile__cmd">byk @@ops..help</p>
+            <p className="b-tile__desc">{t('homeTile6Desc')}</p>
           </div>
           <div className="b-tile">
             <span className="b-tile__label">{t('homeTile4Label')}</span>
@@ -334,7 +339,7 @@ export function BykHome() {
             </div>
             <p>
               {t('homeWhy2BodyA')}{' '}
-              <span className="b-ic">$priority: -1</span>
+              <span className="b-ic">$private</span>
               {t('homeWhy2BodyB')}
             </p>
           </div>

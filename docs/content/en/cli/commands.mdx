@@ -1,11 +1,11 @@
 ---
 title: Options & Commands
-description: The full command-line surface of byk — three options, two execution forms, one hidden program interface and a short list of reserved words
+description: The full command-line surface of byk — four options, two execution forms, file commands, one hidden program interface and a short list of reserved words
 ---
 
 # Options & Commands
 
-byk's command line has only three layers: **options**, **aliases**, and the **program interface**. Apart from the words in [Reserved Words](#reserved-words), every word is treated as an alias to look up — so you can name aliases whatever you like.
+byk's command line has only four layers: **options**, **aliases**, **file commands**, and the **program interface**. Apart from the words in [Reserved Words](#reserved-words), every word is treated as an alias to look up — so you can name aliases whatever you like.
 
 ```
 Usage: byk [OPTIONS] [ALIAS] [ARGS]...
@@ -24,9 +24,11 @@ Running `byk` with no arguments produces exactly the same output as `byk -h`. Th
 
 ```bash title="-v"
 $ byk -v
-byk 0.6.0 (a1b2c3d4e 2026-11-08) [darwin-arm64]
+byk 0.7.0 (a1b2c3d4e 2026-11-08) [darwin-arm64]
 installed at /opt/homebrew/bin/byk
 ```
+
+When the executable is a symlink, the `installed at` line gets a `-> target` suffix, so you can tell which copy actually runs.
 
 ```bash title="--paths"
 $ byk --paths
@@ -68,7 +70,7 @@ Scanned 2 alias files; 1 has problems (1 error).
   error: cannot load link target /Users/me/.byk/alias/missing.byk.json
 ```
 
-With no problems it prints `Scanned N alias files; no problems.` and exits 0; otherwise it exits 1. It currently covers file reading, JSON parsing, root type, alias and metadata field types, link files, `$mode`, and `$var`.
+With no problems it prints `Scanned N alias files; no problems.` and exits 0; otherwise it exits 1. It currently covers file reading, JSON parsing, root type, alias and metadata field types, link files, `$mode`, and `$var`. `--check` takes no alias argument — anything extra fails with `check takes no arguments`.
 
 ## Running Aliases
 
@@ -110,6 +112,7 @@ Every word after `byk` is treated as an alias, with only these exceptions — no
 | `-h` / `--help` | Option |
 | `-v` / `--version` | Option |
 | `--paths` | Option |
+| `--check` | Option |
 | `__api__` | Hidden interface |
 
 Everything else is free — even words like `version` or `paths` work as aliases, as long as they do not start with `-`.
@@ -119,8 +122,10 @@ Everything else is free — even words like `version` or `paths` work as aliases
 When you run `byk <word> ...`, the following order applies — the first match wins:
 
 1. The `__api__` hidden interface
-2. Options such as `-h` / `-v` / `--paths`
+2. Options such as `-h` / `-v` / `--paths` / `--check`
 3. `@file.key` / `@@file.key` exact execution
 4. Aliases in the merged space
+
+File commands are handled right before step 3: an `@file..command` token with `..` never reaches alias lookup. When several options are given at once, `-h` wins, followed by `--check`, `--paths`, and `-v`.
 
 When nothing matches, byk prints `Unrecognized command or alias: <word>` along with candidate suggestions and exits with code 1.

@@ -52,17 +52,18 @@ byk @run.dev       # exact invocation — the only way to call it
 ### Make It Available in Your Home Directory
 
 ```bash
-cp run.byk.json ~/.byk/alias/
+byk @@run..clone @run     # copy ./run.byk.json into ~/.byk/alias/
 byk dev
 ```
 
-Files under `~/.byk/alias/` default to priority `0` and are available in any directory; when you enter a project with a same-named alias, the project's copy overrides it.
+A plain `cp run.byk.json ~/.byk/alias/` works too. Files under `~/.byk/alias/` default to priority `0` and are available in any directory; when you enter a project with a same-named alias, the project's copy overrides it.
 
 ### Going Further
 
 - [Alias Configuration](./config.mdx) — fields, inheritance, priority, exact execution
 - [Placeholders](./placeholders.mdx) — placeholder syntax and argument consumption rules
-- [Options & Commands](/cli/commands) — `-h` / `-v` / `--paths`
+- [Options & Commands](/cli/commands) — `-h` / `-v` / `--paths` / `--check`
+- [File Commands](/cli/file-commands) — the built-in commands that edit an alias file itself
 - [Program Interface](/cli/api) — `byk __api__`, for scripts and plugins
 
 </Steps>

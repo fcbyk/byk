@@ -40,8 +40,8 @@ byk __api__
     },
     {
       "name": "complete",
-      "args": "<words...>",
-      "description": "print completion candidates, one per line"
+      "args": "[--with-descriptions] <words...>",
+      "description": "print completion candidates; the flag appends a tab-separated description"
     },
     {
       "name": "resolve",
@@ -68,22 +68,24 @@ Unsupported shell: pwsh
 
 This request exists for the install script; day to day you only need one line (see [How completion hooks up](#how-completion-hooks-up)).
 
-## complete `<words...>`
+## complete `[--with-descriptions] <words...>`
 
-Hand it the words already typed on the command line and it returns candidates, one per line. With an `@` / `@@` prefix it returns file keys only; with a group prefix it returns that group's children. An empty word lists merged aliases only — file keys appear once the word starts with `@` / `@@`. With `--with-descriptions`, each file key carries its alias file path, with the home directory shown as `~`.
+Hand it the words already typed on the command line and it returns candidates, one per line. With an `@` / `@@` prefix it returns file keys only; with a group prefix it returns that group's children. An empty word lists merged aliases only — file keys appear once the word starts with `@` / `@@`. With `--with-descriptions`, built-in options, file-command verbs, and file keys all carry a tab-separated description; a file key describes itself with its alias file path, home directory shown as `~`.
 
 ```bash
 $ byk __api__ complete grp.
 grp.inner
 ```
 
-**Only the first word is completable.** An alias is a single dotted token (`grp.inner`), so once a word is closed by a space everything after it is passed to the target command as-is and byk cannot know what belongs there — `complete grp ''` (Tab after `byk grp `) returns nothing instead of listing `inner` as a subcommand. When the cursor sits after a space the shell passes one empty word, and that empty word is exactly what separates "still typing the first word" from "first word already finished".
+**Only aliases stop at the first word.** An alias is a single dotted token (`grp.inner`), so once a word is closed by a space everything after it is passed to the target command as-is and byk cannot know what belongs there — `complete grp ''` (Tab after `byk grp `) returns nothing instead of listing `inner` as a subcommand. When the cursor sits after a space the shell passes one empty word, and that empty word is exactly what separates "still typing the first word" from "first word already finished".
+
+File commands are the exception: their arguments are interpreted by byk itself, so `..help` completes command names, `..remove` completes existing keys in the file, `..clone` / `..link` / `..init --link` complete source files, and a command completes its own options. The list lives in [File Commands - Completion](/cli/file-commands#completion).
 
 Each call is a read-only scan, and scan-time warnings about alias files (an invalid variable name, say) still go to stderr — stdout holds candidates only, which is why the completion script can wrap it in `$(...)`.
 
 ## resolve `<key> [args...]`
 
-Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`@run.build`, `@@ops.deploy`).
+Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`@run.build`, `@@ops.deploy`). File commands are not aliases: `@file..command` is rejected with exit code 1.
 
 :::warning Not `file.key`
 `run.build` is a **dotted path**, looked up as a group name inside the merged space, and will usually miss. File keys take a prefix: `@run.build`.

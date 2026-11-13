@@ -52,17 +52,18 @@ byk @run.dev       # 精确调用，只能这样用
 ### 想让它在家目录也能用
 
 ```bash
-cp run.byk.json ~/.byk/alias/
+byk @@run..clone @run     # 把当前目录的 run.byk.json 复制到 ~/.byk/alias/
 byk dev
 ```
 
-`~/.byk/alias/` 下的文件默认优先级 `0`，在任何目录都可用；进入含有同名别名的项目时，项目里的那份会覆盖它。
+也可以直接 `cp run.byk.json ~/.byk/alias/`。`~/.byk/alias/` 下的文件默认优先级 `0`，在任何目录都可用；进入含有同名别名的项目时，项目里的那份会覆盖它。
 
 ### 进阶
 
 - [别名配置](./config.mdx) — 字段、继承、优先级、精确执行
 - [参数处理](./placeholders.mdx) — 占位符与参数消耗规则
-- [选项与命令](/cli/commands) — `-h` / `-v` / `--paths`
+- [选项与命令](/cli/commands) — `-h` / `-v` / `--paths` / `--check`
+- [文件命令](/cli/file-commands) — 直接改别名文件本身的一组保留命令
 - [程序接口](/cli/api) — 写脚本或插件时用的 `byk __api__`
 
 </Steps>

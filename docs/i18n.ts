@@ -65,48 +65,56 @@ export const i18nSource = {
     en: 'Alias Configuration',
   },
   homeFeat2Title: {
-    zh: '精确执行',
-    en: 'Exact Execution',
+    zh: '精确路由与文件命令',
+    en: 'Exact routing & file commands',
   },
   homeFeat2DescA: {
-    zh: '需要指定具体文件时用',
-    en: 'When you need to target a specific file, use',
+    zh: '要指定具体文件时用',
+    en: 'Use',
   },
   homeFeat2Token: {
     zh: '@文件.key',
     en: '@file.key',
   },
   homeFeat2DescB: {
-    zh: '，绕过合并直接路由过去，同名也不会互相干扰。',
-    en: 'to bypass merging and route straight to it — same-named aliases never clash.',
+    zh: '绕过合并直接路由过去；要改文件本身用',
+    en: 'to bypass merging and go straight to a file; to edit the file itself use',
+  },
+  homeFeat2Token2: {
+    zh: '@文件..命令',
+    en: '@file..command',
+  },
+  homeFeat2DescC: {
+    zh: '——init、set、clone、link 这些，不必手写 JSON。',
+    en: '— init, set, clone, link — no hand-written JSON.',
   },
   homeFeat2More: {
-    zh: '选项与命令',
-    en: 'Options & Commands',
+    zh: '文件命令',
+    en: 'File Commands',
   },
   homeShowLabel: {
     zh: '命令别名',
     en: 'Command Aliases',
   },
   homeShowTitle: {
-    zh: '用 JSON 描述你的命令集合',
-    en: 'Describe your command set in JSON',
+    zh: '全局那份，不用开编辑器',
+    en: 'The global file, without an editor',
   },
   homeShowSub: {
-    zh: '一个文件管完项目里所有命令——占位符、交互式输入、精确执行语法都在这里。',
-    en: 'One file for every command in your project — placeholders, interactive input, and exact-execution syntax, all included.',
+    zh: '项目里的别名文件，手写最直接；家目录那份 ~/.byk/alias/ 用文件命令改，四条命令就写完。',
+    en: 'In a project the file is easiest to write by hand; for ~/.byk/alias/, file commands finish it in four lines.',
   },
-  homeShowOutput: {
-    zh: '执行效果',
-    en: 'Output',
+  homeShowCommands: {
+    zh: '四条命令写出一个文件',
+    en: 'a file in four commands',
   },
   homeCliLabel: {
     zh: '命令行',
     en: 'CLI Surface',
   },
   homeCliTitle: {
-    zh: '三个选项，一个接口',
-    en: 'Three options, one interface',
+    zh: '四个选项，一组文件命令',
+    en: 'Four options and a set of file commands',
   },
   homeCliSub: {
     zh: '除了别名，byk 只有这些。',
@@ -136,6 +144,22 @@ export const i18nSource = {
     zh: 'CLI 家目录与全局别名目录的实际位置',
     en: 'The actual locations of the CLI home and global alias directory',
   },
+  homeTile5Label: {
+    zh: '体检',
+    en: 'Check',
+  },
+  homeTile5Desc: {
+    zh: '扫一遍别名文件，按文件汇总读取、JSON、元数据与链接问题',
+    en: 'Scan every alias file and report read, JSON, metadata, and link problems per file',
+  },
+  homeTile6Label: {
+    zh: '文件命令',
+    en: 'File Commands',
+  },
+  homeTile6Desc: {
+    zh: '每个别名文件自带：init、set、remove、clone、link、json、path',
+    en: 'Built into every alias file: init, set, remove, clone, link, json, path',
+  },
   homeTile4Label: {
     zh: '程序接口',
     en: 'Program Interface',
@@ -157,8 +181,8 @@ export const i18nSource = {
     en: 'Predictable sources',
   },
   homeWhy1BodyA: {
-    zh: '选项 → 隐藏接口 →',
-    en: 'Options → hidden interface →',
+    zh: '选项 → 隐藏接口 → 文件命令 →',
+    en: 'Options → hidden interface → file commands →',
   },
   homeWhy1BodyB: {
     zh: '→ 别名，第一个命中即执行；未命中时列出候选并退出 1。',

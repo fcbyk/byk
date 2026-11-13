@@ -40,8 +40,8 @@ byk __api__
     },
     {
       "name": "complete",
-      "args": "<words...>",
-      "description": "print completion candidates, one per line"
+      "args": "[--with-descriptions] <words...>",
+      "description": "print completion candidates; the flag appends a tab-separated description"
     },
     {
       "name": "resolve",
@@ -68,22 +68,24 @@ Unsupported shell: pwsh
 
 这个请求是给安装脚本用的，日常只需要这一行（见[补全是怎么接上的](#补全是怎么接上的)）。
 
-## complete `<words...>`
+## complete `[--with-descriptions] <words...>`
 
-把命令行上已经敲下的词原样传进去，返回候选，一行一个。带 `@` / `@@` 前缀时只返回文件 key，带分组前缀时只返回该组的子项。空输入只列合并别名——文件 key 要等词以 `@` / `@@` 开头才出现。带 `--with-descriptions` 时，文件 key 会附带别名文件路径，家目录显示为 `~`。
+把命令行上已经敲下的词原样传进去，返回候选，一行一个。带 `@` / `@@` 前缀时只返回文件 key，带分组前缀时只返回该组的子项。空输入只列合并别名——文件 key 要等词以 `@` / `@@` 开头才出现。带 `--with-descriptions` 时，内置选项、文件命令动词与文件 key 都附带 tab 分隔的描述；文件 key 的描述是别名文件路径，家目录显示为 `~`。
 
 ```bash
 $ byk __api__ complete grp.
 grp.inner
 ```
 
-**只有第一个词可以补**。别名只认点号单 token（`grp.inner`），词一旦被空格终结，后面敲的都是原样传给目标命令的参数，byk 无从得知它们该是什么——所以 `complete grp ''`（`byk grp ` 后按 Tab）返回空，不会像子命令那样列出 `inner`。光标在空格后时 shell 传一个空词，正是靠它区分「还在敲第一个词」和「第一个词已经敲完」。
+**别名只补第一个词**。别名只认点号单 token（`grp.inner`），词一旦被空格终结，后面敲的都是原样传给目标命令的参数，byk 无从得知它们该是什么——所以 `complete grp ''`（`byk grp ` 后按 Tab）返回空，不会像子命令那样列出 `inner`。光标在空格后时 shell 传一个空词，正是靠它区分「还在敲第一个词」和「第一个词已经敲完」。
+
+文件命令是这条规则的例外：它的参数由 byk 自己解释，所以 `..help` 后补命令名、`..remove` 后补文件里已有的 key、`..clone` / `..link` / `..init --link` 后补来源文件、命令后补该命令的选项。清单见[文件命令 - 补全](/cli/file-commands#补全)。
 
 它做的是一次只读扫描，扫描期对别名文件的告警（例如非法变量名）仍然走 stderr——stdout 上只有候选，补全脚本因此可以直接 `$(...)`。
 
 ## resolve `<key> [args...]`
 
-解析一个别名但不执行：返回最终命令、工作目录、PATH 前缀和执行方式。键支持两种写法——合并空间里的名字（`dep`），或精确语法（`@run.build`、`@@ops.deploy`）。
+解析一个别名但不执行：返回最终命令、工作目录、PATH 前缀和执行方式。键支持两种写法——合并空间里的名字（`dep`），或精确语法（`@run.build`、`@@ops.deploy`）。文件命令不是别名，`@文件..命令` 会被拒绝并以退出码 1 结束。
 
 :::warning 不是 `file.key`
 `run.build` 是**点号路径**，会在合并空间里当成分组名查找，通常找不到。文件 key 必须带前缀：`@run.build`。

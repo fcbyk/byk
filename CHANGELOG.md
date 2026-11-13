@@ -7,11 +7,19 @@
 ### Features
 
 - **`$private`**: new inheritable field that keeps a file, group, or alias out of the merged space while exact calls still work; it replaces `$priority: -1`
-- **`..set`**: add `--private` / `--no-private` for both the file root and a single alias
+- **file commands**: alias files now carry reserved commands addressed as `@file..<verb>` / `@@file..<verb>` — `init`, `destroy`, `clear`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `help` — to create, edit, clone, link, and inspect the file itself
 - **completion**: file-scope keys (`@file` / `@@file`) are offered only after typing `@` / `@@`; an empty Tab now lists merged aliases only
-- **completion**: file keys now carry their alias file path as the description under `--with-descriptions`
+- **completion**: file keys now carry their alias file path as the description under `--with-descriptions`; file commands and their options are completed after `..`
 - **`--check`**: diagnostic report; unreadable files, invalid JSON, bad metadata types, and link problems are summarized in the help banner instead of being printed during normal runs
 - **`--paths`**: now also prints the working directory and lists alias files in the global alias directory and the current working directory; file names are validated, contents are not parsed
+- **`-v`**: a symlinked executable now shows its target after the install path
+- **`$recursive`**: new non-inheritable field that lets an alias re-enter itself on the call chain; `BYK_ALLOW_RECURSION=1` allows it for one run, while chains deeper than 32 levels are always stopped
+
+### Bug Fixes
+
+- **execution**: a self-referencing alias is detected when the chain loops back and stops there, with the whole chain in the error (`@dev.build -> @dev.release -> @dev.build`)
+- **execution**: substituted values are quoted, so an argument containing spaces, `;`, `*`, or a backslash reaches the command as one literal argument
+- **completion**: nested aliases are no longer completed after a space; only the first word position is completed
 
 ### Performance
 

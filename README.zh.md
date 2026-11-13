@@ -8,10 +8,13 @@ byk 只做两件事——**找到别名，执行命令**。一个二进制，一
 
 ## 使用
 
+byk 扫描**当前目录**和全局目录 `~/.byk/alias/` 下的所有 `*.byk.json`，文件里的 key 都能直接当命令敲。
+
+项目里手写一个 `run.byk.json`：
+
 ```json
 // run.byk.json
 {
-  "$cwd": "~/project/web",
   "dev": "pnpm dev",
   "build": "pnpm build",
   "deploy": {
@@ -22,29 +25,33 @@ byk 只做两件事——**找到别名，执行命令**。一个二进制，一
 ```
 
 ```bash
-byk dev             # pnpm dev，在 ~/project/web 下执行
+byk dev             # pnpm dev
 byk build           # pnpm build
-byk deploy          # 先问 {env}，然后执行
+byk deploy          # 先问 {env}，确认后执行
 ```
 
-`{env}` 是占位符，`$cwd` / `$mode` / `$private` 是可继承的元数据（`$mode` 取 `normal` / `interactive` / `silent`），`$description` 提供帮助文本，`@文件.key` / `@@文件.key` 精确路由到某一个文件。
+`{env}` 是占位符——`byk deploy` 会先问你要填什么，再拼进命令；`$mode: "interactive"` 表示先确认再执行；命令在你运行 byk 的目录里执行。其余字段见 [别名配置](https://cli.fcbyk.com/zh/cli/alias/config)。
 
-当前目录里的别名文件以优先级 1 加入合并空间，全局的（`~/.byk/alias/`）以优先级 0——所以 `cd` 进一个项目，它的名字就能直接用，并覆盖同名的全局别名。给文件、分组或别名标上 `"$private": true`，它就不会进入合并空间，只保留通过 `@文件.key` 调用的能力。
+想在任何目录都能用，把文件放进 `~/.byk/alias/`。那里不方便随手开编辑器，就让 byk 自己改（`@@` 指全局目录）：
+
+```bash
+byk @@ops..init                          # 建 ~/.byk/alias/ops.byk.json
+byk @@ops..set clean --cmd "cargo clean" # 加一条
+byk @@ops..json                          # 看一眼现在写了什么
+```
+
+项目里已经有现成的，`byk @@run..clone @run` 可以直接复制过去。
 
 ## 命令行
 
-| 形式 | 作用 |
-|---|---|
-| `byk <别名> [参数...]` | 在合并空间里查找并执行别名 |
-| `byk @file.key [参数...]` | 精确执行**当前目录**某个文件里的别名 |
-| `byk @@file.key [参数...]` | 精确执行 `~/.byk/alias/` 里某个文件的别名 |
-| `-h, --help` | 用法、选项与完整别名列表 |
-| `-v, --version` | 版本、commit、平台、安装路径 |
-| `--paths` | CLI 家目录、别名目录、工作目录，以及全局与当前目录下的别名文件 |
-| `--check` | 检查别名文件，按文件汇总扫描发现的问题 |
-| `__api__ <request>` | 给 shell 和编辑器用的只读接口（隐藏） |
+调用形式只有四种：
 
-`byk __api__ completion zsh` 打印 shell 注册脚本；`byk __api__ complete <words...>` 为 Tab 补全提供候选。
+- `byk <别名> [参数...]` —— 在当前目录与全局目录的别名里查找并执行
+- `byk @文件.key` / `@@文件.key` —— 精确路由到某一个文件
+- `byk @文件..命令` —— 文件命令，`init`、`set`、`remove`、`json`、`path`、`rename`、`clone`、`link`、`destroy`、`clear`、`help`；`byk @文件..help` 一次列全
+- `byk __api__` —— 给 shell 补全与编辑器插件的只读接口（隐藏）
+
+选项：`--paths` 列出 byk 扫描到的别名文件，`--check` 检查这些文件写得对不对，`-h` 看帮助与全部别名，`-v` 看版本。完整说明见 [选项与命令](https://cli.fcbyk.com/zh/cli/commands) 和 [文件命令](https://cli.fcbyk.com/zh/cli/file-commands)。
 
 ## 安装
 
@@ -68,6 +75,7 @@ powershell -c "irm https://cli.fcbyk.com/install.ps1 | iex"
 
 - [概述](https://cli.fcbyk.com/zh/cli)
 - [选项与命令](https://cli.fcbyk.com/zh/cli/commands)
+- [文件命令](https://cli.fcbyk.com/zh/cli/file-commands)
 - [别名配置](https://cli.fcbyk.com/zh/cli/alias/config)
 - [参数处理](https://cli.fcbyk.com/zh/cli/alias/placeholders)
 
