@@ -1,4 +1,4 @@
-# 把已发布 release 里的 wheel 上传到 PyPI。
+# 把已发布 release 对应的 wheel 和 sdist 上传到 PyPI。
 #
 # 触发点是 release 被 publish（人工点确认），不是 tag push —— PyPI 的版本号
 # 一旦上传就永久占用，发错了只能升版本号补救，所以中间必须有人看一眼。
@@ -37,8 +37,8 @@ jobs:
       actions: read       # 查 release.yml 那次运行，并下载它的 wheel artifact
       id-token: write     # Trusted Publishing 必需，缺了无法向 PyPI 自证身份
     steps:
-      # wheel 不在 release 资产里（release 是给用户装 CLI 的，wheel 只走 artifact），
-      # 所以按 tag → commit → release.yml 运行 的顺序找回来。
+      # wheel 和 sdist 都不在 release 资产里（release 是给用户装 CLI 的，
+      # 包只走 artifact），所以按 tag → commit → release.yml 运行 的顺序找回来。
       - name: Download wheels artifact
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,7 +59,7 @@ jobs:
 
           gh run download "$run_id" --repo "${{ github.repository }}" -n byk-wheels -D dist
 
-          # artifact 里装的是 byk-<version>-wheels.zip，再解一层才是 whl。
+          # artifact 里装的是 byk-<version>-wheels.zip，再解一层才是 whl 和 sdist。
           mkdir -p dist/whl
           unzip -o dist/byk-*-wheels.zip -d dist/whl
           ls -1 dist/whl

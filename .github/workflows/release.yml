@@ -102,6 +102,12 @@ jobs:
           pip install maturin
           maturin build --release --target ${{ matrix.target }} --out dist
 
+      # sdist 与平台无关，只产一次。给没有预编译 wheel 的平台留一条
+      # 源码安装路径（代价是安装端需要 Rust 和 crates.io 访问）。
+      - name: Build sdist
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: maturin sdist --out sdist
+
       - name: Package (Unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -139,7 +145,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # 把五个平台的 wheel 收拢成一个压缩包：手动模式方便一次下载完，
+      - name: Upload sdist
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: sdist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # 把五个平台的 wheel 和 sdist 收拢成一个压缩包：手动模式方便一次下载完，
   # tag 模式下它是 publish-pypi.yml 发 PyPI 的输入（不进 release 资产）。
   # 每平台的中间 artifact 用完即删。
   wheels:
@@ -157,16 +172,18 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: wheel-*
+          pattern: |
+            wheel-*
+            sdist
           path: wheels
-          # 五个平台的 whl 平铺到同一目录，打包时不用处理层级。
+          # 五个平台的 whl 和 sdist 平铺到同一目录，打包时不用处理层级。
           merge-multiple: true
 
       - name: Bundle wheels
         run: |
           cd wheels
-          ls -1 ./*.whl
-          zip -j "../byk-${VERSION}-wheels.zip" ./*.whl
+          ls -1 ./*.whl ./*.tar.gz
+          zip -j "../byk-${VERSION}-wheels.zip" ./*.whl ./*.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
@@ -178,13 +195,13 @@ jobs:
           retention-days: 7
 
       # 清理失败不该把整个 workflow 拖红——产物早就传好了。
-      - name: Remove per-platform wheel artifacts
+      - name: Remove intermediate artifacts
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.name | startswith("wheel-")) | .id' |
+            --jq '.artifacts[] | select((.name | startswith("wheel-")) or .name == "sdist") | .id' |
           while read -r id; do
             echo "deleting artifact ${id}"
             gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/${id}"
