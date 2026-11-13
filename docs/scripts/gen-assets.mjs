@@ -87,6 +87,9 @@ for (const page of PAGES) {
     `description: ${JSON.stringify(page.description)}`,
     // 页面挂在根目录，没有 _meta.json，侧栏会渲染成一个空壳；changelog 也不需要它
     'sidebar: false',
+    // 光隐藏侧栏仍会留下占位宽度并把右侧目录挤向左；doc-wide 把占位归零，
+    // 正文吃掉这段宽度，目录保持和其它文档页相同的水平位置
+    'pageType: doc-wide',
     '---',
     '',
     `# ${page.heading}`,
