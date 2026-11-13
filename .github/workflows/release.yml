@@ -130,8 +130,8 @@ jobs:
           retention-days: 7
 
       # 中间产物，下面 wheels job 会把它收拢成一个压缩包再删掉。
+      # 两种模式都要传：tag 模式下它是 publish-pypi.yml 的唯一输入。
       - name: Upload wheel
-        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: wheel-${{ matrix.artifact }}
@@ -210,16 +210,18 @@ jobs:
 
       # 在 assets 里生成，校验和文件记录的是不带目录前缀的文件名，
       # 用户下载后在同目录 `sha256sum -c checksums.txt` 即可。
+      # 只列二进制包：下载目录里还有 byk-<version>-wheels.zip，它不进 release。
       - name: Generate checksums
         run: |
           cd assets
-          sha256sum byk-*.tar.gz byk-*.zip | tee checksums.txt
+          sha256sum byk-linux-*.tar.gz byk-darwin-*.tar.gz byk-windows-*.zip | tee checksums.txt
 
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
           files: |
-            assets/byk-*.tar.gz
-            assets/byk-*.zip
+            assets/byk-linux-*.tar.gz
+            assets/byk-darwin-*.tar.gz
+            assets/byk-windows-*.zip
             assets/checksums.txt
           generate_release_notes: true
