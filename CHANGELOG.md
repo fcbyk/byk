@@ -12,6 +12,7 @@
 - **completion**: file keys now carry their alias file path as the description under `--with-descriptions`; file commands and their options are completed after `..`
 - **`--check`**: diagnostic report; unreadable files, invalid JSON, bad metadata types, and link problems are summarized in the help banner instead of being printed during normal runs
 - **`--paths`**: now also prints the working directory and lists alias files in the global alias directory and the current working directory; file names are validated, contents are not parsed
+- **`__api__ check`**: scan diagnostics as JSON for editor plugins; problems appear in the payload and keep the exit code at `0`, while `--check` keeps the human-readable report and exits `1`
 - **`-v`**: a symlinked executable now shows its target after the install path
 - **`$recursive`**: new non-inheritable field that lets an alias re-enter itself on the call chain; `BYK_ALLOW_RECURSION=1` allows it for one run, while chains deeper than 32 levels are always stopped
 

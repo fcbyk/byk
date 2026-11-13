@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -503,6 +503,147 @@ function buildPath(): string {
   return binaryDirs().join(path.delimiter);
 }
 
+// ── Alias File Diagnostics (Problems panel) ────────────────────────
+//
+// `byk __api__ check` scans the working directory and the global alias
+// dir — the same two places the CLI reads — and returns scan problems
+// as JSON. The scan is not recursive, so results are kept per directory
+// and merged by file: two directories that both scan the global dir
+// report the same items.
+
+interface CheckItem {
+  level: 'error' | 'warning';
+  path: string;
+  message: string;
+}
+
+interface CheckResponse {
+  scanned: number;
+  errors: number;
+  warnings: number;
+  items: CheckItem[];
+}
+
+/** Diagnostics per scanned directory. */
+const checkByRoot = new Map<string, CheckItem[]>();
+/** Every directory scanned at least once, so a binary change can re-run them. */
+const checkRoots = new Set<string>();
+/** Run generation per directory — a newer run supersedes an older one. */
+const checkRuns = new Map<string, number>();
+const checkTimers = new Map<string, NodeJS.Timeout>();
+
+let diagnostics: vscode.DiagnosticCollection | undefined;
+
+/** Call `byk __api__ check` in `root` and parse the JSON. Null on any failure. */
+function callCheck(root: string): Promise<CheckResponse | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: CheckResponse | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn('byk', ['__api__', 'check'], {
+        cwd: root,
+        env: { ...process.env, [pathEnvKey()]: buildPath() },
+        windowsHide: true,
+      });
+    } catch {
+      finish(null);
+      return;
+    }
+
+    let stdout = '';
+    const timer = setTimeout(() => child.kill(), 15000);
+    child.stdout?.on('data', (chunk) => { stdout += chunk; });
+    // A CLI without the `check` request exits 1 with a message on stderr;
+    // this feature is absent, not broken, so stay silent.
+    child.stderr?.resume();
+    child.on('error', () => { clearTimeout(timer); finish(null); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        finish(null);
+        return;
+      }
+      try {
+        const payload = JSON.parse(stdout) as CheckResponse;
+        finish(Array.isArray(payload.items) ? payload : null);
+      } catch {
+        finish(null);
+      }
+    });
+  });
+}
+
+function scheduleCheck(root: string, delay = 0): void {
+  checkRoots.add(root);
+  const pending = checkTimers.get(root);
+  if (pending) clearTimeout(pending);
+  checkTimers.set(root, setTimeout(() => {
+    checkTimers.delete(root);
+    void refreshCheck(root);
+  }, delay));
+}
+
+async function refreshCheck(root: string): Promise<void> {
+  const run = (checkRuns.get(root) ?? 0) + 1;
+  checkRuns.set(root, run);
+
+  const payload = await callCheck(root);
+  if (checkRuns.get(root) !== run) return;
+
+  if (payload === null) checkByRoot.delete(root);
+  else checkByRoot.set(root, payload.items);
+  renderDiagnostics();
+}
+
+/** Rebuild the whole collection; overlapping scans are deduped by file + message. */
+function renderDiagnostics(): void {
+  if (!diagnostics) return;
+
+  const byFile = new Map<string, { uri: vscode.Uri; items: CheckItem[] }>();
+  const seen = new Set<string>();
+
+  for (const items of checkByRoot.values()) {
+    for (const item of items) {
+      const uri = vscode.Uri.file(item.path);
+      const key = `${uri.toString()}\u0000${item.level}\u0000${item.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      let entry = byFile.get(uri.toString());
+      if (!entry) {
+        entry = { uri, items: [] };
+        byFile.set(uri.toString(), entry);
+      }
+      entry.items.push(item);
+    }
+  }
+
+  diagnostics.clear();
+  for (const { uri, items } of byFile.values()) {
+    diagnostics.set(
+      uri,
+      items.map((item) => {
+        // `check` reports per file, not per line; point at the file start.
+        const diagnostic = new vscode.Diagnostic(
+          new vscode.Range(0, 0, 0, 0),
+          item.message,
+          item.level === 'error'
+            ? vscode.DiagnosticSeverity.Error
+            : vscode.DiagnosticSeverity.Warning,
+        );
+        diagnostic.source = 'byk';
+        return diagnostic;
+      }),
+    );
+  }
+}
+
 // ── Run Alias ──────────────────────────────────────────────────────
 
 /** Run an alias as a VS Code Task — preserves task output formatting. */
@@ -794,6 +935,68 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
+  // --- Problems panel ---
+
+  diagnostics = vscode.languages.createDiagnosticCollection('byk');
+  context.subscriptions.push(diagnostics);
+
+  const refreshDirOf = (uri: vscode.Uri, delay = 0) => {
+    if (isBykFile(path.basename(uri.fsPath))) {
+      scheduleCheck(path.dirname(uri.fsPath), delay);
+    }
+  };
+
+  // The CLI scan is not recursive: cover the workspace roots and one
+  // directory per alias file, or nested projects would stay unchecked
+  // until their first save.
+  const scanWorkspaceDirs = async () => {
+    const roots = new Set<string>();
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      roots.add(folder.uri.fsPath);
+    }
+    try {
+      const files = await vscode.workspace.findFiles('**/*.byk.json', '**/node_modules/**');
+      for (const uri of files) roots.add(path.dirname(uri.fsPath));
+    } catch {
+      // No workspace: the folder roots above are all there is.
+    }
+    for (const root of roots) scheduleCheck(root);
+  };
+  void scanWorkspaceDirs();
+
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument((document) => refreshDirOf(document.uri)),
+    vscode.workspace.onDidChangeWorkspaceFolders((event) => {
+      for (const folder of event.removed) {
+        const removed = folder.uri.fsPath;
+        for (const root of [...checkRoots]) {
+          if (root !== removed && !root.startsWith(removed + path.sep)) continue;
+          const timer = checkTimers.get(root);
+          if (timer) clearTimeout(timer);
+          checkTimers.delete(root);
+          checkRuns.delete(root);
+          checkRoots.delete(root);
+          checkByRoot.delete(root);
+        }
+      }
+      renderDiagnostics();
+      if (event.added.length > 0) void scanWorkspaceDirs();
+    }),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      // priorityPaths / secondarySource can point at a different binary.
+      if (!event.affectsConfiguration('byk')) return;
+      checkByRoot.clear();
+      renderDiagnostics();
+      for (const root of checkRoots) scheduleCheck(root);
+    }),
+  );
+
+  const bykFileWatcher = vscode.workspace.createFileSystemWatcher('**/*.byk.json');
+  bykFileWatcher.onDidCreate((uri) => refreshDirOf(uri, 300));
+  bykFileWatcher.onDidChange((uri) => refreshDirOf(uri, 300));
+  bykFileWatcher.onDidDelete((uri) => refreshDirOf(uri, 300));
+  context.subscriptions.push(bykFileWatcher);
+
   // --- Commands ---
 
   // Right-click: precisely run the alias under the cursor (byk @stem.key)
@@ -937,4 +1140,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-export function deactivate() {}
+export function deactivate() {
+  for (const timer of checkTimers.values()) clearTimeout(timer);
+  checkTimers.clear();
+}

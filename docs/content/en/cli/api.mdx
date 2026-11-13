@@ -22,6 +22,7 @@ Three rules apply to every request:
 | `__api__ resolve <key> [args...]` | Resolved alias, JSON |
 | `__api__ paths` | The two CLI directories, JSON |
 | `__api__ paths <name>` | A single bare path (`root` / `alias`) |
+| `__api__ check` | Scan diagnostics, JSON |
 | `__api__` (no args) | Interface manifest, JSON |
 
 Keep the last one close: **don't memorise request names, ask for them**.
@@ -52,6 +53,11 @@ byk __api__
       "name": "paths",
       "args": "[name]",
       "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
+    },
+    {
+      "name": "check",
+      "args": "",
+      "description": "print scan diagnostics as JSON; problems do not change the exit code"
     }
   ]
 }
@@ -156,6 +162,46 @@ __api__ paths: unknown name "bin" (expected one of: root, alias)
 
 `paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal, rendered from the same path layout; it additionally lists the alias files found in both directories, while the machine-facing request stays directory-only.
 
+## check
+
+The machine form of `byk --check`: scans the working directory and the global alias directory — the same two places normal execution reads — and returns the problems found there.
+
+```bash
+byk __api__ check
+```
+
+```json title="byk __api__ check"
+{
+  "scanned": 2,
+  "errors": 1,
+  "warnings": 1,
+  "items": [
+    {
+      "level": "error",
+      "path": "/Users/you/proj/gone.byk.json",
+      "message": "cannot load link target /Users/you/proj/missing.byk.json: cannot read file: No such file or directory (os error 2)"
+    },
+    {
+      "level": "warning",
+      "path": "/Users/you/proj/env.byk.json",
+      "message": "$mode must be one of normal|interactive|silent, got \"activ\" (treated as normal)"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `scanned` | Number of alias files scanned |
+| `errors` / `warnings` | Item counts, so a caller can badge without walking the list |
+| `items[].level` | `error` (file or alias unusable) or `warning` (still usable, but suspicious) |
+| `items[].path` | Absolute path of the file the problem belongs to |
+| `items[].message` | Same text the human-readable report prints |
+
+**Problems do not change the exit code.** The request succeeds as long as it ran, so stdout carries a complete payload and the caller reads `items` — only a usage error (an extra argument) exits 1. This keeps "there are problems" apart from "the request failed", which is also why the `__api__` exit-code rule above does not apply to findings.
+
+The scan is not recursive, exactly like execution: it covers the process working directory plus the global alias directory, so an editor plugin runs one request per directory it wants covered.
+
 ## How completion hooks up
 
 `install.sh` writes one line to `~/.zshrc` (or `~/.bashrc`):
@@ -169,7 +215,7 @@ This line forwards Tab events to `byk __api__ complete`, which scans your aliase
 
 ## Versions and compatibility
 
-Requests get added over time — `resolve` and `paths` both arrived after the first release. When integrating:
+Requests get added over time — `resolve`, `paths` and `check` all arrived after the first release. When integrating:
 
 - read request names from `byk __api__`, never hardcode the list
 - tolerate unknown fields when parsing the JSON; fields only get added

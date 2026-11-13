@@ -89,7 +89,7 @@
     },
     "AliasObject": {
       "title": "别名对象（对象模式）",
-      "description": "使用 $cmd / $cwd / $mode / $private / $description 系统字段配置别名，可嵌套子别名。",
+      "description": "使用 $cmd / $cwd / $mode / $private / $description / $recursive 系统字段配置别名，可嵌套子别名。",
       "type": "object",
       "properties": {
         "$cmd": {
@@ -116,6 +116,11 @@
         "$description": {
           "description": "描述文本，在帮助页中替代命令映射显示。仅对当前别名生效，不可继承。",
           "type": "string"
+        },
+        "$recursive": {
+          "description": "为 true 时允许该别名在调用链上重复进入，用于刻意自调用（如 FOO=1 byk build）。仅对当前别名生效，不可继承，默认 false。BYK_ALLOW_RECURSION=1 可临时全局放行，链深超过 32 层始终会被拦截。",
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": {

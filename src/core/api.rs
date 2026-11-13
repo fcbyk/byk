@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::core::aliases;
 use crate::core::completion;
-use crate::core::config::Mode;
+use crate::core::config::{Level, Mode};
 use crate::core::filecmd;
 use crate::core::paths::PathLayout;
 
@@ -34,6 +34,11 @@ const REQUESTS: &[RequestInfo] = &[
         name: "paths",
         args: "[name]",
         description: "print CLI paths as JSON; with <name>, print only that path (root|alias)",
+    },
+    RequestInfo {
+        name: "check",
+        args: "",
+        description: "print scan diagnostics as JSON; problems do not change the exit code",
     },
 ];
 
@@ -69,6 +74,25 @@ struct ResolveResponse {
     /// 只认 `mode` 的旧插件读到 `null` 会把交互别名直接执行、跳过确认。
     interactive: bool,
     description: Option<String>,
+}
+
+/// `__api__ check` 的返回体：扫描诊断，供编辑器直接映射到问题面板。
+///
+/// 发现问题的请求本身依然成功（退出码 0）：调用方读 `items`，不必把
+/// “有问题”与“请求失败”两种非零混在一起。
+#[derive(Serialize)]
+struct CheckResponse {
+    scanned: usize,
+    errors: usize,
+    warnings: usize,
+    items: Vec<CheckItem>,
+}
+
+#[derive(Serialize)]
+struct CheckItem {
+    level: &'static str,
+    path: String,
+    message: String,
 }
 
 /// `__api__ paths` 的返回体：byk 实际使用的两条目录。
@@ -152,6 +176,36 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 mode: rc.mode.as_str(),
                 interactive: rc.mode == Mode::Interactive,
                 description: rc.description,
+            };
+
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&response).unwrap_or_else(|_| "{}".to_string())
+            );
+        }
+        Some("check") => {
+            if args.len() > 1 {
+                usage_error("check", "takes no arguments");
+            }
+
+            let scanned = aliases::load_scanned_aliases(layout);
+            let report = &scanned.report;
+            let response = CheckResponse {
+                scanned: report.scanned,
+                errors: report.error_count(),
+                warnings: report.warning_count(),
+                items: report
+                    .items
+                    .iter()
+                    .map(|item| CheckItem {
+                        level: match item.level {
+                            Level::Error => "error",
+                            Level::Warning => "warning",
+                        },
+                        path: item.path.to_string_lossy().into_owned(),
+                        message: item.message.clone(),
+                    })
+                    .collect(),
             };
 
             println!(

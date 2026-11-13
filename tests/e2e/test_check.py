@@ -1,4 +1,6 @@
-"""E2E —— 扫描诊断：banner 汇总与隐藏的 --check 明细"""
+"""E2E —— 扫描诊断：banner 汇总、隐藏的 --check 明细与 __api__ check 契约"""
+
+import json
 
 
 def test_help_banner_stays_clean_without_problems(runner, tmp_path):
@@ -177,3 +179,49 @@ def test_check_is_completed_with_description(runner, tmp_path):
     assert result.stdout.splitlines() == [
         "--check\tCheck alias files for problems"
     ]
+
+
+def test_api_check_clean_report(runner, tmp_path):
+    """无问题时返回空 items，退出码仍是 0"""
+    runner.prepare_alias_json("ok", {"hi": "echo hi"})
+
+    result = runner.run("__api__", "check", cwd=str(tmp_path))
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == {
+        "scanned": 1,
+        "errors": 0,
+        "warnings": 0,
+        "items": [],
+    }
+
+
+def test_api_check_reports_items_with_absolute_paths(runner, tmp_path):
+    """有问题时退出码仍为 0，细节放在 items 里，路径是绝对路径"""
+    gone = runner.prepare_alias_file("gone", '["missing.byk.json"]')
+    env = runner.prepare_alias_json(
+        "env", {"hi": {"$cmd": "echo hi", "$mode": "activ"}}
+    )
+
+    result = runner.run("__api__", "check", cwd=str(tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["scanned"] == 2
+    assert payload["errors"] == 1
+    assert payload["warnings"] == 1
+
+    by_path = {item["path"]: item for item in payload["items"]}
+    assert by_path[str(gone)]["level"] == "error"
+    assert "cannot load link target" in by_path[str(gone)]["message"]
+    assert by_path[str(env)]["level"] == "warning"
+    assert "$mode must be one of" in by_path[str(env)]["message"]
+
+
+def test_api_check_rejects_arguments(runner, tmp_path):
+    result = runner.run("__api__", "check", "extra", cwd=str(tmp_path))
+
+    assert result.returncode == 1
+    assert "takes no arguments" in result.stderr
+    assert result.stdout == ""

@@ -22,6 +22,7 @@ description: 隐藏的 byk __api__：给 shell 脚本与编辑器插件的只读
 | `__api__ resolve <key> [args...]` | 别名的解析结果，JSON |
 | `__api__ paths` | CLI 两条目录，JSON |
 | `__api__ paths <name>` | 单个目录的裸路径（`root` / `alias`） |
+| `__api__ check` | 扫描诊断，JSON |
 | `__api__`（无参） | 接口清单，JSON |
 
 最后一条建议常备：**请求名别背，直接问**。
@@ -52,6 +53,11 @@ byk __api__
       "name": "paths",
       "args": "[name]",
       "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
+    },
+    {
+      "name": "check",
+      "args": "",
+      "description": "print scan diagnostics as JSON; problems do not change the exit code"
     }
   ]
 }
@@ -156,6 +162,46 @@ __api__ paths: unknown name "bin" (expected one of: root, alias)
 
 之所以不给 `paths <name>` 也套 JSON：它的调用方是 shell 脚本，套一层就得靠 `jq` 或 `sed` 剥引号，而 `"$(...)"` 天然拿到干净的值；需要结构化数据的程序走无参 `paths`。人读的版本仍然是 `byk --paths`——带标签和空行，终端里一眼看清，两者共用同一份路径布局；`--paths` 还会额外列出两处目录下的别名文件，而机器接口仍然只返回目录。
 
+## check
+
+`byk --check` 的机器版本：扫描工作目录与全局别名目录——和正常执行读的是同两处——把发现的问题返回为 JSON。
+
+```bash
+byk __api__ check
+```
+
+```json title="byk __api__ check"
+{
+  "scanned": 2,
+  "errors": 1,
+  "warnings": 1,
+  "items": [
+    {
+      "level": "error",
+      "path": "/Users/you/proj/gone.byk.json",
+      "message": "cannot load link target /Users/you/proj/missing.byk.json: cannot read file: No such file or directory (os error 2)"
+    },
+    {
+      "level": "warning",
+      "path": "/Users/you/proj/env.byk.json",
+      "message": "$mode must be one of normal|interactive|silent, got \"activ\" (treated as normal)"
+    }
+  ]
+}
+```
+
+| 字段 | 含义 |
+|------|------|
+| `scanned` | 扫描了多少个别名文件 |
+| `errors` / `warnings` | 条目数量，调用方不必遍历列表就能出徽标 |
+| `items[].level` | `error`（文件或别名不可用）或 `warning`（仍可用但可疑） |
+| `items[].path` | 问题所属文件的绝对路径 |
+| `items[].message` | 与人读报告里完全相同的文本 |
+
+**发现问题不改变退出码。** 只要请求跑完就算成功：stdout 一定是一份完整数据，调用方读 `items`；只有用法错误（多写参数）才退出 1。这样「有问题」和「请求失败」从一开始就是两件事，上面那条 `__api__` 退出码约定不适用于检查结果。
+
+扫描和正常执行一样不递归：只覆盖进程工作目录与全局别名目录，所以编辑器插件想覆盖哪些目录，就按目录各发一次请求。
+
 ## 补全是怎么接上的
 
 `install.sh` 会往 `~/.zshrc`（或 `~/.bashrc`）写一行：
@@ -169,7 +215,7 @@ if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
 
 ## 版本与兼容
 
-请求可能随版本增加——`resolve` 和 `paths` 都是后来才有的。写集成时：
+请求可能随版本增加——`resolve`、`paths` 和 `check` 都是后来才有的。写集成时：
 
 - 请求名从 `byk __api__` 读，不要写死在代码里
 - 解析 JSON 时容忍未知字段，字段只会增加

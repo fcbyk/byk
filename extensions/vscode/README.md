@@ -7,6 +7,7 @@ VS Code integration for [byk](https://github.com/fcbyk/byk) — run aliases from
 - **Right-click to run** — execute the alias under the cursor, from the editor or the Explorer
 - **Quick Pick** — search every alias in a file via the command palette
 - **JSON validation** — validates `*.byk.json` against the alias schema
+- **Problems panel** — invalid JSON, bad metadata types, and broken links in `*.byk.json` show up as diagnostics while you edit
 - **Path completion** — completes file paths in `$cwd` values and `$paths` entries
 - **Task provider** — registers `byk` as a VS Code task type, so output lands in the task panel
 - **Bundled binary** — ships with platform binaries and uses them by default; two settings reorder the lookup when you need a system or development build instead
@@ -27,6 +28,8 @@ VS Code integration for [byk](https://github.com/fcbyk/byk) — run aliases from
 Alternatively, **right-click → Alias List** to search all aliases in the file through the Quick Pick panel. You can also right-click a `*.byk.json` file in the Explorer and pick **Alias List**.
 
 The extension activates automatically when the workspace contains any `*.byk.json`.
+
+Scan problems land in the **Problems** panel and refresh when a `*.byk.json` is saved, created, changed, or deleted. They come from `byk __api__ check`, so this is the same report `byk --check` prints in a terminal.
 
 ### Supported filenames
 
@@ -112,6 +115,7 @@ VS Code 的 [byk](https://github.com/fcbyk/byk) 集成——不用离开编辑�
 - **右键运行** —— 在编辑器或资源管理器里执行光标所在的别名
 - **快速选择** —— 通过命令面板搜索文件里的每一个别名
 - **JSON 校验** —— 按别名 schema 校验 `*.byk.json`
+- **问题面板** —— `*.byk.json` 里的 JSON 错误、元数据类型错误与链接问题会作为诊断实时显示
 - **路径补全** —— 为 `$cwd` 的值和 `$paths` 的条目补全文件路径
 - **任务提供器** —— 把 `byk` 注册成 VS Code 的任务类型，输出落在任务面板里
 - **内置二进制** —— 随包分发各平台的二进制并默认使用；需要换成系统版本或自编译版本时，两个设置可以改变查找顺序
@@ -132,6 +136,8 @@ VS Code 的 [byk](https://github.com/fcbyk/byk) 集成——不用离开编辑�
 也可以**右键 → 别名列表**，用快速选择面板搜索该文件里的全部别名；在资源管理器里右键一个 `*.byk.json`，同样能选**别名列表**。
 
 工作区里存在任何 `*.byk.json` 时，插件会自动激活。
+
+扫描问题会出现在**问题**面板，并在 `*.byk.json` 保存、新建、改动或删除后刷新。数据来自 `byk __api__ check`，与终端里 `byk --check` 的报告是同一份。
 
 ### 支持的文件名
 

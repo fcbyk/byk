@@ -126,7 +126,7 @@ def test_api_lists_requests(runner):
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     names = {item["name"] for item in payload["requests"]}
-    assert names == {"completion", "complete", "resolve", "paths"}
+    assert names == {"completion", "complete", "resolve", "paths", "check"}
 
 
 def test_api_paths_json(runner):
