@@ -3,10 +3,10 @@
   "type": "module",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "gen:changelog": "node scripts/gen-changelog.mjs",
-    "predev": "pnpm run gen:changelog",
+    "gen:assets": "node scripts/gen-assets.mjs",
+    "predev": "pnpm run gen:assets",
     "dev": "rspress dev --host 0.0.0.0",
-    "prebuild": "pnpm run gen:changelog",
+    "prebuild": "pnpm run gen:assets",
     "build": "rspress build && cp ../scripts/install.sh doc_build/install.sh && cp ../scripts/install.ps1 doc_build/install.ps1",
     "preview": "rspress preview"
   },

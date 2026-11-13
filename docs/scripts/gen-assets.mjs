@@ -1,7 +1,10 @@
-// 从仓库根的 CHANGELOG*.md 生成文档站的 changelog 页面。
+// 构建文档站之前要准备的资源，从仓库根的唯一真值来源生成：
 //
-// 为什么不直接手写两份 mdx：更新日志每发一版就要改一次，副本迟早会漏改。
-// 这里让根目录的文件当唯一真值来源，页面在 dev/build 前重新生成。
+//   - changelog 页面  <- CHANGELOG*.md
+//   - 首页版本号      <- Cargo.toml 的 [package].version
+//
+// 为什么不直接手写：更新日志每发一版就要改一次，版本号更是每次发版都变；
+// 副本迟早会漏改。让根目录的文件当唯一真值来源，这些产物在 dev/build 前重新生成。
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -104,3 +107,35 @@ for (const page of PAGES) {
     `[changelog] ${path.relative(REPO, page.source)} -> ${path.relative(REPO, page.output)}`,
   );
 }
+
+/**
+ * 首页 hero 的版本标签：生成一个小模块给 React 用。
+ *
+ * 不在运行时请求版本号——构建期就定下来，离线也能显示，也不会出现
+ * “页面写着 v0.8、内容其实是 0.7 写的”这种错位。
+ */
+function generateVersion() {
+  const manifest = path.join(REPO, 'Cargo.toml');
+  const matched = fs
+    .readFileSync(manifest, 'utf8')
+    .match(/\[package\][\s\S]*?\nversion = "([^"]+)"/);
+  if (!matched) {
+    throw new Error(`cannot read [package].version from ${manifest}`);
+  }
+
+  const output = path.join(DOCS, 'theme', 'generated', 'version.ts');
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(
+    output,
+    [
+      '// 由 docs/scripts/gen-assets.mjs 从根 Cargo.toml 生成，不要手改。',
+      `export const BYK_VERSION = ${JSON.stringify(matched[1])};`,
+      '',
+    ].join('\n'),
+  );
+  console.log(
+    `[version]   Cargo.toml (${matched[1]}) -> ${path.relative(REPO, output)}`,
+  );
+}
+
+generateVersion();

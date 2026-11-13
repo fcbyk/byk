@@ -24,6 +24,7 @@ target
 .data
 doc_build
 
-# 由 docs/scripts/gen-changelog.mjs 从根 CHANGELOG*.md 生成
+# 由 docs/scripts/gen-assets.mjs 生成（源：根 CHANGELOG*.md、Cargo.toml）
 docs/content/en/changelog.mdx
 docs/content/zh/changelog.mdx
+docs/theme/generated/

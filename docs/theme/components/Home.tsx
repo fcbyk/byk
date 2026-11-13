@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from '@rspress/core/theme';
 import { useI18n, useLang, useSite } from '@rspress/core/runtime';
 import type { i18nSource } from '../../i18n';
+import { BYK_VERSION } from '../generated/version';
 import './home.css';
 
 /**
@@ -58,7 +59,7 @@ export function BykHome() {
       <header className="b-shell b-hero b-reveal">
         <div className="b-hero__eyebrow">
           <span className="b-dot" />
-          <span>v0.7.0</span>
+          <span>v{BYK_VERSION}</span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span>MIT</span>
           <span style={{ opacity: 0.4 }}>·</span>

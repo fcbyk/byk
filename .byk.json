@@ -32,11 +32,9 @@
   },
 
   "发布": {
+    "$mode": "silent",
+    "更新版本号":"python3 scripts/release.py",
     "生成变更日志": "cz changelog --incremental",
-    "更新版本号": {
-      "$mode": "interactive",
-      "$cmd": "cz bump {version}"
-    },
     "maturin": {
       "打包arm": "maturin build --release --out dist",
       "打包x86": "maturin build --release --out dist --target x86_64-apple-darwin",
