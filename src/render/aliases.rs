@@ -42,17 +42,20 @@ fn collect_alias_entries(merged: &MergedConfig) -> Vec<(String, String)> {
             // cwd 相对路径以别名来源文件所在目录为基准解析，
             // 无 source_path 时回退到 ~/.byk/alias/
             let base_dir = resolved.source_path.as_deref().and_then(|p| p.parent());
-            let suffix = definition
-                .cwd
-                .as_ref()
-                .map(|c| format!(" ({})", resolve_cwd_display(c, base_dir)))
-                .unwrap_or_default();
+            // 有描述时描述就是用户挑好的一行摘要，cwd 属于实现细节；
+            // 无描述时回退显示命令，此时路径才有辨识价值。
             let display_text = if let Some(ref desc) = definition.description {
                 desc.clone()
             } else {
-                display::escape_for_display(&definition.command)
+                let command = display::escape_for_display(&definition.command);
+                match definition.cwd.as_ref() {
+                    Some(cwd) => {
+                        format!("{} ({})", command, resolve_cwd_display(cwd, base_dir))
+                    }
+                    None => command,
+                }
             };
-            Some((path.clone(), format!("{}{}", display_text, suffix)))
+            Some((path.clone(), display_text))
         })
         .collect()
 }
@@ -290,6 +293,31 @@ mod tests {
         let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
         assert_eq!(result.len(), 1);
         assert!(result[0].1.contains("Say hello"));
+    }
+
+    #[test]
+    fn alias_format_with_description_omits_cwd_suffix() {
+        let mut merged: MergedConfig = HashMap::new();
+        let node = MergedNode {
+            alias: Some(ResolvedAlias {
+                value: AliasValue::Meta {
+                    cmd: "venv/bin/sprout".into(),
+                    cwd: Some("/path/to/project".into()),
+                    mode: None,
+                    description: Some("A general-purpose AI agent".into()),
+                    recursive: None,
+                },
+                source: "@test".into(),
+                source_path: None,
+                paths: Vec::new(),
+            }),
+            ..Default::default()
+        };
+        merged.insert("sprout".into(), node);
+        let result = format_lines(&merged, Path::new(TEST_ALIAS_DIR));
+        assert_eq!(result.len(), 1);
+        assert!(result[0].1.contains("A general-purpose AI agent"));
+        assert!(!result[0].1.contains("/path/to/project"));
     }
 
     #[test]

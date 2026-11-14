@@ -281,6 +281,8 @@ Aliases:
   release    cz bump {version}
 ```
 
+A resolved `$cwd` is appended in parentheses only when no description is set — with a description, the line stays a single summary and the working directory is left out.
+
 ### PATH Directories
 
 `$paths` prepends directories to `PATH` before an alias runs, letting the alias call executables in those directories directly.
