@@ -8,7 +8,7 @@ use colored::Colorize;
 use serde_json::Value;
 
 use super::{FileScope, not_found_message, resolve_target};
-use crate::core::config::{FILE_DIR_VAR, build_builtin_table, describe_issue, preprocess_vars};
+use crate::core::config::{describe_issue, expand_document};
 use crate::core::paths::PathLayout;
 use crate::utils::path::dir_of;
 
@@ -54,21 +54,15 @@ pub(super) fn run(
     }
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut vars = build_builtin_table(&layout.root_dir, &cwd);
-    vars.insert(FILE_DIR_VAR.to_string(), dir_of(&target));
+    let issues = expand_document(&mut value, &layout.root_dir, &cwd, &dir_of(&target));
 
-    for issue in preprocess_vars(&mut value, &vars) {
+    for issue in issues {
         eprintln!(
             "{} {} in {}",
             "Warning:".yellow(),
             describe_issue(&issue),
             target.display()
         );
-    }
-
-    // $var 已完成使命：展开后继续保留只会暴露过时信息。
-    if let Some(obj) = value.as_object_mut() {
-        obj.remove("$var");
     }
 
     let mut output = serde_json::to_string_pretty(&value)

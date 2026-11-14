@@ -126,7 +126,15 @@ def test_api_lists_requests(runner):
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     names = {item["name"] for item in payload["requests"]}
-    assert names == {"completion", "complete", "resolve", "paths", "file", "check"}
+    assert names == {
+        "completion",
+        "complete",
+        "resolve",
+        "paths",
+        "file",
+        "expand",
+        "check",
+    }
 
 
 def test_api_paths_json(runner, tmp_path):
@@ -287,6 +295,122 @@ def test_api_file_requires_key(runner):
 
 def test_api_file_rejects_extra_args(runner):
     r = runner.run("__api__", "file", "@ops", "extra")
+    assert r.returncode == 1
+    assert "too many arguments" in r.stderr
+
+
+def test_api_expand_vars(runner, tmp_path):
+    """expand 展开 $var 与内置变量，且不校验别名结构"""
+    conf = tmp_path / "conf.json"
+    conf.write_text(
+        json.dumps(
+            {
+                "$var": {"TOOLS": "${byk_dir}/tools", "DEPLOY": "${TOOLS}/deploy"},
+                "build": {
+                    "$cmd": "cd ${file_dir} && ${DEPLOY} --work ${work_dir}",
+                    "$unknown": "${nope}",
+                },
+                "not_an_alias": {"$cmd": 123},
+            }
+        ),
+        encoding="utf-8",
+    )
+    r = runner.run("__api__", "expand", str(conf), cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    workdir = tmp_path.resolve()
+    payload = json.loads(r.stdout)
+    assert "$var" not in payload
+    assert payload["build"]["$cmd"] == (
+        f"cd {workdir} && {runner.byk_dir}/tools/deploy --work {workdir}"
+    )
+    assert payload["build"]["$unknown"] == "${nope}"
+    assert payload["not_an_alias"] == {"$cmd": 123}
+    assert r.stdout.endswith("\n")
+
+
+def test_api_expand_builtins_without_var(runner, tmp_path):
+    """没有 $var 时内置变量照样展开"""
+    conf = tmp_path / "plain.json"
+    conf.write_text(
+        '{"root":"${byk_dir}","work":"${work_dir}","here":"${file_dir}"}',
+        encoding="utf-8",
+    )
+    r = runner.run("__api__", "expand", str(conf), cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {
+        "root": str(runner.byk_dir),
+        "work": str(tmp_path.resolve()),
+        "here": str(tmp_path.resolve()),
+    }
+
+
+def test_api_expand_array_root(runner, tmp_path):
+    conf = tmp_path / "list.json"
+    conf.write_text('["${file_dir}/a", {"b":"${byk_dir}"}]', encoding="utf-8")
+    r = runner.run("__api__", "expand", str(conf), cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    workdir = tmp_path.resolve()
+    assert json.loads(r.stdout) == [f"{workdir}/a", {"b": str(runner.byk_dir)}]
+
+
+def test_api_expand_relative_path(runner, tmp_path):
+    """相对路径按 cwd 解析，file_dir 仍是一个绝对目录"""
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "conf.json").write_text('{"here":"${file_dir}"}', encoding="utf-8")
+    r = runner.run("__api__", "expand", "sub/conf.json", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["here"] == str(tmp_path.resolve() / "sub")
+
+
+def test_api_expand_warns_without_failing(runner, tmp_path):
+    conf = tmp_path / "conf.json"
+    conf.write_text(
+        '{"$var":{"bad-name":"x"},"cmd":"echo ${byk_dir}"}', encoding="utf-8"
+    )
+    r = runner.run("__api__", "expand", str(conf), cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert "Warning:" in r.stderr
+    assert "bad-name" in r.stderr
+    payload = json.loads(r.stdout)
+    assert "$var" not in payload
+    assert payload["cmd"] == f"echo {runner.byk_dir}"
+
+
+def test_api_expand_rejects_invalid_json(runner, tmp_path):
+    conf = tmp_path / "bad.json"
+    conf.write_text("{not json", encoding="utf-8")
+    r = runner.run("__api__", "expand", str(conf), cwd=str(tmp_path))
+    assert r.returncode == 1
+    assert "invalid JSON in" in r.stderr
+    assert r.stdout == ""
+
+
+def test_api_expand_rejects_directory(runner, tmp_path):
+    r = runner.run("__api__", "expand", str(tmp_path))
+    assert r.returncode == 1
+    assert "refusing to read directory" in r.stderr
+
+
+def test_api_expand_reports_missing_file(runner, tmp_path):
+    r = runner.run("__api__", "expand", str(tmp_path / "nope.json"))
+    assert r.returncode == 1
+    assert "file not found" in r.stderr
+
+
+def test_api_expand_treats_at_prefix_as_path(runner, tmp_path):
+    """@ 前缀不会被当作文件 key"""
+    r = runner.run("__api__", "expand", "@ops", cwd=str(tmp_path))
+    assert r.returncode == 1
+    assert "file not found" in r.stderr
+
+
+def test_api_expand_rejects_missing_or_extra_args(runner, tmp_path):
+    r = runner.run("__api__", "expand")
+    assert r.returncode == 1
+    assert "missing <path>" in r.stderr
+
+    r = runner.run("__api__", "expand", "a.json", "b.json", cwd=str(tmp_path))
     assert r.returncode == 1
     assert "too many arguments" in r.stderr
 

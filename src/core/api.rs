@@ -3,15 +3,18 @@
 //! 形式为 `byk __api__ <request> [args...]`，结果走 stdout，错误走 stderr 并以非零码退出。
 //! 不出现于 `byk -h`。
 
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
 use crate::core::aliases;
 use crate::core::completion;
-use crate::core::config::{Level, Mode};
+use crate::core::config::{Level, Mode, describe_issue, expand_document};
 use crate::core::filecmd;
 use crate::core::paths::PathLayout;
+use crate::utils::path::dir_of;
 
 /// 全部请求；无参调用 `byk __api__` 时原样输出。
 const REQUESTS: &[RequestInfo] = &[
@@ -39,6 +42,11 @@ const REQUESTS: &[RequestInfo] = &[
         name: "file",
         args: "<file-key> | --list",
         description: "resolve an alias file key (@name / @@name) to its path, or list every alias file with --list",
+    },
+    RequestInfo {
+        name: "expand",
+        args: "<path>",
+        description: "expand file-level $var and built-in variables in a JSON file without alias validation",
     },
     RequestInfo {
         name: "check",
@@ -179,7 +187,7 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
         Some("completion") => {
             let shell = match args.get(1) {
                 Some(s) => s,
-                None => usage_error("completion", "missing <shell> (zsh|bash|fish)"),
+                None => fail("completion", "missing <shell> (zsh|bash|fish)"),
             };
             completion::generate(shell);
         }
@@ -194,7 +202,7 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
         Some("resolve") => {
             let key = match args.get(1) {
                 Some(s) if !s.is_empty() => s,
-                _ => usage_error("resolve", "missing <key>"),
+                _ => fail("resolve", "missing <key>"),
             };
             let command_args = &args[2..];
 
@@ -245,7 +253,7 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
         }
         Some("check") => {
             if args.len() > 1 {
-                usage_error("check", "takes no arguments");
+                fail("check", "takes no arguments");
             }
 
             let scanned = aliases::load_scanned_aliases(layout);
@@ -294,11 +302,11 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
             // 带名字：只打印那一个值的裸字符串，不引号、不转义，直接进 `$(...)`
             Some(name) => {
                 if args.len() > 2 {
-                    usage_error("paths", "too many arguments (expected [name])");
+                    fail("paths", "too many arguments (expected [name])");
                 }
                 match path_for(name, layout) {
                     Some(path) => println!("{}", path.display()),
-                    None => usage_error(
+                    None => fail(
                         "paths",
                         &format!(
                             "unknown name {:?} (expected one of: {})",
@@ -312,7 +320,7 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
         Some("file") => match args.get(1).map(String::as_str) {
             Some("--list") => {
                 if args.len() > 2 {
-                    usage_error("file", "too many arguments (expected --list)");
+                    fail("file", "too many arguments (expected --list)");
                 }
                 let workdir = current_workdir();
                 let payload = FilesResponse {
@@ -323,20 +331,17 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                     serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
                 );
             }
-            Some(option) if option.starts_with('-') => usage_error(
+            Some(option) if option.starts_with('-') => fail(
                 "file",
                 &format!("unknown option {:?} (expected --list)", option),
             ),
             Some(key) if !key.is_empty() => {
                 if args.len() > 2 {
-                    usage_error("file", "too many arguments (expected <file-key>)");
+                    fail("file", "too many arguments (expected <file-key>)");
                 }
                 let address = match filecmd::address_for_key(key, layout) {
                     Ok(address) => address,
-                    Err(message) => {
-                        eprintln!("__api__ file: {}", message);
-                        std::process::exit(1);
-                    }
+                    Err(message) => fail("file", &message),
                 };
                 let payload =
                     alias_file_info(key.to_string(), address.scope.as_str(), address.path);
@@ -345,8 +350,75 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                     serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
                 );
             }
-            _ => usage_error("file", "missing <file-key> (or use --list)"),
+            _ => fail("file", "missing <file-key> (or use --list)"),
         },
+        Some("expand") => {
+            if args.len() > 2 {
+                fail("expand", "too many arguments (expected <path>)");
+            }
+            let raw = match args.get(1) {
+                Some(path) if !path.is_empty() => path,
+                _ => fail("expand", "missing <path>"),
+            };
+
+            let cwd = current_workdir();
+            let target = if Path::new(raw).is_absolute() {
+                PathBuf::from(raw)
+            } else {
+                cwd.join(raw)
+            };
+
+            let metadata = match fs::metadata(&target) {
+                Ok(metadata) => metadata,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    fail("expand", &format!("file not found: {}", target.display()))
+                }
+                Err(e) => fail(
+                    "expand",
+                    &format!("failed to inspect {}: {}", target.display(), e),
+                ),
+            };
+            if metadata.is_dir() {
+                fail(
+                    "expand",
+                    &format!("refusing to read directory: {}", target.display()),
+                );
+            }
+            if !metadata.is_file() {
+                fail(
+                    "expand",
+                    &format!("not a regular file: {}", target.display()),
+                );
+            }
+
+            let content = match fs::read(&target) {
+                Ok(content) => content,
+                Err(e) => fail(
+                    "expand",
+                    &format!("failed to read {}: {}", target.display(), e),
+                ),
+            };
+            let mut value: serde_json::Value = match serde_json::from_slice(&content) {
+                Ok(value) => value,
+                Err(e) => fail(
+                    "expand",
+                    &format!("invalid JSON in {}: {}", target.display(), e),
+                ),
+            };
+
+            for issue in expand_document(&mut value, &layout.root_dir, &cwd, &dir_of(&target)) {
+                eprintln!(
+                    "Warning: {} in {}",
+                    describe_issue(&issue),
+                    target.display()
+                );
+            }
+
+            match serde_json::to_string_pretty(&value) {
+                Ok(output) => println!("{}", output),
+                Err(e) => fail("expand", &format!("failed to render JSON: {}", e)),
+            }
+        }
         Some(other) => {
             eprintln!("__api__: unknown request {:?}", other);
             eprintln!("  Run `byk __api__` to list available requests.");
@@ -362,7 +434,7 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
     }
 }
 
-fn usage_error(request: &str, message: &str) -> ! {
+fn fail(request: &str, message: &str) -> ! {
     eprintln!("__api__ {}: {}", request, message);
     std::process::exit(1);
 }

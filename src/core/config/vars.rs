@@ -287,6 +287,24 @@ pub fn preprocess_vars(root: &mut Value, builtin: &VarTable) -> Vec<VarIssue> {
     issues
 }
 
+/// 文档级展开：内置变量 + 顶层 `$var`，随后移除 `$var`。
+///
+/// `file_dir` 由调用方按被处理文件的位置给出；返回值是声明问题，供调用方提示。
+pub fn expand_document(
+    value: &mut Value,
+    byk_root: &Path,
+    work_dir: &Path,
+    file_dir: &str,
+) -> Vec<VarIssue> {
+    let mut vars = build_builtin_table(byk_root, work_dir);
+    vars.insert(FILE_DIR_VAR.to_string(), file_dir.to_string());
+    let issues = preprocess_vars(value, &vars);
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("$var");
+    }
+    issues
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

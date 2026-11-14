@@ -23,6 +23,7 @@ description: 隐藏的 byk __api__：给 shell 脚本与编辑器插件的只读
 | `__api__ paths` | CLI 目录、工作目录与别名文件清单，JSON |
 | `__api__ paths <name>` | 单个目录的裸路径（`root` / `alias`） |
 | `__api__ file <file-key>` / `--list` | 单个文件地址或全部文件清单，JSON |
+| `__api__ expand <path>` | 展开 JSON 文件中的变量，输出 JSON |
 | `__api__ check` | 扫描诊断，JSON |
 | `__api__`（无参） | 接口清单，JSON |
 
@@ -59,6 +60,11 @@ byk __api__
       "name": "file",
       "args": "<file-key> | --list",
       "description": "resolve an alias file key (@name / @@name) to its path, or list every alias file with --list"
+    },
+    {
+      "name": "expand",
+      "args": "<path>",
+      "description": "expand file-level $var and built-in variables in a JSON file without alias validation"
     },
     {
       "name": "check",
@@ -237,6 +243,39 @@ byk __api__ file --list
 
 清单只按文件名枚举、不读取内容：JSON 损坏或链接目标缺失的文件照样列出，文件名非法的文件不会出现。`--list` 不能与 key 同时给出，未知选项同样以退出码 1 结束。
 
+## expand `<path>`
+
+展开一个 JSON 文件里的变量并输出结果。参数是普通文件路径（相对路径按进程工作目录解析），**不是 `@文件key`**。
+
+```json title="./config.json"
+{
+  "$var": {
+    "TOOLS": "${byk_dir}/tools"
+  },
+  "deploy": "cd ${file_dir} && ${TOOLS}/deploy.sh"
+}
+```
+
+```bash
+byk __api__ expand ./config.json
+```
+
+```json title="byk __api__ expand ./config.json"
+{
+  "deploy": "cd /Users/you/proj && /Users/you/.byk/tools/deploy.sh"
+}
+```
+
+规则与 `..json --expand` 相同：
+
+- 展开 `${byk_dir}`、`${work_dir}`、`${file_dir}` 以及顶层 `$var`；`$var` 可以覆盖内置名
+- 展开后移除顶层 `$var`
+- 未识别的 `${name}`、裸 `$HOME`、`\${...}` 原样保留；`${args}` 是别名占位符，不展开
+- **不做别名结构校验**：没有 `$var`、没有 `$cmd`、甚至根不是对象都可以，只要是合法 JSON 就处理；内置变量照样展开
+- 不跟随 link 数组、不做继承、不执行任何内容
+
+`$var` 声明的问题（非法名字、自引用等）只写 stderr 告警，请求仍然成功，stdout 是一份完整 JSON；只有文件读不到、目标是目录、非法 UTF-8/JSON 才退出 1，stdout 为空。
+
 ## check
 
 `byk --check` 的机器版本：扫描工作目录与全局别名目录——和正常执行读的是同两处——把发现的问题返回为 JSON。
@@ -290,7 +329,7 @@ if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
 
 ## 版本与兼容
 
-请求可能随版本增加——`resolve`、`paths`、`file` 和 `check` 都是后来才有的。写集成时：
+请求可能随版本增加——`resolve`、`paths`、`file`、`expand` 和 `check` 都是后来才有的。写集成时：
 
 - 请求名从 `byk __api__` 读，不要写死在代码里
 - 解析 JSON 时容忍未知字段，字段只会增加

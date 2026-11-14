@@ -23,6 +23,7 @@ Three rules apply to every request:
 | `__api__ paths` | CLI directories, working directory, and alias file list, JSON |
 | `__api__ paths <name>` | A single bare path (`root` / `alias`) |
 | `__api__ file <file-key>` / `--list` | Address of a single alias file, or the full file list, JSON |
+| `__api__ expand <path>` | Expand variables in a JSON file, JSON output |
 | `__api__ check` | Scan diagnostics, JSON |
 | `__api__` (no args) | Interface manifest, JSON |
 
@@ -59,6 +60,11 @@ byk __api__
       "name": "file",
       "args": "<file-key> | --list",
       "description": "resolve an alias file key (@name / @@name) to its path, or list every alias file with --list"
+    },
+    {
+      "name": "expand",
+      "args": "<path>",
+      "description": "expand file-level $var and built-in variables in a JSON file without alias validation"
     },
     {
       "name": "check",
@@ -237,6 +243,39 @@ byk __api__ file --list
 
 The list is enumerated by filename only and content is never read: a file with broken JSON or a missing link target is still listed, while invalid filenames do not appear. `--list` cannot be combined with a key, and an unknown option also exits 1.
 
+## expand `<path>`
+
+Expands the variables in a JSON file and prints the result. The argument is an ordinary file path (a relative one is resolved against the process working directory), **not an `@file` key**.
+
+```json title="./config.json"
+{
+  "$var": {
+    "TOOLS": "${byk_dir}/tools"
+  },
+  "deploy": "cd ${file_dir} && ${TOOLS}/deploy.sh"
+}
+```
+
+```bash
+byk __api__ expand ./config.json
+```
+
+```json title="byk __api__ expand ./config.json"
+{
+  "deploy": "cd /Users/you/proj && /Users/you/.byk/tools/deploy.sh"
+}
+```
+
+The rules match `..json --expand`:
+
+- Expands `${byk_dir}`, `${work_dir}`, `${file_dir}`, and a top-level `$var`; `$var` may override a built-in name
+- Removes the top-level `$var` after expansion
+- Unknown `${name}`, bare `$HOME`, and `\${...}` stay as-is; `${args}` is an alias placeholder and is not expanded
+- **No alias-structure validation**: missing `$var`, missing `$cmd`, or even a non-object root are all fine as long as the JSON parses; built-ins still expand
+- Does not follow link arrays, apply inheritance, or execute anything
+
+Problems with `$var` declarations (invalid names, self-references) only warn on stderr and the request still succeeds with a complete JSON document on stdout. Only an unreadable file, a directory, or invalid UTF-8/JSON exits 1 with an empty stdout.
+
 ## check
 
 The machine form of `byk --check`: scans the working directory and the global alias directory — the same two places normal execution reads — and returns the problems found there.
@@ -290,7 +329,7 @@ This line forwards Tab events to `byk __api__ complete`, which scans your aliase
 
 ## Versions and compatibility
 
-Requests get added over time — `resolve`, `paths`, `file` and `check` all arrived after the first release. When integrating:
+Requests get added over time — `resolve`, `paths`, `file`, `expand` and `check` all arrived after the first release. When integrating:
 
 - read request names from `byk __api__`, never hardcode the list
 - tolerate unknown fields when parsing the JSON; fields only get added

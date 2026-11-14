@@ -5,6 +5,7 @@
 - **variables**: `${work_dir}` expands to the directory `byk` was invoked from, unaffected by inherited `$cwd`; built-ins expand to absolute paths, so it can go directly into `$cwd` to escape a file-level directory
 - **`__api__ paths`**: the JSON now also carries `workdir` and `aliasFiles`, a path-only list of alias files enumerated by filename (global first, then local, sorted by key)
 - **`__api__ file`**: new read-only request that resolves one alias file key (`@name` / `@@name` / `@` / `@@`) to `{key, scope, path, dir}` without checking existence, reading contents, or following links; `--list` returns every alias file as an array of the same objects
+- **`__api__ expand`**: expands file-level `$var` and built-in variables in any JSON file and prints the result; no alias-structure validation, no link following, no execution
 
 ## v0.8.0 (2026-11-13)
 
