@@ -131,10 +131,12 @@ def test_paths_omits_only_missing_group(runner, tmp_path):
 
 
 def test_api_lists_requests(runner):
-    """无参 __api__ 输出请求清单"""
+    """无参 __api__ 输出版本与请求清单"""
     r = runner.run("__api__")
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
+    version = runner.run("-v").stdout.split()[1]
+    assert payload["version"] == version
     names = {item["name"] for item in payload["requests"]}
     assert names == {
         "completion",

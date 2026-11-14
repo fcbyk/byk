@@ -7,6 +7,7 @@
 - **`__api__ paths`**: `<name>` now also accepts `workdir`, so every JSON directory field has a scalar form (`root` / `alias` / `workdir`)
 - **`__api__ file`**: new read-only request that resolves one alias file key (`@name` / `@@name` / `@` / `@@`) to `{key, scope, path, dir}` without checking existence, reading contents, or following links; `--list` returns every alias file as an array of the same objects
 - **`__api__ expand`**: expands file-level `$var` and built-in variables in any JSON file and prints the result; no alias-structure validation, no link following, no execution
+- **`__api__`**: the no-arg manifest now includes `version`, so integrations do not need to parse the text output of `byk -v`
 
 ### Bug Fixes
 

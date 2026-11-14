@@ -27,7 +27,7 @@ description: 隐藏的 byk __api__：给 shell 脚本与编辑器插件的只读
 | `__api__ check` | 扫描诊断，JSON |
 | `__api__`（无参） | 接口清单，JSON |
 
-最后一条建议常备：**请求名别背，直接问**。
+最后一条建议常备：**请求名别背，直接问**。清单顶层的 `version` 是 CLI 版本，与 `-v` 首行一致，集成方不必再解析版本文本。
 
 ```bash
 byk __api__
@@ -35,6 +35,7 @@ byk __api__
 
 ```json title="byk __api__"
 {
+  "version": "0.8.0",
   "requests": [
     {
       "name": "completion",

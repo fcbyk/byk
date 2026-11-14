@@ -27,7 +27,7 @@ Three rules apply to every request:
 | `__api__ check` | Scan diagnostics, JSON |
 | `__api__` (no args) | Interface manifest, JSON |
 
-Keep the last one close: **don't memorise request names, ask for them**.
+Keep the last one close: **don't memorise request names, ask for them**. The top-level `version` is the CLI version, matching the first line of `-v`, so integrations need not parse version text.
 
 ```bash
 byk __api__
@@ -35,6 +35,7 @@ byk __api__
 
 ```json title="byk __api__"
 {
+  "version": "0.8.0",
   "requests": [
     {
       "name": "completion",

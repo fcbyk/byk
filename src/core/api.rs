@@ -68,6 +68,7 @@ struct RequestInfo {
 
 #[derive(Serialize)]
 struct RequestList {
+    version: &'static str,
     requests: &'static [RequestInfo],
 }
 
@@ -410,7 +411,10 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
             std::process::exit(1);
         }
         None => {
-            let payload = RequestList { requests: REQUESTS };
+            let payload = RequestList {
+                version: env!("CARGO_PKG_VERSION"),
+                requests: REQUESTS,
+            };
             println!(
                 "{}",
                 serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())

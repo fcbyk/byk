@@ -325,6 +325,17 @@ mod tests {
         (v, issues)
     }
 
+    fn expand_doc(root: Value) -> (Value, Vec<VarIssue>) {
+        let mut v = root;
+        let issues = expand_document(
+            &mut v,
+            Path::new("/home/u/.byk"),
+            Path::new("/home/u/invoke"),
+            "/home/u/proj/conf",
+        );
+        (v, issues)
+    }
+
     // ---------- expand ----------
 
     #[test]
@@ -522,6 +533,42 @@ mod tests {
         assert!(issues.is_empty());
         assert_eq!(v[0], json!("/home/u/.byk/x.json"));
         assert_eq!(v[1], json!("${nope}/y.json"));
+    }
+
+    #[test]
+    fn expand_document_array_root_expands_without_var() {
+        let (v, issues) = expand_doc(json!([
+            "${byk_dir}/bin",
+            {"p": "${file_dir}"},
+            "${nope}"
+        ]));
+        assert!(issues.is_empty());
+        assert_eq!(
+            v,
+            json!([
+                "/home/u/.byk/bin",
+                {"p": "/home/u/proj/conf"},
+                "${nope}"
+            ])
+        );
+    }
+
+    #[test]
+    fn expand_document_without_var_expands_object() {
+        let (v, issues) = expand_doc(json!({"run": "echo ${work_dir}", "n": 1}));
+        assert!(issues.is_empty());
+        assert_eq!(v, json!({"run": "echo /home/u/invoke", "n": 1}));
+    }
+
+    #[test]
+    fn expand_document_non_object_root_expands_and_preserves_scalars() {
+        let (v, issues) = expand_doc(json!("${byk_dir}/x"));
+        assert!(issues.is_empty());
+        assert_eq!(v, json!("/home/u/.byk/x"));
+
+        let (v, issues) = expand_doc(json!(42));
+        assert!(issues.is_empty());
+        assert_eq!(v, json!(42));
     }
 
     #[test]
