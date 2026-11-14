@@ -375,6 +375,17 @@ def test_api_expand_relative_path(runner, tmp_path):
     assert json.loads(r.stdout)["here"] == str(tmp_path.resolve() / "sub")
 
 
+def test_api_expand_normalizes_file_dir(runner, tmp_path):
+    """file_dir 取真实目录，输入里的 . 与 .. 不进入展开结果"""
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "conf.json").write_text('{"here":"${file_dir}"}', encoding="utf-8")
+    for raw in ("./sub/conf.json", "sub/../sub/conf.json"):
+        r = runner.run("__api__", "expand", raw, cwd=str(tmp_path))
+        assert r.returncode == 0, r.stderr
+        assert json.loads(r.stdout)["here"] == str(sub.resolve())
+
+
 def test_api_expand_warns_without_failing(runner, tmp_path):
     conf = tmp_path / "conf.json"
     conf.write_text(

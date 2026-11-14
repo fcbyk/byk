@@ -14,7 +14,7 @@ use crate::core::completion;
 use crate::core::config::{Level, Mode, describe_issue, expand_document};
 use crate::core::filecmd;
 use crate::core::paths::PathLayout;
-use crate::utils::path::dir_of;
+use crate::utils::path::{canonical, dir_of};
 
 /// 全部请求；无参调用 `byk __api__` 时原样输出。
 const REQUESTS: &[RequestInfo] = &[
@@ -392,7 +392,16 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 ),
             };
 
-            for issue in expand_document(&mut value, &layout.root_dir, &cwd, &dir_of(&target)) {
+            // 读取沿用原路径（保留系统对符号链接的解析），file_dir 取真实目录，
+            // 顺带消掉用户输入里的 `.` / `..`
+            let file_dir = target
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .map(canonical)
+                .map(|parent| parent.to_string_lossy().into_owned())
+                .unwrap_or_else(|| dir_of(&target));
+
+            for issue in expand_document(&mut value, &layout.root_dir, &cwd, &file_dir) {
                 eprintln!(
                     "Warning: {} in {}",
                     describe_issue(&issue),
