@@ -172,9 +172,9 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: |
-            wheel-*
-            sdist
+          # pattern 是单个 minimatch glob：换行不是分隔符，多行会匹配不到任何
+          # artifact，下载步骤仍成功但目录不会创建。花括号才能同时匹配两组。
+          pattern: '{wheel-*,sdist}'
           path: wheels
           # 五个平台的 whl 和 sdist 平铺到同一目录，打包时不用处理层级。
           merge-multiple: true
@@ -219,6 +219,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+
       # merge-multiple 把所有 artifact 平铺到一个目录，省掉手动搬运。
       - uses: actions/download-artifact@v4
         with:
@@ -233,9 +235,32 @@ jobs:
           cd assets
           sha256sum byk-linux-*.tar.gz byk-darwin-*.tar.gz byk-windows-*.zip | tee checksums.txt
 
+      # 草稿正文 = 这一段 + GitHub 自动生成的 notes（body 会被前置）。
+      # 锚点按 GitHub 的标题 slug 规则算：`## v0.8.1 (2026-11-14)`
+      # → `#v081-2026-11-14`，所以版本或日期变了链接也自动跟着变。
+      - name: Compose release body
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          heading=$(grep -m1 "^## v${version} " CHANGELOG.md || true)
+          if [ -z "$heading" ]; then
+            echo "::error::CHANGELOG.md has no '## v${version} (...)' section"
+            exit 1
+          fi
+          anchor=$(printf '%s\n' "$heading" \
+            | sed -E 's/^##[[:space:]]+//' \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9 -]//g; s/ +/-/g')
+          url="https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md#${anchor}"
+          {
+            echo "Please refer to [CHANGELOG.md](${url}) for details."
+            echo
+          } > release-body.md
+          cat release-body.md
+
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
+          body_path: release-body.md
           files: |
             assets/byk-linux-*.tar.gz
             assets/byk-darwin-*.tar.gz
