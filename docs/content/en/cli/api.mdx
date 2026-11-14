@@ -21,7 +21,7 @@ Three rules apply to every request:
 | `__api__ complete [--with-descriptions] <words...>` | Completion candidates, one per line; the flag appends a tab-separated description for built-in options, file-command verbs, and file keys (their alias file path) |
 | `__api__ resolve <key> [args...]` | Resolved alias, JSON |
 | `__api__ paths` | CLI directories, working directory, and alias file list, JSON |
-| `__api__ paths <name>` | A single bare path (`root` / `alias`) |
+| `__api__ paths <name>` | A single bare path (`root` / `alias` / `workdir`) |
 | `__api__ file <file-key>` / `--list` | Address of a single alias file, or the full file list, JSON |
 | `__api__ expand <path>` | Expand variables in a JSON file, JSON output |
 | `__api__ check` | Scan diagnostics, JSON |
@@ -54,7 +54,7 @@ byk __api__
     {
       "name": "paths",
       "args": "[name]",
-      "description": "print CLI paths and alias file locations as JSON; with <name>, print only that path (root|alias)"
+      "description": "print CLI paths and alias file locations as JSON; with <name>, print only that path (root|alias|workdir)"
     },
     {
       "name": "file",
@@ -171,17 +171,18 @@ The list is enumerated by filename only and content is never read: a file with b
 
 ### Reading paths
 
-Shell scripts use `paths <name>`: it prints that value as a bare string — no quotes, no label, a single trailing newline — exactly the shape `$()` wants.
+Shell scripts use `paths <name>`: it prints that value as a bare string — no quotes, no label, a single trailing newline — exactly the shape `$()` wants. `<name>` accepts `root`, `alias`, or `workdir`, matching the JSON fields one-to-one.
 
 ```bash
 INSTALL_DIR="$(byk __api__ paths root)/bin"
 ALIAS_DIR="$(byk __api__ paths alias)"
+WORKDIR="$(byk __api__ paths workdir)"
 ```
 
 A wrong name lists the valid ones and exits 1:
 
 ```text
-__api__ paths: unknown name "bin" (expected one of: root, alias)
+__api__ paths: unknown name "bin" (expected one of: root, alias, workdir)
 ```
 
 `paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal; it shares the same path layout and the same filename enumeration with argument-less `paths`, and differs only in shape.

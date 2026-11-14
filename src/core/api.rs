@@ -36,7 +36,7 @@ const REQUESTS: &[RequestInfo] = &[
     RequestInfo {
         name: "paths",
         args: "[name]",
-        description: "print CLI paths and alias file locations as JSON; with <name>, print only that path (root|alias)",
+        description: "print CLI paths and alias file locations as JSON; with <name>, print only that path (root|alias|workdir)",
     },
     RequestInfo {
         name: "file",
@@ -57,7 +57,7 @@ const REQUESTS: &[RequestInfo] = &[
 
 /// `paths <name>` 可取的键，顺序即错误提示里的顺序。
 /// `PathsResponse` 的字段必须与它保持一致。
-const PATH_NAMES: &[&str] = &["root", "alias"];
+const PATH_NAMES: &[&str] = &["root", "alias", "workdir"];
 
 #[derive(Serialize)]
 struct RequestInfo {
@@ -173,11 +173,12 @@ fn current_workdir() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-/// 键名到目录的唯一映射，JSON 与 `paths <name>` 两条出口共用。
-fn path_for<'a>(name: &str, layout: &'a PathLayout) -> Option<&'a PathBuf> {
+/// `paths <name>` 的键名到目录映射，与 JSON 字段一一对应。
+fn path_for(name: &str, layout: &PathLayout) -> Option<PathBuf> {
     match name {
-        "root" => Some(&layout.root_dir),
-        "alias" => Some(&layout.alias_dir),
+        "root" => Some(layout.root_dir.clone()),
+        "alias" => Some(layout.alias_dir.clone()),
+        "workdir" => Some(current_workdir()),
         _ => None,
     }
 }

@@ -425,7 +425,7 @@ def test_api_expand_rejects_missing_or_extra_args(runner, tmp_path):
     assert "too many arguments" in r.stderr
 
 
-def test_api_paths_single_value_is_bare(runner):
+def test_api_paths_single_value_is_bare(runner, tmp_path):
     """paths <name> 只输出裸字符串：无引号、无转义、结尾一个换行，可直接进 $()"""
     r = runner.run("__api__", "paths", "root")
     assert r.returncode == 0, r.stderr
@@ -434,6 +434,10 @@ def test_api_paths_single_value_is_bare(runner):
     r = runner.run("__api__", "paths", "alias")
     assert r.returncode == 0, r.stderr
     assert r.stdout == f"{runner.byk_dir / 'alias'}\n"
+
+    r = runner.run("__api__", "paths", "workdir", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == f"{tmp_path.resolve()}\n"
 
 
 def test_api_paths_does_not_create_dirs(runner):
@@ -447,7 +451,7 @@ def test_api_paths_rejects_unknown_name(runner):
     r = runner.run("__api__", "paths", "bin")
     assert r.returncode == 1
     assert 'unknown name "bin"' in r.stderr
-    assert "root, alias" in r.stderr
+    assert "root, alias, workdir" in r.stderr
     assert r.stdout == ""
 
 
