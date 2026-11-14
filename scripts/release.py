@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""发布脚本：选版本 → 归档 changelog → 跑全量测试 → 写盘 → 提交并打标签。
+"""发布脚本：选版本 → 归档 changelog → 确认扩展版本 → 跑全量测试 → 写盘 → 提交并打标签。
 
 写盘是倒数第二步、提交是最后一步，前面几步都不动文件；测试也放在写盘之前，
 失败时仓库一个字节都没改，不需要为半成品写回滚。
@@ -9,6 +9,8 @@
   - 版本唯一真值是 Cargo.toml（release.yml 会校验 tag 与它一致，docs 构建也从
     这里读）。Cargo.lock 交给 `cargo update -p byk` 自己改，脚本不碰它的内容。
   - changelog 只做标题重命名，不生成条目 —— 代写出来的句子没人认领。
+  - VS Code 扩展的 version / bykBinaryVersion 发版前单独询问：扩展 X.Y 跟随
+    CLI、Z 独立，跨 X.Y 时 Z 重置为 0。
   - 提交不筛选文件：发版时工作区本来就有手写的 changelog，只报数量不列名字。
   - 不 push：推 tag 会直接触发 release 构建，那一步留给人。
 
@@ -30,6 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "Cargo.toml"
 LOCK = ROOT / "Cargo.lock"
+VSCODE_PKG = ROOT / "extensions" / "vscode" / "package.json"
 RULE = "------------------"
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$")
 
@@ -149,6 +152,50 @@ def rewrite(text: str, index: int, next_version: str) -> str:
     lines = text.split("\n")
     lines[index] = set_version(lines[index], next_version)
     return "\n".join(lines)
+
+
+def json_field(text: str, key: str, name: str) -> re.Match[str]:
+    """定位顶层 JSON 字符串字段；同名键必须恰好出现一次。"""
+    pattern = rf'^(\s*"{re.escape(key)}":\s*")([^"]+)(")'
+    matches = list(re.finditer(pattern, text, re.MULTILINE))
+    if len(matches) != 1:
+        raise ReleaseError(
+            f"{name} 里应恰有一个 \"{key}\" 字段，实际找到 {len(matches)} 个"
+        )
+    return matches[0]
+
+
+def json_value(text: str, key: str, name: str) -> str:
+    return json_field(text, key, name).group(2)
+
+
+def plan_json_field(text: str, key: str, next_version: str, name: str) -> dict | None:
+    """算出单个字段的改写位置与前后整行；值已一致时返回 None。
+
+    只替换值本身，缩进、逗号和其余字段保持原样，避免整份 JSON 重新序列化。
+    """
+    match = json_field(text, key, name)
+    current = match.group(2)
+    if current == next_version:
+        return None
+
+    start, end = match.start(2), match.end(2)
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    if line_end < 0:
+        line_end = len(text)
+    before = text[line_start:line_end]
+    after = before[: start - line_start] + next_version + before[end - line_start :]
+    return {
+        "key": key,
+        "current": current,
+        "next": next_version,
+        "start": start,
+        "end": end,
+        "line": text.count("\n", 0, start) + 1,
+        "before": before.strip(),
+        "after": after.strip(),
+    }
 
 
 def pick_version(current: str, suggested: list[str]) -> str:
@@ -378,6 +425,73 @@ def resolve_changelogs(target: str, current: str) -> list[dict]:
             ]
 
         checked = True
+
+
+# ── VS Code 扩展版本 ────────────────────────────────────────────────
+
+
+def resolve_vscode(target: str) -> list[dict]:
+    """扩展版本闸门：询问是否把扩展与内置 CLI 的版本升到这一版。
+
+    - `bykBinaryVersion` 必须指向本次发版的 CLI，否则扩展打包时会内置旧二进制。
+    - 扩展的 `version` 的 X.Y 跟随 CLI；同一 X.Y 内 Z 独立前进，跨 X.Y 时重置为 0。
+    - 只替换字段值，不重新序列化整份 JSON。
+    """
+    name = "extensions/vscode/package.json"
+
+    print(dim(RULE))
+    print("vscode")
+    if not VSCODE_PKG.exists():
+        print(yellow(f"  {name} 不存在，跳过"))
+        return []
+
+    text = VSCODE_PKG.read_text(encoding="utf-8")
+    ext_now = json_value(text, "version", name)
+    bin_now = json_value(text, "bykBinaryVersion", name)
+    ext = parse_version(ext_now)
+    nxt = parse_version(target)
+    if ext is None:
+        raise ReleaseError(f"{name}: version {ext_now!r} 不是合法 semver")
+    if parse_version(bin_now) is None:
+        raise ReleaseError(f"{name}: bykBinaryVersion {bin_now!r} 不是合法 semver")
+    if nxt is None:
+        raise ReleaseError(f"目标版本不是合法 semver: {target}")
+
+    if ext[:2] != nxt[:2]:
+        if ext[:2] > nxt[:2]:
+            raise ReleaseError(
+                f"{name}: 扩展版本 {ext_now} 高于本次 CLI {target}，先确认要发的版本"
+            )
+        ext_next = f"{nxt[0]}.{nxt[1]}.0"
+    else:
+        ext_next = ext_now if compare(ext_now, target) >= 0 else target
+
+    if compare(bin_now, target) > 0:
+        raise ReleaseError(
+            f"{name}: bykBinaryVersion {bin_now} 已高于本次 CLI {target}，先确认要发的版本"
+        )
+    bin_next = target
+
+    edits = [
+        edit
+        for edit in (
+            plan_json_field(text, "version", ext_next, name),
+            plan_json_field(text, "bykBinaryVersion", bin_next, name),
+        )
+        if edit
+    ]
+    if not edits:
+        print(green(f"✓ {name} 已是 {ext_next} / CLI {bin_next}"))
+        return []
+
+    print(name)
+    for edit in edits:
+        print(f"  {edit['key'].ljust(16)} {edit['current']} → {edit['next']}")
+
+    if not confirm("更新 VS Code 扩展版本? [y/n]"):
+        print(yellow("已跳过；扩展内置的 CLI 可能与本次发版不匹配"))
+        return []
+    return [{"path": VSCODE_PKG, "name": name, "text": text, "edits": edits}]
 
 
 # ── 测试 ────────────────────────────────────────────────────────────
@@ -617,8 +731,9 @@ def main() -> None:
     if tag_exists(f"v{target}"):
         raise ReleaseError(f"tag v{target} 已存在，先确认这次要发的版本号")
 
-    # 两个闸门都在写盘之前：不过就一直问，宁可什么都没改
+    # 所有闸门都在写盘之前：不过就一直问，宁可什么都没改
     archived = resolve_changelogs(target, current)
+    vscode = resolve_vscode(target)
     run_tests()
 
     manifest_before = line.strip()
@@ -634,6 +749,11 @@ def main() -> None:
         print(f"{edit['name']}:{edit['index'] + 1}")
         print(red(f"- {edit['before']}"))
         print(green(f"+ {edit['after']}"))
+    for edit in vscode:
+        for field in edit["edits"]:
+            print(f"{edit['name']}:{field['line']}")
+            print(red(f"- {field['before']}"))
+            print(green(f"+ {field['after']}"))
     print(dim(RULE))
 
     # 记下每个文件的原内容：任何一步失败都整体还原，不留半成品
@@ -651,6 +771,11 @@ def main() -> None:
             lines = edit["text"].split("\n")
             lines[edit["index"]] = edit["after"]
             write(Path(edit["path"]), "\n".join(lines))
+        for edit in vscode:
+            content = edit["text"]
+            for field in sorted(edit["edits"], key=lambda f: f["start"], reverse=True):
+                content = content[: field["start"]] + field["next"] + content[field["end"] :]
+            write(edit["path"], content)
     except (ReleaseError, OSError) as error:
         for path, content in originals.items():
             path.write_text(content, encoding="utf-8")
@@ -659,6 +784,8 @@ def main() -> None:
     done = [f"Cargo.toml{' 与 Cargo.lock' if has_lock else ''} 已更新到 {target}"]
     if archived:
         done.append(f"{len(archived)} 份 changelog 已归档")
+    if vscode:
+        done.append("VS Code 扩展版本已更新")
     print(green(f"✓ {'，'.join(done)}"))
     if not has_lock:
         print(dim("  Cargo.lock 不存在，未同步"))
