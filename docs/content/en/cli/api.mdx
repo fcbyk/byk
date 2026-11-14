@@ -166,7 +166,7 @@ Called without a name it returns the directories plus the alias file list, for p
 | `root` | CLI root directory, the same as `${byk_dir}` inside aliases |
 | `alias` | Global alias directory |
 | `workdir` | Process working directory, where local alias files are looked up |
-| `aliasFiles` | Absolute paths of alias files in both directories: global first, then local, each sorted by key; an empty array when there are none. Use `file --list` when you need key, scope, or directory |
+| `aliasFiles` | Absolute paths of alias files in both directories: global first, then local, each sorted by key; a directory used as both scopes is listed once; an empty array when there are none. Use `file --list` when you need key, scope, or directory |
 
 The list is enumerated by filename only and content is never read: a file with broken JSON, a missing link target, or a broken symlink is still listed, and whether it is usable is `check`'s job; files with invalid names do not appear. Every value only answers "where is it" and **never creates anything**.
 
@@ -218,7 +218,7 @@ It accepts the same key forms as file commands: `@name` (working directory), `@@
 
 ### `--list`
 
-With no key and `--list`, it returns every alias file, ordered exactly like `paths.aliasFiles`: global first, then local, each sorted by key. Every entry has the same shape as the single-key response.
+With no key and `--list`, it returns every alias file, ordered like `paths.aliasFiles`: global first, then local, each sorted by key. Unlike `aliasFiles`, it keeps both scope identities, so a directory that serves as both scopes yields two entries. Every entry has the same shape as the single-key response.
 
 ```bash
 byk __api__ file --list

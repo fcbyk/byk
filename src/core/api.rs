@@ -3,6 +3,8 @@
 //! 形式为 `byk __api__ <request> [args...]`，结果走 stdout，错误走 stderr 并以非零码退出。
 //! 不出现于 `byk -h`。
 
+use std::collections::HashSet;
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -118,8 +120,8 @@ struct PathsResponse {
     root: PathBuf,
     alias: PathBuf,
     workdir: PathBuf,
-    /// 两处目录下的别名文件绝对路径，先全局后本地，各自按 key 排序。
-    /// 需要 key / scope / dir 时用 `__api__ file --list`。
+    /// 两处目录下的别名文件绝对路径，先全局后本地，各自按 key 排序；
+    /// 同一目录兼作两种作用域时只出现一次。需要 key / scope / dir 时用 `file --list`。
     #[serde(rename = "aliasFiles")]
     alias_files: Vec<PathBuf>,
 }
@@ -168,6 +170,28 @@ fn alias_file_info(key: String, scope: &'static str, path: PathBuf) -> AliasFile
         path,
         dir,
     }
+}
+
+/// `aliasFiles` 只要文件清单：同一目录兼作两种作用域时只保留先出现的全局路径。
+///
+/// `file --list` 不去重 —— `@` / `@@` 是两个不同的地址身份。
+fn alias_file_paths(layout: &PathLayout, workdir: &Path) -> Vec<PathBuf> {
+    let mut seen: HashSet<(PathBuf, OsString)> = HashSet::new();
+    alias_files(layout, workdir)
+        .into_iter()
+        .map(|file| file.path)
+        .filter(|path| {
+            // 目录身份用规范化路径比较，HOME 本身是符号链接时两种拼写也能认出来；
+            // 文件名保持原样，两个不同的链接仍算两个文件。
+            let identity = (
+                path.parent().map(canonical).unwrap_or_default(),
+                path.file_name()
+                    .map(|name| name.to_os_string())
+                    .unwrap_or_default(),
+            );
+            seen.insert(identity)
+        })
+        .collect()
 }
 
 fn current_workdir() -> PathBuf {
@@ -274,10 +298,7 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 let payload = PathsResponse {
                     root: layout.root_dir.clone(),
                     alias: layout.alias_dir.clone(),
-                    alias_files: alias_files(layout, &workdir)
-                        .into_iter()
-                        .map(|file| file.path)
-                        .collect(),
+                    alias_files: alias_file_paths(layout, &workdir),
                     workdir,
                 };
                 println!(

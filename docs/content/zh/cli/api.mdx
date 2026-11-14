@@ -166,7 +166,7 @@ byk __api__ resolve @run.build --env staging
 | `root` | CLI 根目录，也就是别名里可用的 `${byk_dir}` |
 | `alias` | 全局别名目录 |
 | `workdir` | 进程工作目录，也就是本地别名文件的查找目录 |
-| `aliasFiles` | 两处目录下的别名文件绝对路径：先全局后本地，各自按 key 排序；没有文件时为空数组。需要 key、scope 或所在目录时用 `file --list` |
+| `aliasFiles` | 两处目录下的别名文件绝对路径：先全局后本地，各自按 key 排序；同一目录兼作两种作用域时只列一次；没有文件时为空数组。需要 key、scope 或所在目录时用 `file --list` |
 
 清单只按文件名枚举、不读取内容：JSON 损坏、链接目标缺失或符号链接断链的文件照样列出，能否使用交给 `check`；文件名非法的文件不会出现。所有值都只回答"在哪"，**不会顺手创建目录**。
 
@@ -218,7 +218,7 @@ byk __api__ file @run
 
 ### `--list`
 
-不带 key、只给 `--list` 时返回全部别名文件，排序与 `paths.aliasFiles` 相同：先全局后本地，各自按 key 排序。每项与单查的返回体同形。
+不带 key、只给 `--list` 时返回全部别名文件，排序与 `paths.aliasFiles` 相同：先全局后本地，各自按 key 排序。与 `aliasFiles` 不同，它保留两种作用域身份，因此同一目录兼作全局与本地时会出现两条。每项与单查的返回体同形。
 
 ```bash
 byk __api__ file --list

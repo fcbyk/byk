@@ -1,6 +1,7 @@
 """E2E —— 帮助渲染（$description / 嵌套分组 / cwd 后缀）与 __api__ 契约"""
 
 import json
+import os
 
 
 def test_help_shows_description(runner):
@@ -178,6 +179,24 @@ def test_api_paths_json_lists_alias_files(runner, tmp_path):
         str(workdir / "broken.byk.json"),
         str(workdir / "l.byk.json"),
     ]
+
+
+def test_api_paths_alias_files_dedupes_shared_directory(runner):
+    """cwd 就是全局别名目录时 aliasFiles 只列一次；file --list 仍保留两种身份"""
+    global_file = runner.prepare_alias_json("ops", {"build": "echo ops"})
+    alias_dir = runner.byk_dir / "alias"
+
+    r = runner.run("__api__", "paths", cwd=str(alias_dir))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["aliasFiles"] == [str(global_file)]
+
+    r = runner.run("__api__", "file", "--list", cwd=str(alias_dir))
+    assert r.returncode == 0, r.stderr
+    files = json.loads(r.stdout)["files"]
+    assert [item["key"] for item in files] == ["@@ops", "@ops"]
+    assert {os.path.realpath(item["path"]) for item in files} == {
+        os.path.realpath(global_file)
+    }
 
 
 def test_api_file_local(runner, tmp_path):
