@@ -20,8 +20,9 @@ Three rules apply to every request:
 | `__api__ completion <shell>` | Shell registration script (zsh / bash / fish) |
 | `__api__ complete [--with-descriptions] <words...>` | Completion candidates, one per line; the flag appends a tab-separated description for built-in options, file-command verbs, and file keys (their alias file path) |
 | `__api__ resolve <key> [args...]` | Resolved alias, JSON |
-| `__api__ paths` | The two CLI directories, JSON |
+| `__api__ paths` | CLI directories, working directory, and alias file list, JSON |
 | `__api__ paths <name>` | A single bare path (`root` / `alias`) |
+| `__api__ file <file-key>` / `--list` | Address of a single alias file, or the full file list, JSON |
 | `__api__ check` | Scan diagnostics, JSON |
 | `__api__` (no args) | Interface manifest, JSON |
 
@@ -52,7 +53,12 @@ byk __api__
     {
       "name": "paths",
       "args": "[name]",
-      "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
+      "description": "print CLI paths and alias file locations as JSON; with <name>, print only that path (root|alias)"
+    },
+    {
+      "name": "file",
+      "args": "<file-key> | --list",
+      "description": "resolve an alias file key (@name / @@name) to its path, or list every alias file with --list"
     },
     {
       "name": "check",
@@ -134,16 +140,28 @@ Two fields deserve their own explanation, because a plugin's correctness rests o
 
 ## paths `[name]`
 
-Called without a name it returns both directories as JSON, for programs that want everything at once:
+Called without a name it returns the directories plus the alias file list, for programs that want everything at once:
 
 ```json title="byk __api__ paths"
 {
   "root": "/Users/you/.byk",
-  "alias": "/Users/you/.byk/alias"
+  "alias": "/Users/you/.byk/alias",
+  "workdir": "/Users/you/proj",
+  "aliasFiles": [
+    "/Users/you/.byk/alias/ops.byk.json",
+    "/Users/you/proj/run.byk.json"
+  ]
 }
 ```
 
-`root` is the same directory as `${byk_dir}` inside aliases; `alias` is the global alias directory. Both only answer "where is it" and **never create anything**.
+| Field | Meaning |
+|-------|---------|
+| `root` | CLI root directory, the same as `${byk_dir}` inside aliases |
+| `alias` | Global alias directory |
+| `workdir` | Process working directory, where local alias files are looked up |
+| `aliasFiles` | Absolute paths of alias files in both directories: global first, then local, each sorted by key; an empty array when there are none. Use `file --list` when you need key, scope, or directory |
+
+The list is enumerated by filename only and content is never read: a file with broken JSON or a missing link target is still listed, and whether it is usable is `check`'s job; files with invalid names do not appear. Every value only answers "where is it" and **never creates anything**.
 
 ### Reading paths
 
@@ -160,7 +178,64 @@ A wrong name lists the valid ones and exits 1:
 __api__ paths: unknown name "bin" (expected one of: root, alias)
 ```
 
-`paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal, rendered from the same path layout; it additionally lists the alias files found in both directories, while the machine-facing request stays directory-only.
+`paths <name>` deliberately does not wrap its answer in JSON: its caller is a shell script, and wrapping would force `jq` or `sed` to strip the quotes, while `"$(...)"` gets a clean value for free. Programs that want structure call `paths` with no argument. The human-readable version is still `byk --paths` — labelled and spaced for reading in a terminal; it shares the same path layout and the same filename enumeration with argument-less `paths`, and differs only in shape.
+
+## file `<file-key>` / `--list`
+
+`file` has two forms: give it a file key to resolve an address, or add `--list` to list every alias file.
+
+### A single key
+
+Resolves a file key to an address without reading the file or requiring it to exist:
+
+```bash
+byk __api__ file @run
+```
+
+```json title="byk __api__ file @run"
+{
+  "key": "@run",
+  "scope": "local",
+  "path": "/Users/you/proj/run.byk.json",
+  "dir": "/Users/you/proj"
+}
+```
+
+It accepts the same key forms as file commands: `@name` (working directory), `@@name` (global alias directory), `@` / `@@` (the anonymous `.byk.json`). `path` matches an entry in `paths.aliasFiles`; `key`, `scope`, and `dir` come on top.
+
+- **No existence check**: it answers "where would this land under byk's rules", the same path `@run..path` prints, plus `scope` and `dir`.
+- **Address only, not content**: to learn which file an alias came from and what it finally runs, use `resolve`.
+- **Links are not followed**: the result is the location of the link file itself, not its target.
+- **Alias keys are rejected**: the dot in `@run.build` makes it an invalid filename, exiting 1.
+
+### `--list`
+
+With no key and `--list`, it returns every alias file, ordered exactly like `paths.aliasFiles`: global first, then local, each sorted by key. Every entry has the same shape as the single-key response.
+
+```bash
+byk __api__ file --list
+```
+
+```json title="byk __api__ file --list"
+{
+  "files": [
+    {
+      "key": "@@ops",
+      "scope": "global",
+      "path": "/Users/you/.byk/alias/ops.byk.json",
+      "dir": "/Users/you/.byk/alias"
+    },
+    {
+      "key": "@run",
+      "scope": "local",
+      "path": "/Users/you/proj/run.byk.json",
+      "dir": "/Users/you/proj"
+    }
+  ]
+}
+```
+
+The list is enumerated by filename only and content is never read: a file with broken JSON or a missing link target is still listed, while invalid filenames do not appear. `--list` cannot be combined with a key, and an unknown option also exits 1.
 
 ## check
 
@@ -215,7 +290,7 @@ This line forwards Tab events to `byk __api__ complete`, which scans your aliase
 
 ## Versions and compatibility
 
-Requests get added over time — `resolve`, `paths` and `check` all arrived after the first release. When integrating:
+Requests get added over time — `resolve`, `paths`, `file` and `check` all arrived after the first release. When integrating:
 
 - read request names from `byk __api__`, never hardcode the list
 - tolerate unknown fields when parsing the JSON; fields only get added

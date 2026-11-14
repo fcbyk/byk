@@ -126,18 +126,169 @@ def test_api_lists_requests(runner):
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     names = {item["name"] for item in payload["requests"]}
-    assert names == {"completion", "complete", "resolve", "paths", "check"}
+    assert names == {"completion", "complete", "resolve", "paths", "file", "check"}
 
 
-def test_api_paths_json(runner):
-    """无参 paths 输出两条目录的 JSON"""
-    r = runner.run("__api__", "paths")
+def test_api_paths_json(runner, tmp_path):
+    """无参 paths 输出目录与别名文件清单的 JSON"""
+    r = runner.run("__api__", "paths", cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     assert payload == {
         "root": str(runner.byk_dir),
         "alias": str(runner.byk_dir / "alias"),
+        "workdir": str(tmp_path.resolve()),
+        "aliasFiles": [],
     }
+
+
+def test_api_paths_json_lists_alias_files(runner, tmp_path):
+    """aliasFiles 是路径数组，先全局后本地，按 key 排序；只校验文件名不解析内容"""
+    global_file = runner.prepare_alias_json("g", {"build": "echo g"})
+    local_file = tmp_path / "l.byk.json"
+    local_file.write_text(json.dumps({"run": "echo l"}), encoding="utf-8")
+    (tmp_path / "broken.byk.json").write_text("not json", encoding="utf-8")
+    (tmp_path / "bad.name.byk.json").write_text("{}", encoding="utf-8")
+
+    r = runner.run("__api__", "paths", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    workdir = tmp_path.resolve()
+    assert json.loads(r.stdout)["aliasFiles"] == [
+        str(global_file),
+        str(workdir / "broken.byk.json"),
+        str(workdir / "l.byk.json"),
+    ]
+
+
+def test_api_file_local(runner, tmp_path):
+    """file 解析本地文件 key，不要求文件存在"""
+    r = runner.run("__api__", "file", "@p", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    workdir = tmp_path.resolve()
+    assert json.loads(r.stdout) == {
+        "key": "@p",
+        "scope": "local",
+        "path": str(workdir / "p.byk.json"),
+        "dir": str(workdir),
+    }
+    assert not (workdir / "p.byk.json").exists()
+
+
+def test_api_file_global(runner, tmp_path):
+    """file 解析全局文件 key"""
+    r = runner.run("__api__", "file", "@@ops", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    alias_dir = runner.byk_dir / "alias"
+    assert json.loads(r.stdout) == {
+        "key": "@@ops",
+        "scope": "global",
+        "path": str(alias_dir / "ops.byk.json"),
+        "dir": str(alias_dir),
+    }
+    assert not runner.byk_dir.exists()
+
+
+def test_api_file_anonymous(runner, tmp_path):
+    """file 支持匿名文件 key"""
+    r = runner.run("__api__", "file", "@", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["path"] == str(tmp_path.resolve() / ".byk.json")
+
+    r = runner.run("__api__", "file", "@@", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["path"] == str(
+        runner.byk_dir / "alias" / ".byk.json"
+    )
+
+
+def test_api_file_list(runner, tmp_path):
+    """--list 返回对象数组，与 paths.aliasFiles 同序；坏文件列出，非法文件名不列"""
+    global_file = runner.prepare_alias_json("g", {"build": "echo g"})
+    local_file = tmp_path / "l.byk.json"
+    local_file.write_text(json.dumps({"run": "echo l"}), encoding="utf-8")
+    (tmp_path / "broken.byk.json").write_text("not json", encoding="utf-8")
+    (tmp_path / "bad.name.byk.json").write_text("{}", encoding="utf-8")
+
+    r = runner.run("__api__", "file", "--list", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    workdir = tmp_path.resolve()
+    assert json.loads(r.stdout) == {
+        "files": [
+            {
+                "key": "@@g",
+                "scope": "global",
+                "path": str(global_file),
+                "dir": str(runner.byk_dir / "alias"),
+            },
+            {
+                "key": "@broken",
+                "scope": "local",
+                "path": str(workdir / "broken.byk.json"),
+                "dir": str(workdir),
+            },
+            {
+                "key": "@l",
+                "scope": "local",
+                "path": str(workdir / "l.byk.json"),
+                "dir": str(workdir),
+            },
+        ]
+    }
+
+
+def test_api_file_list_empty_does_not_create_dirs(runner, tmp_path):
+    r = runner.run("__api__", "file", "--list", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"files": []}
+    assert not runner.byk_dir.exists()
+
+
+def test_api_file_list_rejects_key(runner):
+    r = runner.run("__api__", "file", "--list", "@ops")
+    assert r.returncode == 1
+    assert "too many arguments" in r.stderr
+
+
+def test_api_file_rejects_unknown_option(runner):
+    r = runner.run("__api__", "file", "--nope")
+    assert r.returncode == 1
+    assert 'unknown option "--nope"' in r.stderr
+    assert "--list" in r.stderr
+
+
+def test_api_file_matches_filecmd_path(runner, tmp_path):
+    """file 的 path 与 @..path 输出的绝对路径一致"""
+    r = runner.run("__api__", "file", "@ops", cwd=str(tmp_path))
+    api_path = json.loads(r.stdout)["path"]
+    r = runner.run("@ops..path", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == f"{api_path}\n"
+
+
+def test_api_file_rejects_alias_key(runner, tmp_path):
+    """file 只接受文件 key；带点的别名 key 不属于文件 namespace"""
+    r = runner.run("__api__", "file", "@p.build", cwd=str(tmp_path))
+    assert r.returncode == 1
+    assert "Invalid file name" in r.stderr
+    assert r.stdout == ""
+
+
+def test_api_file_rejects_missing_prefix(runner):
+    r = runner.run("__api__", "file", "ops")
+    assert r.returncode == 1
+    assert "Invalid file key" in r.stderr
+
+
+def test_api_file_requires_key(runner):
+    r = runner.run("__api__", "file")
+    assert r.returncode == 1
+    assert "missing <file-key>" in r.stderr
+
+
+def test_api_file_rejects_extra_args(runner):
+    r = runner.run("__api__", "file", "@ops", "extra")
+    assert r.returncode == 1
+    assert "too many arguments" in r.stderr
 
 
 def test_api_paths_single_value_is_bare(runner):

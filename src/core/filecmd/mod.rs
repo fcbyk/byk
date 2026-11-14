@@ -38,6 +38,16 @@ pub(crate) enum FileScope {
     Global,
 }
 
+impl FileScope {
+    /// 面向 `__api__` JSON 的小写名。
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            FileScope::Local => "local",
+            FileScope::Global => "global",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Verb {
     Init,
@@ -367,6 +377,34 @@ fn resolve_target(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<P
         }
         FileScope::Global => Ok(target_path(&layout.alias_dir, stem)),
     }
+}
+
+/// `__api__ file` 的返回内容：key 对应的 scope 与目标文件路径。
+pub(crate) struct FileAddress {
+    pub scope: FileScope,
+    pub path: PathBuf,
+}
+
+/// 解析文件 key（`@name` / `@@name` / `@` / `@@`）为目标地址。
+///
+/// 与 `..path` 共用文件名校验和 scope 选择；不读取文件，也不要求文件存在。
+pub(crate) fn address_for_key(key: &str, layout: &PathLayout) -> Result<FileAddress, String> {
+    let Some((prefix, stem)) = split_prefix(key) else {
+        return Err(format!(
+            "Invalid file key: {:?}\nHint: expected @<name> or @@<name>",
+            key
+        ));
+    };
+    if !validate_filename(stem) {
+        return Err(invalid_stem_message(stem));
+    }
+    let scope = if prefix == "@@" {
+        FileScope::Global
+    } else {
+        FileScope::Local
+    };
+    let path = resolve_target(scope, stem, layout)?;
+    Ok(FileAddress { scope, path })
 }
 
 /// 目标不存在时的错误；另一 scope 有同名文件时给出切换提示。

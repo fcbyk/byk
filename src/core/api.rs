@@ -3,7 +3,7 @@
 //! 形式为 `byk __api__ <request> [args...]`，结果走 stdout，错误走 stderr 并以非零码退出。
 //! 不出现于 `byk -h`。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -33,7 +33,12 @@ const REQUESTS: &[RequestInfo] = &[
     RequestInfo {
         name: "paths",
         args: "[name]",
-        description: "print CLI paths as JSON; with <name>, print only that path (root|alias)",
+        description: "print CLI paths and alias file locations as JSON; with <name>, print only that path (root|alias)",
+    },
+    RequestInfo {
+        name: "file",
+        args: "<file-key> | --list",
+        description: "resolve an alias file key (@name / @@name) to its path, or list every alias file with --list",
     },
     RequestInfo {
         name: "check",
@@ -95,14 +100,69 @@ struct CheckItem {
     message: String,
 }
 
-/// `__api__ paths` 的返回体：byk 实际使用的两条目录。
+/// `__api__ paths` 的返回体：byk 实际使用的目录与本次扫描到的别名文件。
 ///
-/// 与 `--paths` 共用同一份 `PathLayout`，区别只在形状：
+/// 与 `--paths` 共用同一份 `PathLayout` 和文件名枚举，区别只在形状：
 /// `--paths` 给人看（带标签和空行），这份 JSON 只给程序解析。
 #[derive(Serialize)]
 struct PathsResponse {
     root: PathBuf,
     alias: PathBuf,
+    workdir: PathBuf,
+    /// 两处目录下的别名文件绝对路径，先全局后本地，各自按 key 排序。
+    /// 需要 key / scope / dir 时用 `__api__ file --list`。
+    #[serde(rename = "aliasFiles")]
+    alias_files: Vec<PathBuf>,
+}
+
+/// `__api__ file` 的返回体：单个别名文件的位置信息。
+#[derive(Serialize)]
+struct AliasFileInfo {
+    key: String,
+    scope: &'static str,
+    path: PathBuf,
+    dir: PathBuf,
+}
+
+/// `__api__ file --list` 的返回体：全部别名文件的位置信息。
+#[derive(Serialize)]
+struct FilesResponse {
+    files: Vec<AliasFileInfo>,
+}
+
+/// 只按文件名枚举两处目录；不解析内容，坏文件与链接文件照样列出。
+/// 先全局后本地，各自按 key 排序。
+fn alias_files(layout: &PathLayout, workdir: &Path) -> Vec<AliasFileInfo> {
+    let mut files = Vec::new();
+    for (key, path) in aliases::list_alias_files(&layout.alias_dir, true) {
+        files.push(alias_file_info(
+            key,
+            filecmd::FileScope::Global.as_str(),
+            path,
+        ));
+    }
+    for (key, path) in aliases::list_alias_files(workdir, false) {
+        files.push(alias_file_info(
+            key,
+            filecmd::FileScope::Local.as_str(),
+            path,
+        ));
+    }
+    files
+}
+
+fn alias_file_info(key: String, scope: &'static str, path: PathBuf) -> AliasFileInfo {
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    AliasFileInfo {
+        key,
+        scope,
+        path,
+        dir,
+    }
+}
+
+fn current_workdir() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 /// 键名到目录的唯一映射，JSON 与 `paths <name>` 两条出口共用。
@@ -216,9 +276,15 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
         Some("paths") => match args.get(1) {
             // 不带名字：整份 JSON，一次拿全
             None => {
+                let workdir = current_workdir();
                 let payload = PathsResponse {
                     root: layout.root_dir.clone(),
                     alias: layout.alias_dir.clone(),
+                    alias_files: alias_files(layout, &workdir)
+                        .into_iter()
+                        .map(|file| file.path)
+                        .collect(),
+                    workdir,
                 };
                 println!(
                     "{}",
@@ -242,6 +308,44 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                     ),
                 }
             }
+        },
+        Some("file") => match args.get(1).map(String::as_str) {
+            Some("--list") => {
+                if args.len() > 2 {
+                    usage_error("file", "too many arguments (expected --list)");
+                }
+                let workdir = current_workdir();
+                let payload = FilesResponse {
+                    files: alias_files(layout, &workdir),
+                };
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
+                );
+            }
+            Some(option) if option.starts_with('-') => usage_error(
+                "file",
+                &format!("unknown option {:?} (expected --list)", option),
+            ),
+            Some(key) if !key.is_empty() => {
+                if args.len() > 2 {
+                    usage_error("file", "too many arguments (expected <file-key>)");
+                }
+                let address = match filecmd::address_for_key(key, layout) {
+                    Ok(address) => address,
+                    Err(message) => {
+                        eprintln!("__api__ file: {}", message);
+                        std::process::exit(1);
+                    }
+                };
+                let payload =
+                    alias_file_info(key.to_string(), address.scope.as_str(), address.path);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
+                );
+            }
+            _ => usage_error("file", "missing <file-key> (or use --list)"),
         },
         Some(other) => {
             eprintln!("__api__: unknown request {:?}", other);

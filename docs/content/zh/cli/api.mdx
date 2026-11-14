@@ -20,8 +20,9 @@ description: 隐藏的 byk __api__：给 shell 脚本与编辑器插件的只读
 | `__api__ completion <shell>` | 补全注册脚本（zsh / bash / fish） |
 | `__api__ complete [--with-descriptions] <words...>` | 补全候选，一行一个；带 flag 时内置选项、文件命令动词和文件 key（别名文件路径）附带 tab 分隔的描述 |
 | `__api__ resolve <key> [args...]` | 别名的解析结果，JSON |
-| `__api__ paths` | CLI 两条目录，JSON |
+| `__api__ paths` | CLI 目录、工作目录与别名文件清单，JSON |
 | `__api__ paths <name>` | 单个目录的裸路径（`root` / `alias`） |
+| `__api__ file <file-key>` / `--list` | 单个文件地址或全部文件清单，JSON |
 | `__api__ check` | 扫描诊断，JSON |
 | `__api__`（无参） | 接口清单，JSON |
 
@@ -52,7 +53,12 @@ byk __api__
     {
       "name": "paths",
       "args": "[name]",
-      "description": "print CLI paths as JSON; with <name>, print only that path (root|alias)"
+      "description": "print CLI paths and alias file locations as JSON; with <name>, print only that path (root|alias)"
+    },
+    {
+      "name": "file",
+      "args": "<file-key> | --list",
+      "description": "resolve an alias file key (@name / @@name) to its path, or list every alias file with --list"
     },
     {
       "name": "check",
@@ -134,16 +140,28 @@ byk __api__ resolve @run.build --env staging
 
 ## paths `[name]`
 
-不带名字返回两条目录的 JSON，给需要一次拿全的程序：
+不带名字返回目录与别名文件清单的 JSON，给需要一次拿全的程序：
 
 ```json title="byk __api__ paths"
 {
   "root": "/Users/you/.byk",
-  "alias": "/Users/you/.byk/alias"
+  "alias": "/Users/you/.byk/alias",
+  "workdir": "/Users/you/proj",
+  "aliasFiles": [
+    "/Users/you/.byk/alias/ops.byk.json",
+    "/Users/you/proj/run.byk.json"
+  ]
 }
 ```
 
-`root` 就是别名里可用的 `${byk_dir}`，`alias` 是全局别名目录。两者都只回答"在哪"，**不会顺手创建目录**。
+| 字段 | 说明 |
+|------|------|
+| `root` | CLI 根目录，也就是别名里可用的 `${byk_dir}` |
+| `alias` | 全局别名目录 |
+| `workdir` | 进程工作目录，也就是本地别名文件的查找目录 |
+| `aliasFiles` | 两处目录下的别名文件绝对路径：先全局后本地，各自按 key 排序；没有文件时为空数组。需要 key、scope 或所在目录时用 `file --list` |
+
+清单只按文件名枚举、不读取内容：JSON 损坏或链接目标缺失的文件照样列出，能否使用交给 `check`；文件名非法的文件不会出现。所有值都只回答"在哪"，**不会顺手创建目录**。
 
 ### 取路径
 
@@ -160,7 +178,64 @@ ALIAS_DIR="$(byk __api__ paths alias)"
 __api__ paths: unknown name "bin" (expected one of: root, alias)
 ```
 
-之所以不给 `paths <name>` 也套 JSON：它的调用方是 shell 脚本，套一层就得靠 `jq` 或 `sed` 剥引号，而 `"$(...)"` 天然拿到干净的值；需要结构化数据的程序走无参 `paths`。人读的版本仍然是 `byk --paths`——带标签和空行，终端里一眼看清，两者共用同一份路径布局；`--paths` 还会额外列出两处目录下的别名文件，而机器接口仍然只返回目录。
+之所以不给 `paths <name>` 也套 JSON：它的调用方是 shell 脚本，套一层就得靠 `jq` 或 `sed` 剥引号，而 `"$(...)"` 天然拿到干净的值；需要结构化数据的程序走无参 `paths`。人读的版本仍然是 `byk --paths`——带标签和空行，终端里一眼看清；它与无参 `paths` 共用同一份路径布局和同一份文件名枚举，区别只在展示形状。
+
+## file `<file-key>` / `--list`
+
+`file` 有两种用法：给一个文件 key，解析成地址；或加 `--list`，列出全部别名文件。
+
+### 单个 key
+
+把文件 key 解析成地址，不读文件，也不要求文件存在：
+
+```bash
+byk __api__ file @run
+```
+
+```json title="byk __api__ file @run"
+{
+  "key": "@run",
+  "scope": "local",
+  "path": "/Users/you/proj/run.byk.json",
+  "dir": "/Users/you/proj"
+}
+```
+
+接受与文件命令相同的 key 形式：`@name`（工作目录）、`@@name`（全局别名目录）、`@` / `@@`（匿名文件 `.byk.json`）。`path` 与 `paths.aliasFiles` 中的一项相同，另外附带 `key`、`scope` 与 `dir`。
+
+- **不要求文件存在**：它回答的是"按 byk 的规则会落在哪里"，与 `@run..path` 的输出路径相同，另外附带 `scope` 与 `dir`。
+- **只解析地址，不解析内容**：想知道某个别名来自哪个文件、最终命令是什么，用 `resolve`。
+- **不跟随链接**：返回的是链接文件本身的位置，不是它指向的目标。
+- **别名 key 会被拒绝**：`@run.build` 里的点让它成为非法文件名，退出码 1。
+
+### `--list`
+
+不带 key、只给 `--list` 时返回全部别名文件，排序与 `paths.aliasFiles` 相同：先全局后本地，各自按 key 排序。每项与单查的返回体同形。
+
+```bash
+byk __api__ file --list
+```
+
+```json title="byk __api__ file --list"
+{
+  "files": [
+    {
+      "key": "@@ops",
+      "scope": "global",
+      "path": "/Users/you/.byk/alias/ops.byk.json",
+      "dir": "/Users/you/.byk/alias"
+    },
+    {
+      "key": "@run",
+      "scope": "local",
+      "path": "/Users/you/proj/run.byk.json",
+      "dir": "/Users/you/proj"
+    }
+  ]
+}
+```
+
+清单只按文件名枚举、不读取内容：JSON 损坏或链接目标缺失的文件照样列出，文件名非法的文件不会出现。`--list` 不能与 key 同时给出，未知选项同样以退出码 1 结束。
 
 ## check
 
@@ -215,7 +290,7 @@ if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
 
 ## 版本与兼容
 
-请求可能随版本增加——`resolve`、`paths` 和 `check` 都是后来才有的。写集成时：
+请求可能随版本增加——`resolve`、`paths`、`file` 和 `check` 都是后来才有的。写集成时：
 
 - 请求名从 `byk __api__` 读，不要写死在代码里
 - 解析 JSON 时容忍未知字段，字段只会增加
