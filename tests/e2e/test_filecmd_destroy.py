@@ -98,6 +98,18 @@ def test_destroy_interactive_eof_cancels(runner):
     assert path.exists()
 
 
+def test_destroy_interactive_deletes_cjk_with_backspace(runner):
+    path = runner.prepare_alias_json("ops", {})
+
+    result = runner.run_in_terminal(
+        "@@ops..destroy", keys="ops中\x7f\r".encode()
+    )
+
+    assert result.returncode == 0
+    assert "Removed" in result.stderr
+    assert not path.exists()
+
+
 def test_destroy_anonymous_interactive_token(runner):
     path = runner.prepare_alias_file("", "{}")
 

@@ -1,8 +1,11 @@
 import json
 import os
 import pty
+import select
+import signal
 import subprocess
 import threading
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -105,6 +108,70 @@ class BykRunner:
         stdout, _ = collected["out"]
         stderr = b"".join(chunks).decode("utf-8", "replace").replace("\r\n", "\n")
         return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+
+    def run_in_terminal(
+        self,
+        *args: str,
+        keys: bytes,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """stdin / stdout / stderr 全部接到伪终端，模拟真实终端里敲键。
+
+        必须等提示出现后再送按键：提示出现前终端仍是 cooked 模式，
+        退格会被内核按字节处理，测不到行编辑器的行为。
+        """
+        process_env = {
+            **os.environ,
+            "HOME": str(self.home),
+            "TERM": "xterm-256color",
+        }
+        if env:
+            process_env.update(env)
+        argv = [str(self.binary), *args]
+
+        pid, fd = pty.fork()
+        if pid == 0:
+            if cwd:
+                os.chdir(cwd)
+            os.execve(str(self.binary), argv, process_env)
+
+        chunks: list[bytes] = []
+
+        def read_once(timeout: float) -> bool:
+            ready, _, _ = select.select([fd], [], [], timeout)
+            if not ready:
+                return False
+            try:
+                data = os.read(fd, 4096)
+            except OSError:
+                return False
+            if not data:
+                return False
+            chunks.append(data)
+            return True
+
+        def wait_prompt() -> None:
+            deadline = time.monotonic() + 10
+            while b"Type" not in b"".join(chunks):
+                if time.monotonic() > deadline:
+                    os.kill(pid, signal.SIGKILL)
+                    return
+                read_once(0.1)
+
+        wait_prompt()
+        os.write(fd, keys)
+        while True:
+            if not read_once(10):
+                os.kill(pid, signal.SIGKILL)
+                break
+        os.close(fd)
+        _, status = os.waitpid(pid, 0)
+
+        output = b"".join(chunks).decode("utf-8", "replace").replace("\r\n", "\n")
+        return subprocess.CompletedProcess(
+            argv, os.waitstatus_to_exitcode(status), "", output
+        )
 
     def prepare_alias_file(self, stem: str, content: str) -> Path:
         """在隔离环境中创建别名 JSON 文件"""

@@ -4,6 +4,8 @@ use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
 use colored::Colorize;
+use rustyline::error::ReadlineError;
+use rustyline::{Behavior, Config, DefaultEditor};
 
 pub(super) enum Confirmation {
     Confirmed,
@@ -40,25 +42,52 @@ pub(super) fn confirm(
     eprintln!();
 
     let expected = confirm_token(stem);
-    eprint!("  {} {}: ", "Type".dimmed(), expected.yellow());
-    io::stderr()
-        .flush()
-        .map_err(|e| format!("Failed to write confirmation prompt: {}", e))?;
+    let prompt = format!("  {} {}: ", "Type".dimmed(), expected.yellow());
 
-    let mut input = String::new();
-    match io::stdin().read_line(&mut input) {
-        Ok(0) => {
+    match read_token(&prompt)? {
+        None => {
             eprintln!();
             Ok(Confirmation::Cancelled)
         }
-        Ok(_) if input.trim() == expected => Ok(Confirmation::Confirmed),
-        Ok(_) => {
+        Some(input) if input.trim() == expected => Ok(Confirmation::Confirmed),
+        Some(_) => {
             eprintln!();
             Ok(Confirmation::Mismatch)
         }
-        Err(e) => {
-            eprintln!();
-            Err(format!("Failed to read confirmation: {}", e))
+    }
+}
+
+/// 读取确认输入；`None` 表示取消（EOF / Ctrl-C）。
+/// 终端输入交给 rustyline，它按 Unicode 宽度重绘，退格能完整删除中文；
+/// 管道输入仍走 `read_line`，保留脚本里 `echo token | byk ...` 的用法。
+fn read_token(prompt: &str) -> Result<Option<String>, String> {
+    if io::stdin().is_terminal() {
+        // PreferTerm 让提示直接落到终端而不是 stdout，保持 stdout 干净
+        let config = Config::builder().behavior(Behavior::PreferTerm).build();
+        let mut editor = DefaultEditor::with_config(config)
+            .map_err(|e| format!("Failed to initialize confirmation prompt: {}", e))?;
+        match editor.readline(prompt) {
+            Ok(line) => Ok(Some(line)),
+            Err(ReadlineError::Eof | ReadlineError::Interrupted) => Ok(None),
+            Err(e) => {
+                eprintln!();
+                Err(format!("Failed to read confirmation: {}", e))
+            }
+        }
+    } else {
+        eprint!("{}", prompt);
+        io::stderr()
+            .flush()
+            .map_err(|e| format!("Failed to write confirmation prompt: {}", e))?;
+
+        let mut input = String::new();
+        match io::stdin().read_line(&mut input) {
+            Ok(0) => Ok(None),
+            Ok(_) => Ok(Some(input)),
+            Err(e) => {
+                eprintln!();
+                Err(format!("Failed to read confirmation: {}", e))
+            }
         }
     }
 }
