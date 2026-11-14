@@ -176,8 +176,8 @@ pub(crate) fn load_merged_aliases_at(
 }
 
 fn scan_at(layout: &PathLayout, cwd: &Path) -> ScannedAliases {
-    // 内置变量在扫描期展开：byk_dir 是固定的资源根，file_dir 由扫描阶段逐文件注入
-    let vars = build_builtin_table(&layout.root_dir);
+    // 内置变量在扫描期展开：byk_dir / work_dir 固定，file_dir 由扫描阶段逐文件注入
+    let vars = build_builtin_table(&layout.root_dir, cwd);
     let local = scan_alias_files(cwd, false, &vars);
     let global = scan_alias_files(&layout.alias_dir, true, &vars);
 

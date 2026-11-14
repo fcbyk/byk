@@ -1,4 +1,4 @@
-"""E2E —— 变量替换：内置 ${byk_dir}/${file_dir} 与文件 $var"""
+"""E2E —— 变量替换：内置 ${byk_dir}/${work_dir}/${file_dir} 与文件 $var"""
 
 
 def test_builtin_byk_dir_expands(runner):
@@ -34,6 +34,38 @@ def test_file_dir_independent_of_cwd(runner):
     assert r.returncode == 0, r.stderr
     assert str(proj) in r.stdout
     assert str(build) not in r.stdout
+
+
+def test_work_dir_is_invocation_dir(runner):
+    """${work_dir} 是调用 byk 时的目录，$cwd 把命令挪走后也不变"""
+    invoke = runner.home / "invoke"
+    build = runner.home / "build"
+    for d in (invoke, build):
+        d.mkdir(parents=True, exist_ok=True)
+    runner.prepare_alias_file(
+        "vars",
+        '{"w": {"$cmd": "echo ${work_dir}", "$cwd": "%s"}}' % build,
+    )
+    r = runner.run("w", cwd=str(invoke))
+    assert r.returncode == 0, r.stderr
+    assert str(invoke.resolve()) in r.stdout
+    assert str(build.resolve()) not in r.stdout
+
+
+def test_work_dir_resets_inherited_cwd(runner):
+    """把 $cwd 写成 ${work_dir} 可跳出文件级 cwd 的继承"""
+    invoke = runner.home / "invoke"
+    build = runner.home / "build"
+    for d in (invoke, build):
+        d.mkdir(parents=True, exist_ok=True)
+    runner.prepare_alias_file(
+        "vars",
+        '{"$cwd": "%s", "w": {"$cmd": "pwd", "$cwd": "${work_dir}"}}' % build,
+    )
+    r = runner.run("w", cwd=str(invoke))
+    assert r.returncode == 0, r.stderr
+    assert str(invoke.resolve()) in r.stdout
+    assert str(build.resolve()) not in r.stdout
 
 
 def test_bare_dollar_left_to_shell(runner):

@@ -127,6 +127,17 @@ Three levels of inheritance: file → group → alias, with the level closer to 
 </Tab>
 </Tabs>
 
+A file-level `$cwd` is inherited by every child alias. If one alias needs to return to the directory where you typed `byk`, set its `$cwd` to `"${work_dir}"`:
+
+```json
+{
+  "$cwd": "/project/web",
+  "here": { "$cmd": "pwd", "$cwd": "${work_dir}" }
+}
+```
+
+`${work_dir}` is substituted during the scan phase as an absolute path, so writing it is equivalent to writing that absolute path directly and it no longer takes part in relative-path resolution. It is the directory in which the current `byk` process started: when alias A calls `byk B` from its own `$cwd`, B sees A's working directory as `${work_dir}`.
+
 ### Execution Mode
 
 `$mode` decides how an alias runs. The three states are mutually exclusive and `normal` is the default.
@@ -308,7 +319,7 @@ Variables come from two places and are merged into **a single table**, substitut
 
 | Source | Description |
 |--------|-------------|
-| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${file_dir}` → the directory holding the current alias file |
+| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${work_dir}` → the directory `byk` was invoked from (unaffected by `$cwd`); `${file_dir}` → the directory holding the current alias file |
 | `$var` declarations | File-scoped custom variables |
 
 On a name collision, **the file declaration wins** — the value you wrote explicitly is the value you get.
@@ -334,6 +345,7 @@ The syntax is uniformly `${name}`, where `name` matches `[A-Za-z_][A-Za-z0-9_]*`
 | Syntax | `${name}` — the braces are the delimiter and are required |
 | Bare `$xx` | Not recognized; passed to the shell as-is (`$HOME`, `$PATH` are still expanded by the shell) |
 | Scope | File-level: applies to all string values including `$cmd` / `$cwd` / `$paths`; JSON keys are untouched |
+| Result | Every built-in expands to an absolute path, equivalent to writing that absolute path directly in the config; `${work_dir}` can therefore go straight into `$cwd` to override an inherited value |
 | Override | A `$var` entry with a built-in's name takes that built-in's place |
 | Self-reference | In `"byk_dir": "${byk_dir}/tools"` the right-hand side is the built-in value, yielding `~/.byk/tools` |
 | Escaping | `\${byk_dir}` is passed to the shell untouched, printing the literal `${byk_dir}` |
@@ -355,7 +367,15 @@ A bare `$byk_dir` has no terminator: there is no way to tell whether `$byk_dirfo
 }
 ```
 
-`${file_dir}` is the directory **holding the alias file** — neither the directory an alias `$cwd` points at, nor the one `byk` was invoked from. Reach for the shell's `$PWD` when you need the latter.
+Keep the three directories apart:
+
+| Variable | Points at |
+|----------|-----------|
+| `${file_dir}` | The directory holding the alias file |
+| `${work_dir}` | The directory `byk` was invoked from, unaffected by any `$cwd` inheritance |
+| `$cwd` / `$PWD` | The directory the command actually runs in |
+
+Do not use the shell's `$PWD` to find the invocation directory: byk starts the shell with `$cwd` as its working directory, so `$PWD` is reset to `$cwd` and can never see the invocation directory. Windows' `%CD%` behaves the same way. Use `${work_dir}` instead.
 
 ### Usage Examples
 

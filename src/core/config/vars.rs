@@ -2,7 +2,7 @@
 //!
 //! 设计目标：**一张表、一个语法、一次替换**。
 //!
-//! - 表：内置变量（`byk_dir` / `file_dir`）与文件 `$var` 声明合并，声明覆盖内置；
+//! - 表：内置变量（`byk_dir` / `work_dir` / `file_dir`）与文件 `$var` 声明合并，声明覆盖内置；
 //! - 语法：`${name}`，`name` 为 `[A-Za-z_][A-Za-z0-9_]*`（与 shell 标识符一致）；
 //! - 裸 `$xx` 不再识别，原样透传给 shell（`$HOME`、`$PATH` 交给 shell 自己展开）；
 //! - `\${...}` 输出字面量 `${...}`；
@@ -40,7 +40,7 @@ pub const FILE_DIR_VAR: &str = "file_dir";
 /// 允许被 `$var` 覆盖的内置变量名。
 ///
 /// 内置变量只有目录这一类，名字一律以 `_dir` 结尾，值是绝对路径。
-pub const BUILTIN_NAMES: &[&str] = &["byk_dir", FILE_DIR_VAR];
+pub const BUILTIN_NAMES: &[&str] = &["byk_dir", "work_dir", FILE_DIR_VAR];
 
 /// 禁止在 `$var` 中声明的名字：会遮蔽别名参数占位符。
 pub const RESERVED_DECL_NAMES: &[&str] = &["args"];
@@ -86,13 +86,18 @@ pub fn is_valid_var_name(name: &str) -> bool {
 
 /// 构建内置变量表。
 ///
-/// 只放与文件无关的 `byk_dir`（byk 的资源根，`~/.byk`，不是二进制目录）；
+/// 放与文件无关的内置变量：`byk_dir`（byk 的资源根，`~/.byk`，不是二进制目录）
+/// 与 `work_dir`（调用 byk 时的进程工作目录，不受别名 `$cwd` 影响）；
 /// `file_dir` 由扫描阶段按文件注入。
-pub fn build_builtin_table(byk_root: &Path) -> VarTable {
+pub fn build_builtin_table(byk_root: &Path, work_dir: &Path) -> VarTable {
     let mut table = VarTable::new();
     table.insert(
         "byk_dir".to_string(),
         byk_root.to_string_lossy().into_owned(),
+    );
+    table.insert(
+        "work_dir".to_string(),
+        work_dir.to_string_lossy().into_owned(),
     );
     table
 }
@@ -291,6 +296,7 @@ mod tests {
     fn builtin() -> VarTable {
         let mut t = VarTable::new();
         t.insert("byk_dir".into(), "/home/u/.byk".into());
+        t.insert("work_dir".into(), "/home/u/invoke".into());
         t.insert("file_dir".into(), "/home/u/proj/conf".into());
         t
     }
@@ -367,6 +373,12 @@ mod tests {
         let (v, issues) = run(json!({"hi": "echo ${byk_dir}"}));
         assert!(issues.is_empty());
         assert_eq!(v["hi"], json!("echo /home/u/.byk"));
+    }
+
+    #[test]
+    fn work_dir_expands() {
+        let (v, _) = run(json!({"p": "echo ${work_dir}"}));
+        assert_eq!(v["p"], json!("echo /home/u/invoke"));
     }
 
     #[test]
@@ -509,10 +521,11 @@ mod tests {
 
     #[test]
     fn build_builtin_table_values() {
-        let t = build_builtin_table(&PathBuf::from("/r/.byk"));
+        let t = build_builtin_table(&PathBuf::from("/r/.byk"), &PathBuf::from("/r/proj"));
         assert_eq!(t["byk_dir"], "/r/.byk");
+        assert_eq!(t["work_dir"], "/r/proj");
         // file_dir 逐文件不同，不能出现在共享表里
-        assert_eq!(t.len(), 1);
+        assert_eq!(t.len(), 2);
         assert!(!t.contains_key("file_dir"));
     }
 

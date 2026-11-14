@@ -1,3 +1,9 @@
+## Unreleased
+
+### Features
+
+- **variables**: `${work_dir}` expands to the directory `byk` was invoked from, unaffected by inherited `$cwd`; built-ins expand to absolute paths, so it can go directly into `$cwd` to escape a file-level directory
+
 ## v0.8.0 (2026-11-13)
 
 ### Breaking Changes

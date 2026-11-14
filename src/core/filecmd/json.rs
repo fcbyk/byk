@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::io;
+use std::path::PathBuf;
 
 use colored::Colorize;
 use serde_json::Value;
@@ -52,7 +53,8 @@ pub(super) fn run(
         return Ok(content);
     }
 
-    let mut vars = build_builtin_table(&layout.root_dir);
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut vars = build_builtin_table(&layout.root_dir, &cwd);
     vars.insert(FILE_DIR_VAR.to_string(), dir_of(&target));
 
     for issue in preprocess_vars(&mut value, &vars) {

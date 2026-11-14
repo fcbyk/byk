@@ -50,12 +50,13 @@ pub fn load_file_by_key(layout: &PathLayout, file_key: &str) -> Option<AliasFile
         return None;
     }
 
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let dir = if is_global {
         layout.alias_dir.clone()
     } else {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        cwd.clone()
     };
-    let vars = build_builtin_table(&layout.root_dir);
+    let vars = build_builtin_table(&layout.root_dir, &cwd);
     load_alias_file(&dir, is_global, stem, &vars)
 }
 
