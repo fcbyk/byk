@@ -46,7 +46,7 @@ Workdir: /Users/coke/proj
 
 `CLI Home` is byk's home directory, `Alias` is where global alias files live, and `Workdir` is the current directory scanned for local files. Drop `*.byk.json` files into either directory and they join the lookup space.
 
-`--paths` also lists the top-level alias files in the global alias directory and the current working directory, one group per source. The `@@` / `@` key prefix tells global from local. File names are validated, but contents are not parsed: a file with broken JSON still appears here, and `$private` files appear too. Use `--check` to find content problems. Empty groups are omitted, including their separator.
+`--paths` also lists the top-level alias files in the global alias directory and the current working directory, one group per source. The `@@` / `@` key prefix tells global from local. File names are validated, but contents are not parsed: a file with broken JSON still appears here, and so do `$private` files and broken symlinks. Use `--check` to find content problems. Empty groups are omitted, including their separator.
 
 The alias list in the help page covers the **merged space** only: aliases marked `$private: true` never appear, since they are reachable through `@file.key` alone. An alias with a `$cwd` gets its effective directory appended, as in `deploy  deploy.sh (/Users/me/proj)`.
 
@@ -70,7 +70,7 @@ Scanned 2 alias files; 1 has problems (1 error).
   error: cannot load link target /Users/me/.byk/alias/missing.byk.json
 ```
 
-With no problems it prints `Scanned N alias files; no problems.` and exits 0; otherwise it exits 1. It currently covers file reading, JSON parsing, root type, alias and metadata field types, link files, `$mode`, and `$var`. `--check` takes no alias argument — anything extra fails with `check takes no arguments`.
+With no problems it prints `Scanned N alias files; no problems.` and exits 0; otherwise it exits 1. `Scanned` counts the candidate `*.byk.json` entries encountered, including invalid file names and broken symlinks. It currently covers file reading, JSON parsing, root type, alias and metadata field types, link files, invalid file names, broken symlinks, `$mode`, and `$var`. `--check` takes no alias argument — anything extra fails with `check takes no arguments`.
 
 ## Running Aliases
 
@@ -88,7 +88,14 @@ byk @run.build           # build from ./run.byk.json
 byk @@work.deploy        # deploy from ~/.byk/alias/work.byk.json
 ```
 
-The exact syntax is pure file routing with no fallback: a missing file reports `Alias file not found: @run` (`@@run` for the global side), a missing key reports `Alias key not found in file @run: build`, and both exit with code 1.
+The exact syntax is pure file routing with no fallback:
+
+- missing file → `Alias file not found: @run` (`@@run` for the global side)
+- file exists but cannot be loaded → `Alias file cannot be loaded: @run`, with the reason and a `byk --check` hint
+- missing key → `Alias key not found in file @run: build`
+- a path segment starts with `$` → `Not an alias (reserved $ field): @run.build.$cmd`
+
+All of them exit with code 1. A `$`-prefixed segment is a reserved field or custom metadata and is never executed as an alias.
 
 Every alias file also has a set of reserved **file commands**: `@file..command` / `@@file..command` create, edit, clone, and inspect the file itself. See [File Commands](/cli/file-commands).
 

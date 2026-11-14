@@ -100,8 +100,18 @@ fn main() {
                 eprintln!("Alias key not found in file {}: {}", file_key, alias_key);
                 exit(1);
             }
+            aliases::ExactLookup::ReservedField { key } => {
+                eprintln!("Not an alias (reserved $ field): {}.{}", file_key, key);
+                exit(1);
+            }
             aliases::ExactLookup::FileNotFound => {
                 eprintln!("Alias file not found: {}", file_key);
+                exit(1);
+            }
+            aliases::ExactLookup::FileUnavailable { reason } => {
+                eprintln!("Alias file cannot be loaded: {}", file_key);
+                eprintln!("  {}", reason);
+                eprintln!("Run `byk --check` for details.");
                 exit(1);
             }
         }

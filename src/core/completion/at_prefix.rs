@@ -22,7 +22,7 @@ pub(crate) fn complete_at_prefix(
         let file_key = &partial[..dot_idx];
         let key_partial = &partial[dot_idx + 1..];
 
-        let Some(file) = aliases::load_file_by_key(layout, file_key) else {
+        let Ok(file) = aliases::load_file_by_key(layout, file_key) else {
             return Vec::new();
         };
         return collect_object_keys(&file.aliases, "")

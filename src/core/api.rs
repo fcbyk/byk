@@ -208,17 +208,29 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
 
             // 文件命令不是别名：只读接口绝不能执行或创建文件
             if filecmd::claims(key) {
-                eprintln!("resolve: not an alias (file command): {}", key);
-                std::process::exit(1);
+                fail("resolve", &format!("not an alias (file command): {}", key));
             }
 
             // 与 main.rs 相同的查找顺序：精确语法优先（只解析目标文件），其次合并命名空间
             let resolved = if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(key) {
                 match aliases::resolve_exact_alias(layout, &file_key, &alias_key) {
                     aliases::ExactLookup::Found { resolved, .. } => resolved,
-                    _ => {
-                        eprintln!("resolve: alias not found: {}", key);
-                        std::process::exit(1);
+                    aliases::ExactLookup::FileNotFound => {
+                        fail("resolve", &format!("alias file not found: {}", file_key));
+                    }
+                    aliases::ExactLookup::FileUnavailable { reason } => fail(
+                        "resolve",
+                        &format!("alias file cannot be loaded: {}: {}", file_key, reason),
+                    ),
+                    aliases::ExactLookup::ReservedField { key: alias_key } => fail(
+                        "resolve",
+                        &format!(
+                            "not an alias (reserved $ field): {}.{}",
+                            file_key, alias_key
+                        ),
+                    ),
+                    aliases::ExactLookup::KeyNotFound => {
+                        fail("resolve", &format!("alias not found: {}", key));
                     }
                 }
             } else {

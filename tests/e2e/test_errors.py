@@ -56,6 +56,34 @@ def test_exact_syntax_missing_key(runner):
     assert "Alias key not found" in r.stderr
 
 
+def test_exact_syntax_reports_unloadable_file(runner):
+    runner.prepare_alias_file("broken", "{not json")
+    r = runner.run("@@broken.build")
+    assert r.returncode == 1
+    assert "Alias file cannot be loaded" in r.stderr
+    assert "invalid JSON" in r.stderr
+    assert "byk --check" in r.stderr
+
+
+def test_exact_syntax_rejects_reserved_fields(runner):
+    runner.prepare_alias_json(
+        "ops",
+        {
+            "$custom": "echo custom",
+            "build": {"$cmd": "echo hi", "$description": "desc"},
+        },
+    )
+
+    for key in ("@@ops.$custom", "@@ops.build.$cmd", "@@ops.build.$description"):
+        r = runner.run(key)
+        assert r.returncode == 1, key
+        assert "Not an alias (reserved $ field)" in r.stderr, key
+
+    ok = runner.run("@@ops.build")
+    assert ok.returncode == 0, ok.stderr
+    assert "hi" in ok.stdout
+
+
 def test_exit_code_propagated(runner):
     """命令自身的退出码原样返回"""
     runner.prepare_alias_json("e", {"fail": "exit 3"})

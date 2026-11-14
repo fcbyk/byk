@@ -109,6 +109,24 @@ def test_resolve_unknown_alias_fails(runner):
     assert "not found" in r.stderr
 
 
+def test_resolve_reports_unloadable_file(runner):
+    runner.prepare_alias_file("broken", "{not json")
+    r = runner.run("__api__", "resolve", "@@broken.build")
+    assert r.returncode == 1
+    assert "cannot be loaded" in r.stderr
+    assert "invalid JSON" in r.stderr
+
+
+def test_resolve_rejects_reserved_fields(runner):
+    runner.prepare_alias_json(
+        "ops",
+        {"$custom": "echo custom", "build": {"$cmd": "echo hi"}},
+    )
+    r = runner.run("__api__", "resolve", "@@ops.build.$cmd")
+    assert r.returncode == 1
+    assert "reserved $ field" in r.stderr
+
+
 def test_resolve_requires_key(runner):
     r = runner.run("__api__", "resolve")
     assert r.returncode == 1

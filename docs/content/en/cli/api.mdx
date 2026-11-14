@@ -103,7 +103,7 @@ Each call is a read-only scan, and scan-time warnings about alias files (an inva
 
 ## resolve `<key> [args...]`
 
-Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`@run.build`, `@@ops.deploy`). File commands are not aliases: `@file..command` is rejected with exit code 1.
+Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`@run.build`, `@@ops.deploy`). File commands are not aliases: `@file..command` is rejected with exit code 1, and so is a path segment that starts with `$` (a reserved field or custom metadata).
 
 :::warning Not `file.key`
 `run.build` is a **dotted path**, looked up as a group name inside the merged space, and will usually miss. File keys take a prefix: `@run.build`.
@@ -167,7 +167,7 @@ Called without a name it returns the directories plus the alias file list, for p
 | `workdir` | Process working directory, where local alias files are looked up |
 | `aliasFiles` | Absolute paths of alias files in both directories: global first, then local, each sorted by key; an empty array when there are none. Use `file --list` when you need key, scope, or directory |
 
-The list is enumerated by filename only and content is never read: a file with broken JSON or a missing link target is still listed, and whether it is usable is `check`'s job; files with invalid names do not appear. Every value only answers "where is it" and **never creates anything**.
+The list is enumerated by filename only and content is never read: a file with broken JSON, a missing link target, or a broken symlink is still listed, and whether it is usable is `check`'s job; files with invalid names do not appear. Every value only answers "where is it" and **never creates anything**.
 
 ### Reading paths
 
@@ -241,7 +241,7 @@ byk __api__ file --list
 }
 ```
 
-The list is enumerated by filename only and content is never read: a file with broken JSON or a missing link target is still listed, while invalid filenames do not appear. `--list` cannot be combined with a key, and an unknown option also exits 1.
+The list is enumerated by filename only and content is never read: a file with broken JSON, a missing link target, or a broken symlink is still listed, while invalid filenames do not appear. `--list` cannot be combined with a key, and an unknown option also exits 1.
 
 ## expand `<path>`
 
@@ -306,7 +306,7 @@ byk __api__ check
 
 | Field | Meaning |
 |-------|---------|
-| `scanned` | Number of alias files scanned |
+| `scanned` | Number of candidate `*.byk.json` entries encountered, including invalid file names and broken symlinks |
 | `errors` / `warnings` | Item counts, so a caller can badge without walking the list |
 | `items[].level` | `error` (file or alias unusable) or `warning` (still usable, but suspicious) |
 | `items[].path` | Absolute path of the file the problem belongs to |

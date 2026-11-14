@@ -92,6 +92,16 @@ def test_paths_lists_global_and_local_alias_files(runner, tmp_path):
     assert "bad.name" not in r.stdout
 
 
+def test_paths_lists_broken_symlink(runner, tmp_path):
+    """断链仍是可寻址的目录项，位置清单列出它；内容问题交给 --check"""
+    link = tmp_path / "ops.byk.json"
+    link.symlink_to(tmp_path / "missing.byk.json")
+
+    r = runner.run("--paths", cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert f"@ops: {link}" in r.stdout
+
+
 def test_paths_omits_empty_alias_file_groups(runner, tmp_path):
     """没有别名文件时整组都不打印"""
     r = runner.run("--paths", cwd=str(tmp_path))

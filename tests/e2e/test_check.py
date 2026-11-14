@@ -88,6 +88,29 @@ def test_check_rejects_arguments(runner, tmp_path):
     assert "check takes no arguments" in result.stderr
 
 
+def test_check_reports_invalid_file_name(runner, tmp_path):
+    (tmp_path / "bad.name.byk.json").write_text("{}", encoding="utf-8")
+
+    result = runner.run("--check", cwd=str(tmp_path))
+
+    assert result.returncode == 1
+    assert "Scanned 1 alias file; 1 has problems" in result.stdout
+    assert "invalid file name" in result.stdout
+    assert "bad.name.byk.json" in result.stdout
+
+
+def test_check_reports_broken_symlink(runner, tmp_path):
+    link = tmp_path / "ops.byk.json"
+    link.symlink_to(tmp_path / "missing.byk.json")
+
+    result = runner.run("--check", cwd=str(tmp_path))
+
+    assert result.returncode == 1
+    assert "Scanned 1 alias file; 1 has problems" in result.stdout
+    assert "broken symlink" in result.stdout
+    assert "missing.byk.json" in result.stdout
+
+
 def test_check_reports_unloadable_files(runner, tmp_path):
     runner.prepare_alias_file("broken", "{not json")
     runner.prepare_alias_file("root", '"just a string"')

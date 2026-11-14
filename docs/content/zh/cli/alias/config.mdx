@@ -35,7 +35,7 @@ type AliasFileJSON =
   | [string];  // 单链接：只含一个路径的数组
 ```
 
-文件里只认这六个 `$` 开头的键，其余 `$xxx` 一律原样透传给 shell（或由 [变量](#变量) 展开）。
+文件级只解释这六个 `$` 开头的键；其余 `$xxx` 不会被当作别名，也不参与合并，保留给其他工具存放配置。字符串里的 `${xxx}` 由[变量](#变量)机制展开，未声明的名字原样留给 shell。
 
 ## 别名对象
 
@@ -578,5 +578,7 @@ byk @@ops.build     # 精确调用走链接的 key
 
 - 只做文件路由，不做 fallback
 - 文件不存在 → `Alias file not found: @release`（全局报 `@@release`）
+- 文件存在但无法加载 → `Alias file cannot be loaded: @release`，附原因并提示 `byk --check`
 - 文件存在但 key 不存在 → `Alias key not found in file @release: build`
-- 两种情况都以退出码 1 结束
+- 路径段以 `$` 开头 → `Not an alias (reserved $ field)`；`$` 字段是保留字段或自定义元数据，不是别名
+- 以上都以退出码 1 结束

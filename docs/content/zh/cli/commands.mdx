@@ -46,7 +46,7 @@ Workdir: /Users/coke/proj
 
 `CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录，`Workdir` 是扫描本地文件时使用的当前目录。把 `*.byk.json` 放进这两处目录，它就会进入查找空间。
 
-`--paths` 还会列出全局别名目录和当前工作目录顶层的别名文件，每个来源一组。`@@` / `@` 前缀区分全局与本地。只校验文件名，不解析内容：JSON 损坏的文件、标了 `$private` 的文件也会出现在这里。内容问题用 `--check` 查。空分组连同分隔线一起不打印。
+`--paths` 还会列出全局别名目录和当前工作目录顶层的别名文件，每个来源一组。`@@` / `@` 前缀区分全局与本地。只校验文件名，不解析内容：JSON 损坏的文件、标了 `$private` 的文件、断链的符号链接也会出现在这里。内容问题用 `--check` 查。空分组连同分隔线一起不打印。
 
 帮助页里的别名列表只包含**合并空间**中的别名：标了 `$private: true` 的别名不出现在这里，因为它们本来就只能通过 `@file.key` 调用。设了 `$cwd` 的别名后面会附上生效目录，形如 `deploy  deploy.sh (/Users/me/proj)`。
 
@@ -70,7 +70,7 @@ Scanned 2 alias files; 1 has problems (1 error).
   error: cannot load link target /Users/me/.byk/alias/missing.byk.json
 ```
 
-没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、`$mode`、`$var` 等。`--check` 不带别名参数，多写会报 `check takes no arguments`。
+没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。`Scanned` 统计的是遇到的候选 `*.byk.json` 目录项，包括非法文件名和断链的符号链接。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、非法文件名、断链符号链接、`$mode`、`$var` 等。`--check` 不带别名参数，多写会报 `check takes no arguments`。
 
 ## 执行别名
 
@@ -88,7 +88,14 @@ byk @run.build           # ./run.byk.json 的 build
 byk @@work.deploy        # ~/.byk/alias/work.byk.json 的 deploy
 ```
 
-精确语法只做文件路由，不做 fallback：文件不存在报 `Alias file not found: @run`（全局是 `@@run`），key 不存在报 `Alias key not found in file @run: build`，两者都以退出码 1 结束。
+精确语法只做文件路由，不做 fallback：
+
+- 文件不存在 → `Alias file not found: @run`（全局是 `@@run`）
+- 文件存在但无法加载 → `Alias file cannot be loaded: @run`，附原因并提示 `byk --check`
+- key 不存在 → `Alias key not found in file @run: build`
+- 路径段以 `$` 开头 → `Not an alias (reserved $ field): @run.build.$cmd`
+
+以上都以退出码 1 结束。`$` 开头的段是保留字段或自定义元数据，永远不会被当作别名执行。
 
 每个别名文件还带一组保留的**文件命令**：用 `@文件..命令` / `@@文件..命令` 创建、编辑、克隆和查看文件本身。完整列表见 [文件命令](/cli/file-commands)。
 

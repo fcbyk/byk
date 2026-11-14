@@ -1,6 +1,7 @@
 //! 文件扫描：扫描目录下的 *.byk.json 文件并解析为 AliasFile。
 
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::core::config::{
@@ -18,6 +19,39 @@ pub(crate) struct ScanResult {
     pub seen: Vec<PathBuf>,
 }
 
+enum CandidateKind {
+    File,
+    Symlink,
+}
+
+/// 目录项是否是别名文件候选：普通文件，或指向文件的符号链接。
+///
+/// 断链也是候选：名字合法、地址成立，只是内容不可用，交给诊断报告。
+fn candidate_kind(path: &Path) -> Option<CandidateKind> {
+    let metadata = fs::symlink_metadata(path).ok()?;
+    if metadata.file_type().is_symlink() {
+        Some(CandidateKind::Symlink)
+    } else if metadata.is_file() {
+        Some(CandidateKind::File)
+    } else {
+        None
+    }
+}
+
+fn symlink_problem(path: &Path) -> Option<String> {
+    match fs::metadata(path) {
+        Ok(target) if target.is_file() => None,
+        Ok(_) => Some("symlink target is not a regular file".to_string()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            let target = fs::read_link(path)
+                .map(|target| target.display().to_string())
+                .unwrap_or_else(|_| "unknown".to_string());
+            Some(format!("broken symlink: target does not exist: {}", target))
+        }
+        Err(e) => Some(format!("cannot read symlink target: {}", e)),
+    }
+}
+
 pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> ScanResult {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
     // 只想给本文件用（仅 @file.key 可达）时写 `$private: true`。
@@ -31,14 +65,34 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if !file_name.ends_with(".byk.json") {
+        let Some(stem) = file_name.strip_suffix(".byk.json") else {
+            continue;
+        };
+        let Some(kind) = candidate_kind(&path) else {
+            continue;
+        };
+
+        result.seen.push(path.clone());
+
+        if !validate_filename(stem) {
+            result.diagnostics.push(Diagnostic::error(
+                &path,
+                format!(
+                    "invalid file name {:?}; use letters, digits, \"-\", \"_\", or CJK characters",
+                    file_name
+                ),
+            ));
             continue;
         }
-        result.seen.push(path.clone());
+
+        if let CandidateKind::Symlink = kind
+            && let Some(reason) = symlink_problem(&path)
+        {
+            result.diagnostics.push(Diagnostic::error(&path, reason));
+            continue;
+        }
+
         if let Some(alias_file) = parse_alias_file(
             &path,
             is_global,
@@ -63,15 +117,15 @@ pub(crate) fn load_alias_file(
     is_global: bool,
     stem: &str,
     vars: &VarTable,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<AliasFile> {
     let path = dir.join(format!("{}.byk.json", stem));
-    let mut diagnostics = Vec::new();
     parse_alias_file(
         &path,
         is_global,
         default_priority(is_global),
         vars,
-        &mut diagnostics,
+        diagnostics,
     )
 }
 
@@ -93,13 +147,19 @@ pub(crate) fn list_alias_files(dir: &Path, is_global: bool) -> Vec<(String, Path
         .flatten()
         .filter_map(|entry| {
             let path = entry.path();
-            if !path.is_file() {
-                return None;
-            }
             let name = path.file_name()?.to_str()?;
             let stem = name.strip_suffix(".byk.json")?;
             if !validate_filename(stem) {
                 return None;
+            }
+            match candidate_kind(&path)? {
+                CandidateKind::File => {}
+                CandidateKind::Symlink => {
+                    // 断链仍是一个可寻址的目录项；指向目录的链接才排除。
+                    if fs::metadata(&path).is_ok_and(|metadata| metadata.is_dir()) {
+                        return None;
+                    }
+                }
             }
             Some((build_file_key(stem, is_global), path))
         })
@@ -721,5 +781,42 @@ mod tests {
         let files = list_alias_files(dir.path(), true);
         assert_eq!(files[0].0, "@@ops");
         assert!(list_alias_files(Path::new("/nonexistent/byk-test-dir"), true).is_empty());
+    }
+
+    #[test]
+    fn scan_reports_invalid_file_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("bad.name.byk.json"), "{}").unwrap();
+
+        let result = scan_alias_files(dir.path(), false, &VarTable::new());
+
+        assert_eq!(result.seen.len(), 1);
+        assert!(result.files.is_empty());
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.level == Level::Error && diagnostic.message.contains("invalid file name")
+        }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_reports_and_lists_broken_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        symlink(
+            dir.path().join("missing.byk.json"),
+            dir.path().join("ops.byk.json"),
+        )
+        .unwrap();
+
+        let result = scan_alias_files(dir.path(), false, &VarTable::new());
+        assert_eq!(result.seen.len(), 1);
+        assert!(result.files.is_empty());
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.level == Level::Error && diagnostic.message.contains("broken symlink")
+        }));
+
+        let files = list_alias_files(dir.path(), false);
+        assert_eq!(files[0].0, "@ops");
     }
 }

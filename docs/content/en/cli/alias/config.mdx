@@ -35,7 +35,7 @@ type AliasFileJSON =
   | [string];  // single link: an array holding exactly one path
 ```
 
-Only these six `$`-prefixed keys are recognized; any other `$xxx` is passed through to the shell verbatim (or expanded by [variables](#variables)).
+Only these six `$`-prefixed keys are interpreted at file level; any other `$xxx` is never treated as an alias and never joins the merged space — it is kept for other tools to store configuration. A `${xxx}` inside a string is handled by [variables](#variables), and undeclared names are passed to the shell verbatim.
 
 ## Alias Objects
 
@@ -583,5 +583,7 @@ Conventions:
 
 - Pure file routing, no fallback
 - File not found → `Alias file not found: @release` (`@@release` on the global side)
+- File exists but cannot be loaded → `Alias file cannot be loaded: @release`, with the reason and a `byk --check` hint
 - File exists but key not found → `Alias key not found in file @release: build`
-- Both cases exit with code 1
+- A path segment starts with `$` → `Not an alias (reserved $ field)`; `$` fields are reserved or custom metadata, not aliases
+- All of these exit with code 1

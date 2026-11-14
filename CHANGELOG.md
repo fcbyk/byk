@@ -7,6 +7,11 @@
 - **`__api__ file`**: new read-only request that resolves one alias file key (`@name` / `@@name` / `@` / `@@`) to `{key, scope, path, dir}` without checking existence, reading contents, or following links; `--list` returns every alias file as an array of the same objects
 - **`__api__ expand`**: expands file-level `$var` and built-in variables in any JSON file and prints the result; no alias-structure validation, no link following, no execution
 
+### Bug Fixes
+
+- **diagnostics**: `--check` now reports invalid file names and broken symlinks; broken symlinks still appear in `--paths` / `file --list`, and `scanned` counts the candidate `*.byk.json` entries encountered
+- **exact execution**: distinguishes a missing file from a file that exists but cannot be loaded, with the reason and a `byk --check` hint; a path segment starting with `$` is rejected as a reserved field instead of executing `$cmd` / `$cwd` and other metadata as aliases
+
 ## v0.8.0 (2026-11-13)
 
 ### Breaking Changes
