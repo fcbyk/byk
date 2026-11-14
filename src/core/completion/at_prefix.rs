@@ -49,7 +49,7 @@ pub(crate) fn complete_nested_alias(
     key_partial: &str,
     layout: &crate::core::paths::PathLayout,
 ) -> Vec<String> {
-    let (merged, _) = aliases::load_merged_aliases(layout);
+    let merged = aliases::load_merged(layout);
 
     // 去掉末尾点号，按点拆成路径段
     let path_str = prefix.trim_end_matches('.');

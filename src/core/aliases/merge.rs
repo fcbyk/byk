@@ -138,22 +138,20 @@ pub struct ScannedAliases {
     pub report: DiagnosticReport,
 }
 
-/// 一次完整扫描的结果：合并树、文件列表与诊断报告。
+/// 一次完整扫描的结果：合并树与诊断报告。
 pub struct LoadedAliases {
     pub merged: MergedConfig,
-    pub files: Vec<AliasFile>,
     pub report: DiagnosticReport,
 }
 
-/// 扫描当前目录与全局目录，返回合并配置和文件列表。
+/// 扫描当前目录与全局目录，只返回合并配置。
 ///
 /// 每次调用都重新扫描：几十个文件的扫描以毫秒计，不值得为此维护缓存状态。
-pub fn load_merged_aliases(layout: &PathLayout) -> (MergedConfig, Vec<AliasFile>) {
-    let loaded = load_merged_aliases_report(layout);
-    (loaded.merged, loaded.files)
+pub fn load_merged(layout: &PathLayout) -> MergedConfig {
+    load_merged_aliases_report(layout).merged
 }
 
-/// 同 [`load_merged_aliases`]，但保留扫描诊断供 banner 与 `--check` 使用。
+/// 同 [`load_merged`]，但保留扫描诊断供 banner 与 `--check` 使用。
 pub fn load_merged_aliases_report(layout: &PathLayout) -> LoadedAliases {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     load_report_at(layout, &cwd)
@@ -171,8 +169,9 @@ pub(crate) fn load_merged_aliases_at(
     layout: &PathLayout,
     cwd: &Path,
 ) -> (MergedConfig, Vec<AliasFile>) {
-    let loaded = load_report_at(layout, cwd);
-    (loaded.merged, loaded.files)
+    let scanned = scan_at(layout, cwd);
+    let merged = merge_at(layout, cwd, &scanned.files);
+    (merged, scanned.files)
 }
 
 fn scan_at(layout: &PathLayout, cwd: &Path) -> ScannedAliases {
@@ -224,26 +223,25 @@ fn scan_at(layout: &PathLayout, cwd: &Path) -> ScannedAliases {
 
 fn load_report_at(layout: &PathLayout, cwd: &Path) -> LoadedAliases {
     let scanned = scan_at(layout, cwd);
+    LoadedAliases {
+        merged: merge_at(layout, cwd, &scanned.files),
+        report: scanned.report,
+    }
+}
 
-    // cwd 恰好是全局目录时，同一批文件会被扫两次（@f 与 @@f）。
-    // 两个身份都保留——这个文件确实同时可通过两种前缀访问；
-    // 但合并只做一次，按全局身份参与，避免同一份声明被合并两遍。
-    let merged = if same_dir(cwd, &layout.alias_dir) {
-        let global_only: Vec<AliasFile> = scanned
-            .files
+// cwd 恰好是全局目录时，同一批文件会被扫两次（@f 与 @@f）。
+// 两个身份都保留——这个文件确实同时可通过两种前缀访问；
+// 但合并只做一次，按全局身份参与，避免同一份声明被合并两遍。
+fn merge_at(layout: &PathLayout, cwd: &Path, files: &[AliasFile]) -> MergedConfig {
+    if same_dir(cwd, &layout.alias_dir) {
+        let global_only: Vec<AliasFile> = files
             .iter()
             .filter(|f| f.key.starts_with("@@"))
             .cloned()
             .collect();
         build_merged_aliases(&global_only)
     } else {
-        build_merged_aliases(&scanned.files)
-    };
-
-    LoadedAliases {
-        merged,
-        files: scanned.files,
-        report: scanned.report,
+        build_merged_aliases(files)
     }
 }
 

@@ -211,37 +211,9 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 fail("resolve", &format!("not an alias (file command): {}", key));
             }
 
-            // 与 main.rs 相同的查找顺序：精确语法优先（只解析目标文件），其次合并命名空间
-            let resolved = if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(key) {
-                match aliases::resolve_exact_alias(layout, &file_key, &alias_key) {
-                    aliases::ExactLookup::Found { resolved, .. } => resolved,
-                    aliases::ExactLookup::FileNotFound => {
-                        fail("resolve", &format!("alias file not found: {}", file_key));
-                    }
-                    aliases::ExactLookup::FileUnavailable { reason } => fail(
-                        "resolve",
-                        &format!("alias file cannot be loaded: {}: {}", file_key, reason),
-                    ),
-                    aliases::ExactLookup::ReservedField { key: alias_key } => fail(
-                        "resolve",
-                        &format!(
-                            "not an alias (reserved $ field): {}.{}",
-                            file_key, alias_key
-                        ),
-                    ),
-                    aliases::ExactLookup::KeyNotFound => {
-                        fail("resolve", &format!("alias not found: {}", key));
-                    }
-                }
-            } else {
-                let (merged, _files) = aliases::load_merged_aliases(layout);
-                match aliases::resolve_merged_alias(&merged, key) {
-                    Some(r) => r.clone(),
-                    None => {
-                        eprintln!("resolve: alias not found: {}", key);
-                        std::process::exit(1);
-                    }
-                }
+            let resolved = match aliases::lookup(layout, key) {
+                Ok(hit) => hit.resolved,
+                Err(failure) => fail("resolve", &describe_lookup_failure(key, failure)),
             };
 
             let rc: aliases::ResolvedCommand = aliases::resolve_alias(&resolved, command_args);
@@ -442,6 +414,29 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 "{}",
                 serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
             );
+        }
+    }
+}
+
+/// 把查找失败转成 `resolve` 的稳定错误文案；建议列表只属于终端交互。
+fn describe_lookup_failure(key: &str, failure: aliases::LookupFailure) -> String {
+    match failure {
+        aliases::LookupFailure::FileNotFound { file_key } => {
+            format!("alias file not found: {}", file_key)
+        }
+        aliases::LookupFailure::FileUnavailable { file_key, reason } => {
+            format!("alias file cannot be loaded: {}: {}", file_key, reason)
+        }
+        aliases::LookupFailure::ReservedField {
+            file_key,
+            alias_key,
+        } => format!(
+            "not an alias (reserved $ field): {}.{}",
+            file_key, alias_key
+        ),
+        aliases::LookupFailure::KeyNotFound { .. }
+        | aliases::LookupFailure::AliasNotFound { .. } => {
+            format!("alias not found: {}", key)
         }
     }
 }

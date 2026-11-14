@@ -86,73 +86,56 @@ fn main() {
         }
     }
 
-    // 精确执行：@file.key / @@file.key，只解析目标文件，不扫描目录、不建合并树
-    if let Some((file_key, alias_key)) = aliases::parse_exact_syntax(command_name) {
-        match aliases::resolve_exact_alias(&layout, &file_key, &alias_key) {
-            aliases::ExactLookup::Found {
-                resolved,
-                display_source,
-            } => {
-                aliases::execute_alias(&resolved, command_args, &display_source);
-                return;
-            }
-            aliases::ExactLookup::KeyNotFound => {
-                eprintln!("Alias key not found in file {}: {}", file_key, alias_key);
-                exit(1);
-            }
-            aliases::ExactLookup::ReservedField { key } => {
-                eprintln!("Not an alias (reserved $ field): {}.{}", file_key, key);
-                exit(1);
-            }
-            aliases::ExactLookup::FileNotFound => {
-                eprintln!("Alias file not found: {}", file_key);
-                exit(1);
-            }
-            aliases::ExactLookup::FileUnavailable { reason } => {
-                eprintln!("Alias file cannot be loaded: {}", file_key);
-                eprintln!("  {}", reason);
-                eprintln!("Run `byk --check` for details.");
-                exit(1);
-            }
-        }
+    // 精确语法 @file.key / @@file.key 优先；其余走合并命名空间
+    match aliases::lookup(&layout, command_name) {
+        Ok(hit) => aliases::execute_alias(&hit.resolved, command_args, &hit.display_source),
+        Err(failure) => report_lookup_failure(failure),
     }
+}
 
-    // 普通别名：全量扫描后合并，在合并后的 key 空间里找
-    let (merged, _files) = aliases::load_merged_aliases(&layout);
-    match aliases::resolve_merged_alias(&merged, command_name) {
-        Some(resolved) => {
-            let display_source = format!("{}.{}", resolved.source, command_name);
-            aliases::execute_alias(resolved, command_args, &display_source);
+/// 查找失败时输出终端文案并退出。
+fn report_lookup_failure(failure: aliases::LookupFailure) -> ! {
+    match failure {
+        aliases::LookupFailure::FileNotFound { file_key } => {
+            eprintln!("Alias file not found: {}", file_key);
         }
-        None => {
-            // 生成建议列表
-            let paths = aliases::collect_merged_paths(&merged, "");
-            let suggestions: Vec<String> = paths
-                .into_iter()
-                .filter(|item| {
-                    item.starts_with(&format!("{}.", command_name))
-                        || command_name.starts_with(&format!("{}.", item))
-                })
-                .take(5)
-                .collect();
-
-            let prefix = if command_name.starts_with('-') {
+        aliases::LookupFailure::FileUnavailable { file_key, reason } => {
+            eprintln!("Alias file cannot be loaded: {}", file_key);
+            eprintln!("  {}", reason);
+            eprintln!("Run `byk --check` for details.");
+        }
+        aliases::LookupFailure::ReservedField {
+            file_key,
+            alias_key,
+        } => {
+            eprintln!(
+                "Not an alias (reserved $ field): {}.{}",
+                file_key, alias_key
+            );
+        }
+        aliases::LookupFailure::KeyNotFound {
+            file_key,
+            alias_key,
+        } => {
+            eprintln!("Alias key not found in file {}: {}", file_key, alias_key);
+        }
+        aliases::LookupFailure::AliasNotFound { key, suggestions } => {
+            let prefix = if key.starts_with('-') {
                 "Unrecognized command, alias, or option"
             } else {
                 "Unrecognized command or alias"
             };
-
             if suggestions.is_empty() {
-                eprintln!("{}: {}", prefix, command_name);
+                eprintln!("{}: {}", prefix, key);
             } else {
                 eprintln!(
                     "{}: {}\nDid you mean:\n  {}",
                     prefix,
-                    command_name,
+                    key,
                     suggestions.join("\n  ")
                 );
             }
-            exit(1);
         }
     }
+    exit(1);
 }

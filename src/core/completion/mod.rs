@@ -166,7 +166,7 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
-    let (merged, _) = aliases::load_merged_aliases(layout);
+    let merged = aliases::load_merged(layout);
 
     for key in merged.keys() {
         candidates.push(key.clone());

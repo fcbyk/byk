@@ -5,16 +5,18 @@
 
 mod exact;
 mod execution;
+mod lookup;
 mod merge;
 pub(crate) mod placeholder;
 mod quote;
 mod scan;
 
 // 统一出口：其他模块只从这里使用别名引擎能力；共享词汇在 core::config
-pub use exact::{ExactLookup, load_file_by_key, parse_exact_syntax, resolve_exact_alias};
+pub use exact::load_file_by_key;
 pub use execution::{ResolvedCommand, execute_alias, resolve_alias};
+pub use lookup::{LookupFailure, lookup};
 pub use merge::{
-    ScannedAliases, collect_merged_paths, load_merged_aliases, load_merged_aliases_report,
+    ScannedAliases, collect_merged_paths, load_merged, load_merged_aliases_report,
     load_scanned_aliases, resolve_merged_alias,
 };
 pub(crate) use scan::list_alias_files;
