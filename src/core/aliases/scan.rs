@@ -79,7 +79,7 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
             result.diagnostics.push(Diagnostic::error(
                 &path,
                 format!(
-                    "invalid file name {:?}; use letters, digits, \"-\", \"_\", or CJK characters",
+                    "invalid file name {:?}; use letters, digits, \"-\", \"_\", or CJK ideographs",
                     file_name
                 ),
             ));

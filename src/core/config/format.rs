@@ -11,12 +11,32 @@ pub(crate) fn validate_filename(stem: &str) -> bool {
         return false;
     }
     stem.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || is_cjk_char(c))
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || is_cjk_ideograph(c))
 }
 
-/// 判断字符是否为 CJK 统一表意文字（U+4E00-U+9FFF）。
-fn is_cjk_char(c: char) -> bool {
-    ('\u{4e00}'..='\u{9fff}').contains(&c)
+/// CJK 表意文字的 Unicode 区块：扩展 A–I、基本区与兼容区。
+///
+/// 按区块整段接受，不区分区块内尚未分配的码位。
+const CJK_IDEOGRAPH_RANGES: &[(u32, u32)] = &[
+    (0x3400, 0x4DBF),   // Extension A
+    (0x4E00, 0x9FFF),   // Unified Ideographs
+    (0xF900, 0xFAFF),   // Compatibility Ideographs
+    (0x20000, 0x2A6DF), // Extension B
+    (0x2A700, 0x2B73F), // Extension C
+    (0x2B740, 0x2B81F), // Extension D
+    (0x2B820, 0x2CEAF), // Extension E
+    (0x2CEB0, 0x2EBEF), // Extension F
+    (0x2EBF0, 0x2EE5F), // Extension I
+    (0x2F800, 0x2FA1F), // Compatibility Ideographs Supplement
+    (0x30000, 0x3134F), // Extension G
+    (0x31350, 0x323AF), // Extension H
+];
+
+fn is_cjk_ideograph(c: char) -> bool {
+    let code = c as u32;
+    CJK_IDEOGRAPH_RANGES
+        .iter()
+        .any(|&(low, high)| (low..=high).contains(&code))
 }
 
 /// 构建文件 key：全局目录加 `@@`，当前目录加 `@`。
@@ -188,6 +208,8 @@ mod tests {
     fn validate_cjk_chars() {
         assert!(validate_filename("部署"));
         assert!(validate_filename("测试文件"));
+        assert!(validate_filename("㐀")); // Extension A
+        assert!(validate_filename("𠀀")); // Extension B, non-BMP
     }
 
     #[test]
@@ -209,23 +231,30 @@ mod tests {
     }
 
     #[test]
-    fn cjk_char_in_range() {
-        assert!(is_cjk_char('中')); // U+4E2D
-        assert!(is_cjk_char('文')); // U+6587
+    fn cjk_ideograph_in_range() {
+        assert!(is_cjk_ideograph('中')); // U+4E2D
+        assert!(is_cjk_ideograph('文')); // U+6587
+        assert!(is_cjk_ideograph('\u{3400}')); // Extension A 起点
+        assert!(is_cjk_ideograph('\u{20000}')); // Extension B 起点
+        assert!(is_cjk_ideograph('\u{2F800}')); // Compatibility Supplement 起点
     }
 
     #[test]
-    fn cjk_char_boundary() {
-        assert!(is_cjk_char('\u{4e00}')); // 起始
-        assert!(is_cjk_char('\u{9fff}')); // 结束
+    fn cjk_ideograph_boundary() {
+        assert!(is_cjk_ideograph('\u{4e00}')); // 基本区起点
+        assert!(is_cjk_ideograph('\u{9fff}')); // 基本区终点
+        assert!(is_cjk_ideograph('\u{323af}')); // Extension H 终点
     }
 
     #[test]
-    fn cjk_char_out_of_range() {
-        assert!(!is_cjk_char('a'));
-        assert!(!is_cjk_char('1'));
-        assert!(!is_cjk_char('-'));
-        assert!(!is_cjk_char('\u{3fff}')); // CJK 扩展前
+    fn cjk_ideograph_out_of_range() {
+        assert!(!is_cjk_ideograph('a'));
+        assert!(!is_cjk_ideograph('1'));
+        assert!(!is_cjk_ideograph('-'));
+        assert!(!is_cjk_ideograph('\u{33ff}')); // Extension A 之前
+        assert!(!is_cjk_ideograph('あ')); // 假名不是表意文字
+        assert!(!is_cjk_ideograph('🙂'));
+        assert!(!is_cjk_ideograph('\u{323b0}')); // Extension H 之后
     }
 
     #[test]
