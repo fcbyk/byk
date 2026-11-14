@@ -1,19 +1,20 @@
-## Unreleased
+## v0.8.1 (2026-11-14)
 
 ### Features
 
-- **variables**: `${work_dir}` expands to the directory `byk` was invoked from, unaffected by inherited `$cwd`; built-ins expand to absolute paths, so it can go directly into `$cwd` to escape a file-level directory
-- **`__api__ paths`**: the JSON now also carries `workdir` and `aliasFiles`, a path-only list of alias files enumerated by filename (global first, then local, sorted by key)
-- **`__api__ paths`**: `<name>` now also accepts `workdir`, so every JSON directory field has a scalar form (`root` / `alias` / `workdir`)
-- **`__api__ file`**: new read-only request that resolves one alias file key (`@name` / `@@name` / `@` / `@@`) to `{key, scope, path, dir}` without checking existence, reading contents, or following links; `--list` returns every alias file as an array of the same objects
-- **`__api__ expand`**: expands file-level `$var` and built-in variables in any JSON file and prints the result; no alias-structure validation, no link following, no execution
-- **`__api__`**: the no-arg manifest now includes `version`, so integrations do not need to parse the text output of `byk -v`
+- **variables**: `${work_dir}` expands to the invocation directory, unaffected by an inherited `$cwd`; built-ins expand to absolute paths, so it can go straight into `$cwd`
+- **`__api__ paths`**: JSON adds `workdir` and `aliasFiles` (global first, then local, each sorted by key, deduplicated when both scopes are the same directory); scalar lookup now also accepts `workdir` alongside `root` / `alias`
+- **`__api__ file`**: read-only request resolving a file key (`@name` / `@@name` / `@` / `@@`) to `{key, scope, path, dir}` without checking existence, reading contents, or following links; `--list` returns every alias file in the same shape
+- **`__api__ expand`**: expands file-level `$var` and built-ins in any JSON file; no alias validation, link following, or execution
+- **`__api__`**: the no-arg manifest now includes `version`
 
 ### Bug Fixes
 
-- **diagnostics**: `--check` now reports invalid file names and broken symlinks; broken symlinks still appear in `--paths` / `file --list`, and `scanned` counts the candidate `*.byk.json` entries encountered
-- **exact execution**: distinguishes a missing file from a file that exists but cannot be loaded, with the reason and a `byk --check` hint; a path segment starting with `$` is rejected as a reserved field instead of executing `$cmd` / `$cwd` and other metadata as aliases
-- **VS Code extension**: alias file keys now come from `__api__ file --list` instead of a second filename-rule implementation; saving an invalid-named `*.byk.json` refreshes Problems diagnostics from `check` instead of being ignored
+- **`--check`**: reports invalid file names and broken symlinks; broken symlinks still show in `--paths` / `file --list`, and `scanned` counts candidate `*.byk.json` entries
+- **exact execution**: a missing file and an unloadable one are distinguished (reason plus a `byk --check` hint); a `$`-prefixed path segment is rejected as reserved metadata instead of executing `$cmd` / `$cwd`
+- **help**: the alias list omits the resolved `$cwd` when a `$description` is present
+- **file commands**: `..destroy` / `..clear` confirmation prompts handle CJK backspace in terminals
+- **file names**: accept CJK ideographs in Ext A–I and the compatibility blocks, not just U+4E00–U+9FFF
 
 ## v0.8.0 (2026-11-13)
 
