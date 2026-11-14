@@ -41,6 +41,8 @@ Scan problems land in the **Problems** panel and refresh when a `*.byk.json` is 
 
 The `@file.key` form calls the alias in that exact file, so a project file works even though it does not take part in global alias merging.
 
+The extension asks the byk CLI for the file key via `byk __api__ file --list`; it does not keep its own copy of the filename rules. An invalid name is reported by `byk __api__ check` in the Problems panel.
+
 ## Settings
 
 ### Choosing which `byk` runs
@@ -148,6 +150,8 @@ VS Code 的 [byk](https://github.com/fcbyk/byk) 集成——不用离开编辑�
 | `.byk.json`        | `byk @.build`          |
 
 `@文件.key` 形式只调用该文件里的别名，所以项目内的文件即使不参与全局别名合并也能用。
+
+插件通过 `byk __api__ file --list` 向 CLI 获取文件 key，不再维护第二份文件名规则。文件名非法时由 `byk __api__ check` 在问题面板中报告。
 
 ## 设置
 

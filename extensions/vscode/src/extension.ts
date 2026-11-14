@@ -19,28 +19,14 @@ function resolvePath(obj: Record<string, unknown>, dotPath: string): unknown {
 }
 
 /**
- * Parse a *.byk.json filename into the "file stem" used in the @ syntax.
- *   run.byk.json  → "run"
- *   .byk.json     → ""   (nameless form)
+ * Filename suffix used by editor event filters.
+ *
+ * This is deliberately not validation: whether a name is a usable alias
+ * file is decided by `byk __api__ file --list`, so invalid names still
+ * reach `check` and show up in the Problems panel.
  */
-function bykFileStem(filename: string): string {
-  if (filename === '.byk.json') return '';
-  // Strip the ".byk.json" suffix
-  return filename.slice(0, filename.length - '.byk.json'.length);
-}
-
-/**
- * Return true when the filename matches the *.byk.json naming convention.
- * Nameless form (.byk.json) is also valid.
- * Names containing '.', '@', '/', ' ' are rejected (issue #3 spec).
- */
-function isBykFile(filename: string): boolean {
-  if (filename === '.byk.json') return true;
-  if (!filename.endsWith('.byk.json')) return false;
-  const stem = bykFileStem(filename);
-  // Reject illegal characters in name
-  if (/[.@/ ]/.test(stem)) return false;
-  return stem.length > 0;
+function hasBykFileSuffix(filename: string): boolean {
+  return filename.endsWith('.byk.json');
 }
 
 // ── Alias lookup ───────────────────────────────────────────────────
@@ -48,7 +34,7 @@ function isBykFile(filename: string): boolean {
 interface AliasItem {
   label: string;
   description: string;
-  /** The exact `byk @stem.key` command to execute. */
+  /** The exact `byk @file.key` command to execute. */
   exactCommand: string;
 }
 
@@ -61,11 +47,11 @@ interface AliasHit {
 /**
  * Flatten all runnable aliases in a single .byk.json file.
  * Skips all $‑prefixed system reserved fields ($priority, $cwd, etc.).
- * @param stem  The file stem (e.g. "run" for run.byk.json, "" for .byk.json)
+ * @param fileKey  The CLI-assigned file key, e.g. "@run" or "@"
  */
 function flattenAliases(
   obj: Record<string, unknown>,
-  stem: string,
+  fileKey: string,
   prefix = '',
 ): AliasItem[] {
   const items: AliasItem[] = [];
@@ -77,9 +63,9 @@ function flattenAliases(
 
     if (typeof value === 'string') {
       items.push({
-        label: `@${stem}.${fullPath}`,
+        label: `${fileKey}.${fullPath}`,
         description: value,
-        exactCommand: `@${stem}.${fullPath}`,
+        exactCommand: `${fileKey}.${fullPath}`,
       });
     } else if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) {
       // Object‑mode alias: { $cmd, $cwd?, $mode?, $description? }
@@ -91,12 +77,12 @@ function flattenAliases(
       const mode = readMode(v.$mode);
       if (mode !== 'normal') parts.push(mode);
       items.push({
-        label: `@${stem}.${fullPath}`,
+        label: `${fileKey}.${fullPath}`,
         description: parts.join('  '),
-        exactCommand: `@${stem}.${fullPath}`,
+        exactCommand: `${fileKey}.${fullPath}`,
       });
     } else if (isGroup(value)) {
-      items.push(...flattenAliases(value as Record<string, unknown>, stem, fullPath));
+      items.push(...flattenAliases(value as Record<string, unknown>, fileKey, fullPath));
     }
   }
 
@@ -112,7 +98,7 @@ function getAliasAtCursor(
   document: vscode.TextDocument,
   lineNumber: number,
   colNumber: number,
-  stem: string,
+  fileKey: string,
 ): AliasHit | null {
   // Collect all keys on the cursor line, pick the nearest one to the left
   let bestPath = '';
@@ -145,8 +131,8 @@ function getAliasAtCursor(
   }
 
   const value = resolvePath(config, execPath);
-  if (typeof value === 'string') return { exactCommand: `@${stem}.${execPath}`, value };
-  if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) return { exactCommand: `@${stem}.${execPath}`, value };
+  if (typeof value === 'string') return { exactCommand: `${fileKey}.${execPath}`, value };
+  if (typeof value === 'object' && value !== null && !Array.isArray(value) && '$cmd' in value) return { exactCommand: `${fileKey}.${execPath}`, value };
   return null; // group — not executable
 }
 
@@ -303,6 +289,8 @@ function resolvePathCompletions(
     searchDir = resolved.slice(0, lastSlash + 1);
   }
 
+  // $cwd / $paths point at arbitrary directories, so this is a plain
+  // filesystem listing; alias-file enumeration comes from `file --list`.
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(searchDir, { withFileTypes: true });
@@ -731,6 +719,71 @@ function callResolve(key: string, cwd: string): ResolveResult | null {
   }
 }
 
+/** One entry from `byk __api__ file --list`. */
+interface AliasFileInfo {
+  key: string;
+  scope: 'global' | 'local';
+  path: string;
+  dir: string;
+}
+
+/** Call `byk __api__ file --list` in `dir`. Null on any failure. */
+function callFileList(dir: string): AliasFileInfo[] | null {
+  let stdout: string;
+  try {
+    const result = spawnSync('byk', ['__api__', 'file', '--list'], {
+      cwd: dir,
+      env: { ...process.env, [pathEnvKey()]: buildPath() },
+      encoding: 'utf-8',
+      timeout: 15000,
+      windowsHide: true,
+    });
+    if (result.error || result.status !== 0) return null;
+    stdout = result.stdout;
+  } catch {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(stdout) as { files?: AliasFileInfo[] };
+    return Array.isArray(payload.files) ? payload.files : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Windows filenames are case-insensitive. */
+function fileNameKey(name: string): string {
+  return IS_WINDOWS ? name.toLowerCase() : name;
+}
+
+/**
+ * Ask byk for the key of the local alias file behind `uri`.
+ *
+ * The extension passes the file's own directory as cwd, so `file --list`
+ * returns that file in the local scope with the exact key byk will address.
+ * Null is returned after reporting why; filename rules stay in Rust.
+ */
+function aliasFileKey(uri: vscode.Uri): string | null {
+  const name = path.basename(uri.fsPath);
+  const files = callFileList(path.dirname(uri.fsPath));
+
+  if (files === null) {
+    vscode.window.showErrorMessage(`Failed to list alias files with byk: ${name}`);
+    return null;
+  }
+
+  const hit = files.find(
+    (file) => file.scope === 'local'
+      && fileNameKey(path.basename(file.path)) === fileNameKey(name),
+  );
+  if (!hit) {
+    vscode.window.showErrorMessage(`Not a valid .byk.json file: ${name}`);
+    return null;
+  }
+  return hit.key;
+}
+
 /** Read `$mode` as a valid mode, ignoring anything unrecognised. */
 function readMode(value: unknown): AliasMode {
   return value === 'interactive' || value === 'silent' || value === 'normal'
@@ -941,7 +994,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(diagnostics);
 
   const refreshDirOf = (uri: vscode.Uri, delay = 0) => {
-    if (isBykFile(path.basename(uri.fsPath))) {
+    if (hasBykFileSuffix(uri.fsPath)) {
       scheduleCheck(path.dirname(uri.fsPath), delay);
     }
   };
@@ -999,7 +1052,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Commands ---
 
-  // Right-click: precisely run the alias under the cursor (byk @stem.key)
+  // Right-click: precisely run the alias under the cursor (byk @file.key)
   context.subscriptions.push(
     vscode.commands.registerCommand('byk.runAtCursor', () => {
       const editor = vscode.window.activeTextEditor;
@@ -1007,13 +1060,9 @@ export function activate(context: vscode.ExtensionContext) {
 
       const document = editor.document;
       const filename = path.basename(document.fileName);
+      const fileKey = aliasFileKey(document.uri);
+      if (!fileKey) return;
 
-      if (!isBykFile(filename)) {
-        vscode.window.showErrorMessage(`Not a valid .byk.json file: ${filename}`);
-        return;
-      }
-
-      const stem = bykFileStem(filename);
       const cwd = path.dirname(document.fileName);
       const lineNumber = editor.selection.active.line;
       const colNumber = editor.selection.active.character;
@@ -1026,7 +1075,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const hit = getAliasAtCursor(config, document, lineNumber, colNumber, stem);
+      const hit = getAliasAtCursor(config, document, lineNumber, colNumber, fileKey);
       if (!hit) {
         vscode.window.showInformationMessage('当前行没有可执行的别名');
         return;
@@ -1044,13 +1093,9 @@ export function activate(context: vscode.ExtensionContext) {
 
       const document = editor.document;
       const filename = path.basename(document.fileName);
+      const fileKey = aliasFileKey(document.uri);
+      if (!fileKey) return;
 
-      if (!isBykFile(filename)) {
-        vscode.window.showErrorMessage(`Not a valid .byk.json file: ${filename}`);
-        return;
-      }
-
-      const stem = bykFileStem(filename);
       const cwd = path.dirname(document.fileName);
       const lineNumber = editor.selection.active.line;
       const colNumber = editor.selection.active.character;
@@ -1063,7 +1108,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const hit = getAliasAtCursor(config, document, lineNumber, colNumber, stem);
+      const hit = getAliasAtCursor(config, document, lineNumber, colNumber, fileKey);
       if (!hit) {
         vscode.window.showInformationMessage('当前行没有可执行的别名');
         return;
@@ -1086,7 +1131,7 @@ export function activate(context: vscode.ExtensionContext) {
       let fileUri = uri;
       if (!fileUri) {
         const editor = vscode.window.activeTextEditor;
-        if (editor && isBykFile(path.basename(editor.document.fileName))) {
+        if (editor && hasBykFileSuffix(editor.document.fileName)) {
           fileUri = editor.document.uri;
         }
       }
@@ -1096,12 +1141,8 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const filename = path.basename(fileUri.fsPath);
-      if (!isBykFile(filename)) {
-        vscode.window.showErrorMessage(`Not a valid .byk.json file: ${filename}`);
-        return;
-      }
-
-      const stem = bykFileStem(filename);
+      const fileKey = aliasFileKey(fileUri);
+      if (!fileKey) return;
 
       let config: Record<string, unknown>;
       try {
@@ -1111,7 +1152,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const aliases = flattenAliases(config, stem);
+      const aliases = flattenAliases(config, fileKey);
       if (aliases.length === 0) {
         vscode.window.showInformationMessage('No aliases found');
         return;

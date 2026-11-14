@@ -12,6 +12,7 @@
 
 - **diagnostics**: `--check` now reports invalid file names and broken symlinks; broken symlinks still appear in `--paths` / `file --list`, and `scanned` counts the candidate `*.byk.json` entries encountered
 - **exact execution**: distinguishes a missing file from a file that exists but cannot be loaded, with the reason and a `byk --check` hint; a path segment starting with `$` is rejected as a reserved field instead of executing `$cmd` / `$cwd` and other metadata as aliases
+- **VS Code extension**: alias file keys now come from `__api__ file --list` instead of a second filename-rule implementation; saving an invalid-named `*.byk.json` refreshes Problems diagnostics from `check` instead of being ignored
 
 ## v0.8.0 (2026-11-13)
 
