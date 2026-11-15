@@ -1,3 +1,9 @@
+## Unreleased
+
+### Features
+
+- **`__api__ expand`**: new `--no-builtins` flag expands only the file's `$var` declarations and leaves `byk_dir` / `work_dir` / `file_dir` unset
+
 ## v0.8.1 (2026-11-14)
 
 ### Features

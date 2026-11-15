@@ -18,5 +18,6 @@ pub(crate) use format::{
 pub(crate) use inherit::apply_inherited;
 pub use types::*;
 pub use vars::{
-    FILE_DIR_VAR, VarTable, build_builtin_table, describe_issue, expand_document, preprocess_vars,
+    FILE_DIR_VAR, VarTable, build_builtin_table, describe_issue, expand_document,
+    expand_document_without_builtins, preprocess_vars,
 };

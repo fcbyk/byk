@@ -23,7 +23,7 @@ Three rules apply to every request:
 | `__api__ paths` | CLI directories, working directory, and alias file list, JSON |
 | `__api__ paths <name>` | A single bare path (`root` / `alias` / `workdir`) |
 | `__api__ file <file-key>` / `--list` | Address of a single alias file, or the full file list, JSON |
-| `__api__ expand <path>` | Expand variables in a JSON file, JSON output |
+| `__api__ expand [--no-builtins] <path>` | Expand variables in a JSON file, JSON output |
 | `__api__ check` | Scan diagnostics, JSON |
 | `__api__` (no args) | Interface manifest, JSON |
 
@@ -64,8 +64,8 @@ byk __api__
     },
     {
       "name": "expand",
-      "args": "<path>",
-      "description": "expand file-level $var and built-in variables in a JSON file without alias validation"
+      "args": "[--no-builtins] <path>",
+      "description": "expand file-level $var in a JSON file without alias validation; --no-builtins leaves byk_dir/work_dir/file_dir unset"
     },
     {
       "name": "check",
@@ -245,9 +245,11 @@ byk __api__ file --list
 
 The list is enumerated by filename only and content is never read: a file with broken JSON, a missing link target, or a broken symlink is still listed, while invalid filenames do not appear. `--list` cannot be combined with a key, and an unknown option also exits 1.
 
-## expand `<path>`
+## expand `[--no-builtins] <path>`
 
-Expands the variables in a JSON file and prints the result. The argument is an ordinary file path (a relative one is resolved against the process working directory), **not an `@file` key**.
+Expands the variables in a JSON file and prints the result. The argument is an ordinary file path (a relative one is resolved against the process working directory), **not an `@file` key**. The flag comes before the path.
+
+`--no-builtins` expands only the file's own `$var` declarations: `${byk_dir}`, `${work_dir}` and `${file_dir}` are not injected and stay as written unless `$var` declares a variable with that name.
 
 ```json title="./config.json"
 {
@@ -268,13 +270,15 @@ byk __api__ expand ./config.json
 }
 ```
 
-The rules match `..json --expand`:
+By default the rules match `..json --expand`:
 
 - Expands `${byk_dir}`, `${work_dir}`, `${file_dir}`, and a top-level `$var`; `$var` may override a built-in name
 - Removes the top-level `$var` after expansion
 - Unknown `${name}`, bare `$HOME`, and `\${...}` stay as-is; `${args}` is an alias placeholder and is not expanded
-- **No alias-structure validation**: missing `$var`, missing `$cmd`, or even a non-object root are all fine as long as the JSON parses; built-ins still expand
+- **No alias-structure validation**: missing `$var`, missing `$cmd`, or even a non-object root are all fine as long as the JSON parses; built-ins expand unless `--no-builtins` is given
 - Does not follow link arrays, apply inheritance, or execute anything
+
+`--no-builtins` is available only on the `__api__` request (not on `..json --expand`): the three built-ins are left unset, while `$var` removal, name checks, and warnings behave exactly as above. A `$var` entry named after a built-in becomes an ordinary custom variable.
 
 Problems with `$var` declarations (invalid names, self-references) only warn on stderr and the request still succeeds with a complete JSON document on stdout. Only an unreadable file, a directory, or invalid UTF-8/JSON exits 1 with an empty stdout.
 

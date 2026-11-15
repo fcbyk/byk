@@ -13,7 +13,9 @@ use serde::Serialize;
 
 use crate::core::aliases;
 use crate::core::completion;
-use crate::core::config::{Level, Mode, describe_issue, expand_document};
+use crate::core::config::{
+    Level, Mode, describe_issue, expand_document, expand_document_without_builtins,
+};
 use crate::core::filecmd;
 use crate::core::paths::PathLayout;
 use crate::utils::path::{canonical, dir_of};
@@ -47,8 +49,8 @@ const REQUESTS: &[RequestInfo] = &[
     },
     RequestInfo {
         name: "expand",
-        args: "<path>",
-        description: "expand file-level $var and built-in variables in a JSON file without alias validation",
+        args: "[--no-builtins] <path>",
+        description: "expand file-level $var in a JSON file without alias validation; --no-builtins leaves byk_dir/work_dir/file_dir unset",
     },
     RequestInfo {
         name: "check",
@@ -360,10 +362,18 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
             _ => fail("file", "missing <file-key> (or use --list)"),
         },
         Some("expand") => {
-            if args.len() > 2 {
-                fail("expand", "too many arguments (expected <path>)");
+            let (no_builtins, path) = match args.get(1).map(String::as_str) {
+                Some("--no-builtins") => (true, args.get(2)),
+                Some(_) => (false, args.get(1)),
+                None => (false, None),
+            };
+            if args.len() > if no_builtins { 3 } else { 2 } {
+                fail(
+                    "expand",
+                    "too many arguments (expected [--no-builtins] <path>)",
+                );
             }
-            let raw = match args.get(1) {
+            let raw = match path {
                 Some(path) if !path.is_empty() => path,
                 _ => fail("expand", "missing <path>"),
             };
@@ -413,16 +423,22 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                 ),
             };
 
-            // 读取沿用原路径（保留系统对符号链接的解析），file_dir 取真实目录，
-            // 顺带消掉用户输入里的 `.` / `..`
-            let file_dir = target
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-                .map(canonical)
-                .map(|parent| parent.to_string_lossy().into_owned())
-                .unwrap_or_else(|| dir_of(&target));
+            let issues = if no_builtins {
+                expand_document_without_builtins(&mut value)
+            } else {
+                // 读取沿用原路径（保留系统对符号链接的解析），file_dir 取真实目录，
+                // 顺带消掉用户输入里的 `.` / `..`
+                let file_dir = target
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .map(canonical)
+                    .map(|parent| parent.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| dir_of(&target));
 
-            for issue in expand_document(&mut value, &layout.root_dir, &cwd, &file_dir) {
+                expand_document(&mut value, &layout.root_dir, &cwd, &file_dir)
+            };
+
+            for issue in issues {
                 eprintln!(
                     "Warning: {} in {}",
                     describe_issue(&issue),

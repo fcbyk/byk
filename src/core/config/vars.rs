@@ -298,7 +298,19 @@ pub fn expand_document(
 ) -> Vec<VarIssue> {
     let mut vars = build_builtin_table(byk_root, work_dir);
     vars.insert(FILE_DIR_VAR.to_string(), file_dir.to_string());
-    let issues = preprocess_vars(value, &vars);
+    expand_with(value, &vars)
+}
+
+/// 文档级展开：只认顶层 `$var`，不注入任何内置变量。
+///
+/// `${byk_dir}` / `${work_dir}` / `${file_dir}` 没有值时原样保留；
+/// `$var` 里显式声明同名变量仍按普通声明生效。`$var` 展开后同样被移除。
+pub fn expand_document_without_builtins(value: &mut Value) -> Vec<VarIssue> {
+    expand_with(value, &VarTable::new())
+}
+
+fn expand_with(value: &mut Value, vars: &VarTable) -> Vec<VarIssue> {
+    let issues = preprocess_vars(value, vars);
     if let Some(obj) = value.as_object_mut() {
         obj.remove("$var");
     }
@@ -333,6 +345,12 @@ mod tests {
             Path::new("/home/u/invoke"),
             "/home/u/proj/conf",
         );
+        (v, issues)
+    }
+
+    fn expand_doc_without_builtins(root: Value) -> (Value, Vec<VarIssue>) {
+        let mut v = root;
+        let issues = expand_document_without_builtins(&mut v);
         (v, issues)
     }
 
@@ -558,6 +576,36 @@ mod tests {
         let (v, issues) = expand_doc(json!({"run": "echo ${work_dir}", "n": 1}));
         assert!(issues.is_empty());
         assert_eq!(v, json!({"run": "echo /home/u/invoke", "n": 1}));
+    }
+
+    #[test]
+    fn without_builtins_expands_only_user_vars() {
+        let (v, issues) = expand_doc_without_builtins(json!({
+            "$var": {"P": "X", "Q": "${P}/y"},
+            "a": "${Q}",
+            "b": "${byk_dir} ${work_dir} ${file_dir}",
+        }));
+        assert!(issues.is_empty());
+        assert_eq!(v["a"], json!("X/y"));
+        assert_eq!(v["b"], json!("${byk_dir} ${work_dir} ${file_dir}"));
+        assert!(v.get("$var").is_none());
+    }
+
+    #[test]
+    fn without_builtins_builtin_name_is_an_ordinary_var() {
+        let (v, issues) = expand_doc_without_builtins(json!({
+            "$var": {"byk_dir": "/custom"},
+            "a": "${byk_dir}/x"
+        }));
+        assert!(issues.is_empty());
+        assert_eq!(v["a"], json!("/custom/x"));
+    }
+
+    #[test]
+    fn without_builtins_still_reports_var_issues() {
+        let (v, issues) = expand_doc_without_builtins(json!({"$var": {"A": "${A}x"}, "a": "${A}"}));
+        assert_eq!(issues, vec![VarIssue::SelfReference("A".into())]);
+        assert_eq!(v["a"], json!("${A}x"));
     }
 
     #[test]

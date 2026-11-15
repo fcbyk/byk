@@ -375,6 +375,39 @@ def test_api_expand_builtins_without_var(runner, tmp_path):
     }
 
 
+def test_api_expand_no_builtins(runner, tmp_path):
+    """--no-builtins 只展开 $var，三个内置变量不注入"""
+    conf = tmp_path / "conf.json"
+    conf.write_text(
+        json.dumps(
+            {
+                "$var": {"P": "X", "Q": "${P}/y"},
+                "a": "${Q}",
+                "b": "${byk_dir} ${work_dir} ${file_dir}",
+            }
+        ),
+        encoding="utf-8",
+    )
+    r = runner.run("__api__", "expand", "--no-builtins", str(conf), cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    payload = json.loads(r.stdout)
+    assert "$var" not in payload
+    assert payload["a"] == "X/y"
+    assert payload["b"] == "${byk_dir} ${work_dir} ${file_dir}"
+    assert r.stdout.endswith("\n")
+
+
+def test_api_expand_no_builtins_allows_a_declared_builtin_name(runner, tmp_path):
+    """不注入内置变量后，同名 $var 就是普通自定义变量"""
+    conf = tmp_path / "conf.json"
+    conf.write_text(
+        '{"$var":{"byk_dir":"/custom"},"a":"${byk_dir}/x"}', encoding="utf-8"
+    )
+    r = runner.run("__api__", "expand", "--no-builtins", str(conf), cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["a"] == "/custom/x"
+
+
 def test_api_expand_array_root(runner, tmp_path):
     conf = tmp_path / "list.json"
     conf.write_text('["${file_dir}/a", {"b":"${byk_dir}"}]', encoding="utf-8")
@@ -452,7 +485,17 @@ def test_api_expand_rejects_missing_or_extra_args(runner, tmp_path):
     assert r.returncode == 1
     assert "missing <path>" in r.stderr
 
+    r = runner.run("__api__", "expand", "--no-builtins")
+    assert r.returncode == 1
+    assert "missing <path>" in r.stderr
+
     r = runner.run("__api__", "expand", "a.json", "b.json", cwd=str(tmp_path))
+    assert r.returncode == 1
+    assert "too many arguments" in r.stderr
+
+    r = runner.run(
+        "__api__", "expand", "--no-builtins", "a.json", "b.json", cwd=str(tmp_path)
+    )
     assert r.returncode == 1
     assert "too many arguments" in r.stderr
 
