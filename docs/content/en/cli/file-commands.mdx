@@ -203,6 +203,7 @@ An unknown command lists every available file command.
 byk @@ops..clone @shared
 byk @@ops..clone ~/src/tool.byk.json
 byk @@ops..clone https://example.com/tool.byk.json
+byk @@ops..clone -gh user/repo                     # the repository root .byk.json
 byk @@ops..clone -gh user/repo@main/tools/release.byk.json
 byk @@ops..clone https://example.com/tool.byk.json -d   # install $deps in the same go
 ```
@@ -222,16 +223,20 @@ Sources:
 Repository shorthand shape:
 
 ```
-<user>/<repo>@<ref>/<path>
+<user>/<repo>[@<ref>][/<path>]
 ```
 
 - `@<ref>` is optional and defaults to `HEAD`.
+- `<path>` is optional: leaving it out reads the repository root `.byk.json`, so `user/repo` equals `user/repo/`.
 - A `<path>` pointing at a directory must end with `/`, meaning that directory's `.byk.json`.
 - The last segment is the file name; the `.byk.json` suffix is optional.
-- The repository root is written as `user/repo/`.
+- The sugar covers the whole path only: `user/repo/ss` still reads `ss.byk.json` and is never guessed to be a `ss/` directory.
+- Don't include a host. `-gh github.com/user/repo` would be read as `user=github.com`, so it fails outright with a hint to write `user/repo`.
 
 | Shorthand | Result |
 |-----------|--------|
+| `-gh user/repo` | the repository root `.byk.json` |
+| `-gh user/repo@v1` | the repository root `.byk.json` on `v1` |
 | `-gh user/repo@v1/tools/release` | `tools/release.byk.json` |
 | `-gh user/repo@v1/tools/` | `tools/.byk.json` |
 | `-gh user/repo@v1/` | the repository root `.byk.json` |
@@ -242,7 +247,7 @@ Repository shorthand shape:
 - Either source freezes `$deps.base` into an absolute address and prints `Recorded $deps.base = …`. The form follows the source: **remote** writes an absolute http(s) directory URL, **local** writes a local absolute directory path. The fill-in rules are identical — the source file's directory when absent, resolved against the source file when relative (`.` / `../` / `sub/dir`), kept as-is when already absolute with only the trailing `/` added.
 - Neither form crosses into the other: a remote source rejects a local-path `base` (`/x`, `C:/x`), which is why **an alias file taken from the network cannot read local files**; a local source keeps an absolute URL as-is, and those assets still come off the network.
 - A `base` containing variables fails outright: a clone has no variable table, so `${CDN}` cannot be evaluated and guessing would bake a bogus address into the file. Writing it back re-serialises the whole document (keys sorted); files without `$deps` stay byte-for-byte copies.
-- Remote sources require `curl`; without it you get an install hint.
+- Remote sources require `curl`; without it you get an install hint. A 404 reports `Remote source not found: <url>` with a hint to check the repository, ref, and path — a directory path missing its trailing `/` lands here too.
 - Options may come before or after the source: `-gh user/repo@v1/tool -d` equals `-d -gh ...`.
 
 #### Clone and install dependencies (`-d`)

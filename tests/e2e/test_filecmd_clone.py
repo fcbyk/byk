@@ -241,8 +241,9 @@ def test_clone_url_reports_curl_failure(runner, tmp_path):
     result = runner.run("@@ops..clone", "https://example.com/x.byk.json", env=env)
 
     assert result.returncode == 1
-    assert "curl failed (exit 22)" in result.stderr
+    assert "Remote source not found: https://example.com/x.byk.json" in result.stderr
     assert "boom" in result.stderr
+    assert "a directory path must end with `/`" in result.stderr
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
 
@@ -337,10 +338,72 @@ def test_clone_github_requires_curl(runner, tmp_path):
 def test_clone_github_invalid_spec_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-gh", "aaa/bb", env=env)
+    result = runner.run("@@ops..clone", "-gh", "aaa", env=env)
 
     assert result.returncode == 1
     assert "GitHub source must be" in result.stderr
+    assert not args_path.exists()
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_github_bare_repo_reads_root_config(runner, tmp_path):
+    payload = b'{"build": "echo root"}'
+    env, args_path = install_fake_curl(tmp_path, payload=payload)
+
+    result = runner.run("@@ops..clone", "-gh", "aaa/bb", env=env)
+
+    assert result.returncode == 0
+    assert args_path.read_text(encoding="utf-8").splitlines() == [
+        "-fsSL",
+        "--",
+        "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json",
+    ]
+    assert (runner.byk_dir / "alias" / "ops.byk.json").read_bytes() == payload
+
+
+def test_clone_github_bare_repo_with_ref_reads_root_config(runner, tmp_path):
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run("@@ops..clone", "--github", "aaa/bb@v1", env=env)
+
+    assert result.returncode == 0
+    assert args_path.read_text(encoding="utf-8").splitlines()[-1] == (
+        "https://raw.githubusercontent.com/aaa/bb/v1/.byk.json"
+    )
+
+
+def test_clone_bare_repo_hits_root_for_each_forge(runner, tmp_path):
+    payload = b'{"build": "echo root"}'
+    cases = [
+        ("-gh", "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"),
+        ("-ge", "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"),
+        ("-jd", "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json"),
+    ]
+    dest = runner.byk_dir / "alias" / "ops.byk.json"
+
+    for flag, url in cases:
+        case_dir = tmp_path / flag.strip("-")
+        case_dir.mkdir()
+        env, args_path = install_fake_curl(case_dir, payload=payload)
+        result = runner.run("@@ops..clone", flag, "aaa/bb", env=env)
+
+        assert result.returncode == 0, result.stderr
+        assert args_path.read_text(encoding="utf-8").splitlines() == [
+            "-fsSL",
+            "--",
+            url,
+        ]
+        dest.unlink()
+
+
+def test_clone_rejects_a_host_in_spec(runner, tmp_path):
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run("@@ops..clone", "-gh", "github.com/aaa/bb", env=env)
+
+    assert result.returncode == 1
+    assert "must not include a host" in result.stderr
+    assert "Did you mean `aaa/bb`?" in result.stderr
     assert not args_path.exists()
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
@@ -376,7 +439,7 @@ def test_clone_gitee_long_flag_with_ref(runner, tmp_path):
 def test_clone_gitee_invalid_spec_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-ge", "aaa/bb", env=env)
+    result = runner.run("@@ops..clone", "-ge", "aaa", env=env)
 
     assert result.returncode == 1
     assert "Gitee source must be" in result.stderr
@@ -414,7 +477,7 @@ def test_clone_jsdelivr_long_flag_with_ref(runner, tmp_path):
 def test_clone_jsdelivr_invalid_spec_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-jd", "aaa/bb", env=env)
+    result = runner.run("@@ops..clone", "-jd", "aaa", env=env)
 
     assert result.returncode == 1
     assert "jsDelivr source must be" in result.stderr

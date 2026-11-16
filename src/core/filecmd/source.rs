@@ -114,13 +114,20 @@ impl Forge {
     }
 }
 
-/// 把 `<user>/<repo>@<ref>/<path>` 展开为对应平台的 raw URL。
+/// 把 `<user>/<repo>[@<ref>][/<path>]` 展开为对应平台的 raw URL。
 pub(super) fn forge_url(forge: Forge, spec: &str) -> Result<String, String> {
     let mut parts = spec.splitn(3, '/');
     let user = parts.next().unwrap_or("");
-    let repo_ref = parts.next().ok_or_else(|| shape_error(forge))?;
-    let path = parts.next().ok_or_else(|| shape_error(forge))?;
+    let repo_ref = parts.next().unwrap_or("");
+    // `<path>` 可省略：省了就是仓库根，与 `user/repo/` 等价。糖只有这一处——
+    // `user/repo/ss` 仍然指 `ss.byk.json`，省略路径不会让第三段变成目录。
+    let path = parts.next().unwrap_or("");
 
+    // `github.com/user/repo` 是最容易手滑的形态：三段都能解析，会被当成
+    // user=github.com / repo=user / path=repo 去 fetch，只能拿到 404。
+    if looks_like_host(user) {
+        return Err(host_error(forge, user, &rest_after_host(spec)));
+    }
     if user.is_empty() || user == "." || user == ".." || repo_ref.is_empty() {
         return Err(shape_error(forge));
     }
@@ -157,9 +164,38 @@ pub(super) fn forge_url(forge: Forge, spec: &str) -> Result<String, String> {
 
 fn shape_error(forge: Forge) -> String {
     format!(
-        "{} source must be <user>/<repo>[/<path>]\nHint: end with `/` for the root .byk.json",
+        "{} source must be <user>/<repo>[@<ref>][/<path>]\nHint: omit <path> for the repository root, and end a directory path with `/`",
         forge.name()
     )
+}
+
+/// 首段长得像主机名就意味着用户把整条 URL 路径粘进来了。
+///
+/// GitHub 与 Gitee 的用户名都不含 `.`，所以带点即主机；`localhost` 单独判一次。
+/// 以 `.` 开头的段（`.`、`..`、`.byk.json`）不算主机，交给形状检查报错。
+fn looks_like_host(segment: &str) -> bool {
+    !segment.starts_with('.')
+        && (segment.contains('.') || segment.eq_ignore_ascii_case("localhost"))
+}
+
+/// 去掉首段主机名后剩下的部分，用来拼「你是不是想写……」的提示。
+fn rest_after_host(spec: &str) -> String {
+    let mut parts = spec.splitn(2, '/');
+    parts.next();
+    parts.next().unwrap_or("").to_string()
+}
+
+fn host_error(forge: Forge, host: &str, rest: &str) -> String {
+    let mut message = format!(
+        "{} source must not include a host: {}\nHint: write <user>/<repo>[@<ref>][/<path>] and leave the host out",
+        forge.name(),
+        host
+    );
+    // 至少还剩 user/repo 才值得建议；只剩一段时建议出去也还是非法形态。
+    if rest.split('/').count() >= 2 {
+        message.push_str(&format!("\nDid you mean `{}`?", rest));
+    }
+    message
 }
 
 fn split_forge_path(forge: Forge, path: &str) -> Result<(Vec<&str>, String), String> {
@@ -275,10 +311,22 @@ fn fetch(url: &str) -> Result<Vec<u8>, String> {
         let code = output.status.code().unwrap_or(-1);
         let stderr = String::from_utf8_lossy(&output.stderr);
         let reason = stderr.trim();
+        // 22 是 `-f` 下的 HTTP 错误，远程来源几乎总是 404：仓库/ref/路径三者
+        // 有一个不对。裸 `curl failed (exit 22)` 只会让人去查网络。
+        if code == 22 {
+            let mut message = format!("Remote source not found: {}", url);
+            if !reason.is_empty() {
+                message.push_str(&format!("\nServer said: {}", reason));
+            }
+            message.push_str(
+                "\nHint: check the repository, ref, and path; a directory path must end with `/`",
+            );
+            return Err(message);
+        }
         return Err(if reason.is_empty() {
-            format!("curl failed (exit {})", code)
+            format!("curl failed (exit {}) for {}", code, url)
         } else {
-            format!("curl failed (exit {}): {}", code, reason)
+            format!("curl failed (exit {}) for {}: {}", code, url, reason)
         });
     }
 
@@ -414,6 +462,14 @@ mod tests {
     #[test]
     fn forge_url_maps_shorthand() {
         assert_eq!(
+            forge_url(Forge::Github, "aaa/bb").unwrap(),
+            "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
+        );
+        assert_eq!(
+            forge_url(Forge::Github, "aaa/bb@v1").unwrap(),
+            "https://raw.githubusercontent.com/aaa/bb/v1/.byk.json"
+        );
+        assert_eq!(
             forge_url(Forge::Github, "aaa/bb/sss").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss.byk.json"
         );
@@ -446,6 +502,10 @@ mod tests {
     #[test]
     fn forge_url_maps_gitee() {
         assert_eq!(
+            forge_url(Forge::Gitee, "aaa/bb").unwrap(),
+            "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"
+        );
+        assert_eq!(
             forge_url(Forge::Gitee, "aaa/bb/sss").unwrap(),
             "https://gitee.com/aaa/bb/raw/HEAD/sss.byk.json"
         );
@@ -461,6 +521,10 @@ mod tests {
 
     #[test]
     fn forge_url_maps_jsdelivr() {
+        assert_eq!(
+            forge_url(Forge::Jsdelivr, "aaa/bb").unwrap(),
+            "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json"
+        );
         assert_eq!(
             forge_url(Forge::Jsdelivr, "aaa/bb/sss").unwrap(),
             "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/sss.byk.json"
@@ -485,10 +549,27 @@ mod tests {
 
     #[test]
     fn forge_url_rejects_bad_shape() {
-        for spec in ["aaa", "aaa/bb", "aaa//sss", "aaa/bb@/sss", "aaa/bb/../sss"] {
+        // 两段现在是合法的（仓库根），剩下的都是真的形状错误
+        for spec in ["", ".byk.json", "aaa", "aaa/bb@/sss", "aaa/bb/../sss"] {
             assert!(forge_url(Forge::Github, spec).is_err(), "{spec}");
         }
+        assert!(forge_url(Forge::Github, "aaa//sss").is_err());
         assert!(forge_url(Forge::Github, "aaa/bb/sss//xxx").is_err());
+    }
+
+    #[test]
+    fn forge_url_rejects_a_host_prefix() {
+        let err = forge_url(Forge::Github, "github.com/aaa/bb").unwrap_err();
+        assert!(err.contains("must not include a host"), "{err}");
+        assert!(err.contains("Did you mean `aaa/bb`?"), "{err}");
+
+        let err = forge_url(Forge::Github, "www.github.com/aaa/bb/sss").unwrap_err();
+        assert!(err.contains("Did you mean `aaa/bb/sss`?"), "{err}");
+
+        // 去掉主机后不到两段，就只能报形状错，别建议一个同样非法的写法
+        let err = forge_url(Forge::Github, "github.com/aaa").unwrap_err();
+        assert!(err.contains("must not include a host"), "{err}");
+        assert!(!err.contains("Did you mean"), "{err}");
     }
 
     #[test]

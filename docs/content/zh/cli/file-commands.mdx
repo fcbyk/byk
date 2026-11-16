@@ -203,6 +203,7 @@ byk @@ops..help set       # set 的用法与选项
 byk @@ops..clone @shared
 byk @@ops..clone ~/src/tool.byk.json
 byk @@ops..clone https://example.com/tool.byk.json
+byk @@ops..clone -gh user/repo                     # 仓库根的 .byk.json
 byk @@ops..clone -gh user/repo@main/tools/release.byk.json
 byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 ```
@@ -222,16 +223,20 @@ byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 仓库简写的格式：
 
 ```
-<user>/<repo>@<ref>/<path>
+<user>/<repo>[@<ref>][/<path>]
 ```
 
 - `@<ref>` 可省略，默认 `HEAD`。
+- `<path>` 可省略：省略就是仓库根的 `.byk.json`，所以 `user/repo` 与 `user/repo/` 等价。
 - `<path>` 指向目录时以 `/` 结尾，表示读取该目录的 `.byk.json`。
 - 最后一段是文件名；`.byk.json` 后缀可写可不写。
-- 仓库根目录要写成 `user/repo/`。
+- 「省略 `<path>`」这一层糖只对整条路径生效：`user/repo/ss` 仍然读 `ss.byk.json`，不会被猜成 `ss/` 目录。
+- 别带主机名。`-gh github.com/user/repo` 会被当成 `user=github.com` 去下载，所以直接报错并提示写成 `user/repo`。
 
 | 简写 | 结果 |
 |------|------|
+| `-gh user/repo` | 仓库根 `.byk.json` |
+| `-gh user/repo@v1` | `v1` 上的仓库根 `.byk.json` |
 | `-gh user/repo@v1/tools/release` | `tools/release.byk.json` |
 | `-gh user/repo@v1/tools/` | `tools/.byk.json` |
 | `-gh user/repo@v1/` | 仓库根 `.byk.json` |
@@ -242,7 +247,7 @@ byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 - 来源顺手把 `$deps.base` 冻结成绝对地址并打印一行 `Recorded $deps.base = …`。形态跟着来源走：**远程**写成绝对 http(s) 目录 URL，**本地**写成本机绝对目录路径。补的规则一致——没写就按源文件所在目录补上，写了相对形态（`.`、`../`、`sub/dir`）就相对源文件解析，写了绝对地址则原样保留，只补结尾的 `/`。
 - 两条路互不越界：远程来源遇到本地路径形态的 `base`（`/x`、`C:/x`）直接失败，于是**从网上拿到的别名文件读不了本机文件**；本地来源遇到绝对 URL 则照搬，那份文档的资产仍然从网上取。
 - clone 时 `base` 里出现变量会直接失败：那一刻没有变量表，`${CDN}` 求不出值，猜一个写死只会把意图烧成假地址。补写会让整份文档重新序列化（键按字典序）；没有 `$deps` 的文件仍是字节级副本。
-- 远程来源依赖 `curl`；缺少时会提示先安装。
+- 远程来源依赖 `curl`；缺少时会提示先安装。服务器返回 404 时报 `Remote source not found: <url>` 并提示检查仓库、ref 与路径——目录路径忘了以 `/` 结尾也归到这里。
 - 选项可以写在来源前后，`-gh user/repo@v1/tool -d` 与 `-d -gh ...` 等价。
 
 #### 克隆并安装依赖（`-d`）
