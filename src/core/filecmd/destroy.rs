@@ -4,9 +4,10 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use super::FileScope;
+use super::command::{not_found_message, resolve_target};
 use super::prompt::{self, Confirmation};
 use super::summary::{self, ContentSummary};
-use super::{FileScope, not_found_message, resolve_target};
 use crate::core::paths::PathLayout;
 
 #[derive(Debug)]

@@ -10,6 +10,7 @@ mod merge;
 pub(crate) mod placeholder;
 mod quote;
 mod scan;
+mod validate;
 
 // 统一出口：其他模块只从这里使用别名引擎能力；共享词汇在 core::config
 pub use exact::load_file_by_key;

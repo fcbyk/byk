@@ -7,7 +7,7 @@ use std::process::Command;
 
 use serde_json::Value;
 
-use super::{invalid_stem_message, target_path};
+use super::command::{invalid_stem_message, target_path};
 use crate::core::config::validate_filename;
 use crate::core::deps::Origin;
 use crate::core::paths::PathLayout;

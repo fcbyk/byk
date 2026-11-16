@@ -4,7 +4,8 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use super::{FileScope, invalid_stem_message, not_found_message, resolve_target};
+use super::FileScope;
+use super::command::{invalid_stem_message, not_found_message, resolve_target};
 use crate::core::config::validate_filename;
 use crate::core::paths::PathLayout;
 

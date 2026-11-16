@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use colored::Colorize;
 use serde_json::Value;
 
-use super::{FileScope, not_found_message, resolve_target};
+use super::FileScope;
+use super::command::{not_found_message, resolve_target};
 use crate::core::config::{describe_issue, expand_document};
 use crate::core::deps;
 use crate::core::paths::PathLayout;

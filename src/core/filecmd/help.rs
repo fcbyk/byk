@@ -2,7 +2,9 @@
 
 use colored::Colorize;
 
-use super::{FileScope, OPTIONS, VERBS, VerbInfo, unknown_verb_message};
+use super::FileScope;
+use super::command::unknown_verb_message;
+use super::registry::{OPTIONS, VERBS, VerbInfo};
 use crate::utils::display::get_display_width;
 
 pub(super) fn run(scope: FileScope, stem: &str, args: &[String]) -> Result<String, String> {

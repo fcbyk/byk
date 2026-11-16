@@ -4,7 +4,8 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::{FileScope, target_path};
+use super::FileScope;
+use super::command::target_path;
 use crate::core::paths::PathLayout;
 
 pub(super) fn destination(

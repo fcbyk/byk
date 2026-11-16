@@ -10,7 +10,8 @@
 
 use serde_json::{Map, Value};
 
-use super::{FileScope, create, deps, resolve_target, source};
+use super::command::resolve_target;
+use super::{FileScope, create, deps, source};
 use crate::core::config::{build_file_key, is_alias_value, parse_clone};
 use crate::core::deps::Origin;
 use crate::core::paths::PathLayout;

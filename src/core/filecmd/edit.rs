@@ -6,7 +6,8 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 
-use super::{FileScope, resolve_target};
+use super::FileScope;
+use super::command::resolve_target;
 use crate::core::paths::PathLayout;
 
 /// 读取对象根文件，交给 `edit` 修改后统一写回。

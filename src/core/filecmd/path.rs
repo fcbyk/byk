@@ -1,6 +1,7 @@
 //! `..path`：输出目标文件的绝对路径。
 
-use super::{FileScope, resolve_target};
+use super::FileScope;
+use super::command::resolve_target;
 use crate::core::paths::PathLayout;
 
 pub(super) fn run(

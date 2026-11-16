@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{FileScope, resolve_target, source};
+use super::FileScope;
+use super::command::resolve_target;
+use super::source;
 use crate::core::paths::PathLayout;
 use crate::utils::path::canonical;
 
