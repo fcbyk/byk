@@ -313,13 +313,60 @@ A resolved `$cwd` is appended in parentheses only when no description is set —
 - Separately, byk always prepends the working directory's `node_modules/.bin`; there is no need to write it into `$paths` yourself
 - The order of `$paths` is the order in `PATH`, so earlier entries win
 
+### Dependencies
+
+`$deps` declares the assets a global alias file needs; byk downloads them into the file's dedicated directory `~/.byk/deps/@@<file-name>/`:
+
+**Global alias files only** (`~/.byk/alias/`); a local file declaring `$deps` gets a warning from `--check`. The declaration itself never touches the network — installing is an explicit verb:
+
+```bash
+byk @@tool..deps install      # download the declared files
+byk @@tool..deps uninstall    # delete the whole dedicated directory
+byk @@tool..clone <source> -d # or install them right after cloning
+```
+
+```json title="~/.byk/alias/tool.byk.json"
+{
+  "$deps": {
+    "files": [
+      "https://example.com/tool-1.4.tar.gz",
+      { "src": "https://example.com/cli-linux", "to": "bin", "exec": true },
+      { "src": "https://example.com/config.json", "name": "tool.cfg", "to": "etc" }
+    ]
+  },
+  "$paths": ["${deps_dir}/bin"],
+  "run": { "$cmd": "tool --version" }
+}
+```
+
+| Rule | Description |
+|------|-------------|
+| String shorthand | Equals `{ "src": "..." }`; the file name is derived from the URL's last segment |
+| `src` | http(s) URLs only; variables are expanded before validation, so a value like `${url}` is fine. Downloading is delegated to the system `curl`, which errors with an install hint when missing |
+| `to` | A subdirectory relative to the dedicated directory (root by default); `/` separated only, `..`, absolute paths and backslashes rejected |
+| `name` | The saved file name, overriding the URL-derived value; mutually exclusive with `extract` |
+| `extract` | Extract as a tar-family archive (`tar.gz` / `tar.xz` / `tar.bz2`, compression auto-detected), delegated to the system `tar`; `to` is the target directory and the log marks the line with `(extract)`. Without `to` the archive unpacks into the dependency root, which requires it to be the only entry (reinstalling replaces the whole directory). Archive entries escaping the target directory abort the install. Mutually exclusive with `exec` |
+| `exec` | Marks the downloaded file executable (no-op on Windows) |
+| Sync | The declaration is the desired state: missing assets are added, changed ones replaced, removed ones deleted; the manifest in `.byk-deps.json` means unchanged assets are never re-downloaded |
+| Scoped removal | Only paths recorded in the manifest and no longer declared are deleted; anything else is left in place with a warning |
+| Confirmation | install no longer asks twice: it prints each curl / tar source and destination, then runs; `uninstall` still confirms |
+| Linkage | `..rename` renames the dedicated directory along, `..destroy` deletes it, `..link` warns about a stale directory when retargeting |
+
+Reference the dedicated directory with `${deps_dir}`. byk owns that directory: installing syncs it to the declaration, so do not keep anything there that must survive an install.
+
+`--check` uses the same classification as `..deps status` and reports missing / outdated / stale with the install command.
+
+`$var`, `$paths` and `$deps` itself all go through variable substitution first, so custom variables like `${version}` can build URLs.
+
+A local file that wants dependencies: first create a global link with `..init --link`. The declaration travels with the target file, while the install location follows the link file's key. See [Single Link](#single-link).
+
 ### Variables
 
 Variables come from two places and are merged into **a single table**, substituted once during the scan phase:
 
 | Source | Description |
 |--------|-------------|
-| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${work_dir}` → the directory `byk` was invoked from (unaffected by `$cwd`); `${file_dir}` → the directory holding the current alias file |
+| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${work_dir}` → the directory `byk` was invoked from (unaffected by `$cwd`); `${file_dir}` → the directory holding the current alias file; `${deps_dir}` → the global alias file's dependency directory `~/.byk/deps/@@<file-name>` (injected into global files only) |
 | `$var` declarations | File-scoped custom variables |
 
 On a name collision, **the file declaration wins** — the value you wrote explicitly is the value you get.
@@ -496,6 +543,7 @@ byk @@ops.build     # exact call goes through the link's key
 | One level | The target may not itself be an array; that is an error and the file is skipped |
 | Identity | Key, `@` / `@@` prefix and default priority come from the link; everything else from the target |
 | `$private` | Still honoured: a target with `true` pulls the link out of the merged namespace, leaving exact calls only |
+| Dependencies | `$deps` declared in the target works as usual; the install location follows the link file's key (`~/.byk/deps/@@<link-file-name>`) |
 
 :::note
 A missing target, broken JSON or an empty array only skips that one file — other aliases keep working.

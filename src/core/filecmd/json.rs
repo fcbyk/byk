@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use super::{FileScope, not_found_message, resolve_target};
 use crate::core::config::{describe_issue, expand_document};
+use crate::core::deps;
 use crate::core::paths::PathLayout;
 use crate::utils::path::dir_of;
 
@@ -54,7 +55,18 @@ pub(super) fn run(
     }
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let issues = expand_document(&mut value, &layout.root_dir, &cwd, &dir_of(&target));
+    // 依赖跟 key 走：全局文件（含链接文件）注入自己的 deps 目录
+    let deps_dir = match scope {
+        FileScope::Global => deps::deps_dir_var(stem, true, &layout.root_dir),
+        FileScope::Local => None,
+    };
+    let issues = expand_document(
+        &mut value,
+        &layout.root_dir,
+        &cwd,
+        &dir_of(&target),
+        deps_dir.as_deref(),
+    );
 
     for issue in issues {
         eprintln!(

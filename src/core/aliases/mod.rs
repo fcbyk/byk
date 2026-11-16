@@ -19,4 +19,4 @@ pub use merge::{
     ScannedAliases, collect_merged_paths, load_merged, load_merged_aliases_report,
     load_scanned_aliases, resolve_merged_alias,
 };
-pub(crate) use scan::list_alias_files;
+pub(crate) use scan::{follow_link, list_alias_files, load_document};

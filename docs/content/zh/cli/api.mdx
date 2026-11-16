@@ -249,7 +249,7 @@ byk __api__ file --list
 
 展开一个 JSON 文件里的变量并输出结果。参数是普通文件路径（相对路径按进程工作目录解析），**不是 `@文件key`**。选项写在路径前面。
 
-`--no-builtins` 只展开文件自己的 `$var`：不注入 `${byk_dir}`、`${work_dir}`、`${file_dir}`，没有声明同名变量时原样保留。
+`--no-builtins` 只展开文件自己的 `$var`：不注入 `${byk_dir}`、`${work_dir}`、`${file_dir}`、`${deps_dir}`，没有声明同名变量时原样保留。
 
 ```json title="./config.json"
 {
@@ -272,7 +272,7 @@ byk __api__ expand ./config.json
 
 默认规则与 `..json --expand` 相同：
 
-- 展开 `${byk_dir}`、`${work_dir}`、`${file_dir}` 以及顶层 `$var`；`$var` 可以覆盖内置名
+- 展开 `${byk_dir}`、`${work_dir}`、`${file_dir}` 以及顶层 `$var`；`$var` 可以覆盖内置名；目标在全局别名目录内时另注入 `${deps_dir}`
 - 展开后移除顶层 `$var`
 - 未识别的 `${name}`、裸 `$HOME`、`\${...}` 原样保留；`${args}` 是别名占位符，不展开
 - **不做别名结构校验**：没有 `$var`、没有 `$cmd`、甚至根不是对象都可以，只要是合法 JSON 就处理；除非传了 `--no-builtins`，内置变量照样展开

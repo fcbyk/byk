@@ -51,6 +51,7 @@ byk @@ops..help                            # list all file commands
 | `..rename` | Rename the alias file |
 | `..clone` | Copy a local or remote alias file |
 | `..link` | Turn the current file into a link to another file |
+| `..deps` | Install, uninstall, or inspect the file's declared dependencies |
 | `..help` | Show commands, usage, and options |
 
 ## Creating and Deleting
@@ -76,6 +77,7 @@ byk @@ops..destroy --yes  # skip confirmation
 
 - Deletes the addressed file. Interactive confirmation asks you to type the file name; non-TTY environments must pass `--yes`.
 - A symlink removes only the link itself, leaving its target untouched; directories are refused.
+- For a global file, the dependency directory `~/.byk/deps/@@<file-name>` is removed along with it.
 
 ### `..clear`
 
@@ -182,6 +184,7 @@ byk @@ops..rename tools
 - Renames within the same scope (`@` only affects the current directory, `@@` only the global one).
 - The new name follows the same file-name rules; an existing target is refused.
 - For a link file, only the link file is renamed; its target is untouched.
+- For a global file, the dependency directory `~/.byk/deps/@@<old-name>` is renamed to `@@<new-name>` along with the file, so `${deps_dir}` keeps pointing at the right place.
 
 ### `..help`
 
@@ -201,6 +204,7 @@ byk @@ops..clone @shared
 byk @@ops..clone ~/src/tool.byk.json
 byk @@ops..clone https://example.com/tool.byk.json
 byk @@ops..clone -gh user/repo@main/tools/release.byk.json
+byk @@ops..clone https://example.com/tool.byk.json -d   # install $deps in the same go
 ```
 
 Sources:
@@ -213,6 +217,7 @@ Sources:
 | `-gh` / `--github` | Read from a GitHub repository |
 | `-ge` / `--gitee` | Read from a Gitee repository |
 | `-jd` / `--jsdelivr` | Read a GitHub file through jsDelivr |
+| `-d` / `--deps` | Also install the cloned file's `$deps` |
 
 Repository shorthand shape:
 
@@ -235,6 +240,18 @@ Repository shorthand shape:
 - A local source is validated first: it must be a JSON object, and a link file (array) is rejected.
 - The result is an independent copy with no relationship to the source. Use `..link` for a live reference.
 - Remote sources require `curl`; without it you get an install hint.
+- Options may come before or after the source: `-gh user/repo@v1/tool -d` equals `-d -gh ...`.
+
+#### Clone and install dependencies (`-d`)
+
+```bash
+byk @@hello..clone https://example.com/hello.byk.json -d
+```
+
+- After the file lands, byk reads the new file's `$deps`: if present it runs the same sync as `..deps i` (a fresh key has no manifest, so it is a first install); if absent it is skipped rather than treated as an error.
+- `-d` is global-only — dependency directories are keyed by the global file key, so a local destination is rejected before anything is downloaded.
+- Installing never asks twice and needs no `--yes`: clone-to-assets-installed is a single command, which suits scripts and non-interactive shells.
+- A failed install does **not** roll back the clone: the file is already valid, so rerun `@@<file>..deps i` as suggested; assets already in place are never downloaded twice.
 
 ### `..link <target>`
 
@@ -247,7 +264,79 @@ byk @@ops..link @shared
 - The target must be a local object alias file; a URL is rejected with a hint to use `..clone`.
 - Pointing at itself is refused, and symlinks are not rewritten.
 - When the addressed file is missing, the error suggests `..init --link`.
+- When retargeting a global file whose dependency directory already exists, byk suggests running `..deps uninstall` first so you keep using the old target's assets.
 - For link behaviour, path resolution, and identity rules, see [Single Link](/cli/alias/config#single-link).
+
+### `..deps [install|uninstall|status]`
+
+```bash
+byk @@tool..deps                       # current state: declared, installed, outdated, stale
+byk @@tool..deps install               # sync the directory to the declaration
+byk @@tool..deps i                     # same, via an unambiguous prefix
+byk @@tool..deps i --force             # ignore the manifest and re-download everything
+byk @@tool..deps uninstall             # delete the whole dependency directory (interactive confirmation)
+byk @@tool..deps u                     # same; u / un / uni all work
+byk @@tool..deps uninstall --yes       # skip the uninstall confirmation
+```
+
+The subcommand is one of `install` / `uninstall` / `status`, and unambiguous prefixes are accepted; no subcommand means `status`.
+
+**install syncs, it does not append.** `$deps.files` is the desired state, and installing converges the directory to it:
+
+| Situation | Action |
+|-----------|--------|
+| Declared, missing on disk | `add` |
+| Declared, recorded, source changed | `update` (re-download and swap atomically) |
+| Recorded but the file is gone | `repair` |
+| Only `exec` differs | `chmod`, no download |
+| Declared, not recorded, file already present | `adopt`: take over the existing file, no download |
+| Recorded but no longer declared | `remove` (plus empty parent directories) |
+| Identical | `keep`, skipped |
+
+```bash
+$ byk @@tool..deps i
+Syncing 2 declared entries in ~/.byk/deps/@@tool:
+  update  @@tool/bin/tool <- https://example.com/v2/tool
+  keep    @@tool/etc/cfg.json
+Downloaded 1 file into ~/.byk/deps/@@tool
+```
+
+When nothing changed it is a no-op and never touches the network:
+
+```bash
+$ byk @@tool..deps i
+@@tool: 2 declared, 2 installed — up to date
+```
+
+- Only works on global alias files; a local file that wants dependencies should first get a global link via `..init --link`.
+- The install manifest lives at `~/.byk/deps/@@<file-name>/.byk-deps.json` and records the last declaration plus where each asset landed. Deleting it just restarts the bookkeeping; the next install adopts whatever is already there.
+- Only paths byk installed are ever removed: anything else in the directory is left alone with a warning.
+- Installing never asks twice and needs no `--yes`; `--force` is the only option, for cases the manifest cannot detect (assets corrupted from outside).
+- Downloading is delegated to the system `curl`, extraction to the system `tar`; when either is missing the error includes an install hint.
+- Everything lands inside `~/.byk/deps/@@<file-name>/`. See [Dependencies](/cli/alias/config#dependencies) for the field reference.
+- An `extract` entry lands on a directory and is marked `(extract)`; reinstalling replaces the whole directory, so files dropped from a newer archive never linger. Without `to` it unpacks into the dependency root, which only works as the sole entry (it replaces that whole directory):
+
+```
+Downloading 2 files into ~/.byk/deps/@@tool:
+  add     @@tool/bin/tool <- https://example.com/cli-linux
+  add     @@tool/dist <- https://example.com/tool-1.4.tar.gz (extract)
+Downloaded 2 files into ~/.byk/deps/@@tool
+```
+
+- A mid-run failure does not roll back finished entries; the error lists what already landed this run, and the manifest is written to match, so rerunning continues where it stopped.
+- uninstall deletes the whole dependency directory; a missing directory is an error. status is read-only and writes to stdout, so it pipes well:
+
+```
+@@tool: 3 declared, 2 installed, 1 stale
+  ok        @@tool/bin/tool
+  missing   @@tool/etc/cfg.json
+  outdated  @@tool/dist
+  stale     @@tool/bin/old-tool
+Deps directory: ~/.byk/deps/@@tool
+Hint: run `byk @@tool..deps i` to install the missing assets
+```
+
+`--check` reuses the same classification and reports missing / outdated / stale per file instead of just testing whether the directory exists.
 
 ## Completion
 
@@ -257,4 +346,5 @@ File-command completion covers:
 - options after a command (for example `..set --`);
 - command names after `..help`;
 - existing key paths after `..remove` (read from the target file; link files are not completed);
-- source arguments for `..clone`, `..link`, and `..init --link` (alias files starting with `@`).
+- source arguments for `..clone`, `..link`, and `..init --link` (alias files starting with `@`);
+- subcommands after `..deps` (`install` / `uninstall` / `status`, global files only).

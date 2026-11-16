@@ -16,9 +16,26 @@ use crate::core::completion;
 use crate::core::config::{
     Level, Mode, describe_issue, expand_document, expand_document_without_builtins,
 };
+use crate::core::deps;
 use crate::core::filecmd;
 use crate::core::paths::PathLayout;
 use crate::utils::path::{canonical, dir_of};
+
+/// expand 请求的 `deps_dir` 注入：只有目标位于全局别名目录内时才给值，
+/// 与扫描语义一致（局部文件和任意 JSON 都不注入）。
+fn deps_dir_for_expand(target: &Path, layout: &PathLayout) -> Option<String> {
+    let stem = target
+        .file_name()?
+        .to_str()?
+        .strip_suffix(".byk.json")?
+        .to_string();
+    let parent = dir_of(target);
+    if canonical(Path::new(&parent)) == canonical(&layout.alias_dir) {
+        deps::deps_dir_var(&stem, true, &layout.root_dir)
+    } else {
+        None
+    }
+}
 
 /// 全部请求；无参调用 `byk __api__` 时原样输出。
 const REQUESTS: &[RequestInfo] = &[
@@ -435,7 +452,16 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
                     .map(|parent| parent.to_string_lossy().into_owned())
                     .unwrap_or_else(|| dir_of(&target));
 
-                expand_document(&mut value, &layout.root_dir, &cwd, &file_dir)
+                // deps_dir 只在目标确实是全局别名文件时注入，与扫描语义一致
+                let deps_dir = deps_dir_for_expand(&target, layout);
+
+                expand_document(
+                    &mut value,
+                    &layout.root_dir,
+                    &cwd,
+                    &file_dir,
+                    deps_dir.as_deref(),
+                )
             };
 
             for issue in issues {

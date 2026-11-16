@@ -51,6 +51,7 @@ byk @@ops..help                            # 列出全部文件命令
 | `..rename` | 重命名别名文件 |
 | `..clone` | 从本地或远程复制一份别名文件 |
 | `..link` | 把当前文件改为指向另一个文件的链接 |
+| `..deps` | 安装、卸载或查看本文件声明的依赖 |
 | `..help` | 查看命令列表、用法与选项 |
 
 ## 创建与删除
@@ -76,6 +77,7 @@ byk @@ops..destroy --yes  # 跳过确认
 
 - 删除被寻址的文件。交互确认要求输入文件名；非 TTY 环境必须带 `--yes`。
 - 符号链接只删除链接本身，不碰目标；目录会被拒绝。
+- 全局文件会连带删除它的依赖目录 `~/.byk/deps/@@<文件名>`。
 
 ### `..clear`
 
@@ -182,6 +184,7 @@ byk @@ops..rename tools
 - 在同一个作用域内改名（`@` 只改当前目录，`@@` 只改全局目录）。
 - 新名字遵循同样的文件名规则；目标已存在时拒绝。
 - 链接文件改的是链接文件本身，目标不动。
+- 全局文件的依赖目录 `~/.byk/deps/@@<旧名>` 会同步改名为 `@@<新名>`，别名里的 `${deps_dir}` 指向不变。
 
 ### `..help`
 
@@ -201,6 +204,7 @@ byk @@ops..clone @shared
 byk @@ops..clone ~/src/tool.byk.json
 byk @@ops..clone https://example.com/tool.byk.json
 byk @@ops..clone -gh user/repo@main/tools/release.byk.json
+byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 ```
 
 来源可以是：
@@ -213,6 +217,7 @@ byk @@ops..clone -gh user/repo@main/tools/release.byk.json
 | `-gh` / `--github` | 从 GitHub 仓库读取 |
 | `-ge` / `--gitee` | 从 Gitee 仓库读取 |
 | `-jd` / `--jsdelivr` | 通过 jsDelivr 读取 GitHub 文件 |
+| `-d` / `--deps` | 克隆后接着装新文件的 `$deps` |
 
 仓库简写的格式：
 
@@ -235,6 +240,18 @@ byk @@ops..clone -gh user/repo@main/tools/release.byk.json
 - 本地来源会先校验：必须是 JSON 对象；链接文件（数组）会被拒绝。
 - 内容是独立副本，与来源不再有关系。想要实时引用请用 `..link`。
 - 远程来源依赖 `curl`；缺少时会提示先安装。
+- 选项可以写在来源前后，`-gh user/repo@v1/tool -d` 与 `-d -gh ...` 等价。
+
+#### 克隆并安装依赖（`-d`）
+
+```bash
+byk @@hello..clone https://example.com/hello.byk.json -d
+```
+
+- 克隆落盘后立刻读新文件的 `$deps`：有就按 `..deps i` 的同步语义装好（新建的 key 没有清单，等于首次安装）；没有就跳过，不当成错误。
+- `-d` 只对全局文件有效——`$deps` 的落点按全局 key 命名，局部文件没有稳定目录，会在下载前就拒绝。
+- 安装不二次确认，也不需要 `--yes`：从 clone 到资产就位是一条命令的事，适合脚本与非交互环境。
+- 装依赖失败**不**回滚克隆：文件已经落盘且合法，按提示重跑 `@@<file>..deps i` 即可，已就位的资产不会重复下载。
 
 ### `..link <target>`
 
@@ -247,7 +264,79 @@ byk @@ops..link @shared
 - 目标必须是本地的对象别名文件；URL 会被拒绝并提示改用 `..clone`。
 - 拒绝指向自己，也拒绝改写符号链接。
 - 被寻址文件不存在时，会提示用 `..init --link` 创建。
+- 全局文件改指向时，如果它的依赖目录已存在，会提醒先 `..deps uninstall`，避免继续用旧目标的资产。
 - 链接后的行为、路径基准与身份归属见 [单链接](/cli/alias/config#单链接)。
+
+### `..deps [install|uninstall|status]`
+
+```bash
+byk @@tool..deps                       # 查看现状：声明几条、装了几个、有哪些过期或多余
+byk @@tool..deps install               # 把目录同步到声明
+byk @@tool..deps i                     # 同上，取无歧义前缀
+byk @@tool..deps i --force             # 忽略清单，全部重下
+byk @@tool..deps uninstall             # 删除整个依赖目录（交互确认）
+byk @@tool..deps u                     # 同上；u / un / uni 都认
+byk @@tool..deps uninstall --yes       # 删除时跳过确认
+```
+
+子命令取 `install` / `uninstall` / `status`，也接受无歧义前缀；不带子命令等于 `status`。
+
+**install 是同步，不是追加。** `$deps.files` 是期望状态，安装让目录收敛到它：
+
+| 情形 | 动作 |
+|------|------|
+| 声明里有、目录里没有 | `add` |
+| 声明里有、清单里有、源变了 | `update`（重下覆盖，原子替换） |
+| 清单里有、文件被删了 | `repair` |
+| 只有 `exec` 不一致 | `chmod`，不重下 |
+| 声明里有、清单里没有、文件已存在 | `adopt`：接管老文件，不下载 |
+| 声明里没有、清单里有 | `remove`（连空掉的父目录一起收） |
+| 完全一致 | `keep`，跳过 |
+
+```bash
+$ byk @@tool..deps i
+Syncing 2 declared entries in ~/.byk/deps/@@tool:
+  update  @@tool/bin/tool <- https://example.com/v2/tool
+  keep    @@tool/etc/cfg.json
+Downloaded 1 file into ~/.byk/deps/@@tool
+```
+
+什么都没变时是空操作，不产生任何请求：
+
+```bash
+$ byk @@tool..deps i
+@@tool: 2 declared, 2 installed — up to date
+```
+
+- 只对全局别名文件生效；局部文件想用依赖，先用 `..init --link` 创建全局链接。
+- 已安装清单存在 `~/.byk/deps/@@<文件名>/.byk-deps.json`，记录上次声明的快照与落点。删除它等于重新开始记账，安装会重新「接管」现有文件。
+- 只删自己装过的路径：目录里多出来的文件永远不动，只提示一句。
+- 安装不二次确认，也不需要 `--yes`；`--force` 是唯一的选项，用于「资产被外部改坏」这类清单看不出的情况。
+- 下载交给系统 `curl`，解压交给系统 `tar`；两者缺失时报错并提示安装。
+- 落点圈死在 `~/.byk/deps/@@<文件名>/` 内。字段说明见 [依赖](/cli/alias/config#依赖)。
+- 带 `extract` 的条目落点是目录，用 `(extract)` 标注；重装时整目录替换，旧归档里没有的文件不会留下。省略 `to` 表示解到专属目录根，这种条目必须单独存在（它会换掉整个目录）：
+
+```
+Downloading 2 files into ~/.byk/deps/@@tool:
+  add     @@tool/bin/tool <- https://example.com/cli-linux
+  add     @@tool/dist <- https://example.com/tool-1.4.tar.gz (extract)
+Downloaded 2 files into ~/.byk/deps/@@tool
+```
+
+- 中途失败不回滚已完成的条目，错误里列出这次已经落盘的路径；清单也会写成实际状态，重跑接着做。
+- uninstall 删除整个依赖目录；目录不存在时报错。status 只读，文本写 stdout，适合管道：
+
+```
+@@tool: 3 declared, 2 installed, 1 stale
+  ok        @@tool/bin/tool
+  missing   @@tool/etc/cfg.json
+  outdated  @@tool/dist
+  stale     @@tool/bin/old-tool
+Deps directory: ~/.byk/deps/@@tool
+Hint: run `byk @@tool..deps i` to install the missing assets
+```
+
+`--check` 用同一套判定，把 missing / outdated / stale 报在文件条目下，不再只看目录在不在。
 
 ## 补全
 
@@ -257,4 +346,5 @@ byk @@ops..link @shared
 - 命令后的选项（如 `..set --`）；
 - `..help` 后面的命令名；
 - `..remove` 后面的已有 key 路径（读目标文件，链接文件不补）；
-- `..clone`、`..link`、`..init --link` 的来源参数（以 `@` 开头的别名文件）。
+- `..clone`、`..link`、`..init --link` 的来源参数（以 `@` 开头的别名文件）；
+- `..deps` 后面的子命令（`install` / `uninstall` / `status`，仅全局文件）。

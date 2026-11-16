@@ -578,6 +578,7 @@ def test_api_complete_with_descriptions_file_command_verbs(runner):
         "@@ops..rename\tRename the alias file",
         "@@ops..clone\tCopy a local or remote alias file into this file",
         "@@ops..link\tPoint this file at another alias file",
+        "@@ops..deps\tInstall, uninstall, or inspect this file's dependencies",
         "@@ops..help\tShow this help",
     ]
 

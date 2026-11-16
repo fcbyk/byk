@@ -232,7 +232,7 @@ mod tests {
 
         assert!(err.starts_with("Unknown file command: \"bogus\""));
         assert!(err.contains(
-            "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, help"
+            "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, deps, help"
         ));
     }
 

@@ -122,6 +122,9 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     if let Some(verbs) = filecmd::complete_help_args(&prev[0], prev.len(), partial) {
         return verbs;
     }
+    if let Some(subs) = filecmd::complete_deps_args(&prev[0], prev.len(), partial) {
+        return subs;
+    }
     if let Some(keys) = filecmd::complete_remove_args(&prev[0], prev.len(), partial, layout) {
         return keys;
     }
@@ -443,6 +446,7 @@ mod tests {
                 "@@anything..rename".to_string(),
                 "@@anything..clone".to_string(),
                 "@@anything..link".to_string(),
+                "@@anything..deps".to_string(),
                 "@@anything..help".to_string()
             ]
         );
@@ -666,7 +670,8 @@ mod tests {
                 "path".to_string(),
                 "rename".to_string(),
                 "clone".to_string(),
-                "link".to_string()
+                "link".to_string(),
+                "deps".to_string()
             ]
         );
         assert_eq!(

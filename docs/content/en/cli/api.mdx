@@ -249,7 +249,7 @@ The list is enumerated by filename only and content is never read: a file with b
 
 Expands the variables in a JSON file and prints the result. The argument is an ordinary file path (a relative one is resolved against the process working directory), **not an `@file` key**. The flag comes before the path.
 
-`--no-builtins` expands only the file's own `$var` declarations: `${byk_dir}`, `${work_dir}` and `${file_dir}` are not injected and stay as written unless `$var` declares a variable with that name.
+`--no-builtins` expands only the file's own `$var` declarations: `${byk_dir}`, `${work_dir}`, `${file_dir}` and `${deps_dir}` are not injected and stay as written unless `$var` declares a variable with that name.
 
 ```json title="./config.json"
 {
@@ -272,7 +272,7 @@ byk __api__ expand ./config.json
 
 By default the rules match `..json --expand`:
 
-- Expands `${byk_dir}`, `${work_dir}`, `${file_dir}`, and a top-level `$var`; `$var` may override a built-in name
+- Expands `${byk_dir}`, `${work_dir}`, `${file_dir}`, and a top-level `$var`; `$var` may override a built-in name; `${deps_dir}` is additionally injected when the target sits inside the global alias directory
 - Removes the top-level `$var` after expansion
 - Unknown `${name}`, bare `$HOME`, and `\${...}` stay as-is; `${args}` is an alias placeholder and is not expanded
 - **No alias-structure validation**: missing `$var`, missing `$cmd`, or even a non-object root are all fine as long as the JSON parses; built-ins expand unless `--no-builtins` is given

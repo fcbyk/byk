@@ -430,7 +430,12 @@ def test_clone_forge_options_are_completed(runner):
     )
 
     assert short.stdout.splitlines() == ["-gh", "-ge"]
-    assert long.stdout.splitlines() == ["--github", "--gitee", "--jsdelivr"]
+    assert long.stdout.splitlines() == [
+        "--github",
+        "--gitee",
+        "--jsdelivr",
+        "--deps",
+    ]
     assert jd.stdout.splitlines() == ["-jd"]
     assert both.stdout.splitlines() == [
         "-gh\tClone from a GitHub repository",
@@ -439,7 +444,137 @@ def test_clone_forge_options_are_completed(runner):
         "--gitee\tClone from a Gitee repository",
         "-jd\tClone a GitHub file through jsDelivr",
         "--jsdelivr\tClone a GitHub file through jsDelivr",
+        "-d\tAlso install the cloned file's dependencies",
+        "--deps\tAlso install the cloned file's dependencies",
     ]
+
+
+def install_routed_curl(tmp_path, routes):
+    """clone 走 stdout、deps 走 `-o`，同一个假 curl 两种都要伺候"""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "curl-log"
+
+    lines = [
+        "#!/bin/sh",
+        f"printf '%s\\n' \"$@\" >> {shlex.quote(str(log))}",
+        'out=""; url=""',
+        "while [ $# -gt 0 ]; do",
+        '  if [ "$1" = "-o" ]; then out="$2"; shift 2; continue; fi',
+        '  url="$1"; shift',
+        "done",
+        'case "$url" in',
+    ]
+    for index, (suffix, payload) in enumerate(routes.items()):
+        payload_path = tmp_path / f"payload-{index}"
+        payload_path.write_bytes(payload)
+        lines.append(f"  *{suffix}) src={shlex.quote(str(payload_path))} ;;")
+    lines += [
+        "esac",
+        'if [ -n "$out" ]; then cat "$src" > "$out"; else cat "$src"; fi',
+    ]
+
+    script = bin_dir / "curl"
+    script.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    script.chmod(0o755)
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    return env, log
+
+
+WITH_DEPS = (
+    b'{"$deps": {"files": [{"src": "https://example.com/bin/tool", "to": "bin"}]},'
+    b' "run": "tool"}'
+)
+
+WITH_TWO_DEPS = (
+    b'{"$deps": {"files": [{"src": "https://example.com/bin/tool", "to": "bin"},'
+    b' {"src": "https://example.com/bin/missing", "to": "bin"}]}, "run": "tool"}'
+)
+
+
+def test_clone_install_deps_skips_without_declaration(runner):
+    source = runner.prepare_alias_json("src", {"build": "echo hi"})
+
+    result = runner.run("@@ops..clone", str(source), "-d")
+
+    assert result.returncode == 0
+    assert "Cloned" in result.stderr
+    assert "declares no $deps" in result.stderr
+    assert not (runner.byk_dir / "deps" / "@@ops").exists()
+
+
+def test_clone_install_deps_combines_with_forge(runner, tmp_path):
+    env, log = install_routed_curl(tmp_path, {"/.byk.json": b'{"build": "echo hi"}'})
+
+    result = runner.run("@@ops..clone", "-gh", "aaa/bb@v1/", "-d", env=env)
+
+    assert result.returncode == 0
+    assert "declares no $deps" in result.stderr
+    assert "raw.githubusercontent.com/aaa/bb/v1/.byk.json" in log.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_clone_install_deps_rejects_local_scope(runner, tmp_path):
+    source = tmp_path / "src.byk.json"
+    source.write_text('{"build": "echo local"}', encoding="utf-8")
+
+    result = runner.run("@ops..clone", str(source), "-d", cwd=str(tmp_path))
+
+    assert result.returncode == 1
+    assert "--deps requires a global alias file" in result.stderr
+    assert not (tmp_path / "ops.byk.json").exists()
+
+
+def test_clone_install_deps_installs_without_prompt(runner, tmp_path):
+    payload = b"#!/bin/sh\necho hi\n"
+    env, _ = install_routed_curl(
+        tmp_path,
+        {"/hello.byk.json": WITH_DEPS, "/bin/tool": payload},
+    )
+
+    # 没有 tty、没有 stdin：安装不再二次确认
+    result = runner.run(
+        "@@ops..clone", "https://example.com/hello.byk.json", "-d", env=env
+    )
+
+    assert result.returncode == 0
+    deps_root = runner.byk_dir / "deps" / "@@ops"
+    assert result.stderr.splitlines() == [
+        f"Cloned https://example.com/hello.byk.json to {runner.byk_dir / 'alias' / 'ops.byk.json'}",
+        f"Downloading 1 file into {deps_root}:",
+        "  add     @@ops/bin/tool <- https://example.com/bin/tool",
+        f"Downloaded 1 file into {deps_root}",
+    ]
+    assert (deps_root / "bin" / "tool").read_bytes() == payload
+
+
+def test_clone_install_deps_reports_failure(runner, tmp_path):
+    # 第二条资产 404、第一条已经落盘：克隆保留，错误里给重试命令
+    env, _ = install_routed_curl(
+        tmp_path,
+        {"/hello.byk.json": WITH_TWO_DEPS, "/bin/tool": b"x"},
+    )
+
+    result = runner.run(
+        "@@ops..clone", "https://example.com/hello.byk.json", "-d", env=env
+    )
+
+    assert result.returncode == 1
+    assert "Failed to install dependencies" in result.stderr
+    assert "already written in this run" in result.stderr
+    assert "byk @@ops..deps i" in result.stderr
+    assert (runner.byk_dir / "alias" / "ops.byk.json").is_file()
+
+
+def test_clone_rejects_yes_without_install_deps(runner):
+    source = runner.prepare_alias_json("src", {"build": "echo hi"})
+
+    result = runner.run("@@ops..clone", str(source), "-y")
+
+    assert result.returncode == 1
+    assert "Unknown option: -y" in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
 
 def test_resolve_rejects_clone(runner):

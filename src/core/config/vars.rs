@@ -2,7 +2,7 @@
 //!
 //! 设计目标：**一张表、一个语法、一次替换**。
 //!
-//! - 表：内置变量（`byk_dir` / `work_dir` / `file_dir`）与文件 `$var` 声明合并，声明覆盖内置；
+//! - 表：内置变量（`byk_dir` / `work_dir` / `file_dir` / `deps_dir`）与文件 `$var` 声明合并，声明覆盖内置；
 //! - 语法：`${name}`，`name` 为 `[A-Za-z_][A-Za-z0-9_]*`（与 shell 标识符一致）；
 //! - 裸 `$xx` 不再识别，原样透传给 shell（`$HOME`、`$PATH` 交给 shell 自己展开）；
 //! - `\${...}` 输出字面量 `${...}`；
@@ -37,10 +37,16 @@ pub type VarTable = BTreeMap<String, String>;
 /// 而这个值逐文件不同，由扫描阶段克隆一份局部表再注入。
 pub const FILE_DIR_VAR: &str = "file_dir";
 
+/// 别名文件专属依赖目录的变量名（`~/.byk/deps/@@<stem>`）。
+///
+/// 与 `file_dir` 同类：逐文件不同，由扫描阶段注入；只有全局别名文件
+/// 注入，局部文件里的 `${deps_dir}` 按未命中规则原样保留。
+pub const DEPS_DIR_VAR: &str = "deps_dir";
+
 /// 允许被 `$var` 覆盖的内置变量名。
 ///
 /// 内置变量只有目录这一类，名字一律以 `_dir` 结尾，值是绝对路径。
-pub const BUILTIN_NAMES: &[&str] = &["byk_dir", "work_dir", FILE_DIR_VAR];
+pub const BUILTIN_NAMES: &[&str] = &["byk_dir", "work_dir", FILE_DIR_VAR, DEPS_DIR_VAR];
 
 /// 禁止在 `$var` 中声明的名字：会遮蔽别名参数占位符。
 pub const RESERVED_DECL_NAMES: &[&str] = &["args"];
@@ -88,7 +94,7 @@ pub fn is_valid_var_name(name: &str) -> bool {
 ///
 /// 放与文件无关的内置变量：`byk_dir`（byk 的资源根，`~/.byk`，不是二进制目录）
 /// 与 `work_dir`（调用 byk 时的进程工作目录，不受别名 `$cwd` 影响）；
-/// `file_dir` 由扫描阶段按文件注入。
+/// `file_dir` 与 `deps_dir` 由扫描阶段按文件注入。
 pub fn build_builtin_table(byk_root: &Path, work_dir: &Path) -> VarTable {
     let mut table = VarTable::new();
     table.insert(
@@ -290,20 +296,29 @@ pub fn preprocess_vars(root: &mut Value, builtin: &VarTable) -> Vec<VarIssue> {
 /// 文档级展开：内置变量 + 顶层 `$var`，随后移除 `$var`。
 ///
 /// `file_dir` 由调用方按被处理文件的位置给出；返回值是声明问题，供调用方提示。
+/// 文档级展开：内置变量加 `file_dir` / 可选 `deps_dir`。
+///
+/// `deps_dir` 由调用方按扫描语义给出：全局别名文件传
+/// `~/.byk/deps/@@<stem>`（链接文件的 key 也是它），其余传 `None`，
+/// `${deps_dir}` 按未命中规则原样保留。
 pub fn expand_document(
     value: &mut Value,
     byk_root: &Path,
     work_dir: &Path,
     file_dir: &str,
+    deps_dir: Option<&str>,
 ) -> Vec<VarIssue> {
     let mut vars = build_builtin_table(byk_root, work_dir);
     vars.insert(FILE_DIR_VAR.to_string(), file_dir.to_string());
+    if let Some(deps_dir) = deps_dir {
+        vars.insert(DEPS_DIR_VAR.to_string(), deps_dir.to_string());
+    }
     expand_with(value, &vars)
 }
 
 /// 文档级展开：只认顶层 `$var`，不注入任何内置变量。
 ///
-/// `${byk_dir}` / `${work_dir}` / `${file_dir}` 没有值时原样保留；
+/// `${byk_dir}` / `${work_dir}` / `${file_dir}` / `${deps_dir}` 没有值时原样保留；
 /// `$var` 里显式声明同名变量仍按普通声明生效。`$var` 展开后同样被移除。
 pub fn expand_document_without_builtins(value: &mut Value) -> Vec<VarIssue> {
     expand_with(value, &VarTable::new())
@@ -344,6 +359,7 @@ mod tests {
             Path::new("/home/u/.byk"),
             Path::new("/home/u/invoke"),
             "/home/u/proj/conf",
+            None,
         );
         (v, issues)
     }

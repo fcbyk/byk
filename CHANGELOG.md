@@ -1,6 +1,21 @@
 ## Unreleased
 
+### Bug Fixes
+
+- **`$deps`**: an `extract` entry without `to` (unpacking into the dependency root) was treated as already installed, so `..deps install` skipped the download and `..deps status` reported `ok` over an empty directory; root extraction now counts as installed only when the directory actually has content, and is repaired when it does not
+- **VS Code extension**: `$deps.files[].src` in the JSON schema now accepts values starting with `${...}` — variables are expanded before the http(s) check, so the schema was flagging valid declarations
+- **`$deps`**: root extraction is rejected when combined with other entries — reinstalling replaces the whole directory and would silently drop them
+
 ### Features
+
+- **`$deps`**: global alias files can declare asset dependencies via `$deps.files` (string shorthand or `{src, to, name, extract, exec}` objects); declared assets land in the file's own directory `~/.byk/deps/<key>/`, guarded against path escapes
+- **`${deps_dir}`**: new built-in variable pointing at the file's dependency directory; only injected for global alias files, left as-is elsewhere
+- **file commands**: `@@<file>..deps install` downloads declared assets (delegating to system `curl` and `tar`, no new dependencies), printing each asset's source and destination as it goes and installing without a second confirmation; `@@<file>..deps uninstall` removes the directory and still asks first. `..rename` and `..destroy` now move/remove the dependency directory, and `..link` warns when retargeting a file that still has one
+- **file commands**: `..clone` takes `-d` / `--deps` to install the cloned file's `$deps` in the same call — no second confirmation, progress printed, and a failed install leaves the clone in place for a retry; options may now sit before or after the source and combine (`-gh user/repo@v1/tool -d`)
+- **`$deps` sync**: `..deps install` now converges the directory to the declaration instead of appending. A manifest (`.byk-deps.json`) records what was installed and from where, so unchanged assets are skipped without touching the network, changed URLs are replaced atomically, entries dropped from the declaration are deleted, manually deleted files are repaired, and an `exec`-only change is a plain `chmod`. Directories from older versions are adopted rather than refused, files byk did not install are never deleted (only reported), `--force` rebuilds everything, and reinstalling an `extract` entry replaces the whole directory so files dropped from a newer archive do not linger
+- **`..deps status`**: reports `ok` / `missing` / `outdated` / `stale` using the same classification as install, and `--check` reports missing / outdated / stale per file instead of only testing whether the dependency directory exists
+- **file commands**: `..deps` accepts unambiguous prefixes (`i` / `u` / `s`) and gains a `status` subcommand; bare `..deps` prints what is declared and what is installed to stdout
+- **`--check`**: validates the `$deps` structure
 
 - **`__api__ expand`**: new `--no-builtins` flag expands only the file's `$var` declarations and leaves `byk_dir` / `work_dir` / `file_dir` unset
 

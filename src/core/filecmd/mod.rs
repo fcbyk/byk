@@ -6,6 +6,7 @@
 mod clear;
 mod clone;
 mod create;
+mod deps;
 mod destroy;
 mod edit;
 mod help;
@@ -60,6 +61,7 @@ enum Verb {
     Rename,
     Clone,
     Link,
+    Deps,
     Help,
 }
 
@@ -132,6 +134,12 @@ const VERBS: &[VerbInfo] = &[
         verb: Verb::Link,
         description: "Point this file at another alias file",
         usage: "<target>",
+    },
+    VerbInfo {
+        name: "deps",
+        verb: Verb::Deps,
+        description: "Install, uninstall, or inspect this file's dependencies",
+        usage: "[install|uninstall|status]",
     },
     VerbInfo {
         name: "help",
@@ -264,6 +272,18 @@ const OPTIONS: &[OptionInfo] = &[
         syntax: "-jd, --jsdelivr <spec>",
         description: "Clone a GitHub file through jsDelivr",
     },
+    OptionInfo {
+        verb: Verb::Clone,
+        flag: "--deps",
+        syntax: "-d, --deps",
+        description: "Also install the cloned file's dependencies",
+    },
+    OptionInfo {
+        verb: Verb::Deps,
+        flag: "--yes",
+        syntax: "--yes",
+        description: "Skip confirmation",
+    },
 ];
 
 /// 选项别名：短写 → 完整 flag；帮助里的展示由 `syntax` 负责。
@@ -271,6 +291,7 @@ const OPTION_ALIASES: &[(&str, &str)] = &[
     ("-gh", "--github"),
     ("-ge", "--gitee"),
     ("-jd", "--jsdelivr"),
+    ("-d", "--deps"),
 ];
 
 impl Verb {
@@ -514,6 +535,15 @@ pub(crate) fn describe_option(flag: &str) -> Option<&'static str> {
         .map(|info| info.description)
 }
 
+/// 依赖条数的文案；安装前的标题与安装后的总结共用。
+pub(super) fn count_files(count: usize) -> String {
+    if count == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{count} files")
+    }
+}
+
 fn write_stdout(content: &[u8]) -> Result<(), String> {
     let mut stdout = std::io::stdout().lock();
     stdout
@@ -528,8 +558,14 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
             eprintln!("Created {}", path.display());
         }),
         Verb::Destroy => {
+            let is_global = command.scope == FileScope::Global;
+            let stem = command.stem.clone();
             destroy::run(command.scope, &command.stem, args, layout).map(|outcome| match outcome {
                 destroy::Outcome::Removed { path, symlink } => {
+                    // 依赖目录只属于全局 key；局部文件的同名 stem 不能碰它
+                    if is_global && !symlink {
+                        deps::remove_dir(&stem, layout);
+                    }
                     if symlink {
                         eprintln!("Removed symlink {}", path.display());
                     } else {
@@ -566,12 +602,46 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
             .and_then(|content| write_stdout(&content)),
         Verb::Path => path::run(command.scope, &command.stem, args, layout)
             .and_then(|text| write_stdout(text.as_bytes())),
-        Verb::Rename => rename::run(command.scope, &command.stem, args, layout)
-            .map(|(from, to)| eprintln!("Renamed {} to {}", from.display(), to.display())),
-        Verb::Clone => clone::run(command.scope, &command.stem, args, layout)
-            .map(|(path, source)| eprintln!("Cloned {} to {}", source, path.display())),
-        Verb::Link => link::run(command.scope, &command.stem, args, layout)
-            .map(|(path, target)| eprintln!("Linked {} to {}", path.display(), target.display())),
+        Verb::Rename => {
+            let new_stem = args.first().cloned();
+            rename::run(command.scope, &command.stem, args, layout).map(|(from, to)| {
+                if command.scope == FileScope::Global
+                    && let Some(new_stem) = new_stem
+                {
+                    deps::rename_dir(&command.stem, &new_stem, layout);
+                }
+                eprintln!("Renamed {} to {}", from.display(), to.display());
+            })
+        }
+        Verb::Clone => clone::run(command.scope, &command.stem, args, layout),
+        Verb::Link => {
+            let stale_check = command.scope == FileScope::Global;
+            link::run(command.scope, &command.stem, args, layout).map(|(path, target)| {
+                if stale_check {
+                    deps::warn_stale_dir(&command.stem, layout);
+                }
+                eprintln!("Linked {} to {}", path.display(), target.display());
+            })
+        }
+        Verb::Deps => {
+            deps::run(command.scope, &command.stem, args, layout).map(|outcome| match outcome {
+                // 安装过程自己打完输出，这里不用再报一遍
+                deps::Outcome::Installed => {}
+                deps::Outcome::Removed { dir } => {
+                    eprintln!("Removed {}", dir.display());
+                }
+                deps::Outcome::Status(text) => {
+                    if let Err(message) = write_stdout(text.as_bytes()) {
+                        eprintln!("{}", message);
+                        exit(1);
+                    }
+                }
+                deps::Outcome::Cancelled => eprintln!("Cancelled."),
+                deps::Outcome::Mismatch => {
+                    eprintln!("Confirmation does not match. Cancelled.");
+                }
+            })
+        }
         Verb::Help => help::run(command.scope, &command.stem, args)
             .and_then(|text| write_stdout(text.as_bytes())),
     };
@@ -741,6 +811,35 @@ fn alias_file_tokens(dir: &Path, prefix: &str) -> Vec<String> {
 /// 补全 `..remove` 后面的已有 key 路径。
 ///
 /// 只有第一个参数位置有候选；链接文件、缺失或非法文件不补。
+pub(crate) fn complete_deps_args(
+    command_token: &str,
+    arg_index: usize,
+    partial: &str,
+) -> Option<Vec<String>> {
+    let command = match parse(command_token) {
+        ParseResult::Command(command) => command,
+        _ => return None,
+    };
+    if command.verb != Verb::Deps {
+        return None;
+    }
+    // deps 只对全局文件生效，局部不补
+    if command.scope != FileScope::Global {
+        return Some(Vec::new());
+    }
+    if arg_index != 1 {
+        return Some(Vec::new());
+    }
+
+    Some(
+        ["install", "uninstall", "status"]
+            .iter()
+            .filter(|name| name.starts_with(partial))
+            .map(|name| (*name).to_string())
+            .collect(),
+    )
+}
+
 pub(crate) fn complete_remove_args(
     command_token: &str,
     arg_index: usize,
@@ -980,6 +1079,7 @@ mod tests {
                 "@@ops..rename".to_string(),
                 "@@ops..clone".to_string(),
                 "@@ops..link".to_string(),
+                "@@ops..deps".to_string(),
                 "@@ops..help".to_string()
             ])
         );
@@ -989,7 +1089,10 @@ mod tests {
         );
         assert_eq!(
             complete_verbs("@@ops..d"),
-            Some(vec!["@@ops..destroy".to_string()])
+            Some(vec![
+                "@@ops..destroy".to_string(),
+                "@@ops..deps".to_string()
+            ])
         );
         assert_eq!(
             complete_verbs("@@ops..c"),
@@ -1088,7 +1191,9 @@ mod tests {
                 "-ge".to_string(),
                 "--gitee".to_string(),
                 "-jd".to_string(),
-                "--jsdelivr".to_string()
+                "--jsdelivr".to_string(),
+                "-d".to_string(),
+                "--deps".to_string()
             ])
         );
         assert_eq!(
@@ -1096,7 +1201,8 @@ mod tests {
             Some(vec![
                 "--github".to_string(),
                 "--gitee".to_string(),
-                "--jsdelivr".to_string()
+                "--jsdelivr".to_string(),
+                "--deps".to_string()
             ])
         );
         assert_eq!(
@@ -1119,7 +1225,7 @@ mod tests {
             Some(
                 [
                     "init", "destroy", "clear", "set", "remove", "json", "path", "rename", "clone",
-                    "link"
+                    "link", "deps"
                 ]
                 .iter()
                 .map(|name| name.to_string())

@@ -5,10 +5,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::core::config::{
-    AliasFile, Diagnostic, FILE_DIR_VAR, Level, Mode, VarTable, build_file_key, describe_issue,
-    filter_invalid_keys, is_valid_private, parse_priority, parse_private, preprocess_vars,
-    validate_filename,
+    AliasFile, DEPS_DIR_VAR, Diagnostic, FILE_DIR_VAR, Level, Mode, VarTable, build_file_key,
+    describe_issue, filter_invalid_keys, is_valid_private, parse_priority, parse_private,
+    preprocess_vars, validate_filename,
 };
+use crate::core::deps;
+use crate::core::sync::{self, Change};
 use crate::utils::path::{canonical, dir_of, expand_home};
 
 /// 一次目录扫描的结果：成功解析的文件、诊断、以及实际检查过的候选文件。
@@ -52,7 +54,12 @@ fn symlink_problem(path: &Path) -> Option<String> {
     }
 }
 
-pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> ScanResult {
+pub(crate) fn scan_alias_files(
+    dir: &Path,
+    is_global: bool,
+    root_dir: &Path,
+    vars: &VarTable,
+) -> ScanResult {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
     // 只想给本文件用（仅 @file.key 可达）时写 `$private: true`。
     let default_priority = default_priority(is_global);
@@ -96,6 +103,7 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
         if let Some(alias_file) = parse_alias_file(
             &path,
             is_global,
+            root_dir,
             default_priority,
             vars,
             &mut result.diagnostics,
@@ -115,6 +123,7 @@ pub(crate) fn scan_alias_files(dir: &Path, is_global: bool, vars: &VarTable) -> 
 pub(crate) fn load_alias_file(
     dir: &Path,
     is_global: bool,
+    root_dir: &Path,
     stem: &str,
     vars: &VarTable,
     diagnostics: &mut Vec<Diagnostic>,
@@ -123,6 +132,7 @@ pub(crate) fn load_alias_file(
     parse_alias_file(
         &path,
         is_global,
+        root_dir,
         default_priority(is_global),
         vars,
         diagnostics,
@@ -169,13 +179,15 @@ pub(crate) fn list_alias_files(dir: &Path, is_global: bool) -> Vec<(String, Path
     files
 }
 
-/// 读取一个别名文件：注入它自己的 `file_dir`，完成变量替换与告警。
+/// 读取一个别名文件：注入它自己的 `file_dir` 与 `deps_dir`，完成变量替换与告警。
 ///
-/// 返回 `(文档, 文件路径)`。链接文件和链接目标都走这里，所以两者
-/// 的 `${file_dir}` 都指向各自所在目录。
-fn load_document(
+/// 返回 `(文档, 文件路径)`。链接文件和链接目标都走这里，所以两者的
+/// `${file_dir}` 都指向各自所在目录；`${deps_dir}` 则由调用方显式给出，
+/// 链接目标继承链接文件的值——依赖跟着 key 走，不跟目标文件走。
+pub(crate) fn load_document(
     path: &Path,
     vars: &VarTable,
+    deps_dir: Option<&str>,
     owner: &Path,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<(serde_json::Value, PathBuf), String> {
@@ -183,9 +195,12 @@ fn load_document(
     let mut data: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| format!("invalid JSON: {}", e))?;
 
-    // 内置表是全局共用的，file_dir 逐文件不同：克隆一份局部表再注入
+    // 内置表是全局共用的，file_dir / deps_dir 逐文件不同：克隆一份局部表再注入
     let mut file_vars = vars.clone();
     file_vars.insert(FILE_DIR_VAR.to_string(), dir_of(path));
+    if let Some(deps_dir) = deps_dir {
+        file_vars.insert(DEPS_DIR_VAR.to_string(), deps_dir.to_string());
+    }
 
     // 变量替换：内置变量与文件 $var 合成一张表，扫描期一次替换完成
     for issue in preprocess_vars(&mut data, &file_vars) {
@@ -231,10 +246,11 @@ fn push_doc_diagnostic(
 ///
 /// 链深只允许一层：目标是数组（又一个链接文件）直接报错——链接本可以一步指到位，
 /// 多一层只是隐藏真实文件的位置。
-fn follow_link(
+pub(crate) fn follow_link(
     data: serde_json::Value,
     link_path: &Path,
     vars: &VarTable,
+    deps_dir: Option<&str>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<(serde_json::Value, PathBuf)> {
     let serde_json::Value::Array(items) = &data else {
@@ -262,16 +278,17 @@ fn follow_link(
     };
 
     let target = resolve_link_path(spec, link_path);
-    let (target_data, target_path) = match load_document(&target, vars, link_path, diagnostics) {
-        Ok(loaded) => loaded,
-        Err(reason) => {
-            diagnostics.push(Diagnostic::error(
-                link_path,
-                format!("cannot load link target {}: {}", target.display(), reason),
-            ));
-            return None;
-        }
-    };
+    let (target_data, target_path) =
+        match load_document(&target, vars, deps_dir, link_path, diagnostics) {
+            Ok(loaded) => loaded,
+            Err(reason) => {
+                diagnostics.push(Diagnostic::error(
+                    link_path,
+                    format!("cannot load link target {}: {}", target.display(), reason),
+                ));
+                return None;
+            }
+        };
 
     if target_data.is_array() {
         diagnostics.push(Diagnostic::error(
@@ -317,6 +334,7 @@ fn resolve_link_path(spec: &str, link_path: &Path) -> PathBuf {
 fn parse_alias_file(
     path: &Path,
     is_global: bool,
+    root_dir: &Path,
     default_priority: i32,
     vars: &VarTable,
     diagnostics: &mut Vec<Diagnostic>,
@@ -330,16 +348,26 @@ fn parse_alias_file(
         return None;
     }
 
+    // deps 跟着 key 走：只有全局文件注入，链接目标继承这个值
+    let deps_dir = deps::deps_dir_var(stem, is_global, root_dir);
+
     // 读链接文件本身，再顺着指针（如果有）拿到真正的别名文档
     let (mut data, source_path) = {
-        let (link_data, link_path) = match load_document(path, vars, path, diagnostics) {
-            Ok(loaded) => loaded,
-            Err(reason) => {
-                diagnostics.push(Diagnostic::error(path, reason));
-                return None;
-            }
-        };
-        follow_link(link_data, &link_path, vars, diagnostics)?
+        let (link_data, link_path) =
+            match load_document(path, vars, deps_dir.as_deref(), path, diagnostics) {
+                Ok(loaded) => loaded,
+                Err(reason) => {
+                    diagnostics.push(Diagnostic::error(path, reason));
+                    return None;
+                }
+            };
+        follow_link(
+            link_data,
+            &link_path,
+            vars,
+            deps_dir.as_deref(),
+            diagnostics,
+        )?
     };
 
     let owner = path;
@@ -439,6 +467,11 @@ fn parse_alias_file(
         }
     };
 
+    // $deps 是声明而非别名：移除后校验并报告，不进合并空间
+    if let Some(value) = obj.remove("$deps") {
+        validate_deps_declaration(value, stem, is_global, root_dir, doc, owner, diagnostics);
+    }
+
     validate_aliases(obj, "", doc, owner, diagnostics);
 
     let filtered = filter_invalid_keys(obj);
@@ -453,6 +486,106 @@ fn parse_alias_file(
         inherited_private,
         inherited_paths,
     })
+}
+
+/// `$deps` 的扫描期校验：局部文件拒绝；全局文件校验结构与落点，
+/// 并在专属目录缺失时提示安装。只报告，不改动别名数据。
+fn validate_deps_declaration(
+    value: serde_json::Value,
+    stem: &str,
+    is_global: bool,
+    root_dir: &Path,
+    doc: &Path,
+    owner: &Path,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !is_global {
+        push_doc_diagnostic(
+            diagnostics,
+            Level::Warning,
+            owner,
+            doc,
+            "$deps is only supported in global alias files; ignored".to_string(),
+        );
+        return;
+    }
+
+    let entries = match deps::parse_deps(&value) {
+        Ok(entries) => entries,
+        Err(message) => {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                format!("$deps ignored: {message}"),
+            );
+            return;
+        }
+    };
+
+    let key = build_file_key(stem, true);
+    let deps_dir = deps::deps_dir_for_stem(stem, root_dir);
+    let assets = match deps::plan_entries(&entries, &deps_dir, &key) {
+        Ok(assets) => assets,
+        Err(message) => {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                format!("$deps ignored: {message}"),
+            );
+            return;
+        }
+    };
+
+    // 与 `..deps status` 同一套判定：目录存在不等于装对了。
+    let inspection = match sync::inspect(&entries, &assets, &deps_dir, false) {
+        Ok(inspection) => inspection,
+        Err(message) => {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                format!("$deps: {message}"),
+            );
+            return;
+        }
+    };
+
+    let count = |wanted: &[Change]| {
+        inspection
+            .diff
+            .steps
+            .iter()
+            .filter(|(_, change)| wanted.contains(change))
+            .count()
+    };
+    let missing = count(&[Change::Add, Change::Repair]);
+    let outdated = count(&[Change::Update, Change::Rechmod]);
+    let stale = inspection.diff.removed.len();
+
+    if missing > 0 || outdated > 0 || stale > 0 {
+        let mut parts = Vec::new();
+        if missing > 0 {
+            parts.push(format!("{missing} missing"));
+        }
+        if outdated > 0 {
+            parts.push(format!("{outdated} outdated"));
+        }
+        if stale > 0 {
+            parts.push(format!("{stale} stale"));
+        }
+        push_doc_diagnostic(
+            diagnostics,
+            Level::Warning,
+            owner,
+            doc,
+            format!("$deps: {}; run `byk @@{stem}..deps i`", parts.join(", ")),
+        );
+    }
 }
 
 /// 校验别名树里的字段类型；这些错误会被后续解析静默丢弃，所以必须在这里报告。
@@ -684,7 +817,7 @@ mod tests {
             r#"{"$paths": ["./scripts", "~/tools/bin"], "build": "make build"}"#,
         )
         .unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
+        let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].inherited_paths, vec!["./scripts", "~/tools/bin"]);
     }
@@ -694,7 +827,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"build": "make build"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
+        let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_paths.is_empty());
     }
@@ -708,7 +841,7 @@ mod tests {
             r#"{"$paths": ["./good", 42, null, "./also-good"], "build": "echo"}"#,
         )
         .unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
+        let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].inherited_paths, vec!["./good", "./also-good"]);
     }
@@ -718,7 +851,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"$paths": "not-an-array", "build": "echo"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
+        let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_paths.is_empty());
     }
@@ -728,7 +861,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"$private": true, "build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
+        let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(files[0].inherited_private);
         assert!(!files[0].aliases.contains_key("$private"));
@@ -739,7 +872,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
+        let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
         assert!(!files[0].inherited_private);
     }
 
@@ -748,7 +881,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.byk.json");
         std::fs::write(&file, r#"{"$paths": ["./bin"], "build": "make"}"#).unwrap();
-        let files = scan_alias_files(dir.path(), false, &VarTable::new()).files;
+        let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
         assert_eq!(files.len(), 1);
         assert!(!files[0].aliases.contains_key("$paths"));
     }
@@ -788,7 +921,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("bad.name.byk.json"), "{}").unwrap();
 
-        let result = scan_alias_files(dir.path(), false, &VarTable::new());
+        let result = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new());
 
         assert_eq!(result.seen.len(), 1);
         assert!(result.files.is_empty());
@@ -809,7 +942,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = scan_alias_files(dir.path(), false, &VarTable::new());
+        let result = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new());
         assert_eq!(result.seen.len(), 1);
         assert!(result.files.is_empty());
         assert!(result.diagnostics.iter().any(|diagnostic| {

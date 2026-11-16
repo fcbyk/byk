@@ -94,7 +94,7 @@ def test_help_rejects_unknown_command(runner):
     assert result.returncode == 1
     assert 'Unknown file command: "bogus"' in result.stderr
     assert (
-        "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, help"
+        "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, deps, help"
         in result.stderr
     )
 
@@ -121,6 +121,7 @@ def test_help_argument_completes_command_names(runner):
         "rename",
         "clone",
         "link",
+        "deps",
     ]
 
 
