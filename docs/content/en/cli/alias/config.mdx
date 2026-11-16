@@ -324,10 +324,10 @@ A resolved `$cwd` is appended in parentheses only when no description is set —
 
 Both scopes follow the same rules, only the root differs: global dependencies stay under `~/.byk`, local ones travel with the project (delete the project, delete its dependencies — no global clutter). A local install writes `.byk/deps/.gitignore` containing `*`, so downloaded assets never show up in `git status`.
 
-**Global alias files only** (`~/.byk/alias/`); a local file declaring `$deps` gets a warning from `--check`. The declaration itself never touches the network — installing is an explicit verb:
+The declaration itself never touches the network — installing is an explicit verb:
 
 ```bash
-byk @@tool..deps install      # download the declared files
+byk @@tool..deps install      # fetch the declared files
 byk @@tool..deps uninstall    # delete the whole dedicated directory
 byk @@tool..clone <source> -d # or install them right after cloning
 ```
@@ -335,10 +335,12 @@ byk @@tool..clone <source> -d # or install them right after cloning
 ```json title="~/.byk/alias/tool.byk.json"
 {
   "$deps": {
+    "base": "https://example.com/releases/v1/",
     "files": [
-      "https://example.com/tool-1.4.tar.gz",
-      { "src": "https://example.com/cli-linux", "to": "bin", "exec": true },
-      { "src": "https://example.com/config.json", "name": "tool.cfg", "to": "etc" }
+      "tool-1.4.tar.gz",
+      { "src": "cli-linux", "to": "bin", "exec": true },
+      { "src": "../shared/config.json", "name": "tool.cfg", "to": "etc" },
+      "https://cdn.example.com/elsewhere.bin"
     ]
   },
   "$paths": ["${deps_dir}/bin"],
@@ -348,10 +350,11 @@ byk @@tool..clone <source> -d # or install them right after cloning
 
 | Rule | Description |
 |------|-------------|
-| String shorthand | Equals `{ "src": "..." }`; the file name is derived from the URL's last segment |
-| `src` | http(s) URLs only; variables are expanded before validation, so a value like `${url}` is fine. Downloading is delegated to the system `curl`, which errors with an install hint when missing |
+| String shorthand | Equals `{ "src": "..." }`; the file name is derived from the last segment of the address |
+| `base` | The resolution base for relative `src`, as a **directory**. On disk it must be absolute: a remote clone writes an absolute http(s) URL, a local clone writes a local absolute path. **You normally do not write this by hand** — `..clone` records it for you. A hand-written value must be a literal: an absolute URL, an absolute path, or a relative form that `..clone` will interpret (`.`, `../`, `sub/dir`). Variables are not supported |
+| `src` | An absolute http(s) URL, or a path relative to `base` (`./x`, `../x`, `bin/tool`); variables are expanded before validation, so a value like `${url}` is fine. Absolute addresses are fetched with the system `curl`, local paths are copied directly, and a missing `curl` errors with an install hint |
 | `to` | A subdirectory relative to the dedicated directory (root by default); `/` separated only, `..`, absolute paths and backslashes rejected |
-| `name` | The saved file name, overriding the URL-derived value; mutually exclusive with `extract` |
+| `name` | The saved file name, overriding the derived value; mutually exclusive with `extract` |
 | `extract` | Extract as a tar-family archive (`tar.gz` / `tar.xz` / `tar.bz2`, compression auto-detected), delegated to the system `tar`; `to` is the target directory and the log marks the line with `(extract)`. Without `to` the archive unpacks into the dependency root, which requires it to be the only entry (reinstalling replaces the whole directory). Archive entries escaping the target directory abort the install. Mutually exclusive with `exec` |
 | `exec` | Marks the downloaded file executable (no-op on Windows) |
 | Sync | The declaration is the desired state: missing assets are added, changed ones replaced, removed ones deleted; the manifest in `.byk-deps.json` means unchanged assets are never re-downloaded |
@@ -359,9 +362,28 @@ byk @@tool..clone <source> -d # or install them right after cloning
 | Confirmation | install no longer asks twice: it prints each curl / tar source and destination, then runs; `uninstall` still confirms |
 | Linkage | `..rename` renames the dedicated directory along, `..destroy` deletes it, `..link` warns about a stale directory when retargeting |
 
+**`base` is the only field clone rewrites.** A landed alias file lives in `~/.byk/alias/` and carries no location of its own, so relative paths can only be interpreted at clone time. The form it is frozen into depends on where the bytes came from, and that form decides how assets are fetched:
+
+| Clone source | `base` landed on disk | How assets are fetched |
+|---|---|---|
+| Remote (URL, `-gh` / `-ge` / `-jd`) | Absolute http(s) directory URL | `curl` |
+| Local (`@@name`, `@name`, a path) | Local absolute directory path | direct copy |
+
+Neither side crosses into the other: **a remote clone only ever writes the URL form, so an alias file you got from the network cannot read local files.** That is not enforced by a check — the local-path form simply never reaches it.
+
+The fill-in rules are the same for both, only the base point and the product differ: absent means the source file's directory, a relative form (`.`, `../`, `sub/dir`) is resolved against the source file, and an absolute address (URL or path) is kept as-is with only the trailing `/` added. The base point is always the **source file's** directory, never the destination directory — the relative paths in `files` were written against the source document, and those files are not sitting next to `~/.byk/alias/`.
+
+Writing `base` back makes clone re-serialise the document (keys sorted). Files without `$deps` are untouched and stay byte-for-byte copies; when `base` already holds the value about to be written, nothing is rewritten either, so cloning twice produces no diff. **Cloning rejects variables in `base`.** A clone has no variable table, so `"base": "${CDN}"` cannot be evaluated; guessing a value would bake a bogus address into the file, so clone fails and tells you to fix the source. (Reading is laxer: `..deps i` expands variables first, so a hand-written `${CDN}` that resolves to an absolute address still works. The restriction is about clone, and the editor schema follows the clone side.) `base` is meant to be a literal written by a program: clone freezes it once, and every later reader sees the same thing.
+
+A local `base` is not portable: it names an absolute path on this machine and means nothing on another. Local dependencies are meant to be local development aids — do not expect a shared alias file to keep working.
+
+On Windows there is one more rule: a `/sub`-style base has no drive letter, so Windows resolves it against the current drive and the same file points somewhere else after a `cd`. Only relative paths and drive-letter absolutes (`C:/share/`) are accepted; `/sub` fails with an error.
+
+**Local entries are compared by the source file's mtime**: a source newer than the installed copy triggers a reinstall, so editing a local build artefact and rerunning `..deps i` takes effect (use `--force` for an unconditional rebuild). URL entries have no such notion — the same address is the same content, so `keep` is always safe. A missing source file is reported with its path instead of a quiet "up to date".
+
 Reference the dedicated directory with `${deps_dir}`. byk owns that directory: installing syncs it to the declaration, so do not keep anything there that must survive an install.
 
-`--check` uses the same classification as `..deps status` and reports missing / outdated / stale with the install command.
+`--check` only validates the declaration itself (does it parse, do two entries collide, does a relative `src` have a `base`); what is missing or outdated is `..deps status`'s job.
 
 `$var`, `$paths` and `$deps` itself all go through variable substitution first, so custom variables like `${version}` can build URLs.
 

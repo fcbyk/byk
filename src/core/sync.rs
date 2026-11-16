@@ -12,7 +12,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::deps::{DepEntry, PlannedAsset};
+use super::deps::{DepEntry, Origin, PlannedAsset};
 
 /// 清单文件名；点号开头，和 `node_modules/.package-lock.json` 一个路数。
 pub(crate) const MANIFEST_NAME: &str = ".byk-deps.json";
@@ -61,9 +61,13 @@ impl ManifestEntry {
 }
 
 /// 从声明条目与计划的落点造一条记录。
-pub(crate) fn entry_for(entry: &DepEntry, dest: String) -> ManifestEntry {
+///
+/// `src` 记**解析后的绝对地址**（URL 或本机路径），不是 `$deps` 里写的原文：
+/// 清单回答的是"上次从哪儿装的"。所以改了 `base` 就是换了来源，下一次必须
+/// 判成 `update` 而不是 `keep`。
+pub(crate) fn entry_for(entry: &DepEntry, asset: &PlannedAsset, dest: String) -> ManifestEntry {
     ManifestEntry {
-        src: entry.src.clone(),
+        src: asset.origin.as_str(),
         to: entry.to.join("/"),
         name: entry.name.clone(),
         extract: entry.extract,
@@ -205,12 +209,13 @@ pub(crate) fn inspect(
                     deps_dir.display()
                 )
             })?;
-            Ok(entry_for(entry, relative(dest)))
+            Ok(entry_for(entry, asset, relative(dest)))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     let existing = existing_paths(deps_dir);
-    let diff = classify(&desired, &installed, &existing, force)?;
+    let stale = stale_sources(&desired, assets, deps_dir);
+    let diff = classify(&desired, &installed, &existing, force, &stale)?;
 
     Ok(Inspection {
         desired,
@@ -221,15 +226,59 @@ pub(crate) fn inspect(
     })
 }
 
+/// 本地来源里，源文件比装好的那份新的条目（按 `dest` 列出）。
+///
+/// URL 可以当内容寻址：同一个地址就是同一份内容，`keep` 永远安全。本地文件
+/// 不行——`../tool` 今天和明天是同一个路径、不同内容，改了源还报 up to date
+/// 等于把"本地能测"这件事毁掉。所以本地来源拿 mtime 说话：源更新了就重装。
+///
+/// 源不在了也算"变了"：这样安装会走到读取并报出具体路径，而不是安静地跳过
+/// ——静默跳过会让人以为装好了。
+///
+/// 本地不本地看 `Origin`，不从地址字面量猜。`desired` 与 `assets` 同序同长。
+fn stale_sources(
+    desired: &[ManifestEntry],
+    assets: &[PlannedAsset],
+    deps_dir: &Path,
+) -> Vec<String> {
+    desired
+        .iter()
+        .zip(assets)
+        .filter(|(_, asset)| asset.origin.is_local())
+        .filter(|(entry, asset)| source_is_newer(asset, &deps_dir.join(&entry.dest)))
+        .map(|(entry, _)| entry.dest.clone())
+        .collect()
+}
+
+/// 源比装好的那份新吗；源不见了也算。
+fn source_is_newer(asset: &PlannedAsset, installed: &Path) -> bool {
+    let Origin::File(source) = &asset.origin else {
+        return false;
+    };
+    let Ok(source) = fs::metadata(source) else {
+        return true;
+    };
+    let Ok(installed) = fs::metadata(installed) else {
+        return false;
+    };
+    match (source.modified(), installed.modified()) {
+        (Ok(source), Ok(installed)) => source > installed,
+        _ => false,
+    }
+}
+
 /// 按 dest 归类，再用磁盘实际内容校正。
 ///
 /// 清单里的 `dest` 是用户可编辑的，删除前必须过 [`validate_dest`]；校验失败
 /// 是整次拒绝，而不是跳过这一条——清单坏了说明状态不可信。
+///
+/// `stale` 是本地来源里源文件已经变新的 `dest` 集合，见 [`stale_sources`]。
 pub(crate) fn classify(
     desired: &[ManifestEntry],
     installed: &[ManifestEntry],
     existing: &[String],
     force: bool,
+    stale: &[String],
 ) -> Result<Diff, String> {
     for entry in desired.iter().chain(installed) {
         validate_dest(&entry.dest)
@@ -271,6 +320,7 @@ pub(crate) fn classify(
             None => Change::Add,
             Some(_) if !present => Change::Repair,
             Some(have) if !have.same_source(want) => Change::Update,
+            Some(_) if stale.contains(&want.dest) => Change::Update,
             Some(have) if have.exec != want.exec => Change::Rechmod,
             Some(_) => Change::Keep,
         };
@@ -410,10 +460,83 @@ mod tests {
         diff.steps.iter().map(|(_, change)| *change).collect()
     }
 
+    fn slash(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
+    }
+
+    fn planned(origin: Origin, dest: &str) -> PlannedAsset {
+        PlannedAsset {
+            index: 0,
+            label: format!("@@t/{dest}"),
+            origin,
+            dest: Path::new("/deps").join(dest),
+            archive: false,
+            exec: false,
+        }
+    }
+
+    #[test]
+    fn a_vanished_local_source_is_stale() {
+        let temp = tempfile::tempdir().unwrap();
+        let deps = temp.path().join("deps");
+        fs::create_dir_all(&deps).unwrap();
+        fs::write(deps.join("tool"), "old").unwrap();
+
+        // 源没了就不能安静地报 up to date：下次安装要撞上读取失败
+        let src = temp.path().join("gone");
+        let want = entry(&slash(&src), "tool");
+        assert_eq!(
+            stale_sources(&[want], &[planned(Origin::File(src), "tool")], &deps),
+            ["tool"]
+        );
+    }
+
+    #[test]
+    fn a_remote_entry_is_never_stale() {
+        let temp = tempfile::tempdir().unwrap();
+        let deps = temp.path().join("deps");
+        fs::create_dir_all(&deps).unwrap();
+        fs::write(deps.join("tool"), "old").unwrap();
+
+        let remote = planned(Origin::Url("https://e.com/tool".to_string()), "tool");
+        assert!(stale_sources(&[entry("https://e.com/tool", "tool")], &[remote], &deps).is_empty());
+
+        // 刚复制过来的本地条目 mtime 不早于源，算干净
+        let source = temp.path().join("fresh");
+        fs::write(&source, "new").unwrap();
+        fs::copy(&source, deps.join("fresh")).unwrap();
+        assert!(
+            stale_sources(
+                &[entry(&slash(&source), "fresh")],
+                &[planned(Origin::File(source.clone()), "fresh")],
+                &deps
+            )
+            .is_empty()
+        );
+
+        // 源比装好的新：重装
+        let newer =
+            fs::metadata(&source).unwrap().modified().unwrap() + std::time::Duration::from_secs(5);
+        fs::File::options()
+            .write(true)
+            .open(&source)
+            .unwrap()
+            .set_modified(newer)
+            .unwrap();
+        assert_eq!(
+            stale_sources(
+                &[entry(&slash(&source), "fresh")],
+                &[planned(Origin::File(source), "fresh")],
+                &deps
+            ),
+            ["fresh"]
+        );
+    }
+
     #[test]
     fn missing_file_is_added() {
         let want = vec![entry("https://e.com/a", "a")];
-        let diff = classify(&want, &[], &[], false).unwrap();
+        let diff = classify(&want, &[], &[], false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Add]);
         assert!(diff.unknown.is_empty());
@@ -423,7 +546,7 @@ mod tests {
     fn unrecorded_but_present_file_is_adopted() {
         let want = vec![entry("https://e.com/a", "a")];
         let existing = vec!["a".to_string()];
-        let diff = classify(&want, &[], &existing, false).unwrap();
+        let diff = classify(&want, &[], &existing, false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Adopt]);
     }
@@ -432,7 +555,7 @@ mod tests {
     fn same_declaration_keeps() {
         let want = vec![entry("https://e.com/a", "a")];
         let existing = vec!["a".to_string()];
-        let diff = classify(&want, &want.clone(), &existing, false).unwrap();
+        let diff = classify(&want, &want.clone(), &existing, false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Keep]);
         assert!(diff.is_noop());
@@ -443,7 +566,7 @@ mod tests {
         let want = vec![entry("https://e.com/v2", "a")];
         let have = vec![entry("https://e.com/v1", "a")];
         let existing = vec!["a".to_string()];
-        let diff = classify(&want, &have, &existing, false).unwrap();
+        let diff = classify(&want, &have, &existing, false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Update]);
     }
@@ -451,7 +574,7 @@ mod tests {
     #[test]
     fn missing_from_disk_is_repaired() {
         let want = vec![entry("https://e.com/a", "a")];
-        let diff = classify(&want, &want.clone(), &[], false).unwrap();
+        let diff = classify(&want, &want.clone(), &[], false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Repair]);
     }
@@ -464,7 +587,7 @@ mod tests {
         }];
         let have = vec![entry("https://e.com/a", "a")];
         let existing = vec!["a".to_string()];
-        let diff = classify(&want, &have, &existing, false).unwrap();
+        let diff = classify(&want, &have, &existing, false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Rechmod]);
     }
@@ -474,7 +597,7 @@ mod tests {
         let want = vec![entry("https://e.com/new", "new")];
         let have = vec![entry("https://e.com/old", "old")];
         let existing = vec!["new".to_string(), "old".to_string()];
-        let diff = classify(&want, &have, &existing, false).unwrap();
+        let diff = classify(&want, &have, &existing, false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Adopt]);
         assert_eq!(diff.removed.len(), 1);
@@ -486,7 +609,7 @@ mod tests {
         let want = vec![entry("https://e.com/new", "new")];
         let have = vec![entry("https://e.com/old", "old")];
         let existing = vec!["new".to_string()];
-        let diff = classify(&want, &have, &existing, false).unwrap();
+        let diff = classify(&want, &have, &existing, false, &[]).unwrap();
 
         assert!(diff.removed.is_empty());
     }
@@ -497,7 +620,7 @@ mod tests {
         want.extract = true;
         let existing = vec!["dist/tool".to_string()];
 
-        let diff = classify(&[want], &[], &existing, false).unwrap();
+        let diff = classify(&[want], &[], &existing, false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Adopt]);
         assert!(diff.unknown.is_empty());
@@ -509,10 +632,10 @@ mod tests {
         want.extract = true;
 
         // 只剩清单的目录 = 什么都没装
-        let diff = classify(&[want.clone()], &[], &[], false).unwrap();
+        let diff = classify(&[want.clone()], &[], &[], false, &[]).unwrap();
         assert_eq!(kept(&diff), vec![Change::Add]);
 
-        let diff = classify(&[want], &[], &[], true).unwrap();
+        let diff = classify(&[want], &[], &[], true, &[]).unwrap();
         assert_eq!(kept(&diff), vec![Change::Add]);
     }
 
@@ -522,7 +645,7 @@ mod tests {
         want.extract = true;
         let existing = vec!["lansend".to_string()];
 
-        let diff = classify(&[want.clone()], &[want], &existing, false).unwrap();
+        let diff = classify(&[want.clone()], &[want], &existing, false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Keep]);
     }
@@ -533,7 +656,7 @@ mod tests {
         want.extract = true;
 
         // 清单说装过，但目录里空到只剩清单：上次解压没成，补一次
-        let diff = classify(&[want.clone()], &[want], &[], false).unwrap();
+        let diff = classify(&[want.clone()], &[want], &[], false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Repair]);
     }
@@ -544,7 +667,7 @@ mod tests {
         want.extract = true;
         let existing = vec!["lansend".to_string()];
 
-        let diff = classify(&[want], &[], &existing, false).unwrap();
+        let diff = classify(&[want], &[], &existing, false, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Adopt]);
         assert!(diff.unknown.is_empty(), "根上的文件都归这条解压条目");
@@ -554,7 +677,7 @@ mod tests {
     fn stray_files_are_reported_not_removed() {
         let want = vec![entry("https://e.com/a", "a")];
         let existing = vec!["a".to_string(), "scratch.txt".to_string()];
-        let diff = classify(&want, &[], &existing, false).unwrap();
+        let diff = classify(&want, &[], &existing, false, &[]).unwrap();
 
         assert_eq!(diff.unknown, vec!["scratch.txt".to_string()]);
         assert!(diff.removed.is_empty());
@@ -564,7 +687,7 @@ mod tests {
     fn force_reinstalls_everything() {
         let want = vec![entry("https://e.com/a", "a")];
         let existing = vec!["a".to_string()];
-        let diff = classify(&want, &want.clone(), &existing, true).unwrap();
+        let diff = classify(&want, &want.clone(), &existing, true, &[]).unwrap();
 
         assert_eq!(kept(&diff), vec![Change::Update]);
     }
@@ -572,7 +695,7 @@ mod tests {
     #[test]
     fn escaping_dest_fails_the_whole_run() {
         let want = vec![entry("https://e.com/a", "../x")];
-        let err = classify(&want, &[], &[], false).unwrap_err();
+        let err = classify(&want, &[], &[], false, &[]).unwrap_err();
 
         assert!(err.contains("a \"..\" segment"), "{err}");
     }
@@ -642,15 +765,25 @@ mod tests {
     fn entry_for_keeps_to_as_slash_path() {
         let dep = DepEntry {
             index: 0,
-            src: "https://e.com/a".to_string(),
+            src: "bin/tool".to_string(),
             to: vec!["bin".to_string(), "sub".to_string()],
             name: Some("tool".to_string()),
             extract: false,
             exec: true,
         };
-        let record = entry_for(&dep, "bin/sub/tool".to_string());
+        let asset = PlannedAsset {
+            index: 0,
+            label: "@@t/bin/sub/tool".to_string(),
+            origin: crate::core::deps::Origin::Url("https://e.com/a/bin/tool".to_string()),
+            dest: std::path::PathBuf::from("/deps/bin/sub/tool"),
+            archive: false,
+            exec: true,
+        };
+        let record = entry_for(&dep, &asset, "bin/sub/tool".to_string());
 
         assert_eq!(record.to, "bin/sub");
         assert!(record.exec);
+        // 清单记的是解析后的地址，相对写法留在声明里
+        assert_eq!(record.src, "https://e.com/a/bin/tool");
     }
 }

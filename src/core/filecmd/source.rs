@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use super::{invalid_stem_message, target_path};
 use crate::core::config::validate_filename;
+use crate::core::deps::Origin;
 use crate::core::paths::PathLayout;
 use crate::utils::path::{canonical, expand_home};
 
@@ -17,6 +18,11 @@ use crate::utils::path::{canonical, expand_home};
 pub(super) struct Loaded {
     pub(super) label: String,
     pub(super) data: Vec<u8>,
+    /// 来源的绝对地址：远程是 URL，本地是规范化后的路径。
+    ///
+    /// `..clone` 靠它把 `$deps.base` 冻结成绝对地址——一旦落盘，这份文件
+    /// 就再也没有自己的位置信息了。形态还决定冻结成 URL 还是本机路径。
+    pub(super) origin: Origin,
 }
 
 /// 解析链接目标：只接受本地文件；URL 明确拒绝并提示用 clone。
@@ -39,6 +45,7 @@ pub(super) fn load(spec: &str, layout: &PathLayout) -> Result<Loaded, String> {
             Ok(Loaded {
                 label: url.to_string(),
                 data,
+                origin: Origin::Url(url.to_string()),
             })
         }
         SourceKind::Local => {
@@ -46,6 +53,7 @@ pub(super) fn load(spec: &str, layout: &PathLayout) -> Result<Loaded, String> {
             Ok(Loaded {
                 label: path.display().to_string(),
                 data,
+                origin: Origin::File(path),
             })
         }
     }

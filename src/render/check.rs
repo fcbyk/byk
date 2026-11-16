@@ -55,11 +55,19 @@ fn format_report(loaded: &ScannedAliases) -> String {
     for (path, diagnostics) in groups {
         output.push_str(&format!("{}\n", path.display().to_string().bold()));
         for diagnostic in diagnostics {
-            let label = match diagnostic.level {
-                Level::Error => "error".red().bold(),
-                Level::Warning => "warning".yellow().bold(),
+            // 消息里可能带 `\nHint: ...`：续行缩进到消息起始列，否则建议会
+            // 顶格跑出来，看着像下一条诊断
+            let (label, width) = match diagnostic.level {
+                Level::Error => ("error".red().bold(), "error".len()),
+                Level::Warning => ("warning".yellow().bold(), "warning".len()),
             };
-            output.push_str(&format!("  {}: {}\n", label, diagnostic.message));
+            let mut lines = diagnostic.message.split('\n');
+            if let Some(first) = lines.next() {
+                output.push_str(&format!("  {}: {}\n", label, first));
+            }
+            for line in lines {
+                output.push_str(&format!("{}{}\n", " ".repeat(2 + width + 2), line));
+            }
         }
         output.push('\n');
     }
@@ -150,6 +158,28 @@ mod tests {
         assert_eq!(
             text,
             "Scanned 1 alias file; 1 has problems (1 error, 1 warning).\n\n/tmp/ops.byk.json\n  error: boom\n  warning: warn one\n\n"
+        );
+    }
+
+    #[test]
+    fn continuation_lines_align_with_the_message() {
+        let path = PathBuf::from("/tmp/ops.byk.json");
+        let text = strip_ansi(&format_report(&loaded(
+            1,
+            vec![
+                Diagnostic::warning(&path, "first line\nHint: read this"),
+                Diagnostic::error(&path, "boom\nHint: fix it"),
+            ],
+        )));
+
+        // 续行缩进到消息起始列，否则 `Hint:` 会顶格，看着像下一条诊断
+        assert!(
+            text.contains("  warning: first line\n           Hint: read this\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("  error: boom\n         Hint: fix it\n"),
+            "{text}"
         );
     }
 }

@@ -10,7 +10,6 @@ use crate::core::config::{
     preprocess_vars, validate_filename,
 };
 use crate::core::deps;
-use crate::core::sync::{self, Change};
 use crate::utils::path::{canonical, dir_of, expand_home};
 
 /// 一次目录扫描的结果：成功解析的文件、诊断、以及实际检查过的候选文件。
@@ -490,8 +489,9 @@ fn parse_alias_file(
     })
 }
 
-/// `$deps` 的扫描期校验：局部文件拒绝；全局文件校验结构与落点，
-/// 并在专属目录缺失时提示安装。只报告，不改动别名数据。
+/// `$deps` 的扫描期校验：局部文件拒绝；全局文件校验声明本身——能不能解析、
+/// 落点是否冲突、相对 `src` 有没有 base。只报告，不改动别名数据，也不看装没装：
+/// 依赖装没装是运行时状态，属于 `..deps status`，不属于配置检查。
 fn validate_deps_declaration(
     value: serde_json::Value,
     stem: &str,
@@ -501,8 +501,8 @@ fn validate_deps_declaration(
     owner: &Path,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let entries = match deps::parse_deps(&value) {
-        Ok(entries) => entries,
+    let declaration = match deps::parse_deps(&value) {
+        Ok(decl) => decl,
         Err(message) => {
             push_doc_diagnostic(
                 diagnostics,
@@ -517,64 +517,13 @@ fn validate_deps_declaration(
 
     let key = build_file_key(stem, is_global);
     let deps_dir = deps::deps_dir(stem, is_global, Path::new(&dir_of(owner)), root_dir);
-    let assets = match deps::plan_entries(&entries, &deps_dir, &key) {
-        Ok(assets) => assets,
-        Err(message) => {
-            push_doc_diagnostic(
-                diagnostics,
-                Level::Warning,
-                owner,
-                doc,
-                format!("$deps ignored: {message}"),
-            );
-            return;
-        }
-    };
-
-    // 与 `..deps status` 同一套判定：目录存在不等于装对了。
-    let inspection = match sync::inspect(&entries, &assets, &deps_dir, false) {
-        Ok(inspection) => inspection,
-        Err(message) => {
-            push_doc_diagnostic(
-                diagnostics,
-                Level::Warning,
-                owner,
-                doc,
-                format!("$deps: {message}"),
-            );
-            return;
-        }
-    };
-
-    let count = |wanted: &[Change]| {
-        inspection
-            .diff
-            .steps
-            .iter()
-            .filter(|(_, change)| wanted.contains(change))
-            .count()
-    };
-    let missing = count(&[Change::Add, Change::Repair]);
-    let outdated = count(&[Change::Update, Change::Rechmod]);
-    let stale = inspection.diff.removed.len();
-
-    if missing > 0 || outdated > 0 || stale > 0 {
-        let mut parts = Vec::new();
-        if missing > 0 {
-            parts.push(format!("{missing} missing"));
-        }
-        if outdated > 0 {
-            parts.push(format!("{outdated} outdated"));
-        }
-        if stale > 0 {
-            parts.push(format!("{stale} stale"));
-        }
+    if let Err(message) = deps::plan_entries(&declaration, &deps_dir, &key) {
         push_doc_diagnostic(
             diagnostics,
             Level::Warning,
             owner,
             doc,
-            format!("$deps: {}; run `byk {key}..deps i`", parts.join(", ")),
+            format!("$deps ignored: {message}"),
         );
     }
 }

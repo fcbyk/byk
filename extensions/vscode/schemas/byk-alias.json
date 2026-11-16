@@ -46,9 +46,14 @@
           }
         },
         "$deps": {
-          "description": "文件级依赖声明。byk 把列出的文件下载到本文件的专属目录：全局别名落到 ~/.byk/deps/@@<文件名>/，局部别名落到 <文件所在目录>/.byk/deps/@<文件名>/，别名里用 ${deps_dir} 引用。安装：byk <文件key>..deps install，卸载：uninstall。安装是同步：缺的装、变的重下、声明里移除的删（清单记在专属目录的 .byk-deps.json）。下载交给系统 curl，解压交给系统 tar，归档条目拒绝越界路径。示例：{\"files\": [\"https://example.com/tool.tar.gz\", {\"src\": \"https://example.com/cli.tar.gz\", \"extract\": true, \"to\": \"opt\"}]}",
+          "description": "文件级依赖声明。byk 把列出的文件取到本文件的专属目录（绝对地址用 curl 下载，本地路径直接复制）：全局别名落到 ~/.byk/deps/@@<文件名>/，局部别名落到 <文件所在目录>/.byk/deps/@<文件名>/，别名里用 ${deps_dir} 引用。安装：byk <文件key>..deps install，卸载：uninstall。安装是同步：缺的装、变的重下、声明里移除的删（清单记在专属目录的 .byk-deps.json）。解压交给系统 tar，归档条目拒绝越界路径。示例：{\"files\": [\"https://example.com/tool.tar.gz\", {\"src\": \"https://example.com/cli.tar.gz\", \"extract\": true, \"to\": \"opt\"}]}",
           "type": "object",
           "properties": {
+            "base": {
+              "description": "相对 src 的解析基准：目录。通常由 ..clone 写入，不建议手写。远程 clone 写绝对 http(s) URL，本地 clone 写本机绝对路径；手写只认字面量（绝对 URL、绝对路径，或 clone 时才被解释的相对形态 . 、../、sub/dir），不支持变量。落盘之后必须是绝对地址——文档已经没有自己的位置信息，猜不出来源。",
+              "type": "string",
+              "pattern": "^(?!.*\\$\\{)(?!~)(?!//)(?!.*[\\\\?#]).+$"
+            },
             "files": {
               "description": "要下载的文件列表。字符串简写等于 {\"src\": \"...\"}。",
               "type": "array",
@@ -56,8 +61,8 @@
                 "oneOf": [
                   {
                     "type": "string",
-                    "description": "下载 URL：http(s)，或以 ${...} 变量开头。文件名从 URL 末段推导，可用 name 覆盖",
-                    "pattern": "^(https?://|\\$\\{)"
+                    "description": "下载地址：http(s) URL，或以 ${...} 变量开头，或相对 $deps.base 的路径（./tool、../hhh.js、bin/tool）。文件名从地址末段推导，可用 name 覆盖",
+                    "pattern": "^(?:(?:https?://|\\$\\{)[^\\\\]*|(?![/~])(?![A-Za-z]:)[^\\\\:]+(?:/[^\\\\:]*)*)$"
                   },
                   {
                     "$ref": "#/$defs/DepFileEntry"
@@ -165,13 +170,13 @@
     },
     "DepFileEntry": {
       "title": "依赖文件条目",
-      "description": "$deps.files 的对象写法。落盘位置始终在本文件的专属目录内；to 是相对它的子目录，拒绝 .. 、绝对路径与反斜杠。",
+      "description": "$deps.files 的对象写法。落盘位置始终在本文件的专属目录内；to 是相对它的子目录，拒绝 .. 、绝对路径与反斜杠。src 可以是绝对 URL，也可以是相对 $deps.base 的路径。",
       "type": "object",
       "properties": {
         "src": {
-          "description": "下载 URL：http(s)，或以 ${...} 变量开头的 URL（先做变量替换再校验）。",
+          "description": "下载地址：http(s) URL、${...} 变量开头的地址，或相对 $deps.base 的路径（先做变量替换再校验）。写相对路径时必须有 $deps.base，否则安装会报错。",
           "type": "string",
-          "pattern": "^(https?://|\\$\\{)"
+          "pattern": "^(?:(?:https?://|\\$\\{)[^\\\\]*|(?![/~])(?![A-Za-z]:)[^\\\\:]+(?:/[^\\\\:]*)*)$"
         },
         "to": {
           "description": "相对专属目录的子目录（用 / 分隔，默认根）。示例：\"bin\"、\"etc/\"",

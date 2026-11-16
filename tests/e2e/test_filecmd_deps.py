@@ -2,6 +2,7 @@ import json
 import os
 import shlex
 import tarfile
+import time
 
 
 def write_fake_curl(tmp_path, routes):
@@ -61,8 +62,11 @@ def manifest_of(runner, stem="@@tool"):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def prepare_tool(runner, files, extra=None):
-    data = {"$deps": {"files": files}}
+def prepare_tool(runner, files, extra=None, base=None):
+    deps = {"files": files}
+    if base is not None:
+        deps["base"] = base
+    data = {"$deps": deps}
     if extra:
         data.update(extra)
     runner.prepare_alias_json("tool", data)
@@ -70,6 +74,13 @@ def prepare_tool(runner, files, extra=None):
 
 def install(runner, env, *args):
     return runner.run("@@tool..deps", "i", *args, env=env)
+
+
+def local_base(tmp_path):
+    """造一个本机目录当 base，返回落盘形态（正斜杠、结尾带 `/`）。"""
+    project = tmp_path / "proj"
+    project.mkdir()
+    return f"{project}/".replace("\\", "/")
 
 
 # ── 首次安装 ────────────────────────────────────────────────────────────
@@ -185,6 +196,7 @@ def test_exec_flag_only_rechmods(runner, tmp_path):
 
     assert result.returncode == 0
     assert "chmod   @@tool/tool" in result.stderr
+    # 只改 exec 不重取：汇总行不该出现
     assert "Downloaded" not in result.stderr
     assert len(calls(log)) == before
     if os.name != "nt":
@@ -370,7 +382,7 @@ def test_root_extract_actually_downloads(runner, tmp_path):
     )
 
     status = runner.run("@@tool..deps")
-    assert "0 installed" in status.stdout
+    assert "0 present" in status.stdout
     assert "missing  @@tool" in status.stdout
 
     result = install(runner, env)
@@ -388,7 +400,7 @@ def test_root_extract_actually_downloads(runner, tmp_path):
     assert "up to date" in again.stderr
 
     ok = runner.run("@@tool..deps")
-    assert "1 installed" in ok.stdout
+    assert "1 present" in ok.stdout
     assert "ok       @@tool" in ok.stdout
 
 
@@ -554,14 +566,14 @@ def test_destroy_removes_local_deps(runner, tmp_path):
     assert not (tmp_path / ".byk").exists(), "空壳目录也要收掉"
 
 
-def test_check_reports_local_deps_drift(runner, tmp_path):
+def test_check_ignores_install_state_of_local_deps(runner, tmp_path):
+    """一条都没装也不该让语法正确的文件变成「有问题」：`--check` 只管配置。"""
     prepare_local(tmp_path, ["https://example.com/tool"])
 
     result = runner.run("--check", cwd=str(tmp_path))
 
-    assert result.returncode == 1
-    assert "1 missing" in result.stdout
-    assert "byk @tool..deps i" in result.stdout
+    assert result.returncode == 0
+    assert "no problems" in result.stdout
 
 
 def test_status_without_declaration_errors(runner):
@@ -619,7 +631,7 @@ def test_status_reports_four_states(runner):
     assert result.returncode == 0
     assert result.stderr == ""
     assert result.stdout.splitlines() == [
-        "@@tool: 3 declared, 1 installed, 1 stale",
+        "@@tool: 3 declared, 1 present, 1 stale",
         "  ok       @@tool/bin/a",
         "  missing  @@tool/bin/b",
         "  outdated @@tool/cfg/c.json",
@@ -655,14 +667,15 @@ def test_status_explains_stale_only(runner):
     assert "to remove the stale assets" in result.stdout
 
 
-def test_check_reports_drift(runner):
+def test_check_ignores_install_state(runner):
+    """缺、旧、多余都是运行时状态，`--check` 不报——那是 `..deps status` 的事。"""
     seed_status_fixture(runner)
 
     result = runner.run("--check")
 
-    assert result.returncode == 1
-    assert "1 missing, 1 outdated, 1 stale" in result.stdout
-    assert "byk @@tool..deps i" in result.stdout
+    assert result.returncode == 0
+    assert "no problems" in result.stdout
+    assert "..deps" not in result.stdout
 
 
 def test_check_is_clean_after_install(runner, tmp_path):
@@ -684,3 +697,121 @@ def test_deps_completion_accepts_short_prefixes(runner):
     assert short.stdout.splitlines() == ["uninstall"]
     assert status.stdout.splitlines() == ["status"]
     assert empty.stdout.splitlines() == ["install", "uninstall", "status"]
+
+
+# ── $deps.base ──────────────────────────────────────────────────────────
+
+
+def test_relative_src_joins_the_base(runner, tmp_path):
+    env, log = write_fake_curl(tmp_path, {"/dist/tool": b"v1", "/shared/x": b"x"})
+    prepare_tool(
+        runner,
+        ["tool", "../shared/x"],
+        base="https://example.com/dist/",
+    )
+
+    result = install(runner, env)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        f"Downloading 2 files into {deps_dir(runner)}:",
+        "  add     @@tool/tool <- https://example.com/dist/tool",
+        "  add     @@tool/x <- https://example.com/shared/x",
+        f"Downloaded 2 files into {deps_dir(runner)}",
+    ]
+    # 清单记的是解析后的地址，相对写法只留在声明里
+    assert [entry["src"] for entry in manifest_of(runner)["entries"]] == [
+        "https://example.com/dist/tool",
+        "https://example.com/shared/x",
+    ]
+
+
+def test_base_is_the_identity_of_the_source(runner, tmp_path):
+    env, _ = write_fake_curl(tmp_path, {"/v1/tool": b"v1", "/v2/tool": b"v2"})
+    prepare_tool(runner, ["tool"], base="https://example.com/v1/")
+    assert install(runner, env).returncode == 0
+
+    # 只改 base，src 一个字没动：来源换了，必须重下
+    prepare_tool(runner, ["tool"], base="https://example.com/v2/")
+    result = install(runner, env)
+
+    assert result.returncode == 0, result.stderr
+    assert f"  update  @@tool/tool <- https://example.com/v2/tool" in result.stderr
+    assert (deps_dir(runner) / "tool").read_bytes() == b"v2"
+
+
+def test_status_shows_the_base(runner, tmp_path):
+    env, _ = write_fake_curl(tmp_path, {"/dist/tool": b"v1"})
+    prepare_tool(runner, ["tool"], base="https://example.com/dist/")
+    assert install(runner, env).returncode == 0
+
+    result = runner.run("@@tool..deps")
+
+    assert result.returncode == 0
+    assert "Base: https://example.com/dist/\n" in result.stdout
+
+
+def test_status_flags_a_missing_base(runner):
+    prepare_tool(runner, ["./tool"])
+
+    result = runner.run("@@tool..deps")
+
+    assert result.returncode == 1
+    assert 'relative path but "$deps.base" is not set' in result.stderr
+
+
+# ── $deps.base 指向本机目录 ──────────────────────────────────────────────
+
+
+def test_a_local_source_says_how_many_came_from_disk(runner, tmp_path):
+    """汇总行统一说 download，本地那几条在括号里交代。"""
+    base = local_base(tmp_path)
+    (tmp_path / "proj" / "tool").write_text("v1", encoding="utf-8")
+    prepare_tool(runner, ["tool"], base=base)
+
+    result = runner.run("@@tool..deps", "i")
+
+    deps_root = deps_dir(runner)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        f"Downloading 1 file into {deps_root}:",
+        f"  add     @@tool/tool <- {base}tool",
+        f"Downloaded 1 file into {deps_root} (1 local)",
+    ]
+
+
+def test_a_newer_local_source_is_reinstalled(runner, tmp_path):
+    base = local_base(tmp_path)
+    (tmp_path / "proj" / "tool").write_text("v1", encoding="utf-8")
+    prepare_tool(runner, ["tool"], base=base)
+    assert runner.run("@@tool..deps", "i").returncode == 0
+
+    # URL 可以当内容寻址，本地文件不行：改了源就该重装
+    time.sleep(1.1)
+    (tmp_path / "proj" / "tool").write_text("v2", encoding="utf-8")
+    result = runner.run("@@tool..deps", "i")
+
+    assert result.returncode == 0, result.stderr
+    assert f"  update  @@tool/tool <- {base}tool" in result.stderr
+    assert "(1 local)" in result.stderr
+    assert (deps_dir(runner) / "tool").read_text(encoding="utf-8") == "v2"
+
+
+def test_a_local_base_can_mix_with_absolute_urls(runner, tmp_path):
+    """一条声明里既有复制的也有下载的：括号只数本地那几条。"""
+    base = local_base(tmp_path)
+    (tmp_path / "proj" / "tool").write_text("v1", encoding="utf-8")
+    env, log = write_fake_curl(tmp_path, {"/remote.js": b"r"})
+    prepare_tool(runner, ["tool", "https://example.com/remote.js"], base=base)
+
+    result = install(runner, env)
+
+    deps_root = deps_dir(runner)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.splitlines() == [
+        f"Downloading 2 files into {deps_root}:",
+        f"  add     @@tool/tool <- {base}tool",
+        "  add     @@tool/remote.js <- https://example.com/remote.js",
+        f"Downloaded 2 files into {deps_root} (1 local)",
+    ]
+    assert len(calls(log)) == 1

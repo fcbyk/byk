@@ -552,6 +552,7 @@ def test_clone_install_deps_installs_without_prompt(runner, tmp_path):
     deps_root = runner.byk_dir / "deps" / "@@ops"
     assert result.stderr.splitlines() == [
         f"Cloned https://example.com/hello.byk.json to {runner.byk_dir / 'alias' / 'ops.byk.json'}",
+        "Recorded $deps.base = https://example.com/",
         f"Downloading 1 file into {deps_root}:",
         "  add     @@ops/bin/tool <- https://example.com/bin/tool",
         f"Downloaded 1 file into {deps_root}",
@@ -592,3 +593,167 @@ def test_resolve_rejects_clone(runner):
 
     assert result.returncode == 1
     assert "file command" in result.stderr
+
+
+WITH_RELATIVE_DEPS = (
+    b'{"$deps": {"files": ["../hhh.js", "bin/tool"]}, "run": "tool"}'
+)
+
+
+def test_remote_clone_freezes_the_base_and_resolves_relative_src(runner, tmp_path):
+    env, _ = install_routed_curl(
+        tmp_path,
+        {
+            "/aaa/bbb/hello.byk.json": WITH_RELATIVE_DEPS,
+            "/aaa/hhh.js": b"hhh",
+            "/aaa/bbb/bin/tool": b"tool",
+        },
+    )
+
+    result = runner.run(
+        "@@ops..clone", "https://example.com/aaa/bbb/hello.byk.json", "-d", env=env
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Recorded $deps.base = https://example.com/aaa/bbb/" in result.stderr
+
+    doc = read(runner.byk_dir / "alias" / "ops.byk.json")
+    assert doc["$deps"]["base"] == "https://example.com/aaa/bbb/"
+    # 声明保持原样：相对写法留在文件里，解析结果只出现在清单里
+    assert doc["$deps"]["files"] == ["../hhh.js", "bin/tool"]
+
+    deps_root = runner.byk_dir / "deps" / "@@ops"
+    assert (deps_root / "hhh.js").read_bytes() == b"hhh"
+    # 落点由 `to` 决定，与 src 的目录结构无关
+    assert (deps_root / "tool").read_bytes() == b"tool"
+
+
+def test_remote_clone_resolves_a_relative_base(runner, tmp_path):
+    body = b'{"$deps": {"base": "..", "files": ["shared/x.js"]}}'
+    env, _ = install_routed_curl(
+        tmp_path,
+        {"/a/b/hello.byk.json": body, "/a/shared/x.js": b"x"},
+    )
+
+    result = runner.run(
+        "@@ops..clone", "https://example.com/a/b/hello.byk.json", "-d", env=env
+    )
+
+    assert result.returncode == 0, result.stderr
+    doc = read(runner.byk_dir / "alias" / "ops.byk.json")
+    assert doc["$deps"]["base"] == "https://example.com/a/"
+    assert (runner.byk_dir / "deps" / "@@ops" / "x.js").read_bytes() == b"x"
+
+
+def test_local_clone_freezes_the_base_to_the_source_directory(runner, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    source = project / "src.byk.json"
+    source.write_text(
+        '{"$deps": {"base": ".", "files": ["./tool"]}}', encoding="utf-8"
+    )
+    (project / "tool").write_text("#!/bin/sh\necho tool\n", encoding="utf-8")
+
+    cloned = runner.run("@@ops..clone", str(source))
+    assert cloned.returncode == 0, cloned.stderr
+    want = f"{project}/".replace("\\", "/")
+    assert f"Recorded $deps.base = {want}" in cloned.stderr
+
+    doc = read(runner.byk_dir / "alias" / "ops.byk.json")
+    assert doc["$deps"]["base"] == want
+    # 声明一字未改：相对写法留在文件里，解析结果只出现在清单里
+    assert doc["$deps"]["files"] == ["./tool"]
+
+    result = runner.run("@@ops..deps", "i")
+    assert result.returncode == 0, result.stderr
+    installed = runner.byk_dir / "deps" / "@@ops" / "tool"
+    assert installed.read_text(encoding="utf-8") == "#!/bin/sh\necho tool\n"
+
+
+def test_local_clone_installs_without_any_network(runner, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "tool").write_bytes(b"binary")
+    source = project / "src.byk.json"
+    source.write_text('{"$deps": {"files": ["./tool"]}}', encoding="utf-8")
+
+    # PATH 里没有 curl：本地来源根本不该调用它
+    result = runner.run(
+        "@@ops..clone",
+        str(source),
+        "-d",
+        env={"PATH": str(tmp_path / "empty-bin")},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (runner.byk_dir / "deps" / "@@ops" / "tool").read_bytes() == b"binary"
+
+
+def test_local_deps_i_reports_a_missing_source(runner, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    source = project / "src.byk.json"
+    source.write_text('{"$deps": {"files": ["./tool"]}}', encoding="utf-8")
+
+    assert runner.run("@@ops..clone", str(source)).returncode == 0
+    # 源文件后来没了：静默跳过会让人以为装好了
+    result = runner.run("@@ops..deps", "i")
+
+    assert result.returncode == 1
+    assert "cannot read" in result.stderr
+    assert "tool" in result.stderr
+
+
+def test_deps_i_reports_a_relative_src_without_base(runner):
+    runner.prepare_alias_json(
+        "ops", {"$deps": {"files": ["../hhh.js"]}, "run": "tool"}
+    )
+
+    result = runner.run("@@ops..deps", "i")
+
+    assert result.returncode == 1
+    assert 'relative path but "$deps.base" is not set' in result.stderr
+
+
+def test_remote_clone_rejects_a_variable_base(runner, tmp_path):
+    # clone 期没有变量表：${CDN} 求不出值，与其写死一个假地址不如直接失败
+    body = json.dumps(
+        {
+            "$var": {"CDN": "https://example.com/cdn/"},
+            "$deps": {"base": "${CDN}", "files": ["x.js"]},
+        }
+    ).encode()
+    env, _ = install_routed_curl(tmp_path, {"/p/var.byk.json": body})
+
+    result = runner.run(
+        "@@ops..clone", "https://example.com/p/var.byk.json", "-d", env=env
+    )
+
+    assert result.returncode == 1
+    assert "must not contain variables" in result.stderr
+    # 半坏文件比没有更糟：拒绝时不落盘
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_remote_clone_rejects_a_leading_slash_base(runner, tmp_path):
+    # 前导 `/` 跟本地绝对路径分不开，不再当包根
+    body = b'{"$deps": {"base": "/sub", "files": ["x.js"]}}'
+    env, _ = install_routed_curl(tmp_path, {"/p/slash.byk.json": body})
+
+    result = runner.run(
+        "@@ops..clone", "https://example.com/p/slash.byk.json", env=env
+    )
+
+    assert result.returncode == 1
+    assert "is a local path" in result.stderr
+
+
+def test_deps_i_names_an_unexpanded_variable_in_base(runner):
+    runner.prepare_alias_json(
+        "ops", {"$deps": {"base": "${NOPE}", "files": ["x.js"]}}
+    )
+
+    result = runner.run("@@ops..deps", "i")
+
+    assert result.returncode == 1
+    assert '"${NOPE}" was not expanded' in result.stderr

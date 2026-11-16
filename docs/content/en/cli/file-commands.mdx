@@ -239,6 +239,9 @@ Repository shorthand shape:
 - The destination must not exist; `..clone` never overwrites.
 - A local source is validated first: it must be a JSON object, and a link file (array) is rejected.
 - The result is an independent copy with no relationship to the source. Use `..link` for a live reference.
+- Either source freezes `$deps.base` into an absolute address and prints `Recorded $deps.base = …`. The form follows the source: **remote** writes an absolute http(s) directory URL, **local** writes a local absolute directory path. The fill-in rules are identical — the source file's directory when absent, resolved against the source file when relative (`.` / `../` / `sub/dir`), kept as-is when already absolute with only the trailing `/` added.
+- Neither form crosses into the other: a remote source rejects a local-path `base` (`/x`, `C:/x`), which is why **an alias file taken from the network cannot read local files**; a local source keeps an absolute URL as-is, and those assets still come off the network.
+- A `base` containing variables fails outright: a clone has no variable table, so `${CDN}` cannot be evaluated and guessing would bake a bogus address into the file. Writing it back re-serialises the whole document (keys sorted); files without `$deps` stay byte-for-byte copies.
 - Remote sources require `curl`; without it you get an install hint.
 - Options may come before or after the source: `-gh user/repo@v1/tool -d` equals `-d -gh ...`.
 
@@ -250,7 +253,7 @@ byk @@hello..clone https://example.com/hello.byk.json -d
 
 - After the file lands, byk reads the new file's `$deps`: if present it runs the same sync as `..deps i` (a fresh key has no manifest, so it is a first install); if absent it is skipped rather than treated as an error.
 - `-d` is global-only — dependency directories are keyed by the global file key, so a local destination is rejected before anything is downloaded.
-- Installing never asks twice and needs no `--yes`: clone-to-assets-installed is a single command, which suits scripts and non-interactive shells.
+- The install step never asks twice and needs no `--yes`: clone-to-assets-fetched is a single command, which suits scripts and non-interactive shells.
 - A failed install does **not** roll back the clone: the file is already valid, so rerun `@@<file>..deps i` as suggested; assets already in place are never downloaded twice.
 
 ### `..link <target>`
@@ -270,7 +273,7 @@ byk @@ops..link @shared
 ### `..deps [install|uninstall|status]`
 
 ```bash
-byk @@tool..deps                       # current state: declared, installed, outdated, stale
+byk @@tool..deps                       # current state: declared, present, outdated, stale
 byk @@tool..deps install               # sync the directory to the declaration
 byk @@tool..deps i                     # same, via an unambiguous prefix
 byk @@tool..deps i --force             # ignore the manifest and re-download everything
@@ -288,8 +291,8 @@ The subcommand is one of `install` / `uninstall` / `status`, and unambiguous pre
 | Declared, missing on disk | `add` |
 | Declared, recorded, source changed | `update` (re-download and swap atomically) |
 | Recorded but the file is gone | `repair` |
-| Only `exec` differs | `chmod`, no download |
-| Declared, not recorded, file already present | `adopt`: take over the existing file, no download |
+| Only `exec` differs | `chmod`, no fetch |
+| Declared, not recorded, file already present | `adopt`: take over the existing file, no fetch |
 | Recorded but no longer declared | `remove` (plus empty parent directories) |
 | Identical | `keep`, skipped |
 
@@ -305,14 +308,16 @@ When nothing changed it is a no-op and never touches the network:
 
 ```bash
 $ byk @@tool..deps i
-@@tool: 2 declared, 2 installed — up to date
+@@tool: 2 declared, 2 present — up to date
 ```
 
+- A relative `src` is joined with `$deps.base`; either one alone is an error, never a guess. `base` must be absolute on disk — the URL form means download, the local-path form means copy, and `..clone` picks it by source. Its relative forms only mean something at clone time.
+- Local entries are compared by source mtime: a newer source is reinstalled, a missing one fails with `cannot read` and its path instead of being skipped.
 - Works for global and local files alike: global assets land in `~/.byk/deps/@@<file-name>/`, local ones in `<file-dir>/.byk/deps/@<file-name>/` with a self-ignoring `.gitignore` (`*`).
 - The install manifest lives at `~/.byk/deps/@@<file-name>/.byk-deps.json` and records the last declaration plus where each asset landed. Deleting it just restarts the bookkeeping; the next install adopts whatever is already there.
 - Only paths byk installed are ever removed: anything else in the directory is left alone with a warning.
-- Installing never asks twice and needs no `--yes`; `--force` is the only option, for cases the manifest cannot detect (assets corrupted from outside).
-- Downloading is delegated to the system `curl`, extraction to the system `tar`; when either is missing the error includes an install hint.
+- The install step never asks twice and needs no `--yes`; `--force` is the only option, for cases the manifest cannot detect (assets corrupted from outside).
+- Absolute addresses are fetched with the system `curl`, local paths are copied with `fs::copy` (same temp-file-then-rename dance); extraction is delegated to the system `tar` on both paths, and a missing tool errors with an install hint. The summary says `Downloaded` either way and counts the local ones in parentheses (`Downloaded 3 files into … (1 local)`); a run with nothing local has no parentheses. `$deps.files` only fetches files, so the verb is about fetching, not about `$deps` as a whole.
 - Everything lands inside `~/.byk/deps/@@<file-name>/`. See [Dependencies](/cli/alias/config#dependencies) for the field reference.
 - An `extract` entry lands on a directory and is marked `(extract)`; reinstalling replaces the whole directory, so files dropped from a newer archive never linger. Without `to` it unpacks into the dependency root, which only works as the sole entry (it replaces that whole directory):
 
@@ -327,16 +332,17 @@ Downloaded 2 files into ~/.byk/deps/@@tool
 - uninstall deletes the whole dependency directory; a missing directory is an error. status is read-only and writes to stdout, so it pipes well:
 
 ```
-@@tool: 3 declared, 2 installed, 1 stale
+@@tool: 3 declared, 2 present, 1 stale
   ok        @@tool/bin/tool
   missing   @@tool/etc/cfg.json
   outdated  @@tool/dist
   stale     @@tool/bin/old-tool
+Base: https://example.com/releases/v1/
 Deps directory: ~/.byk/deps/@@tool
 Hint: run `byk @@tool..deps i` to install the missing assets
 ```
 
-`--check` reuses the same classification and reports missing / outdated / stale per file instead of just testing whether the directory exists.
+`--check` only validates the declaration itself: whether it parses, whether two entries collide on one target, and whether a relative `src` has a `base`. It never looks at what is installed — missing or outdated assets are runtime state, reported by `..deps status`.
 
 ## Completion
 

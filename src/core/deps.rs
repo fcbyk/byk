@@ -8,13 +8,21 @@
 //! 三条贯穿规则（沿自 byk-add）：
 //!
 //! 1. **不覆盖**。目标已存在就报错；归档先用 `tar -tf` 列清单逐个查。
-//! 2. **临时文件与目标同级**。下载先落到 `dest` 同目录的唯一临时文件，
+//! 2. **临时文件与目标同级**。取回先落到 `dest` 同目录的唯一临时文件，
 //!    成功后 rename 过去，中途失败不留半个文件。
 //! 3. **落点圈死在专属目录内**。`to` 只接受相对子目录段，拒绝 `..`、
 //!    绝对路径与反斜杠；归档条目额外做越界检查。
 //!
-//! `src` 只支持 http(s) URL：别名文件住在 `~/.byk/alias/`，
-//! 相对它解析本地路径没有意义。
+//! `src` 可以写绝对 http(s) URL，也可以写相对路径——相对谁由 `$deps.base`
+//! 决定。base 是**目录**，落盘后必须是绝对地址：别名文件住在 `~/.byk/alias/`，
+//! 它自己没有任何位置信息，相对值在那里无从解析。冻结只发生在 `..clone`：
+//! 远程来源写成 http(s) 目录 URL（[`freeze_remote_base`]），本地来源写成
+//! 本机绝对路径（[`freeze_local_base`]）。
+//!
+//! 两种 base 对应两种来源：URL 交给 `curl`，本地路径走 `fs::copy`。远程 clone
+//! 只会写出 URL 形态，于是「从网上拿到的别名文件读不了本机文件」这条边界由
+//! clone 保证，安装期只管照着执行——本地路径形态只可能来自本地 clone 或用户
+//! 手写。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,6 +31,9 @@ use std::process::Command;
 use serde_json::Value;
 
 use super::config::build_file_key;
+
+/// `$deps` 顶层允许的字段；报错时按这个顺序列出。
+const DEP_FIELDS: [&str; 2] = ["files", "base"];
 
 /// `$deps.files` 条目允许的字段；报错时按这个顺序列出。
 const ENTRY_FIELDS: [&str; 5] = ["src", "to", "name", "extract", "exec"];
@@ -33,11 +44,39 @@ const WINDOWS_RESERVED: [&str; 22] = [
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
+/// 一份完整的 `$deps` 声明：基准目录加条目列表。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Declaration {
+    /// 相对 `src` 的解析基准。落盘态只可能是绝对地址，见 [`Base`]。
+    pub(crate) base: Option<Base>,
+    pub(crate) files: Vec<DepEntry>,
+}
+
+/// `$deps.base` 的两种落盘形态。
+///
+/// 两者都是**目录**，都必定以 `/` 结尾：远程 clone 写出 `Url`，本地 clone
+/// 写出 `Dir`。形态决定 `src` 怎么拼、执行层用 `curl` 还是 `fs::copy`。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Base {
+    /// 绝对 http(s) 目录 URL。
+    Url(String),
+    /// 本机绝对目录路径，用 `/` 分隔（Windows 也是）。
+    Dir(String),
+}
+
+impl Base {
+    pub(crate) fn as_str(&self) -> &str {
+        match self {
+            Self::Url(text) | Self::Dir(text) => text,
+        }
+    }
+}
+
 /// 一个依赖条目：语法层校验后的产物，不碰文件系统。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DepEntry {
     pub(crate) index: usize,
-    /// http(s) URL。
+    /// 绝对 http(s) URL，或相对 `$deps.base` 的路径（原样保留，计划期拼接）。
     pub(crate) src: String,
     /// 相对专属目录的子目录段，空切片表示根。
     pub(crate) to: Vec<String>,
@@ -55,11 +94,38 @@ pub(crate) struct PlannedAsset {
     pub(crate) index: usize,
     /// 展示用标签：`<key>/<to>/<name>`。
     pub(crate) label: String,
-    pub(crate) url: String,
+    /// 解析后的绝对来源。
+    pub(crate) origin: Origin,
     pub(crate) dest: PathBuf,
     /// 解压条目；`dest` 是目标目录本身。
     pub(crate) archive: bool,
     pub(crate) exec: bool,
+}
+
+/// 一个资产的绝对来源：远程 URL，或本机文件。
+///
+/// 形态由 `base` 的类型决定，`src` 自己不表态——绝对 URL 的 `src` 永远走到
+/// [`Origin::Url`]，只有相对 `src` 才可能被本地 base 拼成本机路径。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Origin {
+    Url(String),
+    File(PathBuf),
+}
+
+impl Origin {
+    /// 展示与清单共用的字面量。本地路径统一 `/` 分隔，Windows 也一样。
+    pub(crate) fn as_str(&self) -> String {
+        match self {
+            Self::Url(url) => url.clone(),
+            Self::File(path) => path_to_slash(path),
+        }
+    }
+
+    /// 来源是本机文件吗。这类条目走 `fs::copy`，不碰网络——汇总行据此
+    /// 注明其中几条来自本地。
+    pub(crate) fn is_local(&self) -> bool {
+        matches!(self, Self::File(_))
+    }
 }
 
 /// 某个别名文件的依赖目录。
@@ -94,22 +160,27 @@ pub(crate) fn deps_dir_var(
 
 // ── 语法层：`$deps` 结构校验 ────────────────────────────────────────────
 
-/// 解析并校验 `$deps` 字段的值；返回条目列表。
+/// 解析并校验 `$deps` 字段的值；返回声明。
 ///
 /// 只回答"长得对不对"：类型、必填、互斥、未知字段、URL scheme。落点
 /// 拼接、文件名推导与冲突检测留给 [`plan_entries`]。
-pub(crate) fn parse_deps(value: &Value) -> Result<Vec<DepEntry>, String> {
+pub(crate) fn parse_deps(value: &Value) -> Result<Declaration, String> {
     let Some(obj) = value.as_object() else {
         return Err("$deps must be an object".to_string());
     };
 
     for key in obj.keys() {
-        if key != "files" {
+        if !DEP_FIELDS.contains(&key.as_str()) {
             return Err(format!(
-                "$deps has unknown field \"{key}\"; only \"files\" is supported"
+                "$deps has unknown field \"{key}\"; expected \"files\" or \"base\""
             ));
         }
     }
+
+    let base = match obj.get("base") {
+        None => None,
+        Some(raw) => Some(parse_base(raw)?),
+    };
 
     let Some(items) = obj.get("files") else {
         return Err("$deps must name a \"files\" array".to_string());
@@ -118,11 +189,118 @@ pub(crate) fn parse_deps(value: &Value) -> Result<Vec<DepEntry>, String> {
         return Err("$deps.files must be an array".to_string());
     };
 
-    items
+    let files = items
         .iter()
         .enumerate()
         .map(|(index, item)| parse_entry(index, item))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Declaration { base, files })
+}
+
+/// `base`：目录，落盘态只认绝对地址——http(s) URL，或本机绝对路径。
+///
+/// 拒绝相对值：解析相对 base 需要文档自己的位置，而那份信息只在 clone 那一
+/// 刻存在（见 [`freeze_remote_base`] / [`freeze_local_base`]）。放进来就会
+/// 变成「写了个谁都看不懂的字符串」，或者更糟：被当成本地路径去拼。
+///
+/// Windows 上 `/sub` 也不算绝对地址——它没有盘符，按「当前盘」解释，写法本身
+/// 就带着工作目录依赖，同样拒绝。
+fn parse_base(raw: &Value) -> Result<Base, String> {
+    let Value::String(text) = raw else {
+        return Err("\"$deps.base\" must be a string".to_string());
+    };
+    if text.is_empty() {
+        return Err(
+            "\"$deps.base\" must not be empty (the value is empty after variable expansion)"
+                .to_string(),
+        );
+    }
+    if text.contains('\\') {
+        return Err("\"$deps.base\" must use \"/\" as the path separator".to_string());
+    }
+    if text.contains(['?', '#']) {
+        return Err(
+            "\"$deps.base\" must not contain a query or fragment; it is a directory".to_string(),
+        );
+    }
+
+    // 本地路径形态先过一遍：UNC 与 Windows 上没有盘符的根路径都在这里挡掉，
+    // 否则 `/sub` 会被当成相对值拼到别处。
+    check_local_shape(text)?;
+
+    // 盘符要先于 scheme 判定：`C:/x` 里的 `C:` 会被 `split_scheme` 当成 scheme
+    if is_drive_path(text) || Path::new(text).is_absolute() {
+        return parse_local_base(text);
+    }
+
+    match split_scheme(text) {
+        Some((scheme, rest)) if is_http(scheme) => {
+            if !rest.starts_with("//") {
+                return Err(format!(
+                    "\"$deps.base\" \"{text}\" must contain \"//\" after the scheme; write https://host/path/"
+                ));
+            }
+            Ok(Base::Url(as_dir_url(text)))
+        }
+        Some((scheme, _)) => Err(format!(
+            "\"$deps.base\" uses unsupported scheme \"{scheme}\"; only http and https are supported"
+        )),
+        // 展开后还带着 `${...}`：变量没定义（或自引用），值本身就是半成品
+        None => match pending_var(text) {
+            Some(name) => Err(format!(
+                "\"$deps.base\" \"{text}\" is not an absolute address: \"${{{name}}}\" was not expanded\nHint: a ${{...}} base must resolve to an absolute URL on its own, or write the absolute base yourself"
+            )),
+            None => Err(format!(
+                "\"$deps.base\" \"{text}\" must be an absolute http(s) URL or an absolute directory path; a relative value only resolves while cloning\nHint: clone this file from its source, or write the absolute base yourself"
+            )),
+        },
+    }
+}
+
+/// 本地绝对目录的落盘校验。盘符在非 Windows 上只能报错——`C:/x` 在 Unix 上
+/// 不是绝对路径，当相对值拼会得到一份看似合法、实则指向别处的配置。
+///
+/// 形态（UNC、Windows 的 `/` 根路径）已在调用方过 [`check_local_shape`]，
+/// 这里只剩「这台机器认不认得出这是绝对路径」。
+fn parse_local_base(text: &str) -> Result<Base, String> {
+    if Path::new(text).is_absolute() {
+        return Ok(Base::Dir(as_dir_path(text)));
+    }
+    Err(foreign_path_error(text))
+}
+
+/// 带盘符、但这台机器用不了的本地路径：`C:/x` 在 Unix 上不是绝对路径，
+/// `C:x` 在 Windows 上是「当前目录」的相对形式——两边都指望不上。
+fn foreign_path_error(text: &str) -> String {
+    if cfg!(windows) {
+        return format!(
+            "\"$deps.base\" \"{text}\" has no directory after the drive; write C:/dir/ (a drive letter alone does not name a path)"
+        );
+    }
+    format!(
+        "\"$deps.base\" \"{text}\" is a Windows path; this build cannot use it\nHint: write the path for the system byk runs on"
+    )
+}
+
+/// 本地路径字面量的公共前检：UNC 一律拒绝；Windows 上 `/sub` 这种没有盘符的
+/// 根路径也拒绝——它挂在「当前盘」上，同一份配置换个工作目录就指向别处。
+/// Unix 上 `/sub` 就是普通绝对路径，照收。
+///
+/// 只认相对路径与盘符开头的绝对路径，两边的含义才与工作目录无关。
+fn check_local_shape(text: &str) -> Result<(), String> {
+    if text.starts_with("//") {
+        return Err(
+            "\"$deps.base\" must not start with \"//\"; network (UNC) paths are not supported"
+                .to_string(),
+        );
+    }
+    if cfg!(windows) && text.starts_with('/') {
+        return Err(format!(
+            "\"$deps.base\" \"{text}\" has no drive letter; on Windows a \"/\"-rooted path hangs off the current drive\nHint: write a relative path, or an absolute path with a drive letter like C:/share/"
+        ));
+    }
+    Ok(())
 }
 
 fn parse_entry(index: usize, item: &Value) -> Result<DepEntry, String> {
@@ -180,7 +358,7 @@ where
             "files[{index}]: \"src\" must use \"/\" as the path separator"
         ));
     }
-    check_url(index, &src)?;
+    check_src(index, &src)?;
 
     let to = match string_field("to")? {
         None => Vec::new(),
@@ -319,19 +497,24 @@ fn validate_asset_name(index: usize, field: &'static str, raw: &str) -> Result<(
 
 // ── 计划层：URL 校验、文件名推导、落点与冲突 ────────────────────────────
 
-/// 把条目变成绝对落点；冲突即报错。不检查目标是否已存在——那是执行期
-/// 的事，计划要能在安装前完整打印。
+/// 把条目变成绝对落点与绝对来源；冲突即报错。不检查目标是否已存在——
+/// 那是执行期的事，计划要能在安装前完整打印。
+///
+/// 相对 `src` 在这里拼上 `base`，所以执行层拿到的永远是绝对地址：URL 交给
+/// `curl`，本机路径交给 `fs::copy`。
 pub(crate) fn plan_entries(
-    entries: &[DepEntry],
+    decl: &Declaration,
     deps_dir: &Path,
     key: &str,
 ) -> Result<Vec<PlannedAsset>, String> {
-    let mut assets = Vec::with_capacity(entries.len());
+    let files = &decl.files;
+    let mut assets = Vec::with_capacity(files.len());
 
-    for entry in entries {
+    for entry in files {
+        let origin = resolve_src(entry, decl.base.as_ref())?;
         let name = match &entry.name {
             Some(name) => name.clone(),
-            None => derive_name(entry.index, &entry.src)?,
+            None => derive_name(entry.index, &origin)?,
         };
 
         let dest = if entry.extract {
@@ -366,7 +549,7 @@ pub(crate) fn plan_entries(
         assets.push(PlannedAsset {
             index: entry.index,
             label,
-            url: normalize_url(&entry.src),
+            origin,
             dest,
             archive: entry.extract,
             exec: entry.exec,
@@ -389,29 +572,57 @@ pub(crate) fn plan_entries(
     Ok(assets)
 }
 
-/// 没写 `name` 时从 URL 路径末段推导。
-fn derive_name(index: usize, url: &str) -> Result<String, String> {
-    let candidate = last_segment(url).unwrap_or_default();
+/// 条目的绝对来源：绝对 `src` 只做点段归约，相对 `src` 拼上 `base`。
+///
+/// 拼接方式跟着 base 的形态走：URL 按 RFC 3986 归约点段，路径按词法归约。
+/// 两条路都不碰文件系统。
+fn resolve_src(entry: &DepEntry, base: Option<&Base>) -> Result<Origin, String> {
+    if split_scheme(&entry.src).is_some() {
+        return Ok(Origin::Url(normalize_url(&entry.src)));
+    }
+
+    let base = base.ok_or_else(|| {
+        format!(
+            "files[{}]: \"src\" is a relative path but \"$deps.base\" is not set\nHint: add \"base\" with the directory these paths are relative to, or write absolute URLs",
+            entry.index
+        )
+    })?;
+    Ok(match base {
+        Base::Url(url) => Origin::Url(join_url(url, &entry.src)),
+        Base::Dir(dir) => Origin::File(join_path(dir, &entry.src)),
+    })
+}
+
+/// 没写 `name` 时从来源的末段推导。
+fn derive_name(index: usize, origin: &Origin) -> Result<String, String> {
+    let candidate = match origin {
+        Origin::Url(url) => last_segment(url).unwrap_or_default().to_string(),
+        Origin::File(path) => path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    };
     if candidate.is_empty() {
+        let shown = origin.as_str();
         return Err(format!(
-            "files[{index}]: cannot derive a file name from \"{url}\"; set \"name\""
+            "files[{index}]: cannot derive a file name from \"{shown}\"; set \"name\""
         ));
     }
-    validate_asset_name(index, "name", candidate)
+    validate_asset_name(index, "name", &candidate)
         .map_err(|err| {
             err.replace(
                 &format!("files[{index}]: \"name\""),
                 &format!("files[{index}]: derived file name is invalid (\"{candidate}\")"),
             )
         })
-        .map(|_| candidate.to_string())
+        .map(|_| candidate)
 }
 
-// ── 执行层：curl 下载、tar 预检与解压 ──────────────────────────────────
+// ── 执行层：取回（curl / 复制）、tar 预检与解压 ────────────────────────
 
 /// 落一条普通资产。
 ///
-/// `replace` 为真时覆盖已存在的目标：先下到同级临时文件，再 rename 过去，
+/// `replace` 为真时覆盖已存在的目标：先取到同级临时文件，再 rename 过去，
 /// 覆盖是原子的，中途失败不会留下半个文件。
 pub(crate) fn install_file(asset: &PlannedAsset, replace: bool) -> Result<(), String> {
     let index = asset.index;
@@ -428,7 +639,7 @@ pub(crate) fn install_file(asset: &PlannedAsset, replace: bool) -> Result<(), St
         .map_err(|e| format!("files[{index}]: cannot create {}: {e}", parent.display()))?;
 
     let scratch = scratch_path(&asset.dest);
-    if let Err(message) = download(index, &asset.url, &scratch) {
+    if let Err(message) = fetch(index, &asset.origin, &scratch) {
         let _ = fs::remove_file(&scratch);
         return Err(message);
     }
@@ -464,7 +675,7 @@ pub(crate) fn install_archive(asset: &PlannedAsset, replace: bool) -> Result<(),
     }
 
     let scratch = scratch_path(&asset.dest);
-    if let Err(message) = download(index, &asset.url, &scratch) {
+    if let Err(message) = fetch(index, &asset.origin, &scratch) {
         let _ = fs::remove_file(&scratch);
         return Err(message);
     }
@@ -655,6 +866,32 @@ fn archive_entry_path(index: usize, entry: &str) -> Result<Option<Vec<String>>, 
     }
 }
 
+/// 把来源取到临时文件。两条路都只写 `out`，不碰 `dest`——rename 之前失败
+/// 都不会留下半个文件。
+fn fetch(index: usize, origin: &Origin, out: &Path) -> Result<(), String> {
+    match origin {
+        Origin::Url(url) => download(index, url, out),
+        Origin::File(path) => copy_local(index, path, out),
+    }
+}
+
+/// 本地来源：直接复制。`extract` 条目也走这条——先落到临时文件，`tar` 再
+/// 从那里解，和下载路径共用同一套预检与换目录逻辑。
+fn copy_local(index: usize, src: &Path, out: &Path) -> Result<(), String> {
+    let metadata = fs::metadata(src)
+        .map_err(|e| format!("files[{index}]: cannot read \"{}\": {e}", src.display()))?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "files[{index}]: \"{}\" is not a file",
+            src.display()
+        ));
+    }
+
+    fs::copy(src, out)
+        .map(|_| ())
+        .map_err(|e| format!("files[{index}]: cannot copy \"{}\": {e}", src.display()))
+}
+
 fn download(index: usize, url: &str, out: &Path) -> Result<(), String> {
     let output = Command::new("curl")
         .args(["-fsSL", "-o"])
@@ -723,26 +960,39 @@ fn scratch_path(dest: &Path) -> PathBuf {
     dest.with_file_name(format!(".byk-dl-{}-{}-{name}.tmp", std::process::id(), n))
 }
 
-// ── URL 字面量：scheme 识别、点段归约、末段推导 ─────────────────────────
+// ── URL 字面量：scheme 识别、点段归约、目录拼接 ─────────────────────────
 
-/// `src` 必须是 http(s) URL。
-fn check_url(index: usize, raw: &str) -> Result<(), String> {
+/// `src` 要么是绝对 http(s) URL，要么是相对路径。
+///
+/// 相对形态只校验"不能是别处的东西"：绝对路径、盘符、`~` 都不行——它们
+/// 指向文件系统，而这里最终只会变成一个 URL。
+fn check_src(index: usize, raw: &str) -> Result<(), String> {
+    if is_drive_path(raw) {
+        return Err(format!(
+            "files[{index}]: \"src\" must not be an absolute path; write it relative to \"$deps.base\""
+        ));
+    }
+
     match split_scheme(raw) {
-        None => Err(format!(
-            "files[{index}]: \"src\" must be an http(s) URL; relative paths are not supported here"
-        )),
         Some((scheme, rest)) if is_http(scheme) => {
-            if !rest.starts_with("//") {
+            if rest.starts_with("//") {
+                Ok(())
+            } else {
                 Err(format!(
                     "files[{index}]: \"{raw}\" must contain \"//\" after the scheme; write https://host/path"
                 ))
-            } else {
-                Ok(())
             }
         }
         Some((scheme, _)) => Err(format!(
             "files[{index}]: unsupported scheme \"{scheme}\"; only http and https are supported"
         )),
+        None if raw.starts_with('/') => Err(format!(
+            "files[{index}]: \"src\" must not start with \"/\"; write it relative to \"$deps.base\""
+        )),
+        None if raw == "~" || raw.starts_with("~/") => Err(format!(
+            "files[{index}]: \"src\" must not start with \"~\"; write it relative to \"$deps.base\""
+        )),
+        None => Ok(()),
     }
 }
 
@@ -788,6 +1038,256 @@ fn normalize_url(url: &str) -> String {
 fn last_segment(url: &str) -> Option<&str> {
     let (_, path, _) = split_url(url)?;
     path.rsplit('/').next()
+}
+
+/// 绝对 URL → 目录 URL：归约点段并补上结尾的 `/`。
+///
+/// base 的定义就是目录，所以缺斜杠时补一个，而不是猜"最后一段是文件"。
+/// 直接粘文档 URL 进来会拼出 `x.byk.json/bin/tool` 这种地址，错得很显眼，
+/// 也比"有时当目录、有时当文件"好教。
+fn as_dir_url(url: &str) -> String {
+    let normalized = normalize_url(url);
+    if normalized.ends_with('/') {
+        normalized
+    } else {
+        format!("{normalized}/")
+    }
+}
+
+/// 把相对路径拼到目录 URL 上。
+///
+/// 点段按 RFC 3986 归约，`..` 可以一路向上，越界止于主机根——URL 里这不算
+/// 权限边界，作者本来就掌控 base。相对路径自带的 query / fragment 原样保留。
+fn join_url(base: &str, rel: &str) -> String {
+    let (head, path) = split_base(base);
+    let (rel_path, rel_tail) = split_tail(rel);
+    let joined = remove_dot_segments(&format!("{}/{rel_path}", path.trim_end_matches('/')));
+    format!("{head}{joined}{rel_tail}")
+}
+
+/// 拆出 (scheme + authority, 路径)；没有路径的 `https://host` 按根处理。
+fn split_base(url: &str) -> (&str, &str) {
+    match split_url(url) {
+        Some((head, path, _)) => (head, path),
+        None => (url, "/"),
+    }
+}
+
+/// 拆出 (路径, query/fragment)。
+fn split_tail(raw: &str) -> (&str, &str) {
+    match raw.find(['?', '#']) {
+        Some(at) => (&raw[..at], &raw[at..]),
+        None => (raw, ""),
+    }
+}
+
+/// 文档 URL → 它所在的目录。
+fn dir_url(doc_url: &str) -> String {
+    let (head, path) = split_base(doc_url);
+    match path.rfind('/') {
+        Some(at) => format!("{head}{}", &path[..=at]),
+        None => format!("{head}/"),
+    }
+}
+
+// ── 本地路径字面量：`/` 分隔、词法归约、目录拼接 ────────────────────────
+
+/// 路径 → 落盘字面量：统一 `/` 分隔。
+///
+/// Windows 的 `Path::display()` 会给反斜杠，写进 JSON 得转义成 `\\`，diff
+/// 和 `..deps status` 都难看；而 Windows 的文件 API 认 `/`，所以存储形态一律
+/// 正斜杠，只在真正操作文件时才交回 `PathBuf`。
+fn path_to_slash(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+/// 目录 → 落盘字面量：`/` 分隔，必定以 `/` 结尾。和 [`as_dir_url`] 对称。
+fn dir_string(path: &Path) -> String {
+    let text = path_to_slash(path);
+    if text.ends_with('/') {
+        text
+    } else {
+        format!("{text}/")
+    }
+}
+
+/// 本地路径 → 目录路径：归约点段并补上结尾的 `/`。
+fn as_dir_path(text: &str) -> String {
+    dir_string(&normalize_path(Path::new(text)))
+}
+
+/// 词法归约 `.` 与 `..`：不碰文件系统，也不解析符号链接。
+///
+/// 越界止于根——`/a/../../x` 得到 `/x`，与 URL 侧 [`remove_dot_segments`]
+/// 的口径一致。base 是自己写的配置，`..` 不构成权限边界。
+fn normalize_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// 把相对路径拼到本地目录上，词法归约掉点段。
+fn join_path(base: &str, rel: &str) -> PathBuf {
+    normalize_path(&Path::new(base).join(rel))
+}
+
+// ── base 冻结：clone 期把相对值变成绝对地址 ─────────────────────────────
+
+/// 两种冻结共用的字面量校验。
+///
+/// 变量一律拒绝：clone 期没有变量表，`${CDN}` 在这里求不出值，猜一个写死只会
+/// 把作者意图烧成假地址。base 的定位就是"程序写的字面量"。
+fn base_literal(current: Option<&Value>) -> Result<Option<&str>, String> {
+    let Some(raw) = current else {
+        return Ok(None);
+    };
+    let Value::String(text) = raw else {
+        return Err("\"$deps.base\" must be a string".to_string());
+    };
+    if text.is_empty() {
+        return Err("\"$deps.base\" must not be empty".to_string());
+    }
+    if text.contains('\\') {
+        return Err("\"$deps.base\" must use \"/\" as the path separator".to_string());
+    }
+    if text.contains(['?', '#']) {
+        return Err(
+            "\"$deps.base\" must not contain a query or fragment; it is a directory".to_string(),
+        );
+    }
+    if text.contains("${") {
+        return Err(
+            "\"$deps.base\" must not contain variables; a clone only freezes a literal value\nHint: write the absolute address in the source file — clone has no variable table to expand it with"
+                .to_string(),
+        );
+    }
+    if text == "~" || text.starts_with("~/") {
+        return Err(
+            "\"$deps.base\" must not start with \"~\"; a clone cannot resolve a home path"
+                .to_string(),
+        );
+    }
+    Ok(Some(text))
+}
+
+/// 远程 clone：把 `base` 冻结成绝对目录 URL。
+///
+/// - 缺失：文档 URL 所在目录，也就是"以文件自己为基准"
+/// - 相对引用（`.`、`../`、`x/y`）：相对文档目录解析
+/// - 绝对 http(s)：规范化，只保证以 `/` 结尾
+///
+/// 其余形态一律拒绝，**包括本机绝对路径**：远程来源只能产出 URL 形态的 base，
+/// 于是"从网上 clone 来的别名文件读不了本机文件"是结构性保证，而不是靠检查。
+/// Windows 上没有盘符的 `/sub` 也算在内：它既不是 URL，读出来也不是这台机器
+/// 上确定的路径。
+pub(crate) fn freeze_remote_base(current: Option<&Value>, doc_url: &str) -> Result<String, String> {
+    let doc_dir = dir_url(doc_url);
+
+    let Some(text) = base_literal(current)? else {
+        return Ok(doc_dir);
+    };
+
+    // `/sub` 在 Windows 上没有盘符（按「当前盘」解释），在 Unix 上就是本机
+    // 路径；`//` 是 UNC。三种读法都不属于远程来源，一律拒掉——否则同一份配置
+    // 在 Windows 上会悄悄变成一个别的地址。
+    if text.starts_with("//")
+        || is_drive_path(text)
+        || Path::new(text).is_absolute()
+        || (cfg!(windows) && text.starts_with('/'))
+    {
+        return Err(format!(
+            "\"$deps.base\" \"{text}\" is a local path; a remote clone only records http(s) URLs\nHint: point base at an http(s) URL, or clone from the file on disk"
+        ));
+    }
+
+    match split_scheme(text) {
+        Some((scheme, rest)) if is_http(scheme) => {
+            if !rest.starts_with("//") {
+                return Err(format!(
+                    "\"$deps.base\" \"{text}\" must contain \"//\" after the scheme; write https://host/path/"
+                ));
+            }
+            Ok(as_dir_url(text))
+        }
+        Some((scheme, _)) => Err(format!(
+            "\"$deps.base\" uses unsupported scheme \"{scheme}\"; only http and https are supported"
+        )),
+        None => Ok(as_dir_url(&join_url(&doc_dir, text))),
+    }
+}
+
+/// 本地 clone：把 `base` 冻结成绝对目录路径，绝对 http(s) URL 原样照搬。
+///
+/// - 缺失：源文件所在目录
+/// - 绝对 http(s)：只做规范化（远程资产仍然从网上取）
+/// - 绝对路径：照搬
+/// - 相对引用（`.`、`../`、`x/y`）：相对源文件目录解析
+/// - UNC 与 Windows 上没有盘符的 `/sub`：报错，见 [`check_local_shape`]
+///
+/// 基准一律是**源文件**所在目录，不是落盘目标目录：`files` 里的相对路径是
+/// 作者照着源文档写的，`~/.byk/alias/` 旁边根本没有那些文件。
+pub(crate) fn freeze_local_base(
+    current: Option<&Value>,
+    doc_path: &Path,
+) -> Result<String, String> {
+    let doc_dir = doc_path.parent().ok_or_else(|| {
+        format!(
+            "Cannot freeze \"$deps.base\": {} has no parent directory",
+            doc_path.display()
+        )
+    })?;
+
+    let Some(text) = base_literal(current)? else {
+        return Ok(dir_string(&normalize_path(doc_dir)));
+    };
+
+    // UNC 与 Windows 上没有盘符的根路径在这里挡掉：`/sub` 会被 join 拼成
+    // `C:/sub`，看着合法、指向别处，必须在冻结前失败。
+    check_local_shape(text)?;
+
+    // 盘符先判：`C:/x` 的 `C:` 会被当成 scheme
+    if !is_drive_path(text)
+        && let Some((scheme, rest)) = split_scheme(text)
+    {
+        return match is_http(scheme) {
+            true if rest.starts_with("//") => Ok(as_dir_url(text)),
+            true => Err(format!(
+                "\"$deps.base\" \"{text}\" must contain \"//\" after the scheme; write https://host/path/"
+            )),
+            false => Err(format!(
+                "\"$deps.base\" uses unsupported scheme \"{scheme}\"; only http and https are supported"
+            )),
+        };
+    }
+
+    let path = Path::new(text);
+    if path.is_absolute() {
+        return Ok(as_dir_path(text));
+    }
+    if is_drive_path(text) {
+        return Err(foreign_path_error(text));
+    }
+    Ok(dir_string(&normalize_path(&doc_dir.join(path))))
+}
+
+/// 展开后仍留在字符串里的第一个 `${name}`。
+///
+/// 变量没定义时 [`crate::core::config::vars::expand`] 原样保留 `${name}`，
+/// 于是 base 会停在一个半成品形态上；报错时点出名字，比说"不是 URL"有用。
+fn pending_var(text: &str) -> Option<&str> {
+    let start = text.find("${")? + 2;
+    let end = text[start..].find('}')? + start;
+    Some(&text[start..end])
 }
 
 /// 拆成 (scheme + authority, 路径, query/fragment)。
@@ -847,12 +1347,17 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn parse(files: Value) -> Result<Vec<DepEntry>, String> {
+    fn parse(files: Value) -> Result<Declaration, String> {
         parse_deps(&json!({ "files": files }))
     }
 
+    fn parse_with(base: Value, files: Value) -> Result<Declaration, String> {
+        parse_deps(&json!({ "base": base, "files": files }))
+    }
+
     fn entry(files: Value, index: usize) -> DepEntry {
-        parse(files).unwrap().remove(index)
+        let mut decl = parse(files).unwrap();
+        decl.files.remove(index)
     }
 
     // ---------- parse_deps ----------
@@ -913,21 +1418,247 @@ mod tests {
     }
 
     #[test]
-    fn src_must_be_http_url() {
-        assert!(
-            parse(json!(["./tool"]))
-                .unwrap_err()
-                .contains("http(s) URL")
-        );
+    fn src_accepts_http_urls_and_relative_paths() {
+        // 绝对 URL
+        parse(json!(["http://e.com/a"])).unwrap();
+        parse(json!(["HTTPS://e.com/a"])).unwrap();
+
+        // 相对路径：语法层放行，绑定 base 的事留给计划层
+        parse(json!(["./tool"])).unwrap();
+        parse(json!(["../bin/tool", "bin/tool"])).unwrap();
+
+        // 指向文件系统的形态一律拒绝
         assert!(
             parse(json!(["/abs/tool"]))
                 .unwrap_err()
-                .contains("http(s) URL")
+                .contains("must not start with \"/\"")
+        );
+        assert!(
+            parse(json!(["~/tool"]))
+                .unwrap_err()
+                .contains("must not start with \"~\"")
+        );
+        assert!(
+            parse(json!(["C:/tool"]))
+                .unwrap_err()
+                .contains("must not be an absolute path")
         );
         assert!(parse(json!(["ftp://e.com/a"])).unwrap_err().contains("ftp"));
         assert!(parse(json!(["https:/e.com/a"])).unwrap_err().contains("//"));
-        parse(json!(["http://e.com/a"])).unwrap();
-        parse(json!(["HTTPS://e.com/a"])).unwrap();
+    }
+
+    // ---------- $deps.base ----------
+
+    #[test]
+    fn base_is_normalized_as_a_directory() {
+        let decl = parse_with(json!("https://e.com/dist"), json!([])).unwrap();
+        assert_eq!(
+            decl.base.as_ref().map(Base::as_str),
+            Some("https://e.com/dist/")
+        );
+
+        let decl = parse_with(json!("https://e.com/a/../b/"), json!([])).unwrap();
+        assert_eq!(
+            decl.base.as_ref().map(Base::as_str),
+            Some("https://e.com/b/")
+        );
+    }
+
+    #[test]
+    fn relative_base_is_rejected_on_disk() {
+        // `C:/x` 只在 Unix 上落进这里（在 Windows 上它本来就是绝对路径），
+        // 单独由 `base_rejects_a_foreign_drive_path` 管
+        for bad in [
+            "",
+            ".",
+            "..",
+            "sub/",
+            "~/x",
+            "//server/share",
+            "ftp://e.com/x/",
+        ] {
+            let err = parse_with(json!(bad), json!([])).unwrap_err();
+            assert!(err.contains("$deps.base"), "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn base_accepts_an_absolute_directory_path() {
+        let dir = tmp_dir();
+        let text = path_to_slash(&dir);
+        let decl = parse_with(json!(text), json!([])).unwrap();
+
+        assert_eq!(
+            decl.base.as_ref().map(Base::as_str),
+            Some(format!("{}/", text.trim_end_matches('/')).as_str())
+        );
+    }
+
+    #[test]
+    fn base_rejects_a_foreign_drive_path() {
+        if cfg!(windows) {
+            return;
+        }
+        let err = parse_with(json!("C:/tool/"), json!([])).unwrap_err();
+        assert!(err.contains("Windows path"), "{err}");
+    }
+
+    #[test]
+    fn a_rooted_base_needs_a_drive_on_windows() {
+        let doc = tmp_dir().join("x.byk.json");
+
+        // Unix 上 `/srv/` 就是绝对路径，读取与 clone 都照收
+        if !cfg!(windows) {
+            assert_eq!(
+                parse_with(json!("/srv/assets/"), json!([]))
+                    .unwrap()
+                    .base
+                    .as_ref()
+                    .map(Base::as_str),
+                Some("/srv/assets/")
+            );
+            assert_eq!(
+                freeze_local_base(Some(&json!("/srv/assets")), &doc).unwrap(),
+                "/srv/assets/"
+            );
+            return;
+        }
+
+        // Windows 上 `/sub` 没有盘符，挂在「当前盘」上：同一份配置换个工作
+        // 目录就指向别处，所以读取期与 clone 期都必须失败，不能悄悄拼成 C:/sub
+        let err = parse_with(json!("/srv/assets/"), json!([])).unwrap_err();
+        assert!(err.contains("has no drive letter"), "{err}");
+        let err = freeze_local_base(Some(&json!("/srv/assets/")), &doc).unwrap_err();
+        assert!(err.contains("has no drive letter"), "{err}");
+    }
+
+    #[test]
+    fn local_base_keeps_its_path_shape() {
+        let dir = tmp_dir();
+        let text = path_to_slash(&dir);
+        let decl = parse_with(json!(format!("{text}//")), json!([])).unwrap();
+
+        match decl.base {
+            Some(Base::Dir(path)) => assert_eq!(path, format!("{text}/")),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn base_must_be_a_string_without_query() {
+        assert!(
+            parse_with(json!(1), json!([]))
+                .unwrap_err()
+                .contains("must be a string")
+        );
+        assert!(
+            parse_with(json!("https://e.com/x/?t=1"), json!([]))
+                .unwrap_err()
+                .contains("query or fragment")
+        );
+        assert!(
+            parse_with(json!("https://e.com\\x"), json!([]))
+                .unwrap_err()
+                .contains("path separator")
+        );
+    }
+
+    #[test]
+    fn unexpanded_variable_in_base_is_named() {
+        // 变量没定义时展开器原样保留 `${...}`，base 停在半成品形态上：
+        // 报错要点出名字，否则作者只会看到"不是绝对 URL"，想不到是变量名错了
+        let err = parse_with(json!("${NOPE}"), json!([])).unwrap_err();
+        assert!(err.contains("\"${NOPE}\" was not expanded"), "{err}");
+        assert!(err.contains("resolve to an absolute URL"), "{err}");
+
+        // 相对段 + 变量：两个问题同时存在，先点名变量
+        let err = parse_with(json!("../${SUB}/"), json!([])).unwrap_err();
+        assert!(err.contains("\"${SUB}\" was not expanded"), "{err}");
+
+        // 纯相对值不该扯上变量
+        let err = parse_with(json!("../x/"), json!([])).unwrap_err();
+        assert!(!err.contains("was not expanded"), "{err}");
+        assert!(err.contains("only resolves while cloning"), "{err}");
+    }
+
+    #[test]
+    fn relative_src_needs_a_base_only_at_plan_time() {
+        let decl = parse(json!(["../hhh.js"])).unwrap();
+        let err = plan_entries(&decl, &tmp_dir(), "@@t").unwrap_err();
+        assert!(
+            err.contains("relative path but \"$deps.base\" is not set"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn relative_src_joins_base_and_climbs() {
+        let dir = tmp_dir();
+        let decl = parse_with(
+            json!("https://e.com/sdsd/asfdsg/qwe/we/"),
+            json!(["../hhh.js", "bin/tool", {"src": "./cfg.json", "to": "etc"}]),
+        )
+        .unwrap();
+
+        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+
+        assert_eq!(
+            assets[0].origin.as_str(),
+            "https://e.com/sdsd/asfdsg/qwe/hhh.js"
+        );
+        assert_eq!(assets[0].dest, dir.join("hhh.js"));
+        assert_eq!(
+            assets[1].origin.as_str(),
+            "https://e.com/sdsd/asfdsg/qwe/we/bin/tool"
+        );
+        assert_eq!(
+            assets[2].origin.as_str(),
+            "https://e.com/sdsd/asfdsg/qwe/we/cfg.json"
+        );
+        assert_eq!(assets[2].dest, dir.join("etc").join("cfg.json"));
+    }
+
+    #[test]
+    fn relative_src_keeps_its_query_when_joined() {
+        let decl = parse_with(json!("https://e.com/a/"), json!(["tool?token=x"])).unwrap();
+        let assets = plan_entries(&decl, &tmp_dir(), "@@t").unwrap();
+        assert_eq!(assets[0].origin.as_str(), "https://e.com/a/tool?token=x");
+        assert_eq!(assets[0].label, "@@t/tool");
+    }
+
+    #[test]
+    fn relative_src_joins_a_local_base_as_a_path() {
+        let dir = tmp_dir();
+        let base = path_to_slash(&dir);
+        let decl = parse_with(json!(base), json!(["../hhh.js", "bin/tool"])).unwrap();
+
+        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+
+        assert_eq!(
+            assets[0].origin,
+            Origin::File(dir.parent().unwrap().join("hhh.js"))
+        );
+        assert_eq!(assets[0].label, "@@t/hhh.js");
+        assert_eq!(assets[1].origin, Origin::File(dir.join("bin").join("tool")));
+    }
+
+    #[test]
+    fn absolute_src_ignores_a_local_base() {
+        let dir = tmp_dir();
+        let decl = parse_with(json!(path_to_slash(&dir)), json!(["https://e.com/x.js"])).unwrap();
+        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+
+        assert_eq!(
+            assets[0].origin,
+            Origin::Url("https://e.com/x.js".to_string())
+        );
+    }
+
+    #[test]
+    fn join_path_climbs_and_stops_at_the_root() {
+        assert_eq!(join_path("/a/b/", "../x"), PathBuf::from("/a/x"));
+        assert_eq!(join_path("/a/b/", "./x/./y"), PathBuf::from("/a/b/x/y"));
+        assert_eq!(join_path("/a/b/", "../../../../x"), PathBuf::from("/x"));
     }
 
     #[test]
@@ -982,12 +1713,12 @@ mod tests {
     #[test]
     fn plan_derives_name_from_url() {
         let dir = tmp_dir();
-        let entries = parse(json!(["https://e.com/dist/my-tool-1.4.tar.gz?token=x"])).unwrap();
-        let assets = plan_entries(&entries, &dir, "@@t").unwrap();
+        let decl = parse(json!(["https://e.com/dist/my-tool-1.4.tar.gz?token=x"])).unwrap();
+        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
         assert_eq!(assets[0].dest, dir.join("my-tool-1.4.tar.gz"));
         assert_eq!(assets[0].label, "@@t/my-tool-1.4.tar.gz");
         assert_eq!(
-            assets[0].url,
+            assets[0].origin.as_str(),
             "https://e.com/dist/my-tool-1.4.tar.gz?token=x"
         );
     }
@@ -995,25 +1726,24 @@ mod tests {
     #[test]
     fn plan_normalizes_dot_segments_in_url() {
         let dir = tmp_dir();
-        let entries = parse(json!(["https://e.com/dist/../rel/tool"])).unwrap();
-        let assets = plan_entries(&entries, &dir, "@@t").unwrap();
-        assert_eq!(assets[0].url, "https://e.com/rel/tool");
+        let decl = parse(json!(["https://e.com/dist/../rel/tool"])).unwrap();
+        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+        assert_eq!(assets[0].origin.as_str(), "https://e.com/rel/tool");
     }
 
     #[test]
     fn plan_derive_failure_mentions_name() {
-        let entries = parse(json!(["https://e.com/"])).unwrap();
-        let err = plan_entries(&entries, &tmp_dir(), "@@t").unwrap_err();
+        let decl = parse(json!(["https://e.com/"])).unwrap();
+        let err = plan_entries(&decl, &tmp_dir(), "@@t").unwrap_err();
         assert!(err.contains("set \"name\""), "{err}");
     }
 
     #[test]
     fn plan_extract_dest_is_the_directory() {
         let dir = tmp_dir();
-        let entries =
-            parse(json!([{"src": "https://e.com/b.tar.gz", "to": "dist", "extract": true}]))
-                .unwrap();
-        let assets = plan_entries(&entries, &dir, "@@t").unwrap();
+        let decl = parse(json!([{"src": "https://e.com/b.tar.gz", "to": "dist", "extract": true}]))
+            .unwrap();
+        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
         assert_eq!(assets[0].dest, dir.join("dist"));
         assert!(assets[0].archive);
         // 标签指向目录，而不是那个只用来中转的压缩包名
@@ -1022,21 +1752,21 @@ mod tests {
 
     #[test]
     fn plan_extract_into_root_is_labelled_by_key() {
-        let entries = parse(json!([{"src": "https://e.com/b.tar.gz", "extract": true}])).unwrap();
-        let assets = plan_entries(&entries, &tmp_dir(), "@@t").unwrap();
+        let decl = parse(json!([{"src": "https://e.com/b.tar.gz", "extract": true}])).unwrap();
+        let assets = plan_entries(&decl, &tmp_dir(), "@@t").unwrap();
         assert_eq!(assets[0].label, "@@t");
     }
 
     #[test]
     fn root_extract_must_be_the_only_entry() {
         let dir = tmp_dir();
-        let entries = parse(json!([
+        let decl = parse(json!([
             {"src": "https://e.com/b.tar.gz", "extract": true},
             {"src": "https://e.com/cfg.json"}
         ]))
         .unwrap();
 
-        let err = plan_entries(&entries, &dir, "@@t").unwrap_err();
+        let err = plan_entries(&decl, &dir, "@@t").unwrap_err();
 
         assert!(err.contains("must be the only entry"), "{err}");
 
@@ -1047,20 +1777,20 @@ mod tests {
 
     #[test]
     fn plan_detects_clashes() {
-        let entries =
+        let decl =
             parse(json!(["https://e.com/a", {"src": "https://e.com/b", "name": "a"}])).unwrap();
-        let err = plan_entries(&entries, &tmp_dir(), "@@t").unwrap_err();
+        let err = plan_entries(&decl, &tmp_dir(), "@@t").unwrap_err();
         assert!(err.contains("already used by files[0]"), "{err}");
     }
 
     #[test]
     fn plan_allows_file_into_extracted_directory() {
-        let entries = parse(json!([
+        let decl = parse(json!([
             {"src": "https://e.com/b.tar.gz", "to": "dist", "extract": true},
             {"src": "https://e.com/README", "to": "dist", "name": "README"}
         ]))
         .unwrap();
-        plan_entries(&entries, &tmp_dir(), "@@t").unwrap();
+        plan_entries(&decl, &tmp_dir(), "@@t").unwrap();
     }
 
     // ---------- archive_entry_path ----------
@@ -1102,6 +1832,102 @@ mod tests {
         assert_eq!(remove_dot_segments("/a/./b"), "/a/b");
         assert_eq!(remove_dot_segments("/../x"), "/x");
         assert_eq!(remove_dot_segments("/a/../../b"), "/b");
+    }
+
+    #[test]
+    fn join_url_treats_base_as_a_directory() {
+        let base = "https://e.com/a/b/";
+        assert_eq!(join_url(base, "tool"), "https://e.com/a/b/tool");
+        assert_eq!(join_url(base, "../x.js"), "https://e.com/a/x.js");
+        assert_eq!(join_url(base, "./x/./y"), "https://e.com/a/b/x/y");
+        assert_eq!(join_url(base, ""), "https://e.com/a/b/");
+
+        // 越界止于根，不会吐出畸形地址
+        assert_eq!(join_url(base, "../../../../x"), "https://e.com/x");
+        // 没有路径的 base 按根处理
+        assert_eq!(join_url("https://e.com", "x"), "https://e.com/x");
+    }
+
+    #[test]
+    fn dir_url_drops_the_document_name() {
+        assert_eq!(
+            dir_url("https://e.com/sdsd/asfdsg/qwe/we/aa.byk.json"),
+            "https://e.com/sdsd/asfdsg/qwe/we/"
+        );
+        assert_eq!(dir_url("https://e.com/a/b/"), "https://e.com/a/b/");
+        assert_eq!(dir_url("https://e.com"), "https://e.com/");
+    }
+
+    // ---------- freeze_remote_base ----------
+
+    fn freeze(current: Value, doc: &str) -> Result<String, String> {
+        freeze_remote_base(Some(&current), doc)
+    }
+
+    const DOC: &str = "https://hello.com/sdsd/asfdsg/qwe/we/aa.byk.json";
+
+    #[test]
+    fn freeze_fills_missing_base_with_the_document_directory() {
+        assert_eq!(
+            freeze_remote_base(None, DOC).unwrap(),
+            "https://hello.com/sdsd/asfdsg/qwe/we/"
+        );
+    }
+
+    #[test]
+    fn freeze_reads_dot_as_the_document_directory() {
+        let want = "https://hello.com/sdsd/asfdsg/qwe/we/";
+        assert_eq!(freeze(json!("."), DOC).unwrap(), want);
+        assert_eq!(freeze(json!("./"), DOC).unwrap(), want);
+    }
+
+    #[test]
+    fn freeze_resolves_relative_forms_against_the_document() {
+        assert_eq!(
+            freeze(json!(".."), DOC).unwrap(),
+            "https://hello.com/sdsd/asfdsg/qwe/"
+        );
+        assert_eq!(
+            freeze(json!("sub/dir"), DOC).unwrap(),
+            "https://hello.com/sdsd/asfdsg/qwe/we/sub/dir/"
+        );
+        // `..` 可以一路向上，止于主机根
+        assert_eq!(
+            freeze(json!("../../../../x"), DOC).unwrap(),
+            "https://hello.com/x/"
+        );
+    }
+
+    #[test]
+    fn freeze_keeps_absolute_urls_and_canonicalizes_them() {
+        assert_eq!(
+            freeze(json!("https://cdn.example.com/x"), DOC).unwrap(),
+            "https://cdn.example.com/x/"
+        );
+        assert_eq!(
+            freeze(json!("https://cdn.example.com/a/../b/"), DOC).unwrap(),
+            "https://cdn.example.com/b/"
+        );
+    }
+
+    #[test]
+    fn freeze_rejects_values_it_cannot_rewrite() {
+        for bad in [
+            json!(""),
+            json!(1),
+            json!("~/x"),
+            json!("C:/x"),
+            json!("ftp://e.com/x"),
+            json!("https://e.com/x?t=1"),
+            json!("a\\b"),
+            json!("/"),
+            json!("/sub"),
+            json!("${CDN}"),
+            json!("${CDN}/v1/"),
+        ] {
+            let err = freeze(bad.clone(), DOC).unwrap_err();
+            assert!(err.contains("$deps.base"), "{bad}: {err}");
+        }
     }
 
     #[test]

@@ -239,6 +239,9 @@ byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 - 目标文件必须不存在，`..clone` 不会覆盖。
 - 本地来源会先校验：必须是 JSON 对象；链接文件（数组）会被拒绝。
 - 内容是独立副本，与来源不再有关系。想要实时引用请用 `..link`。
+- 来源顺手把 `$deps.base` 冻结成绝对地址并打印一行 `Recorded $deps.base = …`。形态跟着来源走：**远程**写成绝对 http(s) 目录 URL，**本地**写成本机绝对目录路径。补的规则一致——没写就按源文件所在目录补上，写了相对形态（`.`、`../`、`sub/dir`）就相对源文件解析，写了绝对地址则原样保留，只补结尾的 `/`。
+- 两条路互不越界：远程来源遇到本地路径形态的 `base`（`/x`、`C:/x`）直接失败，于是**从网上拿到的别名文件读不了本机文件**；本地来源遇到绝对 URL 则照搬，那份文档的资产仍然从网上取。
+- clone 时 `base` 里出现变量会直接失败：那一刻没有变量表，`${CDN}` 求不出值，猜一个写死只会把意图烧成假地址。补写会让整份文档重新序列化（键按字典序）；没有 `$deps` 的文件仍是字节级副本。
 - 远程来源依赖 `curl`；缺少时会提示先安装。
 - 选项可以写在来源前后，`-gh user/repo@v1/tool -d` 与 `-d -gh ...` 等价。
 
@@ -270,7 +273,7 @@ byk @@ops..link @shared
 ### `..deps [install|uninstall|status]`
 
 ```bash
-byk @@tool..deps                       # 查看现状：声明几条、装了几个、有哪些过期或多余
+byk @@tool..deps                       # 查看现状：声明几条、到位几条、有哪些过期或多余
 byk @@tool..deps install               # 把目录同步到声明
 byk @@tool..deps i                     # 同上，取无歧义前缀
 byk @@tool..deps i --force             # 忽略清单，全部重下
@@ -289,7 +292,7 @@ byk @@tool..deps uninstall --yes       # 删除时跳过确认
 | 声明里有、清单里有、源变了 | `update`（重下覆盖，原子替换） |
 | 清单里有、文件被删了 | `repair` |
 | 只有 `exec` 不一致 | `chmod`，不重下 |
-| 声明里有、清单里没有、文件已存在 | `adopt`：接管老文件，不下载 |
+| 声明里有、清单里没有、文件已存在 | `adopt`：接管老文件，不重取 |
 | 声明里没有、清单里有 | `remove`（连空掉的父目录一起收） |
 | 完全一致 | `keep`，跳过 |
 
@@ -305,14 +308,16 @@ Downloaded 1 file into ~/.byk/deps/@@tool
 
 ```bash
 $ byk @@tool..deps i
-@@tool: 2 declared, 2 installed — up to date
+@@tool: 2 declared, 2 present — up to date
 ```
 
+- `src` 写相对路径时靠 `$deps.base` 拼成绝对地址；两者缺一就报错，不会去猜。base 落盘后必须是绝对地址——URL 形态对应下载，本机路径形态对应复制（`..clone` 按来源决定写哪种）。相对写法只在 `..clone` 时才有意义。
+- 本地条目按源文件 mtime 判新旧：源比装好的那份新就重装；源不在了就报 `cannot read` 并给出路径，不安静跳过。
 - 全局与局部都支持：全局落到 `~/.byk/deps/@@<文件名>/`，局部落到 `<文件所在目录>/.byk/deps/@<文件名>/` 并自带 `.gitignore`（内容 `*`）。
 - 已安装清单存在 `~/.byk/deps/@@<文件名>/.byk-deps.json`，记录上次声明的快照与落点。删除它等于重新开始记账，安装会重新「接管」现有文件。
 - 只删自己装过的路径：目录里多出来的文件永远不动，只提示一句。
 - 安装不二次确认，也不需要 `--yes`；`--force` 是唯一的选项，用于「资产被外部改坏」这类清单看不出的情况。
-- 下载交给系统 `curl`，解压交给系统 `tar`；两者缺失时报错并提示安装。
+- 绝对地址交给系统 `curl`，本地路径直接 `fs::copy`（同样先落临时文件再 rename）；解压两条路都交给系统 `tar`，缺失时报错并提示安装。汇总行两种来源都写 `Downloaded`，其中来自本地复制的条数在括号里交代（`Downloaded 3 files into … (1 local)`），一条本地都没有时不出现括号——`$deps.files` 只负责取文件，动词说的是取，不是整个 `$deps`。
 - 落点圈死在 `~/.byk/deps/@@<文件名>/` 内。字段说明见 [依赖](/cli/alias/config#依赖)。
 - 带 `extract` 的条目落点是目录，用 `(extract)` 标注；重装时整目录替换，旧归档里没有的文件不会留下。省略 `to` 表示解到专属目录根，这种条目必须单独存在（它会换掉整个目录）：
 
@@ -327,16 +332,17 @@ Downloaded 2 files into ~/.byk/deps/@@tool
 - uninstall 删除整个依赖目录；目录不存在时报错。status 只读，文本写 stdout，适合管道：
 
 ```
-@@tool: 3 declared, 2 installed, 1 stale
+@@tool: 3 declared, 2 present, 1 stale
   ok        @@tool/bin/tool
   missing   @@tool/etc/cfg.json
   outdated  @@tool/dist
   stale     @@tool/bin/old-tool
+Base: https://example.com/releases/v1/
 Deps directory: ~/.byk/deps/@@tool
 Hint: run `byk @@tool..deps i` to install the missing assets
 ```
 
-`--check` 用同一套判定，把 missing / outdated / stale 报在文件条目下，不再只看目录在不在。
+`--check` 只校验声明本身：能不能解析、落点是否冲突、相对 `src` 有没有 `base`，不碰装没装。缺哪条、旧没旧是运行时状态，用 `..deps status` 看，或者在执行前跑一次 `..deps i`。
 
 ## 补全
 

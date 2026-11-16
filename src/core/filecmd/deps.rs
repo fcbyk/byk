@@ -17,7 +17,7 @@ use super::prompt::{self, Confirmation};
 use super::{FileScope, count_files, resolve_target};
 use crate::core::aliases::{follow_link, load_document};
 use crate::core::config::{Diagnostic, Level, build_builtin_table, build_file_key};
-use crate::core::deps::{self, DepEntry, PlannedAsset, parse_deps, plan_entries};
+use crate::core::deps::{self, Declaration, PlannedAsset, parse_deps, plan_entries};
 use crate::core::paths::PathLayout;
 use crate::core::sync::{self, Change};
 
@@ -77,8 +77,8 @@ pub(super) fn run(
         Action::Status => status(scope, stem, layout),
         Action::Install { force } => {
             let (target, declared) = declaration(scope, stem, layout)?;
-            let entries = declared.ok_or_else(|| no_declaration(&target))?;
-            install(scope, stem, layout, &entries, force)?;
+            let decl = declared.ok_or_else(|| no_declaration(&target))?;
+            install(scope, stem, layout, &decl, force)?;
             Ok(Outcome::Installed)
         }
         Action::Uninstall { yes } => uninstall(scope, stem, &deps_dir_of(scope, stem, layout), yes),
@@ -144,7 +144,7 @@ pub(super) fn install(
     scope: FileScope,
     stem: &str,
     layout: &PathLayout,
-    entries: &[DepEntry],
+    decl: &Declaration,
     force: bool,
 ) -> Result<(), String> {
     let deps_dir = deps_dir_of(scope, stem, layout);
@@ -155,7 +155,7 @@ pub(super) fn install(
         ensure_local_gitignore(&deps_dir)?;
     }
 
-    let assets = plan_entries(entries, &deps_dir, &key)?;
+    let assets = plan_entries(decl, &deps_dir, &key)?;
     if assets.is_empty() {
         return Err(
             "nothing to install: $deps.files is empty\nHint: run `..deps uninstall` to remove the whole directory"
@@ -163,13 +163,13 @@ pub(super) fn install(
         );
     }
 
-    let inspection = sync::inspect(entries, &assets, &deps_dir, force)?;
+    let inspection = sync::inspect(&decl.files, &assets, &deps_dir, force)?;
     if let Some(warning) = &inspection.warning {
         eprintln!("Warning: {warning}");
     }
     if inspection.diff.is_noop() {
         eprintln!(
-            "{}: {} declared, {} installed — up to date",
+            "{}: {} declared, {} present — up to date",
             key,
             assets.len(),
             assets.len()
@@ -188,7 +188,8 @@ pub(super) fn install(
         .collect();
 
     let mut written: Vec<PathBuf> = Vec::new();
-    let mut downloaded = 0usize;
+    let mut installed_now = 0usize;
+    let mut local_now = 0usize;
     let mut removed_count = 0usize;
 
     for (index, change) in &inspection.diff.steps {
@@ -210,7 +211,10 @@ pub(super) fn install(
             }
             Change::Add | Change::Update | Change::Repair => {
                 eprintln!("  {:<7} {}", verb_of(*change), describe(asset));
-                downloaded += 1;
+                installed_now += 1;
+                if asset.origin.is_local() {
+                    local_now += 1;
+                }
                 // 根上解压的落点就是专属目录，它一直都在，只能走替换路径
                 let replace = !matches!(change, Change::Add) || asset.dest == deps_dir;
                 if asset.archive {
@@ -262,10 +266,16 @@ pub(super) fn install(
     next.retain(|dest, _| inspection.desired.iter().any(|want| &want.dest == dest));
     sync::save(&deps_dir, &ordered(&next), byk_version())?;
 
-    if downloaded > 0 {
+    if installed_now > 0 {
+        // 本地条目不下载，但汇总行只说取回了几个文件——来源在括号里交代
+        let local = if local_now > 0 {
+            format!(" ({local_now} local)")
+        } else {
+            String::new()
+        };
         eprintln!(
-            "Downloaded {} into {}",
-            count_files(downloaded),
+            "Downloaded {} into {}{local}",
+            count_files(installed_now),
             deps_dir.display()
         );
     }
@@ -326,10 +336,10 @@ fn verb_of(change: Change) -> &'static str {
     }
 }
 
-/// 一行动作的右半边：`<label> <- <url>`，解压条目补 `(extract)`。
+/// 一行动作的右半边：`<label> <- <address>`，解压条目补 `(extract)`。
 fn describe(asset: &PlannedAsset) -> String {
     let how = if asset.archive { " (extract)" } else { "" };
-    format!("{} <- {}{}", asset.label, asset.url, how)
+    format!("{} <- {}{}", asset.label, asset.origin.as_str(), how)
 }
 
 fn label_of(key: &str, dest: &str) -> String {
@@ -440,14 +450,14 @@ fn failure(message: String, written: &[PathBuf], scope: FileScope, stem: &str) -
 
 fn status(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<Outcome, String> {
     let (target, declared) = declaration(scope, stem, layout)?;
-    let Some(entries) = declared else {
+    let Some(decl) = declared else {
         return Err(no_declaration(&target));
     };
 
     let deps_dir = deps_dir_of(scope, stem, layout);
     let key = build_file_key(stem, scope.is_global());
-    let assets = plan_entries(&entries, &deps_dir, &key)?;
-    let inspection = sync::inspect(&entries, &assets, &deps_dir, false)?;
+    let assets = plan_entries(&decl, &deps_dir, &key)?;
+    let inspection = sync::inspect(&decl.files, &assets, &deps_dir, false)?;
     if let Some(warning) = &inspection.warning {
         eprintln!("Warning: {warning}");
     }
@@ -465,25 +475,23 @@ fn status(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<Outcome, 
         rows.push(("stale", label_of(&key, &entry.dest)));
     }
 
-    let installed = rows.iter().filter(|(state, _)| *state == "ok").count();
+    let present = rows.iter().filter(|(state, _)| *state == "ok").count();
     let stale = inspection.diff.removed.len();
     let todo = rows
         .iter()
         .filter(|(state, _)| matches!(*state, "missing" | "outdated"))
         .count();
 
-    let mut output = format!(
-        "{}: {} declared, {} installed",
-        key,
-        assets.len(),
-        installed
-    );
+    let mut output = format!("{}: {} declared, {} present", key, assets.len(), present);
     if stale > 0 {
         output.push_str(&format!(", {stale} stale"));
     }
     output.push('\n');
     for (state, label) in &rows {
         output.push_str(&format!("  {:<9}{label}\n", state));
+    }
+    if let Some(base) = &decl.base {
+        output.push_str(&format!("Base: {}\n", base.as_str()));
     }
     output.push_str(&format!("Deps directory: {}\n", deps_dir.display()));
 
@@ -507,7 +515,7 @@ pub(super) fn declaration(
     scope: FileScope,
     stem: &str,
     layout: &PathLayout,
-) -> Result<(PathBuf, Option<Vec<DepEntry>>), String> {
+) -> Result<(PathBuf, Option<Declaration>), String> {
     let target = resolve_target(scope, stem, layout)?;
     if !target.is_file() {
         return Err(format!("File not found: {}", target.display()));
@@ -539,7 +547,7 @@ pub(super) fn declaration(
     let Some(value) = data.get("$deps") else {
         return Ok((target, None));
     };
-    parse_deps(value).map(|entries| (target, Some(entries)))
+    parse_deps(value).map(|decl| (target, Some(decl)))
 }
 
 fn no_declaration(target: &Path) -> String {

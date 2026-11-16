@@ -70,7 +70,7 @@ Scanned 2 alias files; 1 has problems (1 error).
   error: cannot load link target /Users/me/.byk/alias/missing.byk.json
 ```
 
-没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。`Scanned` 统计的是遇到的候选 `*.byk.json` 目录项，包括非法文件名和断链的符号链接。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、非法文件名、断链符号链接、`$mode`、`$var` 等。`--check` 不带别名参数，多写会报 `check takes no arguments`。
+没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。`Scanned` 统计的是遇到的候选 `*.byk.json` 目录项，包括非法文件名和断链的符号链接。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、非法文件名、断链符号链接、`$mode`、`$var`、`$deps` 声明（含 `base` 与落点冲突）等。它只查配置本身——依赖装没装是运行时状态，用 `..deps status` 看。`--check` 不带别名参数，多写会报 `check takes no arguments`。
 
 ## 执行别名
 

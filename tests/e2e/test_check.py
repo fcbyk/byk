@@ -248,3 +248,34 @@ def test_api_check_rejects_arguments(runner, tmp_path):
     assert result.returncode == 1
     assert "takes no arguments" in result.stderr
     assert result.stdout == ""
+
+
+def test_check_reports_a_relative_src_without_base(runner, tmp_path):
+    runner.prepare_alias_file(
+        "rel", json.dumps({"$deps": {"files": ["./tool"]}, "hi": "echo hi"})
+    )
+
+    result = runner.run("--check", cwd=str(tmp_path))
+
+    assert result.returncode == 1
+    assert "$deps ignored" in result.stdout
+    assert 'relative path but "$deps.base" is not set' in result.stdout
+
+
+def test_check_accepts_relative_src_with_a_base(runner, tmp_path):
+    runner.prepare_alias_file(
+        "rel",
+        json.dumps(
+            {"$deps": {"base": "https://example.com/x/", "files": ["./tool"]}, "hi": "echo"}
+        ),
+    )
+
+    result = runner.run("--check", cwd=str(tmp_path))
+
+    # 声明本身合法就够了。装没装是运行时状态，`--check` 只管配置：
+    # 一个依赖都没装也不该让一个语法正确的文件变成"有问题"
+    assert result.returncode == 0
+    assert "no problems" in result.stdout
+    assert "$deps" not in result.stdout
+
+
