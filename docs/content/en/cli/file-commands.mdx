@@ -244,9 +244,10 @@ Repository shorthand shape:
 - The destination must not exist; `..clone` never overwrites.
 - A local source is validated first: it must be a JSON object, and a link file (array) is rejected.
 - The result is an independent copy with no relationship to the source. Use `..link` for a live reference.
+- Aliases and groups marked `$clone: false` are dropped from the copy; marked groups keep children that re-expose themselves with `$clone: true`, and the tag never appears in the result. If nothing would remain, the clone is refused before writing. A copy that strips anything, or carries a tag at all, is re-serialised with keys sorted. `$private` does not affect cloning.
 - Either source freezes `$deps.base` into an absolute address and prints `Recorded $deps.base = …`. The form follows the source: **remote** writes an absolute http(s) directory URL, **local** writes a local absolute directory path. The fill-in rules are identical — the source file's directory when absent, resolved against the source file when relative (`.` / `../` / `sub/dir`), kept as-is when already absolute with only the trailing `/` added.
 - Neither form crosses into the other: a remote source rejects a local-path `base` (`/x`, `C:/x`), which is why **an alias file taken from the network cannot read local files**; a local source keeps an absolute URL as-is, and those assets still come off the network.
-- A `base` containing variables fails outright: a clone has no variable table, so `${CDN}` cannot be evaluated and guessing would bake a bogus address into the file. Writing it back re-serialises the whole document (keys sorted); files without `$deps` stay byte-for-byte copies.
+- A `base` containing variables fails outright: a clone has no variable table, so `${CDN}` cannot be evaluated and guessing would bake a bogus address into the file. Writing it back re-serialises the whole document (keys sorted); files with neither `$deps` nor `$clone` stay byte-for-byte copies.
 - Remote sources require `curl`; without it you get an install hint. A 404 reports `Remote source not found: <url>` with a hint to check the repository, ref, and path — a directory path missing its trailing `/` lands here too.
 - Options may come before or after the source: `-gh user/repo@v1/tool -d` equals `-d -gh ...`.
 

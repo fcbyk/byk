@@ -18,6 +18,7 @@ type AliasObject = {
   $description?: string;
   $recursive?: boolean;
   $private?: boolean;
+  $clone?: boolean;
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
@@ -28,6 +29,7 @@ type AliasFileJSON =
       $cwd?: string;           // file- or group-level working directory, inherited by child aliases
       $mode?: 'normal' | 'interactive' | 'silent';  // file- or group-level mode, inherited by child aliases
       $private?: boolean;      // file- or group-level visibility, inherited by child aliases; private aliases stay out of the merged space
+      $clone?: boolean;        // file- or group-level copy tag, inherited by child aliases; false keeps a subtree out of ..clone copies
       $paths?: string[];       // file-level PATH directories, inherited by child aliases
       $var?: Record<string, string | Record<string, string>>;  // file-level variables
       [key: string]: string | AliasObject | number | boolean | undefined;
@@ -35,7 +37,7 @@ type AliasFileJSON =
   | [string];  // single link: an array holding exactly one path
 ```
 
-Only these six `$`-prefixed keys are interpreted at file level; any other `$xxx` is never treated as an alias and never joins the merged space — it is kept for other tools to store configuration. A `${xxx}` inside a string is handled by [variables](#variables), and undeclared names are passed to the shell verbatim.
+Only these seven `$`-prefixed keys are interpreted at file level; any other `$xxx` is never treated as an alias and never joins the merged space — it is kept for other tools to store configuration. A `${xxx}` inside a string is handled by [variables](#variables), and undeclared names are passed to the shell verbatim.
 
 ## Alias Objects
 
@@ -68,9 +70,10 @@ byk 开发.测试
 | `$description` | string | Help-page description text (not inheritable) |
 | `$recursive` | boolean | Allow re-entering this alias on the call chain (not inheritable), defaults to `false` — see [Recursion Guard](#recursion-guard) |
 | `$private` | boolean | Keep this subtree out of the merged space, reachable only through exact calls (inheritable), defaults to `false` — see [Visibility](#visibility) |
+| `$clone` | boolean | Keep this subtree out of `..clone` copies (inheritable), defaults to `true` — see [Cloning](#cloning) |
 
 :::note
-An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$mode` / `$private` but no `$cmd` is a **group with inherited properties** and is not executable itself.
+An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$mode` / `$private` / `$clone` but no `$cmd` is a **group with inherited properties** and is not executable itself.
 :::
 
 ### Working Directory (cwd)
@@ -373,7 +376,7 @@ Neither side crosses into the other: **a remote clone only ever writes the URL f
 
 The fill-in rules are the same for both, only the base point and the product differ: absent means the source file's directory, a relative form (`.`, `../`, `sub/dir`) is resolved against the source file, and an absolute address (URL or path) is kept as-is with only the trailing `/` added. The base point is always the **source file's** directory, never the destination directory — the relative paths in `files` were written against the source document, and those files are not sitting next to `~/.byk/alias/`.
 
-Writing `base` back makes clone re-serialise the document (keys sorted). Files without `$deps` are untouched and stay byte-for-byte copies; when `base` already holds the value about to be written, nothing is rewritten either, so cloning twice produces no diff. **Cloning rejects variables in `base`.** A clone has no variable table, so `"base": "${CDN}"` cannot be evaluated; guessing a value would bake a bogus address into the file, so clone fails and tells you to fix the source. (Reading is laxer: `..deps i` expands variables first, so a hand-written `${CDN}` that resolves to an absolute address still works. The restriction is about clone, and the editor schema follows the clone side.) `base` is meant to be a literal written by a program: clone freezes it once, and every later reader sees the same thing.
+Writing `base` back makes clone re-serialise the document (keys sorted). Files with neither `$deps` nor `$clone` are untouched and stay byte-for-byte copies; when `base` already holds the value about to be written, nothing is rewritten either, so cloning twice produces no diff. **Cloning rejects variables in `base`.** A clone has no variable table, so `"base": "${CDN}"` cannot be evaluated; guessing a value would bake a bogus address into the file, so clone fails and tells you to fix the source. (Reading is laxer: `..deps i` expands variables first, so a hand-written `${CDN}` that resolves to an absolute address still works. The restriction is about clone, and the editor schema follows the clone side.) `base` is meant to be a literal written by a program: clone freezes it once, and every later reader sees the same thing.
 
 A local `base` is not portable: it names an absolute path on this machine and means nothing on another. Local dependencies are meant to be local development aids — do not expect a shared alias file to keep working.
 
@@ -645,6 +648,28 @@ To keep a whole file out of the merged space, put `$private` at the file root:
 
 :::note
 `$private` only affects the merged space; exact calls always work, including aliases inside a private group.
+:::
+
+### Cloning
+
+`$clone: false` marks a subtree as personal: `..clone` never copies it. It is a copy-time tag only — it does not affect the merged space, execution, completion, or any other lookup.
+
+Like `$private`, it has three levels of inheritance: file → group → alias, with the closest level winning. A child can set `true` to expose its subtree again.
+
+```json title="run.byk.json"
+{
+  "$clone": false,
+  "shared": { "$clone": true, "whoami": "whoami" },
+  "deploy": "deploy --prod"
+}
+```
+
+Cloning this file yields only `shared.whoami`; `deploy` is dropped. If nothing would be left, `..clone` refuses and writes no file. The tag itself never appears in the copy.
+
+`$private` and `$clone` are independent: write both when an alias should stay out of the merged space **and** out of cloned copies.
+
+:::note
+`$clone` only governs `byk ..clone`. `cp`, git, and fetching the file by other means still see the original bytes — it is a declaration, not encryption.
 :::
 
 ### Exact Execution Syntax

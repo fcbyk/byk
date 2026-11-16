@@ -46,6 +46,78 @@ def test_clone_copies_source_bytes(runner):
     )
 
 
+def test_clone_skips_aliases_marked_clone_false(runner):
+    source = runner.prepare_alias_json(
+        "src",
+        {
+            "keep": "echo keep",
+            "mine": {"$cmd": "echo mine", "$clone": False},
+            "group": {
+                "$clone": False,
+                "hidden": "echo hidden",
+                "shared": {"$clone": True, "run": "echo run"},
+            },
+        },
+    )
+
+    result = runner.run("@@ops..clone", str(source))
+
+    assert result.returncode == 0
+    assert "Skipped 2 aliases marked $clone: false" in result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "keep": "echo keep",
+        "group": {"shared": {"run": "echo run"}},
+    }
+
+
+def test_clone_refuses_when_every_alias_is_marked(runner):
+    source = runner.prepare_alias_json(
+        "src", {"$clone": False, "deploy": "echo hi"}
+    )
+
+    result = runner.run("@@ops..clone", str(source))
+
+    assert result.returncode == 1
+    assert "Nothing to clone" in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_file_level_false_allows_reexposed_children(runner):
+    source = runner.prepare_alias_json(
+        "src",
+        {
+            "$clone": False,
+            "mine": "echo mine",
+            "shared": {"$clone": True, "run": "echo run"},
+        },
+    )
+
+    result = runner.run("@@ops..clone", str(source))
+
+    assert result.returncode == 0
+    assert "Skipped 1 alias marked $clone: false" in result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "shared": {"run": "echo run"}
+    }
+
+
+def test_remote_clone_strips_aliases_marked_clone_false(runner, tmp_path):
+    payload = (
+        b'{"keep": "echo keep",'
+        b' "mine": {"$cmd": "echo mine", "$clone": false}}'
+    )
+    env, _ = install_fake_curl(tmp_path, payload=payload)
+
+    result = runner.run(
+        "@@ops..clone", "https://example.com/tool.byk.json", env=env
+    )
+
+    assert result.returncode == 0
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "keep": "echo keep"
+    }
+
+
 def test_clone_global_name(runner):
     runner.prepare_alias_json("src", {"build": "echo hi"})
 

@@ -3,7 +3,7 @@
 ### 新功能
 
 - **`$deps`**: 别名文件可以声明依赖资产，装到该文件自己的目录（全局 `~/.byk/deps/<key>/`，局部 `<文件目录>/.byk/deps/@<文件>/`）。`files[].src` 可以写相对路径，由 `base` 指明基准目录；`base` 既可以是 http(s) 地址，也可以是本机目录，前者走 `curl`、后者直接复制，`extract` 条目交给 `tar`。`..clone -d` 与 `..deps install` 一次装好，`..deps status` 报告现状；安装按声明收敛，详情见文档
-
+- **`$clone`**: 新增可继承字段，让文件、分组或别名不进入 `..clone` 的副本；本机执行与合并空间不受影响，剔除后为空的 clone 会被拒绝
 - **`__api__ expand`**: 新增 `--no-builtins`，只展开文件自己的 `$var`，不注入 `byk_dir` / `work_dir` / `file_dir`
 
 ## v0.8.1 (2026-11-14)

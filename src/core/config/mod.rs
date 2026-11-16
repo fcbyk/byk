@@ -12,8 +12,8 @@ mod vars;
 pub use diagnostic::{Diagnostic, DiagnosticReport, Level};
 pub use format::to_alias_definition;
 pub(crate) use format::{
-    build_file_key, filter_invalid_keys, is_alias_value, is_valid_private, parse_priority,
-    parse_private, to_alias_value, validate_filename,
+    build_file_key, filter_invalid_keys, is_alias_value, is_valid_clone, is_valid_private,
+    parse_clone, parse_priority, parse_private, to_alias_value, validate_filename,
 };
 pub(crate) use inherit::apply_inherited;
 pub use types::*;

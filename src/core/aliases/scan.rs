@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use crate::core::config::{
     AliasFile, DEPS_DIR_VAR, Diagnostic, FILE_DIR_VAR, Level, Mode, VarTable, build_file_key,
-    describe_issue, filter_invalid_keys, is_valid_private, parse_priority, parse_private,
-    preprocess_vars, validate_filename,
+    describe_issue, filter_invalid_keys, is_valid_clone, is_valid_private, parse_priority,
+    parse_private, preprocess_vars, validate_filename,
 };
 use crate::core::deps;
 use crate::utils::path::{canonical, dir_of, expand_home};
@@ -432,6 +432,19 @@ fn parse_alias_file(
         }
     };
 
+    // $clone 只被 `..clone` 读取：扫描阶段不消费，校验后移除以免泄漏进别名数据
+    if let Some(raw) = obj.remove("$clone")
+        && !is_valid_clone(&raw)
+    {
+        push_doc_diagnostic(
+            diagnostics,
+            Level::Warning,
+            owner,
+            doc,
+            format!("$clone must be a boolean; {} is treated as true", raw),
+        );
+    }
+
     let inherited_paths = match obj.remove("$paths") {
         None => Vec::new(),
         Some(serde_json::Value::Array(items)) => {
@@ -612,6 +625,21 @@ fn validate_aliases(
                 format!(
                     "\"{}\": $private must be a boolean; {} is treated as false",
                     path, private
+                ),
+            );
+        }
+
+        if let Some(clone) = inner.get("$clone")
+            && !is_valid_clone(clone)
+        {
+            push_doc_diagnostic(
+                diagnostics,
+                Level::Warning,
+                owner,
+                doc,
+                format!(
+                    "\"{}\": $clone must be a boolean; {} is treated as true",
+                    path, clone
                 ),
             );
         }
@@ -814,6 +842,32 @@ mod tests {
         std::fs::write(&file, r#"{"build": "make"}"#).unwrap();
         let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
         assert!(!files[0].inherited_private);
+    }
+
+    #[test]
+    fn clone_tag_is_not_leaked_into_aliases() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(&file, r#"{"$clone": false, "build": "make"}"#).unwrap();
+        let files = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new()).files;
+        assert_eq!(files.len(), 1);
+        assert!(files[0].aliases.contains_key("build"));
+        assert!(!files[0].aliases.contains_key("$clone"));
+    }
+
+    #[test]
+    fn clone_invalid_value_is_reported_as_treated_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.byk.json");
+        std::fs::write(&file, r#"{"$clone": "ture", "build": "make"}"#).unwrap();
+        let result = scan_alias_files(dir.path(), false, dir.path(), &VarTable::new());
+
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.level == Level::Warning
+                && diagnostic
+                    .message
+                    .contains("$clone must be a boolean; \"ture\" is treated as true")
+        }));
     }
 
     #[test]

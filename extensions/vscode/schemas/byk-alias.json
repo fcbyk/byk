@@ -24,6 +24,10 @@
           "description": "为 true 时不进入合并空间，只能通过 @文件名.key 精确调用。子别名自动继承；子级写 false 可重新暴露。默认 false。",
           "type": "boolean"
         },
+        "$clone": {
+          "description": "为 false 时不进入 ..clone 的副本，整份文件默认不可复制。子别名自动继承；子级写 true 可重新暴露。默认 true。只影响 ..clone，不影响合并空间与执行。",
+          "type": "boolean"
+        },
         "$cwd": {
           "description": "文件级工作目录，所有子别名未单独指定 $cwd 时会自动继承。写 \"${work_dir}\" 可回到调用 byk 时的目录。",
           "type": "string"
@@ -120,7 +124,7 @@
     },
     "AliasObject": {
       "title": "别名对象（对象模式）",
-      "description": "使用 $cmd / $cwd / $mode / $private / $description / $recursive 系统字段配置别名，可嵌套子别名。",
+      "description": "使用 $cmd / $cwd / $mode / $private / $clone / $description / $recursive 系统字段配置别名，可嵌套子别名。",
       "type": "object",
       "properties": {
         "$cmd": {
@@ -129,6 +133,10 @@
         },
         "$private": {
           "description": "为 true 时不进入合并空间，只能精确调用；子级自动继承，写 false 可重新暴露。",
+          "type": "boolean"
+        },
+        "$clone": {
+          "description": "为 false 时不进入 ..clone 的副本；子级自动继承，写 true 可重新暴露。默认 true。只影响 ..clone。",
           "type": "boolean"
         },
         "$cwd": {

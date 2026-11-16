@@ -8,10 +8,10 @@
 //! 这是 base 唯一一次能被解释的时刻，落盘之后的文件没有自己的位置信息。
 //! 两条路走不同的冻结函数，远程永远产不出本地路径形态。
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use super::{FileScope, create, deps, resolve_target, source};
-use crate::core::config::build_file_key;
+use crate::core::config::{build_file_key, is_alias_value, parse_clone};
 use crate::core::deps::Origin;
 use crate::core::paths::PathLayout;
 
@@ -32,11 +32,22 @@ pub(super) fn run(
         SourceArg::Forge(forge, spec) => source::load(&source::forge_url(forge, &spec)?, layout)?,
     };
     let path = create::destination(scope, stem, layout)?;
-    let (body, recorded) = prepare(&loaded.data, &loaded.origin)?;
-    create::create(&path, &body)?;
+    let prepared = prepare(&loaded.data, &loaded.origin)?;
+    create::create(&path, &prepared.body)?;
     // 先报落盘结果：后面的装依赖可能失败，但这行必须已经出现过。
     eprintln!("Cloned {} to {}", loaded.label, path.display());
-    if let Some(base) = recorded {
+    if prepared.skipped > 0 {
+        eprintln!(
+            "Skipped {} {} marked $clone: false",
+            prepared.skipped,
+            if prepared.skipped == 1 {
+                "alias"
+            } else {
+                "aliases"
+            }
+        );
+    }
+    if let Some(base) = prepared.base {
         eprintln!("Recorded $deps.base = {base}");
     }
 
@@ -67,42 +78,148 @@ fn install_deps(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<(),
     deps::install(scope, stem, layout, &decl, false).map_err(fail)
 }
 
-/// clone 的写回：把 `$deps.base` 冻结成绝对地址。
+/// clone 的写回：剔除 `$clone: false` 的子树，并把 `$deps.base` 冻结成绝对地址。
 ///
-/// 冻结成什么由来源决定：远程来源写 http(s) 目录 URL，本地来源写本机绝对路径。
+/// 两种写入理由分开记：`removed` 决定「什么都没剩下」是否算失败，
+/// `changed` 只决定要不要重新序列化。只写了 `$clone: true` 或 `false` 标记、
+/// 却没真删内容的文件仍然照常 clone，只是标记不会留在副本里。
+///
+/// base 冻结成什么由来源决定：远程来源写 http(s) 目录 URL，本地来源写本机绝对路径。
 /// 这条分叉就是安全边界的全部——远程 clone 产不出本地路径形态，所以网上拿来
 /// 的别名文件读不了本机文件。
-///
-/// 返回落盘内容与记下来的 base。三种情况原样返回字节，保住「内容是独立副本」
-/// 这条原则：没有 `$deps`、`$deps` 不是对象（交给 `..deps i` 报错）、base 已经
-/// 等于将要写入的值（重复 clone 不再产生 diff）。
-fn prepare(data: &[u8], origin: &Origin) -> Result<(Vec<u8>, Option<String>), String> {
+#[derive(Debug)]
+struct Prepared {
+    body: Vec<u8>,
+    base: Option<String>,
+    skipped: usize,
+}
+
+fn prepare(data: &[u8], origin: &Origin) -> Result<Prepared, String> {
     let mut root: Value = serde_json::from_slice(data)
         .map_err(|e| format!("Failed to parse source {}: {e}", origin.as_str()))?;
 
-    let Some(deps_value) = root.get_mut("$deps") else {
-        return Ok((data.to_vec(), None));
-    };
-    let Some(object) = deps_value.as_object_mut() else {
-        return Ok((data.to_vec(), None));
-    };
+    let strip = strip_clone_disabled(&mut root)?;
+    let mut changed = strip.changed;
+    let mut recorded = None;
 
-    let current = object.get("base").cloned();
-    // 变量在这里没有表可查，两路冻结都会直接拒绝：base 只该由程序写成
-    // 字面量，猜一个写死只会把作者意图烧成假地址。
-    let base = match origin {
-        Origin::Url(url) => crate::core::deps::freeze_remote_base(current.as_ref(), url)?,
-        Origin::File(path) => crate::core::deps::freeze_local_base(current.as_ref(), path)?,
-    };
-    if current.as_ref().and_then(Value::as_str) == Some(base.as_str()) {
-        return Ok((data.to_vec(), None));
+    if let Some(object) = root.get_mut("$deps").and_then(Value::as_object_mut) {
+        let current = object.get("base").cloned();
+        // 变量在这里没有表可查，两路冻结都会直接拒绝：base 只该由程序写成
+        // 字面量，猜一个写死只会把作者意图烧成假地址。
+        let base = match origin {
+            Origin::Url(url) => crate::core::deps::freeze_remote_base(current.as_ref(), url)?,
+            Origin::File(path) => crate::core::deps::freeze_local_base(current.as_ref(), path)?,
+        };
+        if current.as_ref().and_then(Value::as_str) != Some(base.as_str()) {
+            object.insert("base".to_string(), Value::String(base.clone()));
+            changed = true;
+            recorded = Some(base);
+        }
     }
 
-    object.insert("base".to_string(), Value::String(base.clone()));
-    let mut body = serde_json::to_string_pretty(&root)
+    let body = if changed {
+        encode(&root)?
+    } else {
+        // 没有标记、没有需要冻结的 base：保持字节副本，连格式都不碰
+        data.to_vec()
+    };
+    Ok(Prepared {
+        body,
+        base: recorded,
+        skipped: strip.skipped,
+    })
+}
+
+fn encode(root: &Value) -> Result<Vec<u8>, String> {
+    let mut body = serde_json::to_string_pretty(root)
         .map_err(|e| format!("Failed to encode the clone: {e}"))?;
     body.push('\n');
-    Ok((body.into_bytes(), Some(base)))
+    Ok(body.into_bytes())
+}
+
+/// 按 `$clone` 的继承规则剔除内容；根上没写时默认 `true`。
+///
+/// 与 `$private` 不同，`false` 的**分组**不整段删除：它只是给子级一个默认值，
+/// 子级写 `true` 仍可重新暴露。真正被删的是别名叶子和剪空后的分组骨架。
+fn strip_clone_disabled(root: &mut Value) -> Result<Strip, String> {
+    let Some(object) = root.as_object_mut() else {
+        return Ok(Strip::default());
+    };
+    let root_clone = object.get("$clone").map(parse_clone).unwrap_or(true);
+    let mut strip = Strip::default();
+    strip_object(object, root_clone, &mut strip);
+    if object.remove("$clone").is_some() {
+        strip.changed = true;
+    }
+
+    // 全部剪空时拒绝落盘：`..clone` 不该产出一个空对象
+    let empty = object.keys().all(|key| key.starts_with('$'));
+    if empty && (!root_clone || strip.removed) {
+        return Err("Nothing to clone: every alias is marked $clone: false".to_string());
+    }
+    Ok(strip)
+}
+
+#[derive(Default)]
+struct Strip {
+    /// 需要重新序列化：删过内容，或删过 `$clone` 标记
+    changed: bool,
+    /// 真的删过内容；决定「剪空」是否算失败
+    removed: bool,
+    /// 被删掉的别名数量，用于 stderr 报告
+    skipped: usize,
+}
+
+fn strip_object(object: &mut Map<String, Value>, inherited: bool, strip: &mut Strip) {
+    let keys: Vec<String> = object
+        .keys()
+        .filter(|key| !key.starts_with('$'))
+        .cloned()
+        .collect();
+
+    for key in keys {
+        let remove = match object.get_mut(&key) {
+            None => false,
+            Some(Value::Object(inner)) => {
+                // 节点自己的 $clone 优先于父级给的默认值
+                let node_clone = inner.get("$clone").map(parse_clone).unwrap_or(inherited);
+                let is_alias = inner.contains_key("$cmd");
+                if !node_clone && is_alias {
+                    strip.removed = true;
+                    strip.skipped += 1;
+                    true
+                } else {
+                    let removed_before = strip.removed;
+                    strip_object(inner, node_clone, strip);
+                    let children_removed = strip.removed && !removed_before;
+                    if inner.remove("$clone").is_some() {
+                        strip.changed = true;
+                    }
+                    // 分组失去全部子节点才剪掉；本来就没写标记的空分组保持原样
+                    !is_alias
+                        && inner.keys().all(|key| key.starts_with('$'))
+                        && (!node_clone || children_removed)
+                }
+            }
+            Some(value) => {
+                if inherited {
+                    false
+                } else {
+                    if is_alias_value(value) {
+                        strip.skipped += 1;
+                    }
+                    strip.removed = true;
+                    true
+                }
+            }
+        };
+
+        if remove {
+            object.remove(&key);
+            strip.changed = true;
+            strip.removed = true;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -166,6 +283,7 @@ fn forge_flag(flag: &str) -> Option<source::Forge> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::fs;
 
     fn test_layout(temp: &tempfile::TempDir) -> PathLayout {
@@ -434,16 +552,23 @@ mod tests {
     }
 
     fn prepared_from(content: &str, origin: &Origin) -> (Value, Option<String>) {
-        let (bytes, base) = prepare(content.as_bytes(), origin).unwrap();
-        (serde_json::from_slice(&bytes).unwrap(), base)
+        let prepared = prepare(content.as_bytes(), origin).unwrap();
+        (
+            serde_json::from_slice(&prepared.body).unwrap(),
+            prepared.base,
+        )
     }
 
     #[test]
     fn prepare_leaves_documents_without_deps_untouched() {
         let content = "{ \"z\": \"echo z\",\n  \"a\": \"echo a\" }";
-        let (bytes, base) = prepare(content.as_bytes(), &remote()).unwrap();
-        assert_eq!(base, None);
-        assert_eq!(bytes, content.as_bytes(), "没有 $deps 就是纯字节副本");
+        let prepared = prepare(content.as_bytes(), &remote()).unwrap();
+        assert_eq!(prepared.base, None);
+        assert_eq!(
+            prepared.body,
+            content.as_bytes(),
+            "没有 $deps 就是纯字节副本"
+        );
     }
 
     #[test]
@@ -488,10 +613,10 @@ mod tests {
     #[test]
     fn prepare_keeps_an_authors_absolute_base() {
         let content = r#"{"$deps": {"base": "https://cdn.example.com/x/", "files": ["a"]}}"#;
-        let (bytes, base) = prepare(content.as_bytes(), &remote()).unwrap();
+        let prepared = prepare(content.as_bytes(), &remote()).unwrap();
 
-        assert_eq!(base, None, "已经是对的就不改，也不报");
-        assert_eq!(bytes, content.as_bytes());
+        assert_eq!(prepared.base, None, "已经是对的就不改，也不报");
+        assert_eq!(prepared.body, content.as_bytes());
     }
 
     #[test]
@@ -613,5 +738,137 @@ mod tests {
             fs::read_to_string(layout.alias_dir.join("ops.byk.json")).unwrap(),
             content
         );
+    }
+
+    // ---------- prepare：$clone 裁剪 ----------
+
+    fn strip(content: &str) -> Prepared {
+        prepare(content.as_bytes(), &remote()).unwrap()
+    }
+
+    #[test]
+    fn prepare_drops_marked_aliases_and_all_tags() {
+        let prepared =
+            strip(r#"{"keep": "echo keep", "mine": {"$clone": false, "$cmd": "echo mine"}}"#);
+        let doc: Value = serde_json::from_slice(&prepared.body).unwrap();
+
+        assert_eq!(doc, json!({"keep": "echo keep"}));
+        assert_eq!(prepared.skipped, 1);
+    }
+
+    #[test]
+    fn prepare_keeps_the_group_skeleton_for_reexposed_children() {
+        let prepared = strip(
+            r#"{
+                "$clone": false,
+                "mine": "echo mine",
+                "group": {
+                    "$clone": false,
+                    "hidden": "echo hidden",
+                    "shared": {"$clone": true, "run": "echo run"}
+                }
+            }"#,
+        );
+        let doc: Value = serde_json::from_slice(&prepared.body).unwrap();
+
+        assert_eq!(doc, json!({"group": {"shared": {"run": "echo run"}}}));
+        assert_eq!(prepared.skipped, 2);
+    }
+
+    #[test]
+    fn prepare_removes_a_true_tag_without_counting_it_as_skipped() {
+        let prepared = strip(r#"{"$clone": true, "build": "echo build"}"#);
+        let doc: Value = serde_json::from_slice(&prepared.body).unwrap();
+
+        assert_eq!(doc, json!({"build": "echo build"}));
+        assert_eq!(prepared.skipped, 0);
+        assert_eq!(prepared.base, None);
+    }
+
+    #[test]
+    fn prepare_refuses_when_every_alias_is_marked() {
+        for content in [
+            r#"{"$clone": false, "mine": "echo mine"}"#,
+            r#"{"mine": {"$clone": false, "$cmd": "echo mine"}}"#,
+            r#"{"group": {"$clone": false, "mine": "echo mine"}}"#,
+        ] {
+            let err = prepare(content.as_bytes(), &remote()).unwrap_err();
+            assert_eq!(
+                err, "Nothing to clone: every alias is marked $clone: false",
+                "{content}"
+            );
+        }
+    }
+
+    #[test]
+    fn prepare_still_clones_an_empty_document() {
+        // 没写过 $clone 的空文件维持原行为：clone 出同样的字节副本
+        let prepared = prepare(b"{}", &remote()).unwrap();
+        assert_eq!(prepared.body, b"{}");
+    }
+
+    #[test]
+    fn prepare_keeps_unmarked_empty_groups() {
+        // 只有被标记过、或子级被剔除过的空分组才剪掉
+        let content = br#"{"group": {}, "keep": "echo keep"}"#;
+        let prepared = prepare(content, &remote()).unwrap();
+        assert_eq!(prepared.body, content);
+    }
+
+    #[test]
+    fn prepare_strips_and_freezes_the_base_in_one_write() {
+        let prepared = strip(
+            r#"{
+                "$clone": false,
+                "mine": "echo mine",
+                "keep": {"$cmd": "echo keep", "$clone": true},
+                "$deps": {"files": ["https://e.com/tool"]}
+            }"#,
+        );
+        let doc: Value = serde_json::from_slice(&prepared.body).unwrap();
+
+        assert!(doc.get("mine").is_none());
+        assert_eq!(doc["keep"]["$cmd"], "echo keep");
+        assert!(doc["keep"].get("$clone").is_none());
+        assert_eq!(
+            doc["$deps"]["base"],
+            "https://hello.com/sdsd/asfdsg/qwe/we/"
+        );
+        assert_eq!(prepared.skipped, 1);
+    }
+
+    #[test]
+    fn prepare_strips_local_sources_the_same_way() {
+        let temp = tempfile::tempdir().unwrap();
+        let prepared = prepare(
+            br#"{"keep": "echo keep", "mine": {"$clone": false, "$cmd": "echo mine"}}"#,
+            &local(temp.path()),
+        )
+        .unwrap();
+        let doc: Value = serde_json::from_slice(&prepared.body).unwrap();
+
+        assert_eq!(doc, json!({"keep": "echo keep"}));
+    }
+
+    #[test]
+    fn run_refuses_when_nothing_is_cloneable() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = test_layout(&temp);
+        let source = source_file(
+            temp.path(),
+            "src.byk.json",
+            r#"{"$clone": false, "mine": "echo mine"}"#,
+        );
+
+        let err = run(
+            FileScope::Global,
+            "ops",
+            &args(&[source.to_str().unwrap()]),
+            &layout,
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "Nothing to clone: every alias is marked $clone: false");
+        assert!(!layout.alias_dir.join("ops.byk.json").exists());
     }
 }

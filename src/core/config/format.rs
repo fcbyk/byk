@@ -70,24 +70,34 @@ pub(crate) fn parse_priority(raw: &serde_json::Value, default: i32) -> i32 {
     }
 }
 
-/// 解析 `$private`：布尔为准，`"true"` / `1` 之类也认，其余按假处理。
+/// 宽容布尔：布尔为准，`"true"` / `1` 之类也认，其余回落到调用方给的默认值。
 ///
-/// 与 `$recursive` 同一套宽容规则——写错不该让别名从合并空间里莫名消失
+/// 与 `$recursive` 同一套规则——写错不该让别名从合并空间里莫名消失
 /// 或莫名出现，布尔语义以最直观的写法为准。
-pub(crate) fn parse_private(raw: &serde_json::Value) -> bool {
+fn parse_bool(raw: &serde_json::Value, default: bool) -> bool {
     match raw {
         serde_json::Value::Bool(b) => *b,
-        serde_json::Value::String(s) => matches!(
-            s.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
+        serde_json::Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => true,
+            "0" | "false" | "no" | "off" => false,
+            _ => default,
+        },
         serde_json::Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        _ => false,
+        _ => default,
     }
 }
 
-/// `$private` 是否是合法写法；非法值按 `false` 处理，由调用方负责告警。
-pub(crate) fn is_valid_private(raw: &serde_json::Value) -> bool {
+/// 解析 `$private`：默认 `false`（可见）。
+pub(crate) fn parse_private(raw: &serde_json::Value) -> bool {
+    parse_bool(raw, false)
+}
+
+/// 解析 `$clone`：默认 `true`（可被复制）——没写或写错都保持最直观的行为。
+pub(crate) fn parse_clone(raw: &serde_json::Value) -> bool {
+    parse_bool(raw, true)
+}
+
+fn is_valid_bool(raw: &serde_json::Value) -> bool {
     match raw {
         serde_json::Value::Bool(_) => true,
         serde_json::Value::Number(n) => n.as_f64().is_some(),
@@ -97,6 +107,16 @@ pub(crate) fn is_valid_private(raw: &serde_json::Value) -> bool {
         ),
         _ => false,
     }
+}
+
+/// `$private` 是否是合法写法；非法值按 `false` 处理，由调用方负责告警。
+pub(crate) fn is_valid_private(raw: &serde_json::Value) -> bool {
+    is_valid_bool(raw)
+}
+
+/// `$clone` 是否是合法写法；非法值按 `true` 处理，由调用方负责告警。
+pub(crate) fn is_valid_clone(raw: &serde_json::Value) -> bool {
+    is_valid_bool(raw)
 }
 
 /// 递归过滤：丢掉 key 含 `@`/`.` 的条目与非法的值类型。
@@ -311,6 +331,22 @@ mod tests {
         assert!(!is_valid_private(&json!(null)));
         assert!(!is_valid_private(&json!({})));
         assert!(!is_valid_private(&json!([])));
+    }
+
+    #[test]
+    fn clone_defaults_to_true_and_rejects_typos() {
+        assert!(parse_clone(&json!(true)));
+        assert!(parse_clone(&json!("yes")));
+        assert!(!parse_clone(&json!(false)));
+        assert!(!parse_clone(&json!("off")));
+        // 写错或没写都保持“可复制”，不能把内容意外锁死
+        assert!(parse_clone(&json!(null)));
+        assert!(parse_clone(&json!("ture")));
+
+        assert!(is_valid_clone(&json!(true)));
+        assert!(is_valid_clone(&json!("false")));
+        assert!(!is_valid_clone(&json!("ture")));
+        assert!(!is_valid_clone(&json!(null)));
     }
 
     #[test]

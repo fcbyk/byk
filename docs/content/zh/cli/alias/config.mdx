@@ -18,6 +18,7 @@ type AliasObject = {
   $description?: string;
   $recursive?: boolean;
   $private?: boolean;
+  $clone?: boolean;
   [key: string]: string | AliasObject | boolean | undefined;
 }
 
@@ -28,6 +29,7 @@ type AliasFileJSON =
       $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
       $mode?: 'normal' | 'interactive' | 'silent';  // 文件级 / 分组级执行方式，子别名自动继承
       $private?: boolean;      // 文件级 / 分组级私有，子别名自动继承；私有别名不进合并空间
+      $clone?: boolean;        // 文件级 / 分组级复制标记，子别名自动继承；false 不进 ..clone 的副本
       $paths?: string[];       // 文件级 PATH 目录列表，子别名自动继承
       $var?: Record<string, string | Record<string, string>>;  // 文件级变量
       [key: string]: string | AliasObject | number | boolean | undefined;
@@ -35,7 +37,7 @@ type AliasFileJSON =
   | [string];  // 单链接：只含一个路径的数组
 ```
 
-文件级只解释这六个 `$` 开头的键；其余 `$xxx` 不会被当作别名，也不参与合并，保留给其他工具存放配置。字符串里的 `${xxx}` 由[变量](#变量)机制展开，未声明的名字原样留给 shell。
+文件级只解释这七个 `$` 开头的键；其余 `$xxx` 不会被当作别名，也不参与合并，保留给其他工具存放配置。字符串里的 `${xxx}` 由[变量](#变量)机制展开，未声明的名字原样留给 shell。
 
 ## 别名对象
 
@@ -55,9 +57,10 @@ type AliasFileJSON =
 | `$description` | string | 帮助页描述文本（不可继承） |
 | `$recursive` | boolean | 放行调用链上的重复进入（不可继承），默认 `false`，见[递归保护](#递归保护) |
 | `$private` | boolean | 不进入合并空间，只能精确调用（可继承），默认 `false`，见[可见性](#可见性) |
+| `$clone` | boolean | 不进入 `..clone` 的副本（可继承），默认 `true`，见[克隆](#克隆) |
 
 :::note
-含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$mode` / `$private` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
+含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$mode` / `$private` / `$clone` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
 :::
 
 ### 工作目录 cwd
@@ -368,7 +371,7 @@ byk @@tool..clone <source> -d # 或者在克隆时顺手装好
 
 补 `base` 的规则两边一致，只是基准和产物不同：没写就按源文件所在目录补上，写了相对形态（`.`、`../`、`sub/dir`）就相对源文件解析，写了绝对地址（URL 或路径）就原样保留，只补结尾的 `/`。基准一律是**源文件**所在目录，不是落盘的目标目录——`files` 里的相对路径是作者照着源文档写的，`~/.byk/alias/` 旁边没有那些文件。
 
-补写 `base` 会让 clone 重新序列化整份文档（键按字典序重排）。没有 `$deps` 的文件不受影响，仍是字节级副本；`base` 已经等于将要写入的值时也不改写，重复 clone 不会产生 diff。**clone 不接受 `base` 里的变量。** clone 期没有变量表，`"base": "${CDN}"` 求不出值，猜一个写死只会把作者意图烧成假地址，见到它会直接失败并提示改源文件。（读取期更宽：`..deps i` 会先展开变量，所以手写的 `${CDN}` 只要展开成绝对地址仍然能装。这条限制只针对 clone，编辑器里的 schema 按 clone 的口径提示。）base 定位就是"程序写的字面量"：clone 冻结一次，之后谁读都一样。
+补写 `base` 会让 clone 重新序列化整份文档（键按字典序重排）。既没有 `$deps` 也没有 `$clone` 的文件不受影响，仍是字节级副本；`base` 已经等于将要写入的值时也不改写，重复 clone 不会产生 diff。**clone 不接受 `base` 里的变量。** clone 期没有变量表，`"base": "${CDN}"` 求不出值，猜一个写死只会把作者意图烧成假地址，见到它会直接失败并提示改源文件。（读取期更宽：`..deps i` 会先展开变量，所以手写的 `${CDN}` 只要展开成绝对地址仍然能装。这条限制只针对 clone，编辑器里的 schema 按 clone 的口径提示。）base 定位就是"程序写的字面量"：clone 冻结一次，之后谁读都一样。
 
 本地 base 是不可移植的：它写的是这台机器上的绝对路径，换机器就失效。本地依赖的定位就是"本机开发工具"，别指望把它分享出去还能用。
 
@@ -640,6 +643,28 @@ byk @@ops.build     # 精确调用走链接的 key
 
 :::note
 `$private` 只影响合并空间；精确调用始终可用，包括 private 分组里的别名。
+:::
+
+### 克隆
+
+`$clone: false` 把一段别名标成"自己的"：`..clone` 永远不复制它。它只是复制期的标签，不影响合并空间、执行、补全或任何其他查找。
+
+和 `$private` 一样支持三级继承：文件级 → 分组级 → 别名级，越靠近别名优先级越高；子级写 `true` 可以重新暴露。
+
+```json title="run.byk.json"
+{
+  "$clone": false,
+  "shared": { "$clone": true, "whoami": "whoami" },
+  "deploy": "deploy --prod"
+}
+```
+
+clone 这个文件只会得到 `shared.whoami`，`deploy` 被剔除。如果剔除后什么都不剩，`..clone` 会直接拒绝、不落盘。这个标记本身也不会出现在副本里。
+
+`$private` 和 `$clone` 相互独立：既要避开合并空间、又要避开 clone 副本时，两个都写。
+
+:::note
+`$clone` 只约束 `byk ..clone`。`cp`、git、用其他方式拉取文件仍然能看到原始字节——它是声明式约定，不是加密。
 :::
 
 ### 精确执行语法

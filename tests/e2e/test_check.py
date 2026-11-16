@@ -146,7 +146,7 @@ def test_check_reports_alias_and_metadata_types(runner, tmp_path):
 def test_check_reports_file_level_metadata_types(runner, tmp_path):
     runner.prepare_alias_file(
         "meta",
-        '{"$priority":"high","$private":"ture","$cwd":42,"$paths":"nope","ok":"echo ok"}',
+        '{"$priority":"high","$private":"ture","$clone":"nope","$cwd":42,"$paths":"nope","ok":"echo ok"}',
     )
 
     result = runner.run("--check", cwd=str(tmp_path))
@@ -154,6 +154,7 @@ def test_check_reports_file_level_metadata_types(runner, tmp_path):
     assert result.returncode == 1
     assert "$priority must be an integer" in result.stdout
     assert '$private must be a boolean; "ture" is treated as false' in result.stdout
+    assert '$clone must be a boolean; "nope" is treated as true' in result.stdout
     assert "$cwd must be a string" in result.stdout
     assert "$paths must be an array of strings" in result.stdout
 

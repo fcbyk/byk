@@ -4,6 +4,8 @@
 
 - **`$deps`**: alias files can declare asset dependencies, installed into the file's own directory (`~/.byk/deps/<key>/` globally, `<file-dir>/.byk/deps/@<file>/` locally). `files[].src` accepts relative paths, anchored by `base`, which may be an http(s) address or a local directory — the former goes through `curl`, the latter is copied, and `extract` entries go through `tar`. `..clone -d` and `..deps install` do it in one call, `..deps status` reports the current state, and install converges the directory to the declaration; see the docs for details
 
+- **`$clone`**: new inheritable field that keeps a file, group, or alias out of `..clone` copies while it stays fully usable locally; it does not affect the merged space, and a clone that would leave nothing is refused
+
 - **`__api__ expand`**: new `--no-builtins` flag expands only the file's `$var` declarations and leaves `byk_dir` / `work_dir` / `file_dir` unset
 
 ## v0.8.1 (2026-11-14)

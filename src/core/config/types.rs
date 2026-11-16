@@ -115,7 +115,7 @@ pub struct AliasFile {
     /// 文件 key: "@release" | "@@release" | "@" | "@@"
     pub key: String,
     pub priority: i32,
-    /// 过滤后的原始 JSON（已去除 $priority/$cwd/$mode/$private/$paths/$var，已过滤非法 key）
+    /// 过滤后的原始 JSON（已去除 $priority/$cwd/$mode/$private/$clone/$paths/$var，已过滤非法 key）
     pub aliases: serde_json::Map<String, serde_json::Value>,
     /// 文件路径
     pub path: PathBuf,
