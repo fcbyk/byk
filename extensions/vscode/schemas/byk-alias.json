@@ -202,8 +202,30 @@
     },
     "PlatformMap": {
       "title": "平台映射",
-      "description": "$var 取值按平台区分。平台键取自 linux-x86_64 / linux-arm64 / darwin-x86_64 / darwin-arm64 / windows-x64。当前平台不在映射中时该变量视为未定义（`${NAME}` 原样透传）。",
+      "description": "$var 取值按平台区分。平台键取自 linux-x86_64 / linux-arm64 / darwin-x86_64 / darwin-arm64 / windows-x64，键名与构建目标一一对应，写错或缺少当前平台时该变量视为未定义（`${NAME}` 原样透传）。",
       "type": "object",
+      "properties": {
+        "linux-x86_64": {
+          "type": "string",
+          "description": "Linux x86_64"
+        },
+        "linux-arm64": {
+          "type": "string",
+          "description": "Linux ARM64"
+        },
+        "darwin-x86_64": {
+          "type": "string",
+          "description": "macOS Intel"
+        },
+        "darwin-arm64": {
+          "type": "string",
+          "description": "macOS Apple Silicon"
+        },
+        "windows-x64": {
+          "type": "string",
+          "description": "Windows x64"
+        }
+      },
       "additionalProperties": {
         "type": "string"
       }

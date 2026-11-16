@@ -121,7 +121,14 @@ pub fn load_file_by_key(layout: &PathLayout, file_key: &str) -> Result<AliasFile
 
     let vars = build_builtin_table(&layout.root_dir, &cwd);
     let mut diagnostics = Vec::new();
-    match load_alias_file(&dir, is_global, &layout.root_dir, stem, &vars, &mut diagnostics) {
+    match load_alias_file(
+        &dir,
+        is_global,
+        &layout.root_dir,
+        stem,
+        &vars,
+        &mut diagnostics,
+    ) {
         Some(file) => Ok(file),
         None => Err(LoadFailure::Failed(failure_reason(&diagnostics))),
     }

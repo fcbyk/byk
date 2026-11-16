@@ -62,6 +62,36 @@ def test_src_rejects_paths_that_point_at_the_filesystem():
             assert not regex.search(value), f"{value!r} 不该被 {pattern} 接受"
 
 
+def test_platform_map_completes_every_platform_key():
+    schema = load_schema()
+    platform_map = schema["$defs"]["PlatformMap"]
+
+    # 平台键必须写成显式 properties，编辑器才会在对象里给出候选；
+    # 只挂 additionalProperties 时 JSON LS 一个键都补不出来
+    assert list(platform_map["properties"]) == [
+        "linux-x86_64",
+        "linux-arm64",
+        "darwin-x86_64",
+        "darwin-arm64",
+        "windows-x64",
+    ]
+    for key, entry in platform_map["properties"].items():
+        assert entry["type"] == "string", key
+        assert entry["description"], key
+
+    # 未知键仍然只是「当前平台不匹配」，schema 不能比 byk 更严格
+    assert platform_map["additionalProperties"] == {"type": "string"}
+
+
+def test_var_values_may_be_a_platform_map():
+    value = load_schema()["$defs"]["AliasFileObject"]["properties"]["$var"][
+        "additionalProperties"
+    ]["oneOf"]
+
+    assert value[0]["type"] == "string"
+    assert value[1]["$ref"] == "#/$defs/PlatformMap"
+
+
 def test_deps_declares_base():
     base = load_schema()["$defs"]["AliasFileObject"]["properties"]["$deps"][
         "properties"
