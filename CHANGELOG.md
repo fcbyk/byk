@@ -8,6 +8,8 @@
 
 ### Features
 
+- **`$deps` for local files**: `@<file>..deps` no longer refuses local scope. Local assets land in `<file-dir>/.byk/deps/@<file-name>/`, next to the alias file, with a self-ignoring `.gitignore` (`*`) so downloads never reach `git status` — a repository can ship a `.byk.json` that pins its own tooling without touching `~/.byk`. `..clone -d`, `..destroy`, `..rename`, `${deps_dir}` and `--check` all follow the same rules for both scopes, and the two roots share one layout (`<root>/deps/<file-key>`), so `~/.byk/deps/@@hello` and `<project>/.byk/deps/@hello` need no separate code paths
+
 - **`$deps`**: global alias files can declare asset dependencies via `$deps.files` (string shorthand or `{src, to, name, extract, exec}` objects); declared assets land in the file's own directory `~/.byk/deps/<key>/`, guarded against path escapes
 - **`${deps_dir}`**: new built-in variable pointing at the file's dependency directory; only injected for global alias files, left as-is elsewhere
 - **file commands**: `@@<file>..deps install` downloads declared assets (delegating to system `curl` and `tar`, no new dependencies), printing each asset's source and destination as it goes and installing without a second confirmation; `@@<file>..deps uninstall` removes the directory and still asks first. `..rename` and `..destroy` now move/remove the dependency directory, and `..link` warns when retargeting a file that still has one

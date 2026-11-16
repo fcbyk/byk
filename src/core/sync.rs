@@ -384,7 +384,8 @@ fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) {
         };
         if meta.is_dir() {
             walk(&entry.path(), &path, out);
-        } else if path != MANIFEST_NAME {
+        } else if path != MANIFEST_NAME && !(prefix.is_empty() && name == ".gitignore") {
+            // 清单和自家的 .gitignore 不算资产，别报成未知文件
             out.push(path);
         }
     }

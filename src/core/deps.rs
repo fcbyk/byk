@@ -62,23 +62,34 @@ pub(crate) struct PlannedAsset {
     pub(crate) exec: bool,
 }
 
-/// 全局别名文件 `@@<stem>` 的依赖目录。
-pub(crate) fn deps_dir_for_stem(stem: &str, byk_root: &Path) -> PathBuf {
-    let key = build_file_key(stem, true);
-    byk_root.join("deps").join(key)
+/// 某个别名文件的依赖目录。
+///
+/// 两种作用域同一套形状，只有根不同：
+///
+/// - 全局：`~/.byk/deps/@@<stem>`
+/// - 局部：`<文件所在目录>/.byk/deps/@<stem>`
+///
+/// 局部依赖跟着项目走：删项目即删依赖，不需要哈希目录，也不需要额外的映射表
+/// ——目录本身就是身份。
+pub(crate) fn deps_dir(stem: &str, is_global: bool, file_dir: &Path, byk_root: &Path) -> PathBuf {
+    let key = build_file_key(stem, is_global);
+    if is_global {
+        byk_root.join("deps").join(key)
+    } else {
+        file_dir.join(".byk").join("deps").join(key)
+    }
 }
 
-/// 计算某文件应注入的 `deps_dir` 变量值；局部文件不注入（返回 `None`，
-/// `${deps_dir}` 按变量替换规则原样保留）。
-pub(crate) fn deps_dir_var(stem: &str, is_global: bool, byk_root: &Path) -> Option<String> {
-    if !is_global {
-        return None;
-    }
-    Some(
-        deps_dir_for_stem(stem, byk_root)
-            .to_string_lossy()
-            .into_owned(),
-    )
+/// 计算某文件应注入的 `deps_dir` 变量值。
+pub(crate) fn deps_dir_var(
+    stem: &str,
+    is_global: bool,
+    file_dir: &Path,
+    byk_root: &Path,
+) -> String {
+    deps_dir(stem, is_global, file_dir, byk_root)
+        .to_string_lossy()
+        .into_owned()
 }
 
 // ── 语法层：`$deps` 结构校验 ────────────────────────────────────────────
@@ -1094,16 +1105,26 @@ mod tests {
     }
 
     #[test]
-    fn deps_dir_var_is_global_only() {
+    fn deps_dir_mirrors_the_file_key_under_each_root() {
         let root = PathBuf::from("/home/u/.byk");
+        let project = PathBuf::from("/work/app");
+
         assert_eq!(
-            deps_dir_var("ops", true, &root),
-            Some("/home/u/.byk/deps/@@ops".to_string())
+            deps_dir_var("ops", true, &project, &root),
+            "/home/u/.byk/deps/@@ops"
         );
-        assert_eq!(deps_dir_var("ops", false, &root), None);
         assert_eq!(
-            deps_dir_for_stem("ops", &root),
-            PathBuf::from("/home/u/.byk/deps/@@ops")
+            deps_dir_var("ops", false, &project, &root),
+            "/work/app/.byk/deps/@ops"
+        );
+        // 匿名文件：key 就是前缀本身
+        assert_eq!(
+            deps_dir("", false, &project, &root),
+            PathBuf::from("/work/app/.byk/deps/@")
+        );
+        assert_eq!(
+            deps_dir("", true, &project, &root),
+            PathBuf::from("/home/u/.byk/deps/@@")
         );
     }
 }

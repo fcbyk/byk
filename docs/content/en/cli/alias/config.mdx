@@ -315,7 +315,14 @@ A resolved `$cwd` is appended in parentheses only when no description is set —
 
 ### Dependencies
 
-`$deps` declares the assets a global alias file needs; byk downloads them into the file's dedicated directory `~/.byk/deps/@@<file-name>/`:
+`$deps` declares the assets an alias file needs; byk downloads them into that file's dedicated directory:
+
+| File | Dedicated directory |
+|------|---------------------|
+| Global `~/.byk/alias/hello.byk.json` | `~/.byk/deps/@@hello/` |
+| Local `./hello.byk.json` | `./.byk/deps/@hello/` |
+
+Both scopes follow the same rules, only the root differs: global dependencies stay under `~/.byk`, local ones travel with the project (delete the project, delete its dependencies — no global clutter). A local install writes `.byk/deps/.gitignore` containing `*`, so downloaded assets never show up in `git status`.
 
 **Global alias files only** (`~/.byk/alias/`); a local file declaring `$deps` gets a warning from `--check`. The declaration itself never touches the network — installing is an explicit verb:
 
@@ -366,7 +373,7 @@ Variables come from two places and are merged into **a single table**, substitut
 
 | Source | Description |
 |--------|-------------|
-| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${work_dir}` → the directory `byk` was invoked from (unaffected by `$cwd`); `${file_dir}` → the directory holding the current alias file; `${deps_dir}` → the global alias file's dependency directory `~/.byk/deps/@@<file-name>` (injected into global files only) |
+| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${work_dir}` → the directory `byk` was invoked from (unaffected by `$cwd`); `${file_dir}` → the directory holding the current alias file; `${deps_dir}` → that file's dependency directory: `~/.byk/deps/@@<file-name>` for global files, `<file-dir>/.byk/deps/@<file-name>` for local ones |
 | `$var` declarations | File-scoped custom variables |
 
 On a name collision, **the file declaration wins** — the value you wrote explicitly is the value you get.
@@ -543,7 +550,7 @@ byk @@ops.build     # exact call goes through the link's key
 | One level | The target may not itself be an array; that is an error and the file is skipped |
 | Identity | Key, `@` / `@@` prefix and default priority come from the link; everything else from the target |
 | `$private` | Still honoured: a target with `true` pulls the link out of the merged namespace, leaving exact calls only |
-| Dependencies | `$deps` declared in the target works as usual; the install location follows the link file's key (`~/.byk/deps/@@<link-file-name>`) |
+| Dependencies | `$deps` declared in the target works as usual; the install location follows the link file's key: `~/.byk/deps/@@<link-file-name>` for a global link, `<link-dir>/.byk/deps/@<link-file-name>` for a local one |
 
 :::note
 A missing target, broken JSON or an empty array only skips that one file — other aliases keep working.

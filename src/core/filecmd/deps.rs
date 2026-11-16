@@ -21,6 +21,29 @@ use crate::core::deps::{self, DepEntry, PlannedAsset, parse_deps, plan_entries};
 use crate::core::paths::PathLayout;
 use crate::core::sync::{self, Change};
 
+/// 被寻址文件所在的目录：全局固定是别名目录，局部就是当前目录。
+fn file_dir_of(scope: FileScope, layout: &PathLayout) -> PathBuf {
+    match scope {
+        FileScope::Global => layout.alias_dir.clone(),
+        FileScope::Local => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    }
+}
+
+/// 被寻址文件的依赖目录。
+/// 提示里那条可复制的命令：`@@hello..deps i` / `@hello..deps i`。
+fn deps_command(scope: FileScope, stem: &str) -> String {
+    format!("byk {}..deps i", build_file_key(stem, scope.is_global()))
+}
+
+fn deps_dir_of(scope: FileScope, stem: &str, layout: &PathLayout) -> PathBuf {
+    deps::deps_dir(
+        stem,
+        scope.is_global(),
+        &file_dir_of(scope, layout),
+        &layout.root_dir,
+    )
+}
+
 #[derive(Debug)]
 pub(super) enum Outcome {
     /// 安装完成；输出已由 install 自己打完，调用方无需再报。
@@ -50,24 +73,15 @@ pub(super) fn run(
     args: &[String],
     layout: &PathLayout,
 ) -> Result<Outcome, String> {
-    if scope != FileScope::Global {
-        return Err(
-            "deps are only supported on global alias files\nHint: use @@<file>..deps, or create a global link with @@<file>..init --link"
-                .to_string(),
-        );
-    }
-
     match parse_args(args)? {
-        Action::Status => status(stem, layout),
+        Action::Status => status(scope, stem, layout),
         Action::Install { force } => {
-            let (target, declared) = declaration(stem, layout)?;
+            let (target, declared) = declaration(scope, stem, layout)?;
             let entries = declared.ok_or_else(|| no_declaration(&target))?;
-            install(stem, layout, &entries, force)?;
+            install(scope, stem, layout, &entries, force)?;
             Ok(Outcome::Installed)
         }
-        Action::Uninstall { yes } => {
-            uninstall(stem, &deps::deps_dir_for_stem(stem, &layout.root_dir), yes)
-        }
+        Action::Uninstall { yes } => uninstall(scope, stem, &deps_dir_of(scope, stem, layout), yes),
     }
 }
 
@@ -127,13 +141,19 @@ fn parse_args(args: &[String]) -> Result<Action, String> {
 ///
 /// 不做二次确认，过程逐条打在 stderr；清单让失败后的下一次安装能接着做。
 pub(super) fn install(
+    scope: FileScope,
     stem: &str,
     layout: &PathLayout,
     entries: &[DepEntry],
     force: bool,
 ) -> Result<(), String> {
-    let deps_dir = deps::deps_dir_for_stem(stem, &layout.root_dir);
-    let key = build_file_key(stem, true);
+    let deps_dir = deps_dir_of(scope, stem, layout);
+    let key = build_file_key(stem, scope.is_global());
+
+    // 局部依赖落在项目里，先放一个自忽略的 .gitignore，别让二进制进仓库
+    if !scope.is_global() {
+        ensure_local_gitignore(&deps_dir)?;
+    }
 
     let assets = plan_entries(entries, &deps_dir, &key)?;
     if assets.is_empty() {
@@ -210,7 +230,7 @@ pub(super) fn install(
             }
             Err(message) => {
                 let _ = sync::save(&deps_dir, &ordered(&next), byk_version());
-                return Err(failure(message, &written, stem));
+                return Err(failure(message, &written, scope, stem));
             }
         }
     }
@@ -234,7 +254,7 @@ pub(super) fn install(
             }
             Err(message) => {
                 let _ = sync::save(&deps_dir, &ordered(&next), byk_version());
-                return Err(failure(message, &written, stem));
+                return Err(failure(message, &written, scope, stem));
             }
         }
     }
@@ -328,6 +348,46 @@ fn byk_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// 局部依赖目录自带一个 `.gitignore`（内容 `*`），仓库里就不会冒出下载产物。
+/// 已存在就不动，用户可以自己改。
+fn ensure_local_gitignore(deps_dir: &Path) -> Result<(), String> {
+    let Some(root) = deps_dir.parent() else {
+        return Ok(());
+    };
+    let path = root.join(".gitignore");
+    if path.exists() {
+        return Ok(());
+    }
+    fs::create_dir_all(root).map_err(|e| format!("cannot create {}: {e}", root.display()))?;
+    fs::write(&path, "*\n").map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
+/// 局部依赖删完后收掉空壳：`.byk/deps` 里只剩我们的 `.gitignore` 时，
+/// 连它和空的 `.byk` 一起删，别把空目录留给项目。
+fn prune_local_root(deps_dir: &Path) {
+    let Some(root) = deps_dir.parent() else {
+        return;
+    };
+    let only_gitignore = fs::read_dir(root)
+        .map(|entries| {
+            entries
+                .flatten()
+                .all(|entry| entry.file_name() == std::ffi::OsStr::new(".gitignore"))
+        })
+        .unwrap_or(false);
+    if !only_gitignore {
+        return;
+    }
+
+    let _ = fs::remove_file(root.join(".gitignore"));
+    if fs::remove_dir(root).is_err() {
+        return;
+    }
+    if let Some(byk) = root.parent() {
+        let _ = fs::remove_dir(byk);
+    }
+}
+
 /// 删完一条资产后收掉空掉的父目录，别在专属目录里留一堆空壳。
 ///
 /// 只 `remove_dir`（删不掉非空目录），所以不会误伤还装着东西的目录。
@@ -361,7 +421,7 @@ fn warn_unknown(unknown: &[String], deps_dir: &Path) {
     }
 }
 
-fn failure(message: String, written: &[PathBuf], stem: &str) -> String {
+fn failure(message: String, written: &[PathBuf], scope: FileScope, stem: &str) -> String {
     let mut out = message;
     if !written.is_empty() {
         out.push_str("\n  already written in this run:");
@@ -370,21 +430,22 @@ fn failure(message: String, written: &[PathBuf], stem: &str) -> String {
         }
     }
     out.push_str(&format!(
-        "\nHint: fix the entry and rerun `byk @@{stem}..deps i`; add --force to rebuild from scratch"
+        "\nHint: fix the entry and rerun `{}`; add --force to rebuild from scratch",
+        deps_command(scope, stem)
     ));
     out
 }
 
 // ── status ──────────────────────────────────────────────────────────────
 
-fn status(stem: &str, layout: &PathLayout) -> Result<Outcome, String> {
-    let (target, declared) = declaration(stem, layout)?;
+fn status(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<Outcome, String> {
+    let (target, declared) = declaration(scope, stem, layout)?;
     let Some(entries) = declared else {
         return Err(no_declaration(&target));
     };
 
-    let deps_dir = deps::deps_dir_for_stem(stem, &layout.root_dir);
-    let key = build_file_key(stem, true);
+    let deps_dir = deps_dir_of(scope, stem, layout);
+    let key = build_file_key(stem, scope.is_global());
     let assets = plan_entries(&entries, &deps_dir, &key)?;
     let inspection = sync::inspect(&entries, &assets, &deps_dir, false)?;
     if let Some(warning) = &inspection.warning {
@@ -428,13 +489,13 @@ fn status(stem: &str, layout: &PathLayout) -> Result<Outcome, String> {
 
     if todo > 0 {
         output.push_str(&format!(
-            "Hint: run `byk @@{}..deps i` to install the missing assets\n",
-            stem
+            "Hint: run `{}` to install the missing assets\n",
+            deps_command(scope, stem)
         ));
     } else if stale > 0 {
         output.push_str(&format!(
-            "Hint: run `byk @@{}..deps i` to remove the stale assets\n",
-            stem
+            "Hint: run `{}` to remove the stale assets\n",
+            deps_command(scope, stem)
         ));
     }
 
@@ -443,10 +504,11 @@ fn status(stem: &str, layout: &PathLayout) -> Result<Outcome, String> {
 
 /// 读 `$deps`；`None` 表示文件没有这个字段。链接会跟随到目标。
 pub(super) fn declaration(
+    scope: FileScope,
     stem: &str,
     layout: &PathLayout,
 ) -> Result<(PathBuf, Option<Vec<DepEntry>>), String> {
-    let target = resolve_target(FileScope::Global, stem, layout)?;
+    let target = resolve_target(scope, stem, layout)?;
     if !target.is_file() {
         return Err(format!("File not found: {}", target.display()));
     }
@@ -456,8 +518,9 @@ pub(super) fn declaration(
         &layout.root_dir,
         &std::env::current_dir().unwrap_or_default(),
     );
-    let deps_dir = deps::deps_dir_for_stem(stem, &layout.root_dir);
-    let deps_dir = deps_dir.to_string_lossy().into_owned();
+    let deps_dir = deps_dir_of(scope, stem, layout)
+        .to_string_lossy()
+        .into_owned();
 
     let (link_data, link_path) =
         load_document(&target, &vars, Some(&deps_dir), &target, &mut diagnostics)
@@ -505,7 +568,7 @@ fn print_warnings(diagnostics: &[Diagnostic]) {
 
 // ── uninstall ───────────────────────────────────────────────────────────
 
-fn uninstall(stem: &str, deps_dir: &Path, yes: bool) -> Result<Outcome, String> {
+fn uninstall(scope: FileScope, stem: &str, deps_dir: &Path, yes: bool) -> Result<Outcome, String> {
     if !deps_dir.is_dir() {
         return Err(format!(
             "No dependencies installed for @@{stem}: {}",
@@ -529,6 +592,9 @@ fn uninstall(stem: &str, deps_dir: &Path, yes: bool) -> Result<Outcome, String> 
 
     std::fs::remove_dir_all(deps_dir)
         .map_err(|e| format!("Failed to remove {}: {}", deps_dir.display(), e))?;
+    if !scope.is_global() {
+        prune_local_root(deps_dir);
+    }
 
     Ok(Outcome::Removed {
         dir: deps_dir.to_path_buf(),
@@ -538,12 +604,12 @@ fn uninstall(stem: &str, deps_dir: &Path, yes: bool) -> Result<Outcome, String> 
 // ── 联动：rename / destroy / link 对依赖目录的处理 ──────────────────────
 
 /// `..rename` 成功后把依赖目录一起改名；目录不存在时静默跳过。
-pub(super) fn rename_dir(from_stem: &str, to_stem: &str, layout: &PathLayout) {
-    let from = deps::deps_dir_for_stem(from_stem, &layout.root_dir);
+pub(super) fn rename_dir(scope: FileScope, from_stem: &str, to_stem: &str, layout: &PathLayout) {
+    let from = deps_dir_of(scope, from_stem, layout);
     if !from.is_dir() {
         return;
     }
-    let to = deps::deps_dir_for_stem(to_stem, &layout.root_dir);
+    let to = deps_dir_of(scope, to_stem, layout);
     if let Err(e) = std::fs::rename(&from, &to) {
         eprintln!(
             "Warning: cannot move the dependency directory {}: {}",
@@ -556,8 +622,8 @@ pub(super) fn rename_dir(from_stem: &str, to_stem: &str, layout: &PathLayout) {
 }
 
 /// `..destroy` 成功后删除依赖目录；目录不存在时静默跳过。
-pub(super) fn remove_dir(stem: &str, layout: &PathLayout) {
-    let dir = deps::deps_dir_for_stem(stem, &layout.root_dir);
+pub(super) fn remove_dir(scope: FileScope, stem: &str, layout: &PathLayout) {
+    let dir = deps_dir_of(scope, stem, layout);
     if !dir.is_dir() {
         return;
     }
@@ -569,17 +635,20 @@ pub(super) fn remove_dir(stem: &str, layout: &PathLayout) {
         );
         return;
     }
+    if !scope.is_global() {
+        prune_local_root(&dir);
+    }
     eprintln!("Removed {}", dir.display());
 }
 
 /// `..link` 改指向时提醒旧的依赖目录还在。
-pub(super) fn warn_stale_dir(stem: &str, layout: &PathLayout) {
-    let dir = deps::deps_dir_for_stem(stem, &layout.root_dir);
+pub(super) fn warn_stale_dir(scope: FileScope, stem: &str, layout: &PathLayout) {
+    let dir = deps_dir_of(scope, stem, layout);
     if dir.is_dir() {
         eprintln!(
-            "Warning: this file still has a dependency directory at {};\nHint: run @@{}..deps uninstall first if the new target needs different assets",
+            "Warning: this file still has a dependency directory at {};\nHint: run `{}..deps uninstall` first if the new target needs different assets",
             dir.display(),
-            stem
+            build_file_key(stem, scope.is_global())
         );
     }
 }

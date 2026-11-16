@@ -40,6 +40,10 @@ pub(crate) enum FileScope {
 }
 
 impl FileScope {
+    pub(crate) fn is_global(self) -> bool {
+        self == FileScope::Global
+    }
+
     /// 面向 `__api__` JSON 的小写名。
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -558,13 +562,12 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
             eprintln!("Created {}", path.display());
         }),
         Verb::Destroy => {
-            let is_global = command.scope == FileScope::Global;
             let stem = command.stem.clone();
             destroy::run(command.scope, &command.stem, args, layout).map(|outcome| match outcome {
                 destroy::Outcome::Removed { path, symlink } => {
-                    // 依赖目录只属于全局 key；局部文件的同名 stem 不能碰它
-                    if is_global && !symlink {
-                        deps::remove_dir(&stem, layout);
+                    // 符号链接删的是链接本身，目标的依赖目录不能跟着没
+                    if !symlink {
+                        deps::remove_dir(command.scope, &stem, layout);
                     }
                     if symlink {
                         eprintln!("Removed symlink {}", path.display());
@@ -605,21 +608,16 @@ pub(crate) fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayo
         Verb::Rename => {
             let new_stem = args.first().cloned();
             rename::run(command.scope, &command.stem, args, layout).map(|(from, to)| {
-                if command.scope == FileScope::Global
-                    && let Some(new_stem) = new_stem
-                {
-                    deps::rename_dir(&command.stem, &new_stem, layout);
+                if let Some(new_stem) = new_stem {
+                    deps::rename_dir(command.scope, &command.stem, &new_stem, layout);
                 }
                 eprintln!("Renamed {} to {}", from.display(), to.display());
             })
         }
         Verb::Clone => clone::run(command.scope, &command.stem, args, layout),
         Verb::Link => {
-            let stale_check = command.scope == FileScope::Global;
             link::run(command.scope, &command.stem, args, layout).map(|(path, target)| {
-                if stale_check {
-                    deps::warn_stale_dir(&command.stem, layout);
-                }
+                deps::warn_stale_dir(command.scope, &command.stem, layout);
                 eprintln!("Linked {} to {}", path.display(), target.display());
             })
         }
@@ -822,10 +820,6 @@ pub(crate) fn complete_deps_args(
     };
     if command.verb != Verb::Deps {
         return None;
-    }
-    // deps 只对全局文件生效，局部不补
-    if command.scope != FileScope::Global {
-        return Some(Vec::new());
     }
     if arg_index != 1 {
         return Some(Vec::new());

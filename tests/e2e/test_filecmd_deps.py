@@ -488,13 +488,80 @@ def test_deps_rejects_unknown_subcommand(runner):
     assert "Available: install, uninstall, status" in result.stderr
 
 
-def test_deps_rejects_local_scope(runner, tmp_path):
-    (tmp_path / "tool.byk.json").write_text("{}", encoding="utf-8")
+# ── 局部依赖：落在项目里 ────────────────────────────────────────────────
 
-    result = runner.run("@tool..deps", cwd=str(tmp_path))
+
+def prepare_local(tmp_path, files, name="tool", extra=None):
+    data = {"$deps": {"files": files}}
+    if extra:
+        data.update(extra)
+    (tmp_path / f"{name}.byk.json").write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_local_deps_install_into_the_project(runner, tmp_path):
+    env, _ = write_fake_curl(tmp_path, {"/tool": b"local"})
+    prepare_local(tmp_path, ["https://example.com/tool"])
+
+    result = runner.run("@tool..deps", "i", cwd=str(tmp_path), env=env)
+
+    assert result.returncode == 0
+    local_deps = tmp_path / ".byk" / "deps" / "@tool"
+    assert (local_deps / "tool").read_bytes() == b"local"
+    assert (local_deps / ".byk-deps.json").is_file()
+    # 自忽略的 .gitignore，免得仓库里冒出二进制
+    assert (tmp_path / ".byk" / "deps" / ".gitignore").read_text() == "*\n"
+    # 全局那份不受影响
+    assert not (runner.byk_dir / "deps" / "@@tool").exists()
+
+
+def test_local_deps_do_not_mix_between_projects(runner, tmp_path):
+    project_a = tmp_path / "a"
+    project_b = tmp_path / "b"
+    for project, payload in ((project_a, b"A"), (project_b, b"B")):
+        project.mkdir()
+        env, _ = write_fake_curl(project, {"/tool": payload})
+        prepare_local(project, ["https://example.com/tool"])
+
+        result = runner.run("@tool..deps", "i", cwd=str(project), env=env)
+        assert result.returncode == 0, result.stderr
+
+    assert (project_a / ".byk" / "deps" / "@tool" / "tool").read_bytes() == b"A"
+    assert (project_b / ".byk" / "deps" / "@tool" / "tool").read_bytes() == b"B"
+
+
+def test_local_deps_dir_expands_in_the_file(runner, tmp_path):
+    prepare_local(
+        tmp_path,
+        ["https://example.com/tool"],
+        extra={"$paths": ["${deps_dir}"], "run": "tool"},
+    )
+
+    result = runner.run("@tool..json", "--expand", cwd=str(tmp_path))
+
+    assert result.returncode == 0
+    assert f"{tmp_path}/.byk/deps/@tool" in result.stdout
+
+
+def test_destroy_removes_local_deps(runner, tmp_path):
+    env, _ = write_fake_curl(tmp_path, {"/tool": b"x"})
+    prepare_local(tmp_path, ["https://example.com/tool"])
+    runner.run("@tool..deps", "i", cwd=str(tmp_path), env=env)
+    assert (tmp_path / ".byk" / "deps" / "@tool").is_dir()
+
+    result = runner.run("@tool..destroy", "--yes", cwd=str(tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / ".byk").exists(), "空壳目录也要收掉"
+
+
+def test_check_reports_local_deps_drift(runner, tmp_path):
+    prepare_local(tmp_path, ["https://example.com/tool"])
+
+    result = runner.run("--check", cwd=str(tmp_path))
 
     assert result.returncode == 1
-    assert "only supported on global alias files" in result.stderr
+    assert "1 missing" in result.stdout
+    assert "byk @tool..deps i" in result.stdout
 
 
 def test_status_without_declaration_errors(runner):

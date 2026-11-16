@@ -348,13 +348,15 @@ fn parse_alias_file(
         return None;
     }
 
-    // deps 跟着 key 走：只有全局文件注入，链接目标继承这个值
-    let deps_dir = deps::deps_dir_var(stem, is_global, root_dir);
+    // deps 跟着 key 走：每个文件注入自己的依赖目录（全局在 ~/.byk/deps，
+    // 局部在文件所在项目的 .byk/deps），链接目标继承这个值
+    let file_dir = PathBuf::from(dir_of(path));
+    let deps_dir = deps::deps_dir_var(stem, is_global, &file_dir, root_dir);
 
     // 读链接文件本身，再顺着指针（如果有）拿到真正的别名文档
     let (mut data, source_path) = {
         let (link_data, link_path) =
-            match load_document(path, vars, deps_dir.as_deref(), path, diagnostics) {
+            match load_document(path, vars, Some(deps_dir.as_str()), path, diagnostics) {
                 Ok(loaded) => loaded,
                 Err(reason) => {
                     diagnostics.push(Diagnostic::error(path, reason));
@@ -365,7 +367,7 @@ fn parse_alias_file(
             link_data,
             &link_path,
             vars,
-            deps_dir.as_deref(),
+            Some(deps_dir.as_str()),
             diagnostics,
         )?
     };
@@ -499,17 +501,6 @@ fn validate_deps_declaration(
     owner: &Path,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if !is_global {
-        push_doc_diagnostic(
-            diagnostics,
-            Level::Warning,
-            owner,
-            doc,
-            "$deps is only supported in global alias files; ignored".to_string(),
-        );
-        return;
-    }
-
     let entries = match deps::parse_deps(&value) {
         Ok(entries) => entries,
         Err(message) => {
@@ -524,8 +515,8 @@ fn validate_deps_declaration(
         }
     };
 
-    let key = build_file_key(stem, true);
-    let deps_dir = deps::deps_dir_for_stem(stem, root_dir);
+    let key = build_file_key(stem, is_global);
+    let deps_dir = deps::deps_dir(stem, is_global, Path::new(&dir_of(owner)), root_dir);
     let assets = match deps::plan_entries(&entries, &deps_dir, &key) {
         Ok(assets) => assets,
         Err(message) => {
@@ -583,7 +574,7 @@ fn validate_deps_declaration(
             Level::Warning,
             owner,
             doc,
-            format!("$deps: {}; run `byk @@{stem}..deps i`", parts.join(", ")),
+            format!("$deps: {}; run `byk {key}..deps i`", parts.join(", ")),
         );
     }
 }

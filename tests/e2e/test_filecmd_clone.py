@@ -515,15 +515,25 @@ def test_clone_install_deps_combines_with_forge(runner, tmp_path):
     )
 
 
-def test_clone_install_deps_rejects_local_scope(runner, tmp_path):
-    source = tmp_path / "src.byk.json"
-    source.write_text('{"build": "echo local"}', encoding="utf-8")
+def test_clone_into_local_installs_into_the_project(runner, tmp_path):
+    env, _ = install_routed_curl(
+        tmp_path,
+        {"/hello.byk.json": WITH_DEPS, "/bin/tool": b"local"},
+    )
 
-    result = runner.run("@ops..clone", str(source), "-d", cwd=str(tmp_path))
+    result = runner.run(
+        "@ops..clone",
+        "https://example.com/hello.byk.json",
+        "-d",
+        cwd=str(tmp_path),
+        env=env,
+    )
 
-    assert result.returncode == 1
-    assert "--deps requires a global alias file" in result.stderr
-    assert not (tmp_path / "ops.byk.json").exists()
+    assert result.returncode == 0, result.stderr
+    local_deps = tmp_path / ".byk" / "deps" / "@ops"
+    assert (local_deps / "bin" / "tool").read_bytes() == b"local"
+    assert (local_deps / ".byk-deps.json").is_file()
+    assert not (runner.byk_dir / "deps" / "@@ops").exists()
 
 
 def test_clone_install_deps_installs_without_prompt(runner, tmp_path):

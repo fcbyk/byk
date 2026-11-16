@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use colored::Colorize;
 use serde_json::Value;
@@ -55,11 +55,13 @@ pub(super) fn run(
     }
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    // 依赖跟 key 走：全局文件（含链接文件）注入自己的 deps 目录
-    let deps_dir = match scope {
-        FileScope::Global => deps::deps_dir_var(stem, true, &layout.root_dir),
-        FileScope::Local => None,
-    };
+    // 依赖跟 key 走：文件（含链接文件）注入自己的 deps 目录
+    let deps_dir = Some(deps::deps_dir_var(
+        stem,
+        scope.is_global(),
+        Path::new(&dir_of(&target)),
+        &layout.root_dir,
+    ));
     let issues = expand_document(
         &mut value,
         &layout.root_dir,

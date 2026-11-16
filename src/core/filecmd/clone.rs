@@ -5,6 +5,7 @@
 //! `@@<file>..deps i` 即可补齐。
 
 use super::{FileScope, create, deps, resolve_target, source};
+use crate::core::config::build_file_key;
 use crate::core::paths::PathLayout;
 
 pub(super) fn run(
@@ -14,14 +15,6 @@ pub(super) fn run(
     layout: &PathLayout,
 ) -> Result<(), String> {
     let options = parse_args(args)?;
-
-    // 依赖目录按全局 key 命名，局部文件没有稳定落点：拦在落盘之前。
-    if options.install_deps && scope != FileScope::Global {
-        return Err(
-            "--deps requires a global alias file\nHint: clone with @@<file> instead of @<file>; $deps is only supported there"
-                .to_string(),
-        );
-    }
 
     // 先确认目标可用，避免为已存在的文件白跑网络。
     let target = resolve_target(scope, stem, layout)?;
@@ -37,7 +30,7 @@ pub(super) fn run(
     eprintln!("Cloned {} to {}", loaded.label, path.display());
 
     if options.install_deps {
-        install_deps(stem, layout)?;
+        install_deps(scope, stem, layout)?;
     }
     Ok(())
 }
@@ -45,15 +38,12 @@ pub(super) fn run(
 /// 克隆成功后再装依赖。
 ///
 /// 安装不二次确认，进度直接打出来；失败不回滚，提示重跑 `..deps i` 比删掉更安全。
-fn install_deps(stem: &str, layout: &PathLayout) -> Result<(), String> {
-    let fail = |err: String| {
-        format!(
-            "Failed to install dependencies: {}\nHint: run `byk @@{}..deps i` to retry",
-            err, stem
-        )
-    };
+fn install_deps(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<(), String> {
+    let hint = format!("byk {}..deps i", build_file_key(stem, scope.is_global()));
+    let fail =
+        |err: String| format!("Failed to install dependencies: {err}\nHint: run `{hint}` to retry");
 
-    let (_, declared) = deps::declaration(stem, layout).map_err(fail)?;
+    let (_, declared) = deps::declaration(scope, stem, layout).map_err(fail)?;
     let Some(entries) = declared else {
         eprintln!("Cloned file declares no $deps; nothing to install");
         return Ok(());
@@ -63,7 +53,7 @@ fn install_deps(stem: &str, layout: &PathLayout) -> Result<(), String> {
         return Ok(());
     }
 
-    deps::install(stem, layout, &entries, false).map_err(fail)
+    deps::install(scope, stem, layout, &entries, false).map_err(fail)
 }
 
 #[derive(Debug)]
@@ -348,24 +338,6 @@ mod tests {
             parse_args(&args(&["-d"])).unwrap_err(),
             "clone requires a source"
         );
-    }
-
-    #[test]
-    fn install_deps_is_global_only() {
-        let temp = tempfile::tempdir().unwrap();
-        let layout = test_layout(&temp);
-        let source = source_file(temp.path(), "src.byk.json", "{\"a\": \"echo a\"}");
-
-        let err = run(
-            FileScope::Local,
-            "ops",
-            &args(&[source.to_str().unwrap(), "-d"]),
-            &layout,
-        )
-        .unwrap_err();
-
-        assert!(err.starts_with("--deps requires a global alias file"));
-        assert!(!temp.path().join("ops.byk.json").exists());
     }
 
     #[test]

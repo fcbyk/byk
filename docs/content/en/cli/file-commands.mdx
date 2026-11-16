@@ -308,7 +308,7 @@ $ byk @@tool..deps i
 @@tool: 2 declared, 2 installed — up to date
 ```
 
-- Only works on global alias files; a local file that wants dependencies should first get a global link via `..init --link`.
+- Works for global and local files alike: global assets land in `~/.byk/deps/@@<file-name>/`, local ones in `<file-dir>/.byk/deps/@<file-name>/` with a self-ignoring `.gitignore` (`*`).
 - The install manifest lives at `~/.byk/deps/@@<file-name>/.byk-deps.json` and records the last declaration plus where each asset landed. Deleting it just restarts the bookkeeping; the next install adopts whatever is already there.
 - Only paths byk installed are ever removed: anything else in the directory is left alone with a warning.
 - Installing never asks twice and needs no `--yes`; `--force` is the only option, for cases the manifest cannot detect (assets corrupted from outside).
