@@ -137,7 +137,7 @@ fn parse_args(args: &[String]) -> Result<Action, String> {
 
 // ── install ─────────────────────────────────────────────────────────────
 
-/// 把目录同步到声明：装缺的、换变了的、删已移除的，没变的跳过。
+/// 安装声明里的依赖：`$deps.files` 同步文件，`$deps.pip` 建 venv 并装包。
 ///
 /// 不做二次确认，过程逐条打在 stderr；清单让失败后的下一次安装能接着做。
 pub(super) fn install(
@@ -156,14 +156,37 @@ pub(super) fn install(
     }
 
     let assets = plan_entries(decl, &deps_dir, &key)?;
-    if assets.is_empty() {
+    let has_files = !assets.is_empty();
+    let has_pip = !decl.pip.is_empty();
+    if !has_files && !has_pip {
         return Err(
-            "nothing to install: $deps.files is empty\nHint: run `..deps uninstall` to remove the whole directory"
+            "nothing to install: both $deps.files and $deps.pip are empty\nHint: run `..deps uninstall` to remove the whole directory"
                 .to_string(),
         );
     }
 
-    let inspection = sync::inspect(&decl.files, &assets, &deps_dir, force)?;
+    if has_files {
+        sync_files(scope, stem, &deps_dir, &key, decl, &assets, force)?;
+    }
+
+    if has_pip {
+        deps::install_pip(&deps_dir, &decl.pip)?;
+    }
+
+    Ok(())
+}
+
+/// 把专属目录同步到 `$deps.files`：装缺的、换变了的、删已移除的，没变的跳过。
+fn sync_files(
+    scope: FileScope,
+    stem: &str,
+    deps_dir: &Path,
+    key: &str,
+    decl: &Declaration,
+    assets: &[PlannedAsset],
+    force: bool,
+) -> Result<(), String> {
+    let inspection = sync::inspect(&decl.files, assets, deps_dir, force)?;
     if let Some(warning) = &inspection.warning {
         eprintln!("Warning: {warning}");
     }
@@ -175,11 +198,11 @@ pub(super) fn install(
             assets.len()
         );
         // 没动作也要提一句目录里的野文件，否则它们永远没机会被发现
-        warn_unknown(&inspection.diff.unknown, &deps_dir);
+        warn_unknown(&inspection.diff.unknown, deps_dir);
         return Ok(());
     }
 
-    print_header(&assets, &inspection, &deps_dir, force);
+    print_header(assets, &inspection, deps_dir, force);
 
     let mut next: BTreeMap<String, sync::ManifestEntry> = inspection
         .installed
@@ -216,7 +239,7 @@ pub(super) fn install(
                     local_now += 1;
                 }
                 // 根上解压的落点就是专属目录，它一直都在，只能走替换路径
-                let replace = !matches!(change, Change::Add) || asset.dest == deps_dir;
+                let replace = !matches!(change, Change::Add) || asset.dest.as_path() == deps_dir;
                 if asset.archive {
                     deps::install_archive(asset, replace)
                 } else {
@@ -233,7 +256,7 @@ pub(super) fn install(
                 }
             }
             Err(message) => {
-                let _ = sync::save(&deps_dir, &ordered(&next), byk_version());
+                let _ = sync::save(deps_dir, &ordered(&next), byk_version());
                 return Err(failure(message, &written, scope, stem));
             }
         }
@@ -249,22 +272,22 @@ pub(super) fn install(
         }
 
         let path = deps_dir.join(&entry.dest);
-        eprintln!("  remove  {}", label_of(&key, &entry.dest));
+        eprintln!("  remove  {}", label_of(key, &entry.dest));
         match deps::remove_installed(&path) {
             Ok(()) => {
-                prune_empty_parents(&deps_dir, &path);
+                prune_empty_parents(deps_dir, &path);
                 next.remove(&entry.dest);
                 removed_count += 1;
             }
             Err(message) => {
-                let _ = sync::save(&deps_dir, &ordered(&next), byk_version());
+                let _ = sync::save(deps_dir, &ordered(&next), byk_version());
                 return Err(failure(message, &written, scope, stem));
             }
         }
     }
 
     next.retain(|dest, _| inspection.desired.iter().any(|want| &want.dest == dest));
-    sync::save(&deps_dir, &ordered(&next), byk_version())?;
+    sync::save(deps_dir, &ordered(&next), byk_version())?;
 
     if installed_now > 0 {
         // 本地条目不下载，但汇总行只说取回了几个文件——来源在括号里交代
@@ -286,7 +309,7 @@ pub(super) fn install(
             deps_dir.display()
         );
     }
-    warn_unknown(&inspection.diff.unknown, &deps_dir);
+    warn_unknown(&inspection.diff.unknown, deps_dir);
 
     Ok(())
 }
@@ -475,6 +498,17 @@ fn status(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<Outcome, 
         rows.push(("stale", label_of(&key, &entry.dest)));
     }
 
+    // pip 包：venv 里已装的才算 ok，其余都算 missing
+    let installed = deps::installed_pip_packages(&deps_dir);
+    for spec in &decl.pip {
+        let state = if installed.contains(&deps::pip_package_name(spec)) {
+            "ok"
+        } else {
+            "missing"
+        };
+        rows.push((state, format!("pip:{spec}")));
+    }
+
     let present = rows.iter().filter(|(state, _)| *state == "ok").count();
     let stale = inspection.diff.removed.len();
     let todo = rows
@@ -482,7 +516,8 @@ fn status(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<Outcome, 
         .filter(|(state, _)| matches!(*state, "missing" | "outdated"))
         .count();
 
-    let mut output = format!("{}: {} declared, {} present", key, assets.len(), present);
+    let declared = assets.len() + decl.pip.len();
+    let mut output = format!("{}: {} declared, {} present", key, declared, present);
     if stale > 0 {
         output.push_str(&format!(", {stale} stale"));
     }
@@ -552,7 +587,7 @@ pub(super) fn declaration(
 
 fn no_declaration(target: &Path) -> String {
     format!(
-        "This file declares no \"$deps\": {}\nHint: add a \"$deps\" object with a \"files\" array",
+        "This file declares no \"$deps\": {}\nHint: add a \"$deps\" object with a \"files\" or \"pip\" array",
         target.display()
     )
 }

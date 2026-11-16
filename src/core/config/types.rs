@@ -127,6 +127,8 @@ pub struct AliasFile {
     pub inherited_private: bool,
     /// 文件级 $paths，需要前置到 PATH 环境变量的目录列表
     pub inherited_paths: Vec<String>,
+    /// 文件级 $deps.pip 对应的 venv 可执行目录（bin / Scripts），自动前置到 PATH
+    pub venv_bin: Option<String>,
 }
 
 /// 合并后叶子节点，包含来源信息。
@@ -139,6 +141,8 @@ pub struct ResolvedAlias {
     pub source_path: Option<PathBuf>,
     /// 来源文件的 $paths，需要前置到 PATH 环境变量的目录列表
     pub paths: Vec<String>,
+    /// 来源文件的 venv 可执行目录（bin / Scripts），自动前置到 PATH
+    pub venv_bin: Option<String>,
 }
 
 /// 合并配置树节点。每个节点可以同时拥有别名和子节点。

@@ -481,9 +481,12 @@ fn parse_alias_file(
         }
     };
 
-    // $deps 是声明而非别名：移除后校验并报告，不进合并空间
+    // $deps 是声明而非别名：移除后校验并报告，不进合并空间；
+    // 声明了 pip 时返回 venv 的 bin（/Scripts）目录，执行期自动前置到 PATH
+    let mut venv_bin = None;
     if let Some(value) = obj.remove("$deps") {
-        validate_deps_declaration(value, stem, is_global, root_dir, doc, owner, diagnostics);
+        venv_bin =
+            validate_deps_declaration(value, stem, is_global, root_dir, doc, owner, diagnostics);
     }
 
     validate_aliases(obj, "", doc, owner, diagnostics);
@@ -499,6 +502,7 @@ fn parse_alias_file(
         inherited_mode,
         inherited_private,
         inherited_paths,
+        venv_bin,
     })
 }
 
@@ -513,7 +517,7 @@ fn validate_deps_declaration(
     doc: &Path,
     owner: &Path,
     diagnostics: &mut Vec<Diagnostic>,
-) {
+) -> Option<String> {
     let declaration = match deps::parse_deps(&value) {
         Ok(decl) => decl,
         Err(message) => {
@@ -524,7 +528,7 @@ fn validate_deps_declaration(
                 doc,
                 format!("$deps ignored: {message}"),
             );
-            return;
+            return None;
         }
     };
 
@@ -538,6 +542,13 @@ fn validate_deps_declaration(
             doc,
             format!("$deps ignored: {message}"),
         );
+        return None;
+    }
+
+    if declaration.pip.is_empty() {
+        None
+    } else {
+        Some(deps::venv_bin(&deps_dir).to_string_lossy().into_owned())
     }
 }
 
@@ -718,6 +729,7 @@ mod tests {
             inherited_mode: None,
             inherited_private: false,
             inherited_paths: Vec::new(),
+            venv_bin: None,
         }
     }
 

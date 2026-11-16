@@ -33,7 +33,7 @@ use serde_json::Value;
 use super::config::build_file_key;
 
 /// `$deps` 顶层允许的字段；报错时按这个顺序列出。
-const DEP_FIELDS: [&str; 2] = ["files", "base"];
+const DEP_FIELDS: [&str; 3] = ["files", "base", "pip"];
 
 /// `$deps.files` 条目允许的字段；报错时按这个顺序列出。
 const ENTRY_FIELDS: [&str; 5] = ["src", "to", "name", "extract", "exec"];
@@ -50,6 +50,8 @@ pub(crate) struct Declaration {
     /// 相对 `src` 的解析基准。落盘态只可能是绝对地址，见 [`Base`]。
     pub(crate) base: Option<Base>,
     pub(crate) files: Vec<DepEntry>,
+    /// pip 包声明（PEP 508/440 规格字符串），装进专属目录的虚拟环境。
+    pub(crate) pip: Vec<String>,
 }
 
 /// `$deps.base` 的两种落盘形态。
@@ -158,6 +160,159 @@ pub(crate) fn deps_dir_var(
         .into_owned()
 }
 
+// ── pip：专属目录里的 Python 虚拟环境 ──────────────────────────────────
+
+/// pip 虚拟环境在专属目录里的目录名（隐藏目录，避开文件同步的落点空间）。
+pub(crate) const VENV_DIR: &str = ".venv";
+
+/// venv 里可执行文件所在子目录：Unix 是 `bin`，Windows 是 `Scripts`。
+pub(crate) fn venv_bin_dir() -> &'static str {
+    #[cfg(windows)]
+    {
+        "Scripts"
+    }
+    #[cfg(not(windows))]
+    {
+        "bin"
+    }
+}
+
+/// 创建 venv 用的系统解释器：Unix 是 `python3`，Windows 是 `python`。
+pub(crate) fn system_python() -> &'static str {
+    #[cfg(windows)]
+    {
+        "python"
+    }
+    #[cfg(not(windows))]
+    {
+        "python3"
+    }
+}
+
+/// venv 内的 python 可执行文件路径。
+pub(crate) fn venv_python(venv: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        venv.join("Scripts").join("python.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        venv.join("bin").join("python")
+    }
+}
+
+/// 专属目录下的 venv 根目录。
+pub(crate) fn venv_dir(deps_dir: &Path) -> PathBuf {
+    deps_dir.join(VENV_DIR)
+}
+
+/// venv 的 `bin`（/`Scripts`）目录，用于前置到 PATH。
+pub(crate) fn venv_bin(deps_dir: &Path) -> PathBuf {
+    deps_dir.join(VENV_DIR).join(venv_bin_dir())
+}
+
+/// 在专属目录里建 venv 并 `pip install` 声明的包。
+///
+/// venv 只在缺失时创建（幂等）；`pip install` 每次执行（v1：不判断是否已装，
+/// 依赖 pip 自身的收敛能力，先把链路跑通）。
+pub(crate) fn install_pip(deps_dir: &Path, packages: &[String]) -> Result<(), String> {
+    fs::create_dir_all(deps_dir)
+        .map_err(|error| format!("cannot create {}: {error}", deps_dir.display()))?;
+
+    let venv = venv_dir(deps_dir);
+    if !venv_bin(deps_dir).is_dir() {
+        eprintln!(
+            "Creating a Python virtual environment in {}:",
+            venv.display()
+        );
+        let output = Command::new(system_python())
+            .args(["-m", "venv"])
+            .arg(&venv)
+            .output()
+            .map_err(|error| match error.kind() {
+                std::io::ErrorKind::NotFound => format!(
+                    "{} is required to create a Python virtual environment\nHint: install Python 3 and retry",
+                    system_python()
+                ),
+                _ => format!("cannot run \"{}\": {error}", system_python()),
+            })?;
+        if !output.status.success() {
+            return Err(format!(
+                "cannot create the virtual environment: \"{}\" {}",
+                system_python(),
+                first_stderr(&output.stderr)
+            ));
+        }
+    }
+
+    let python = venv_python(&venv);
+    eprintln!("Installing Python packages into {}:", venv.display());
+    let status = Command::new(&python)
+        .args(["-m", "pip", "install"])
+        .args(packages)
+        .status()
+        .map_err(|error| format!("cannot run \"{}\": {error}", python.display()))?;
+    if !status.success() {
+        return Err(format!(
+            "pip install failed (exit {})",
+            status.code().unwrap_or(1)
+        ));
+    }
+    Ok(())
+}
+
+/// 把 pip 包名规范成 PEP 503 形式：小写，`_` / `.` / `-` 统一成 `-`。
+fn normalize_pip_name(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '_' | '.' => '-',
+            c => c.to_ascii_lowercase(),
+        })
+        .collect()
+}
+
+/// 从 PEP 508 规格里抠出包名（丢弃 extras、版本约束与环境标记）。
+///
+/// 名字由字母数字与 `.` `-` `_` 组成，遇到 `[` / `>=` / `;` 等即结束。
+/// 结果经过 [`normalize_pip_name`] 规范化，便于和 `pip list` 比对。
+pub(crate) fn pip_package_name(spec: &str) -> String {
+    let raw: String = spec
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+        .collect();
+    normalize_pip_name(&raw)
+}
+
+/// venv 里已安装的包名集合（规范化）。venv 不存在或查询失败时返回空集合。
+pub(crate) fn installed_pip_packages(deps_dir: &Path) -> Vec<String> {
+    let python = venv_python(&venv_dir(deps_dir));
+    if !python.is_file() {
+        return Vec::new();
+    }
+
+    let output = match Command::new(&python)
+        .args(["-m", "pip", "list", "--format=json"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => return Vec::new(),
+    };
+
+    let Ok(value) = serde_json::from_slice::<Value>(&output.stdout) else {
+        return Vec::new();
+    };
+    let Some(items) = value.as_array() else {
+        return Vec::new();
+    };
+
+    items
+        .iter()
+        .filter_map(|item| item.get("name").and_then(Value::as_str))
+        .map(normalize_pip_name)
+        .collect()
+}
+
 // ── 语法层：`$deps` 结构校验 ────────────────────────────────────────────
 
 /// 解析并校验 `$deps` 字段的值；返回声明。
@@ -172,7 +327,7 @@ pub(crate) fn parse_deps(value: &Value) -> Result<Declaration, String> {
     for key in obj.keys() {
         if !DEP_FIELDS.contains(&key.as_str()) {
             return Err(format!(
-                "$deps has unknown field \"{key}\"; expected \"files\" or \"base\""
+                "$deps has unknown field \"{key}\"; expected \"files\", \"base\" or \"pip\""
             ));
         }
     }
@@ -182,20 +337,35 @@ pub(crate) fn parse_deps(value: &Value) -> Result<Declaration, String> {
         Some(raw) => Some(parse_base(raw)?),
     };
 
-    let Some(items) = obj.get("files") else {
-        return Err("$deps must name a \"files\" array".to_string());
-    };
-    let Value::Array(items) = items else {
-        return Err("$deps.files must be an array".to_string());
+    let pip = match obj.get("pip") {
+        None => Vec::new(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| match item {
+                Value::String(text) if !text.trim().is_empty() => Ok(text.clone()),
+                Value::String(_) => Err(format!("\"$deps.pip[{index}]\" must not be empty")),
+                _ => Err(format!("\"$deps.pip[{index}]\" must be a string")),
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => return Err("$deps.pip must be an array of strings".to_string()),
     };
 
-    let files = items
-        .iter()
-        .enumerate()
-        .map(|(index, item)| parse_entry(index, item))
-        .collect::<Result<Vec<_>, _>>()?;
+    let files = match obj.get("files") {
+        Some(Value::Array(items)) => items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| parse_entry(index, item))
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => return Err("$deps.files must be an array".to_string()),
+        // files 只在声明了 pip 时可缺省；否则 $deps 是个空声明，没有意义
+        None if pip.is_empty() => {
+            return Err("$deps must name a \"files\" or \"pip\" array".to_string());
+        }
+        None => Vec::new(),
+    };
 
-    Ok(Declaration { base, files })
+    Ok(Declaration { base, files, pip })
 }
 
 /// `base`：目录，落盘态只认绝对地址——http(s) URL，或本机绝对路径。
@@ -1386,8 +1556,62 @@ mod tests {
     fn missing_files_is_an_error() {
         assert_eq!(
             parse_deps(&json!({})).unwrap_err(),
-            "$deps must name a \"files\" array"
+            "$deps must name a \"files\" or \"pip\" array"
         );
+    }
+
+    #[test]
+    fn pip_alone_parses_string_array() {
+        let decl = parse_deps(&json!({"pip": ["requests", "click>=8.0"]})).unwrap();
+        assert!(decl.files.is_empty());
+        assert_eq!(
+            decl.pip,
+            vec!["requests".to_string(), "click>=8.0".to_string()]
+        );
+    }
+
+    #[test]
+    fn pip_rejects_non_array() {
+        assert_eq!(
+            parse_deps(&json!({"pip": "requests"})).unwrap_err(),
+            "$deps.pip must be an array of strings"
+        );
+    }
+
+    #[test]
+    fn pip_rejects_non_string_entry() {
+        assert!(
+            parse_deps(&json!({"pip": [1]}))
+                .unwrap_err()
+                .contains("must be a string")
+        );
+    }
+
+    #[test]
+    fn pip_rejects_empty_entry() {
+        assert!(
+            parse_deps(&json!({"pip": [""]}))
+                .unwrap_err()
+                .contains("must not be empty")
+        );
+    }
+
+    // ---------- pip_package_name ----------
+
+    #[test]
+    fn pip_package_name_strips_version_and_extras() {
+        assert_eq!(pip_package_name("fcbyk-cli"), "fcbyk-cli");
+        assert_eq!(pip_package_name("click>=8.0"), "click");
+        assert_eq!(pip_package_name("requests[socks]>=2.0"), "requests");
+        assert_eq!(pip_package_name("pkg; python_version < '3.8'"), "pkg");
+        assert_eq!(pip_package_name("  padded==1.2.3  "), "padded");
+    }
+
+    #[test]
+    fn pip_package_name_normalizes_separators_and_case() {
+        assert_eq!(pip_package_name("PyYAML"), "pyyaml");
+        assert_eq!(pip_package_name("Foo.Bar"), "foo-bar");
+        assert_eq!(pip_package_name("foo_bar"), "foo-bar");
     }
 
     #[test]
