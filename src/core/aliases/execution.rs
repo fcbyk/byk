@@ -451,10 +451,8 @@ pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: 
     // 相对 $paths 以配置文件所在目录为基准，与调用时的当前目录无关
     let config_dir = resolved.source_path.as_deref().and_then(|p| p.parent());
     let mut custom_paths = absolutize_paths(&resolved.paths, config_dir);
-    // 声明了 $deps.pip 时，venv 的 bin 目录也自动前置到 PATH
-    if let Some(bin) = &resolved.venv_bin {
-        custom_paths.push(bin.clone());
-    }
+    // $deps 声明的可执行目录（venv 的 bin / node_modules/.bin）也自动前置到 PATH
+    custom_paths.extend(resolved.prepend_paths.iter().cloned());
 
     let working_dir = resolve_working_dir(
         cwd.as_deref(),
@@ -538,10 +536,8 @@ pub fn resolve_alias(resolved: &ResolvedAlias, args: &[String]) -> ResolvedComma
     // 相对 $paths 以配置文件所在目录为基准，与 execute_alias 保持一致
     let config_dir = resolved.source_path.as_deref().and_then(|p| p.parent());
     let mut custom_paths = absolutize_paths(&resolved.paths, config_dir);
-    // 声明了 $deps.pip 时，venv 的 bin 目录也自动前置到 PATH
-    if let Some(bin) = &resolved.venv_bin {
-        custom_paths.push(bin.clone());
-    }
+    // $deps 声明的可执行目录（venv 的 bin / node_modules/.bin）也自动前置到 PATH
+    custom_paths.extend(resolved.prepend_paths.iter().cloned());
     let working_dir = resolve_working_dir(definition.cwd.as_deref(), config_dir);
     let paths = build_path_prefixes(&working_dir, &custom_paths);
 
@@ -1314,7 +1310,7 @@ mod tests {
             source: "@t".into(),
             source_path: None,
             paths: Vec::new(),
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         }
     }
 
@@ -1352,7 +1348,7 @@ mod tests {
             source: "@t".into(),
             source_path: None,
             paths: Vec::new(),
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         };
         let rc = resolve_alias(&resolved, &[]);
         assert_eq!(rc.mode, Mode::Interactive);
@@ -1374,7 +1370,7 @@ mod tests {
             source: "@t".into(),
             source_path: None,
             paths: Vec::new(),
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         };
         let rc = resolve_alias(&resolved, &[]);
         assert_eq!(rc.mode, Mode::Silent);
@@ -1398,7 +1394,7 @@ mod tests {
             source: "@t".into(),
             source_path: None,
             paths: vec![dir.path().to_string_lossy().into_owned()],
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         };
 
         let rc = resolve_alias(&resolved, &[]);
@@ -1411,7 +1407,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_meta_with_venv_bin_prepends_it() {
+    fn resolve_meta_with_prepend_paths_prepends_it() {
         use crate::core::config::AliasValue;
         let dir = tempfile::tempdir().unwrap();
         let venv_bin = dir.path().join(".venv").join("bin");
@@ -1422,11 +1418,11 @@ mod tests {
             source: "@t".into(),
             source_path: None,
             paths: Vec::new(),
-            venv_bin: Some(venv_bin.to_string_lossy().into_owned()),
+            prepend_paths: vec![venv_bin.to_string_lossy().into_owned()],
         };
 
         let rc = resolve_alias(&resolved, &[]);
-        // $deps.pip 声明的 venv bin 目录被自动前置到 PATH
+        // $deps 推导出的可执行目录被自动前置到 PATH
         let bin = venv_bin.to_string_lossy().into_owned();
         assert!(rc.paths.contains(&bin));
     }

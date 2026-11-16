@@ -70,8 +70,10 @@ fn install_deps(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<(),
         eprintln!("Cloned file declares no $deps; nothing to install");
         return Ok(());
     };
-    if decl.files.is_empty() && decl.pip.is_empty() {
-        eprintln!("Cloned file declares no assets ($deps.files and $deps.pip are empty)");
+    if decl.files.is_empty() && decl.pip.is_empty() && decl.npm.is_empty() {
+        eprintln!(
+            "Cloned file declares no assets ($deps.files, $deps.pip and $deps.npm are empty)"
+        );
         return Ok(());
     }
 

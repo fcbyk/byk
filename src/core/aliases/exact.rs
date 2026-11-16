@@ -224,7 +224,7 @@ pub fn lookup_exact_alias(
                     source: file_key.to_string(),
                     source_path,
                     paths: f.inherited_paths.clone(),
-                    venv_bin: f.venv_bin.clone(),
+                    prepend_paths: f.prepend_paths.clone(),
                 },
                 display_source,
             ));

@@ -161,7 +161,7 @@ mod tests {
             source: "@test".into(),
             source_path: None,
             paths: Vec::new(),
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         }
     }
 
@@ -177,7 +177,7 @@ mod tests {
             source: "@test".into(),
             source_path: None,
             paths: Vec::new(),
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         }
     }
 
@@ -288,7 +288,7 @@ mod tests {
                 source: "@test".into(),
                 source_path: None,
                 paths: Vec::new(),
-                venv_bin: None,
+                prepend_paths: Vec::new(),
             }),
             ..Default::default()
         };
@@ -313,7 +313,7 @@ mod tests {
                 source: "@test".into(),
                 source_path: None,
                 paths: Vec::new(),
-                venv_bin: None,
+                prepend_paths: Vec::new(),
             }),
             ..Default::default()
         };

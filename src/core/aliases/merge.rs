@@ -20,7 +20,7 @@ struct MergeContext<'a> {
     inherited_mode: Option<Mode>,
     inherited_private: bool,
     inherited_paths: &'a [String],
-    venv_bin: Option<&'a str>,
+    prepend_paths: &'a [String],
 }
 
 /// 将 source 深度合并进 target。
@@ -72,7 +72,7 @@ fn deep_merge_dict(
                         source: ctx.file_key.to_string(),
                         source_path: ctx.source_path.map(|p| p.to_path_buf()),
                         paths: ctx.inherited_paths.to_vec(),
-                        venv_bin: ctx.venv_bin.map(str::to_string),
+                        prepend_paths: ctx.prepend_paths.to_vec(),
                     });
                 }
 
@@ -118,7 +118,7 @@ pub(crate) fn build_merged_aliases(files: &[AliasFile]) -> MergedConfig {
                 inherited_mode: f.inherited_mode,
                 inherited_private: f.inherited_private,
                 inherited_paths: &f.inherited_paths,
-                venv_bin: f.venv_bin.as_deref(),
+                prepend_paths: &f.prepend_paths,
             },
         );
     }
@@ -315,7 +315,7 @@ mod tests {
             source: "@test".into(),
             source_path: None,
             paths: Vec::new(),
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         }
     }
 
@@ -469,7 +469,7 @@ mod tests {
             inherited_mode: None,
             inherited_private: false,
             inherited_paths: vec!["./scripts".into(), "~/tools/bin".into()],
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         }];
         let merged = build_merged_aliases(&files);
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
@@ -492,7 +492,7 @@ mod tests {
             inherited_mode: None,
             inherited_private: false,
             inherited_paths: Vec::new(),
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         }];
         let merged = build_merged_aliases(&files);
         let resolved = resolve_merged_alias(&merged, "build").unwrap();

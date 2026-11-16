@@ -137,7 +137,7 @@ fn parse_args(args: &[String]) -> Result<Action, String> {
 
 // ── install ─────────────────────────────────────────────────────────────
 
-/// 安装声明里的依赖：`$deps.files` 同步文件，`$deps.pip` 建 venv 并装包。
+/// 安装声明里的依赖：`$deps.files` 同步文件，`$deps.pip` 建 venv 并装包，`$deps.npm` 装进 node_modules。
 ///
 /// 不做二次确认，过程逐条打在 stderr；清单让失败后的下一次安装能接着做。
 pub(super) fn install(
@@ -158,9 +158,10 @@ pub(super) fn install(
     let assets = plan_entries(decl, &deps_dir, &key)?;
     let has_files = !assets.is_empty();
     let has_pip = !decl.pip.is_empty();
-    if !has_files && !has_pip {
+    let has_npm = !decl.npm.is_empty();
+    if !has_files && !has_pip && !has_npm {
         return Err(
-            "nothing to install: both $deps.files and $deps.pip are empty\nHint: run `..deps uninstall` to remove the whole directory"
+            "nothing to install: $deps.files, $deps.pip and $deps.npm are all empty\nHint: run `..deps uninstall` to remove the whole directory"
                 .to_string(),
         );
     }
@@ -171,6 +172,10 @@ pub(super) fn install(
 
     if has_pip {
         deps::install_pip(&deps_dir, &decl.pip)?;
+    }
+
+    if has_npm {
+        deps::install_npm(&deps_dir, &decl.npm)?;
     }
 
     Ok(())
@@ -509,6 +514,16 @@ fn status(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<Outcome, 
         rows.push((state, format!("pip:{spec}")));
     }
 
+    // npm 包：node_modules 里已有对应目录的才算 ok，其余都算 missing
+    for spec in &decl.npm {
+        let state = if deps::npm_package_installed(&deps_dir, spec) {
+            "ok"
+        } else {
+            "missing"
+        };
+        rows.push((state, format!("npm:{spec}")));
+    }
+
     let present = rows.iter().filter(|(state, _)| *state == "ok").count();
     let stale = inspection.diff.removed.len();
     let todo = rows
@@ -516,7 +531,7 @@ fn status(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<Outcome, 
         .filter(|(state, _)| matches!(*state, "missing" | "outdated"))
         .count();
 
-    let declared = assets.len() + decl.pip.len();
+    let declared = assets.len() + decl.pip.len() + decl.npm.len();
     let mut output = format!("{}: {} declared, {} present", key, declared, present);
     if stale > 0 {
         output.push_str(&format!(", {stale} stale"));
@@ -587,7 +602,7 @@ pub(super) fn declaration(
 
 fn no_declaration(target: &Path) -> String {
     format!(
-        "This file declares no \"$deps\": {}\nHint: add a \"$deps\" object with a \"files\" or \"pip\" array",
+        "This file declares no \"$deps\": {}\nHint: add a \"$deps\" object with a \"files\", \"pip\" or \"npm\" array",
         target.display()
     )
 }

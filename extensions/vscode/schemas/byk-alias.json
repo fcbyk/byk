@@ -73,12 +73,26 @@
                   }
                 ]
               }
+            },
+            "pip": {
+              "description": "要装进专属目录虚拟环境（.venv）的 Python 包列表，条目是 PEP 508 规格字符串（如 \"requests\"、\"click>=8.0\"）。装好后 venv 的 bin/Scripts 目录自动前置到 PATH。",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "npm": {
+              "description": "要装进专属目录 node_modules 的 npm 包列表，条目是包名加可选版本约束（如 \"chalk\"、\"commander@^12\"、\"@scope/pkg\"）。无需虚拟环境，包直接装进专属目录，node_modules/.bin 自动前置到 PATH。",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           },
           "additionalProperties": false,
-          "required": [
-            "files"
-          ]
+          "minProperties": 1
         },
         "$var": {
           "description": "文件级变量：与内置变量合并为一张表，扫描期一次性替换文件内所有字符串值（JSON key 不动）。同名时此处覆盖内置值。内置变量 ${byk_dir}（~/.byk）、${work_dir}（调用 byk 时所在目录，不受 $cwd 影响）、${file_dir}（当前别名文件所在目录）与 ${deps_dir}（该文件的依赖目录：全局为 ~/.byk/deps/@@<文件名>，局部为 <文件所在目录>/.byk/deps/@<文件名>）也在这张表里，同名声明覆盖它们。展开结果都是绝对路径，等价于直接写绝对路径。语法 ${name}，name 须符合 [A-Za-z_][A-Za-z0-9_]*。值可为字符串或平台映射（当前平台取值）。示例：{\"BASE\": \"https://github.com/o/r/releases/download/v1.0.0\", \"BIN\": {\"darwin-arm64\": \"${BASE}/mac\"}}",

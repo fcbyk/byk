@@ -12,7 +12,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::deps::{DepEntry, Origin, PlannedAsset, VENV_DIR};
+use super::deps::{DepEntry, NODE_MODULES, Origin, PlannedAsset, VENV_DIR};
 
 /// 清单文件名；点号开头，和 `node_modules/.package-lock.json` 一个路数。
 pub(crate) const MANIFEST_NAME: &str = ".byk-deps.json";
@@ -433,13 +433,16 @@ fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) {
             continue;
         };
         if meta.is_dir() {
-            // venv 是 pip 建的虚拟环境，属于 byk 自己管的资产，别报成未知文件
-            if prefix.is_empty() && name == VENV_DIR {
+            // venv / node_modules 是 pip / npm 建的资产，属于 byk 自己管的，别报成未知文件
+            if prefix.is_empty() && (name == VENV_DIR || name == NODE_MODULES) {
                 continue;
             }
             walk(&entry.path(), &path, out);
-        } else if path != MANIFEST_NAME && !(prefix.is_empty() && name == ".gitignore") {
-            // 清单和自家的 .gitignore 不算资产，别报成未知文件
+        } else if path != MANIFEST_NAME
+            && !(prefix.is_empty()
+                && (name == ".gitignore" || name == "package.json" || name == "package-lock.json"))
+        {
+            // 清单、自家的 .gitignore 和 npm 的 package.json / lock 不算资产，别报成未知文件
             out.push(path);
         }
     }

@@ -482,10 +482,10 @@ fn parse_alias_file(
     };
 
     // $deps 是声明而非别名：移除后校验并报告，不进合并空间；
-    // 声明了 pip 时返回 venv 的 bin（/Scripts）目录，执行期自动前置到 PATH
-    let mut venv_bin = None;
+    // 声明了 pip / npm 时返回要前置到 PATH 的可执行目录，执行期自动生效
+    let mut prepend_paths = Vec::new();
     if let Some(value) = obj.remove("$deps") {
-        venv_bin =
+        prepend_paths =
             validate_deps_declaration(value, stem, is_global, root_dir, doc, owner, diagnostics);
     }
 
@@ -502,7 +502,7 @@ fn parse_alias_file(
         inherited_mode,
         inherited_private,
         inherited_paths,
-        venv_bin,
+        prepend_paths,
     })
 }
 
@@ -517,7 +517,7 @@ fn validate_deps_declaration(
     doc: &Path,
     owner: &Path,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Option<String> {
+) -> Vec<String> {
     let declaration = match deps::parse_deps(&value) {
         Ok(decl) => decl,
         Err(message) => {
@@ -528,7 +528,7 @@ fn validate_deps_declaration(
                 doc,
                 format!("$deps ignored: {message}"),
             );
-            return None;
+            return Vec::new();
         }
     };
 
@@ -542,14 +542,21 @@ fn validate_deps_declaration(
             doc,
             format!("$deps ignored: {message}"),
         );
-        return None;
+        return Vec::new();
     }
 
-    if declaration.pip.is_empty() {
-        None
-    } else {
-        Some(deps::venv_bin(&deps_dir).to_string_lossy().into_owned())
+    let mut paths = Vec::new();
+    if !declaration.pip.is_empty() {
+        paths.push(deps::venv_bin(&deps_dir).to_string_lossy().into_owned());
     }
+    if !declaration.npm.is_empty() {
+        paths.push(
+            deps::node_modules_bin(&deps_dir)
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+    paths
 }
 
 /// 校验别名树里的字段类型；这些错误会被后续解析静默丢弃，所以必须在这里报告。
@@ -729,7 +736,7 @@ mod tests {
             inherited_mode: None,
             inherited_private: false,
             inherited_paths: Vec::new(),
-            venv_bin: None,
+            prepend_paths: Vec::new(),
         }
     }
 

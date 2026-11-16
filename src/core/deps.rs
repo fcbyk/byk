@@ -33,7 +33,7 @@ use serde_json::Value;
 use super::config::build_file_key;
 
 /// `$deps` 顶层允许的字段；报错时按这个顺序列出。
-const DEP_FIELDS: [&str; 3] = ["files", "base", "pip"];
+const DEP_FIELDS: [&str; 4] = ["files", "base", "pip", "npm"];
 
 /// `$deps.files` 条目允许的字段；报错时按这个顺序列出。
 const ENTRY_FIELDS: [&str; 5] = ["src", "to", "name", "extract", "exec"];
@@ -52,6 +52,8 @@ pub(crate) struct Declaration {
     pub(crate) files: Vec<DepEntry>,
     /// pip 包声明（PEP 508/440 规格字符串），装进专属目录的虚拟环境。
     pub(crate) pip: Vec<String>,
+    /// npm 包声明（包名 + 可选版本约束），装进专属目录的 node_modules。
+    pub(crate) npm: Vec<String>,
 }
 
 /// `$deps.base` 的两种落盘形态。
@@ -313,6 +315,84 @@ pub(crate) fn installed_pip_packages(deps_dir: &Path) -> Vec<String> {
         .collect()
 }
 
+// ── npm：专属目录里的 node_modules ─────────────────────────────────────
+
+/// npm 包装进专属目录下的 `node_modules`（无需虚拟环境：node_modules 本身就是目录级隔离）。
+pub(crate) const NODE_MODULES: &str = "node_modules";
+
+/// 专属目录下 npm 可执行脚本所在目录（node_modules/.bin），全平台同名。
+pub(crate) fn node_modules_bin(deps_dir: &Path) -> PathBuf {
+    deps_dir.join(NODE_MODULES).join(".bin")
+}
+
+/// 在专属目录里 `npm install` 声明的包。
+///
+/// 不建虚拟环境：npm 直接把包装进专属目录的 node_modules，并在根下生成
+/// package.json / package-lock.json。主动写固定 name 的 package.json，避免
+/// npm 拿目录名（如 `@hello`）当包名。幂等交给 npm（v1：每次直接执行）。
+pub(crate) fn install_npm(deps_dir: &Path, packages: &[String]) -> Result<(), String> {
+    fs::create_dir_all(deps_dir)
+        .map_err(|error| format!("cannot create {}: {error}", deps_dir.display()))?;
+    ensure_package_json(deps_dir)?;
+
+    eprintln!("Installing npm packages into {}:", deps_dir.display());
+    let status = Command::new("npm")
+        .args(["install"])
+        .args(packages)
+        .current_dir(deps_dir)
+        .status()
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => {
+                "npm is required to install npm packages\nHint: install Node.js and retry"
+                    .to_string()
+            }
+            _ => format!("cannot run \"npm\": {error}"),
+        })?;
+    if !status.success() {
+        return Err(format!(
+            "npm install failed (exit {})",
+            status.code().unwrap_or(1)
+        ));
+    }
+    Ok(())
+}
+
+/// 专属目录下没有 package.json 时写一个固定 name 的最小版本，`private` 防止误发。
+fn ensure_package_json(deps_dir: &Path) -> Result<(), String> {
+    let path = deps_dir.join("package.json");
+    if path.exists() {
+        return Ok(());
+    }
+    fs::write(
+        &path,
+        "{\n  \"name\": \"byk-deps\",\n  \"private\": true\n}\n",
+    )
+    .map_err(|error| format!("cannot write {}: {error}", path.display()))
+}
+
+/// 从 npm 规格里抠出包名（丢弃版本约束），形如 `chalk` 或 `@scope/pkg`。
+///
+/// node_modules 里的目录名就是包名本身，直接拿它拼路径判断装没装。
+pub(crate) fn npm_package_name(spec: &str) -> String {
+    let spec = spec.trim();
+    if let Some(rest) = spec.strip_prefix('@') {
+        // scope 包：@scope/pkg[@version]
+        let (scope, rest) = rest.split_once('/').unwrap_or((rest, ""));
+        let name = rest.split('@').next().unwrap_or("");
+        format!("@{scope}/{name}")
+    } else {
+        spec.split('@').next().unwrap_or("").to_string()
+    }
+}
+
+/// npm 包是否已装：看 node_modules 下有没有对应的包目录。
+pub(crate) fn npm_package_installed(deps_dir: &Path, spec: &str) -> bool {
+    deps_dir
+        .join(NODE_MODULES)
+        .join(npm_package_name(spec))
+        .is_dir()
+}
+
 // ── 语法层：`$deps` 结构校验 ────────────────────────────────────────────
 
 /// 解析并校验 `$deps` 字段的值；返回声明。
@@ -327,7 +407,7 @@ pub(crate) fn parse_deps(value: &Value) -> Result<Declaration, String> {
     for key in obj.keys() {
         if !DEP_FIELDS.contains(&key.as_str()) {
             return Err(format!(
-                "$deps has unknown field \"{key}\"; expected \"files\", \"base\" or \"pip\""
+                "$deps has unknown field \"{key}\"; expected \"files\", \"base\", \"pip\" or \"npm\""
             ));
         }
     }
@@ -351,6 +431,20 @@ pub(crate) fn parse_deps(value: &Value) -> Result<Declaration, String> {
         Some(_) => return Err("$deps.pip must be an array of strings".to_string()),
     };
 
+    let npm = match obj.get("npm") {
+        None => Vec::new(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| match item {
+                Value::String(text) if !text.trim().is_empty() => Ok(text.clone()),
+                Value::String(_) => Err(format!("\"$deps.npm[{index}]\" must not be empty")),
+                _ => Err(format!("\"$deps.npm[{index}]\" must be a string")),
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => return Err("$deps.npm must be an array of strings".to_string()),
+    };
+
     let files = match obj.get("files") {
         Some(Value::Array(items)) => items
             .iter()
@@ -358,14 +452,19 @@ pub(crate) fn parse_deps(value: &Value) -> Result<Declaration, String> {
             .map(|(index, item)| parse_entry(index, item))
             .collect::<Result<Vec<_>, _>>()?,
         Some(_) => return Err("$deps.files must be an array".to_string()),
-        // files 只在声明了 pip 时可缺省；否则 $deps 是个空声明，没有意义
-        None if pip.is_empty() => {
-            return Err("$deps must name a \"files\" or \"pip\" array".to_string());
+        // files 只在声明了 pip 或 npm 时可缺省；否则 $deps 是个空声明，没有意义
+        None if pip.is_empty() && npm.is_empty() => {
+            return Err("$deps must name a \"files\", \"pip\" or \"npm\" array".to_string());
         }
         None => Vec::new(),
     };
 
-    Ok(Declaration { base, files, pip })
+    Ok(Declaration {
+        base,
+        files,
+        pip,
+        npm,
+    })
 }
 
 /// `base`：目录，落盘态只认绝对地址——http(s) URL，或本机绝对路径。
@@ -1556,7 +1655,7 @@ mod tests {
     fn missing_files_is_an_error() {
         assert_eq!(
             parse_deps(&json!({})).unwrap_err(),
-            "$deps must name a \"files\" or \"pip\" array"
+            "$deps must name a \"files\", \"pip\" or \"npm\" array"
         );
     }
 
@@ -1596,6 +1695,60 @@ mod tests {
         );
     }
 
+    // ---------- npm ----------
+
+    #[test]
+    fn npm_alone_parses_string_array() {
+        let decl = parse_deps(&json!({"npm": ["chalk", "commander@^12"]})).unwrap();
+        assert!(decl.files.is_empty());
+        assert!(decl.pip.is_empty());
+        assert_eq!(
+            decl.npm,
+            vec!["chalk".to_string(), "commander@^12".to_string()]
+        );
+    }
+
+    #[test]
+    fn npm_rejects_non_array() {
+        assert_eq!(
+            parse_deps(&json!({"npm": "chalk"})).unwrap_err(),
+            "$deps.npm must be an array of strings"
+        );
+    }
+
+    #[test]
+    fn npm_rejects_non_string_entry() {
+        assert!(
+            parse_deps(&json!({"npm": [1]}))
+                .unwrap_err()
+                .contains("must be a string")
+        );
+    }
+
+    #[test]
+    fn npm_rejects_empty_entry() {
+        assert!(
+            parse_deps(&json!({"npm": [""]}))
+                .unwrap_err()
+                .contains("must not be empty")
+        );
+    }
+
+    // ---------- npm_package_name ----------
+
+    #[test]
+    fn npm_package_name_strips_version() {
+        assert_eq!(npm_package_name("chalk"), "chalk");
+        assert_eq!(npm_package_name("commander@^12"), "commander");
+        assert_eq!(npm_package_name("  padded@1.2.3  "), "padded");
+    }
+
+    #[test]
+    fn npm_package_name_handles_scoped() {
+        assert_eq!(npm_package_name("@scope/pkg"), "@scope/pkg");
+        assert_eq!(npm_package_name("@scope/pkg@1.0"), "@scope/pkg");
+    }
+
     // ---------- pip_package_name ----------
 
     #[test]
@@ -1617,9 +1770,9 @@ mod tests {
     #[test]
     fn unknown_top_field_is_rejected() {
         assert!(
-            parse_deps(&json!({"npm": []}))
+            parse_deps(&json!({"cargo": []}))
                 .unwrap_err()
-                .contains("unknown field \"npm\"")
+                .contains("unknown field \"cargo\"")
         );
     }
 
