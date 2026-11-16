@@ -491,6 +491,25 @@ function buildPath(): string {
   return binaryDirs().join(path.delimiter);
 }
 
+/**
+ * Absolute path of the byk binary this extension would run, or null.
+ *
+ * Same first-match-wins rule the child processes get through PATH, but
+ * checked up front so a missing binary is reported as such instead of
+ * surfacing as a failed spawn.
+ */
+function resolvedBinary(): string | null {
+  for (const dir of binaryDirs()) {
+    const candidate = path.join(dir, BINARY_NAME);
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      // missing or broken symlink — keep looking
+    }
+  }
+  return null;
+}
+
 // ── Alias File Diagnostics (Problems panel) ────────────────────────
 //
 // `byk __api__ check` scans the working directory and the global alias
@@ -719,69 +738,59 @@ function callResolve(key: string, cwd: string): ResolveResult | null {
   }
 }
 
-/** One entry from `byk __api__ file --list`. */
-interface AliasFileInfo {
-  key: string;
-  scope: 'global' | 'local';
-  path: string;
-  dir: string;
-}
+/** CJK ideograph blocks — mirrors `CJK_IDEOGRAPH_RANGES` in Rust. */
+const CJK_IDEOGRAPH_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x3400, 0x4DBF],   // Extension A
+  [0x4E00, 0x9FFF],   // Unified Ideographs
+  [0xF900, 0xFAFF],   // Compatibility Ideographs
+  [0x20000, 0x2A6DF], // Extension B
+  [0x2A700, 0x2B73F], // Extension C
+  [0x2B740, 0x2B81F], // Extension D
+  [0x2B820, 0x2CEAF], // Extension E
+  [0x2CEB0, 0x2EBEF], // Extension F
+  [0x2EBF0, 0x2EE5F], // Extension I
+  [0x2F800, 0x2FA1F], // Compatibility Ideographs Supplement
+  [0x30000, 0x3134F], // Extension G
+  [0x31350, 0x323AF], // Extension H
+];
 
-/** Call `byk __api__ file --list` in `dir`. Null on any failure. */
-function callFileList(dir: string): AliasFileInfo[] | null {
-  let stdout: string;
-  try {
-    const result = spawnSync('byk', ['__api__', 'file', '--list'], {
-      cwd: dir,
-      env: { ...process.env, [pathEnvKey()]: buildPath() },
-      encoding: 'utf-8',
-      timeout: 15000,
-      windowsHide: true,
-    });
-    if (result.error || result.status !== 0) return null;
-    stdout = result.stdout;
-  } catch {
-    return null;
+/** Mirror of `validate_filename`: empty, or letters/digits/`-`/`_`/CJK only. */
+function validateStem(stem: string): boolean {
+  if (stem === '') return true;
+  if (stem.includes('.')) return false;
+  for (const ch of stem) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code < 0x80 && /[A-Za-z0-9_-]/.test(ch)) continue;
+    if (CJK_IDEOGRAPH_RANGES.some(([low, high]) => code >= low && code <= high)) continue;
+    return false;
   }
-
-  try {
-    const payload = JSON.parse(stdout) as { files?: AliasFileInfo[] };
-    return Array.isArray(payload.files) ? payload.files : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Windows filenames are case-insensitive. */
-function fileNameKey(name: string): string {
-  return IS_WINDOWS ? name.toLowerCase() : name;
+  return true;
 }
 
 /**
- * Ask byk for the key of the local alias file behind `uri`.
+ * The `@file.key` address prefix for the file behind `uri` — `@stem`, or `@`
+ * for the anonymous `.byk.json`.
  *
- * The extension passes the file's own directory as cwd, so `file --list`
- * returns that file in the local scope with the exact key byk will address.
- * Null is returned after reporting why; filename rules stay in Rust.
+ * Derived from the filename, never from a byk process. The key is a pure
+ * function of the name (`build_file_key` in Rust is the same rule), so asking
+ * the CLI for it only made a missing binary fatal — including for run-direct,
+ * whose whole point is to work without the CLI.
+ *
+ * Filename rules are mirrored rather than delegated: `validate_filename`
+ * decides what the CLI can load, and the Problems panel still reports invalid
+ * names through `__api__ check`. Here the same rule only decides whether the
+ * editor can address the file at all.
  */
 function aliasFileKey(uri: vscode.Uri): string | null {
   const name = path.basename(uri.fsPath);
-  const files = callFileList(path.dirname(uri.fsPath));
+  const suffix = '.byk.json';
+  const stem = name.endsWith(suffix) ? name.slice(0, -suffix.length) : null;
 
-  if (files === null) {
-    vscode.window.showErrorMessage(`Failed to list alias files with byk: ${name}`);
-    return null;
-  }
-
-  const hit = files.find(
-    (file) => file.scope === 'local'
-      && fileNameKey(path.basename(file.path)) === fileNameKey(name),
-  );
-  if (!hit) {
+  if (stem === null || !validateStem(stem)) {
     vscode.window.showErrorMessage(`Not a valid .byk.json file: ${name}`);
     return null;
   }
-  return hit.key;
+  return stem ? `@${stem}` : '@';
 }
 
 /** Read `$mode` as a valid mode, ignoring anything unrecognised. */
@@ -852,10 +861,14 @@ function executeDirectCommand(command: string, cwd: string, paths: string[], tas
  * alias from rebuilding byk.exe itself.
  *
  * Interactive aliases fall back to `byk @key`; when the byk binary predates
- * the resolve endpoint, falls back to running the raw config value.
+ * the resolve endpoint — or is missing entirely — it falls back to running
+ * the raw config value. Nothing about this path waits on a byk process.
  */
 function runAliasDirect(exactCommand: string, rawValue: unknown, configDir: string) {
-  const resolved = callResolve(exactCommand, configDir);
+  // Without a binary there is nothing to ask: skip the spawn and go straight
+  // to the raw config value, which is the whole point of "run direct".
+  const hasBinary = resolvedBinary() !== null;
+  const resolved = hasBinary ? callResolve(exactCommand, configDir) : null;
 
   if (resolved) {
     if (resolvedMode(resolved) === 'interactive') {
@@ -875,15 +888,29 @@ function runAliasDirect(exactCommand: string, rawValue: unknown, configDir: stri
   // resolve unavailable — fall back to the raw value from the config file.
   const raw = rawValueToCommand(rawValue);
   if (!raw) {
-    vscode.window.showErrorMessage(`无法解析别名 "${exactCommand}"，且 byk 不支持 resolve`);
+    vscode.window.showErrorMessage(
+      hasBinary
+        ? `无法解析别名 "${exactCommand}"，且 byk 不支持 resolve`
+        : `无法解析别名 "${exactCommand}"：未找到 byk 二进制`,
+    );
     return;
   }
   if (raw.mode === 'interactive') {
+    if (!hasBinary) {
+      vscode.window.showErrorMessage(
+        `"${exactCommand}" 是交互别名，只能由 byk 执行，但未找到 byk 二进制`,
+      );
+      return;
+    }
     runAliasTask(exactCommand, configDir);
     return;
   }
 
-  vscode.window.showWarningMessage('byk resolve 不可用，直接运行原始命令（未做变量/占位符解析）');
+  vscode.window.showWarningMessage(
+    hasBinary
+      ? 'byk resolve 不可用，直接运行原始命令（未做变量/占位符解析）'
+      : '未找到 byk 二进制，直接运行原始命令（未做变量/占位符解析）',
+  );
   const rawCwd = raw.cwd ? path.resolve(configDir, resolveTilde(raw.cwd)) : configDir;
   executeDirectCommand(raw.command, rawCwd, [], `${exactCommand} (direct)`);
 }
@@ -1058,6 +1085,15 @@ export function activate(context: vscode.ExtensionContext) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
 
+      // This command executes through byk, so a missing binary is the answer —
+      // say so instead of launching a task that fails with "command not found".
+      if (resolvedBinary() === null) {
+        vscode.window.showErrorMessage(
+          `未找到 ${BINARY_NAME} 二进制，无法用 byk 执行。可在命令面板执行「查看当前使用的 byk」检查搜索顺序，或改用「独立运行别名」。`,
+        );
+        return;
+      }
+
       const document = editor.document;
       const filename = path.basename(document.fileName);
       const fileKey = aliasFileKey(document.uri);
@@ -1137,6 +1173,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
       if (!fileUri) {
         vscode.window.showErrorMessage('No .byk.json file found');
+        return;
+      }
+
+      if (resolvedBinary() === null) {
+        vscode.window.showErrorMessage(
+          `未找到 ${BINARY_NAME} 二进制，无法用 byk 执行。可在命令面板执行「查看当前使用的 byk」检查搜索顺序，或改用「独立运行别名」。`,
+        );
         return;
       }
 
