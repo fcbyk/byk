@@ -42,10 +42,13 @@ pub(crate) fn inspect(
         rows.push(("stale", label_of(key, &entry.dest)));
     }
 
-    // pip 包：venv 里已装的才算 ok，其余都算 missing
+    // pip 包：venv 里已装的才算 ok，缺失算 missing；URL/VCS 直接引用标 unknown，
+    // 这类规格里没有包名，本地无法可靠判定装没装，交给用户自查。
     let installed = installed_pip_packages(deps_dir);
     for spec in &decl.pip {
-        let state = if installed.contains(&pip_package_name(spec)) {
+        let state = if is_direct_reference(spec) {
+            "unknown"
+        } else if installed.contains(&pip_package_name(spec)) {
             "ok"
         } else {
             "missing"
@@ -88,5 +91,40 @@ fn label_of(key: &str, dest: &str) -> String {
         key.to_string()
     } else {
         format!("{key}/{dest}")
+    }
+}
+
+/// URL/VCS 直接引用（`git+` / `hg+` / `svn+` / `bzr+` 或直链 URL）里没有包名，
+/// 无法用 `pip list` 比对装没装，只能标 unknown 交给用户自查。
+fn is_direct_reference(spec: &str) -> bool {
+    let spec = spec.trim();
+    let rest = ["git+", "hg+", "svn+", "bzr+"]
+        .iter()
+        .find_map(|prefix| spec.strip_prefix(prefix))
+        .unwrap_or(spec);
+    rest.starts_with("http://") || rest.starts_with("https://") || rest.starts_with("file://")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_direct_reference;
+
+    #[test]
+    fn flags_url_and_vcs_specs() {
+        assert!(is_direct_reference(
+            "git+https://github.com/fcbyk/slide.git#subdirectory=server"
+        ));
+        assert!(is_direct_reference(
+            "git+https://github.com/fcbyk/fcbyk-cli.git"
+        ));
+        assert!(is_direct_reference("https://example.com/foo-1.0.tar.gz"));
+        assert!(is_direct_reference("file:///tmp/foo.whl"));
+    }
+
+    #[test]
+    fn leaves_plain_name_specs_alone() {
+        assert!(!is_direct_reference("click>=8.0"));
+        assert!(!is_direct_reference("requests[socks]>=2.0"));
+        assert!(!is_direct_reference("pkg; python_version < '3.8'"));
     }
 }
