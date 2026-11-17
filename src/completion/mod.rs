@@ -131,6 +131,9 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     if let Some(keys) = file_complete::complete_remove_args(&prev[0], prev.len(), partial, layout) {
         return keys;
     }
+    if let Some(keys) = file_complete::complete_set_args(&prev[0], prev.len(), partial, layout) {
+        return keys;
+    }
     if let Some(sources) = file_complete::complete_source_args(&prev[0], prev, partial, layout) {
         return sources;
     }
@@ -711,6 +714,32 @@ mod tests {
     }
 
     #[test]
+    fn candidates_deps_completes_options_after_subcommand() {
+        let env = TestEnv::new();
+        assert_eq!(
+            candidates(&words(&["@@ops..deps", ""]), &env.layout),
+            vec![
+                "install".to_string(),
+                "uninstall".to_string(),
+                "status".to_string()
+            ]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..deps", "install", "--"]), &env.layout),
+            vec!["--force".to_string(), "--yes".to_string()]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..deps", "install", "--f"]), &env.layout),
+            vec!["--force".to_string()]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..deps", "uninstall", "--"]), &env.layout),
+            vec!["--force".to_string(), "--yes".to_string()]
+        );
+        assert!(candidates(&words(&["@@ops..deps", "install", "x"]), &env.layout).is_empty());
+    }
+
+    #[test]
     fn candidates_remove_completes_existing_keys() {
         let env = TestEnv::new();
         env.add_alias_file(
@@ -743,6 +772,72 @@ mod tests {
             vec!["@@src".to_string()]
         );
         assert!(candidates(&words(&["@@ops..clone", "./x"]), &env.layout).is_empty());
+    }
+
+    #[test]
+    fn candidates_clone_completes_options_after_source() {
+        let env = TestEnv::new();
+        env.add_alias_file("src", &json!({"build": "echo hi"}));
+
+        // 源已给之后仍能补 `-d`/`--deps`
+        assert_eq!(
+            candidates(&words(&["@@ops..clone", "@@src", "-"]), &env.layout),
+            vec![
+                "-gh".to_string(),
+                "--github".to_string(),
+                "-ge".to_string(),
+                "--gitee".to_string(),
+                "-jd".to_string(),
+                "--jsdelivr".to_string(),
+                "-d".to_string(),
+                "--deps".to_string()
+            ]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..clone", "@@src", "--d"]), &env.layout),
+            vec!["--deps".to_string()]
+        );
+        // 第二个源不补
+        assert!(candidates(&words(&["@@ops..clone", "@@src", "@"]), &env.layout).is_empty());
+    }
+
+    #[test]
+    fn candidates_set_completes_existing_keys() {
+        let env = TestEnv::new();
+        env.add_alias_file(
+            "ops",
+            &json!({"build": "echo hi", "web": {"deploy": "echo d"}}),
+        );
+
+        assert_eq!(
+            candidates(&words(&["@@ops..set", ""]), &env.layout),
+            vec![
+                "build".to_string(),
+                "web".to_string(),
+                "web.deploy".to_string()
+            ]
+        );
+        assert_eq!(
+            candidates(&words(&["@@ops..set", "web."]), &env.layout),
+            vec!["web.deploy".to_string()]
+        );
+        // key 之后还能补选项
+        assert_eq!(
+            candidates(&words(&["@@ops..set", "build", "--"]), &env.layout),
+            vec![
+                "--cmd".to_string(),
+                "--cwd".to_string(),
+                "--mode".to_string(),
+                "--description".to_string(),
+                "--recursive".to_string(),
+                "--no-recursive".to_string(),
+                "--private".to_string(),
+                "--no-private".to_string(),
+                "--unset".to_string(),
+                "--priority".to_string(),
+                "--paths".to_string()
+            ]
+        );
     }
 
     #[test]

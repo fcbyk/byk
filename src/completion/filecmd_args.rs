@@ -112,7 +112,9 @@ pub(crate) fn complete_source_args(
     match command.verb {
         Verb::Clone | Verb::Link => {
             if prev.len() != 1 {
-                return Some(Vec::new());
+                // 源已给：clone 还能补 `-d`/`--deps`，交给 complete_options；
+                // link 无选项，落下去也只会得到空列表。
+                return None;
             }
         }
         Verb::Init => {
@@ -171,7 +173,8 @@ fn alias_file_tokens(dir: &Path, prefix: &str) -> Vec<String> {
 
 /// 补全 `..deps` 后面的子命令。
 ///
-/// 只有第一个参数位置有候选。
+/// 只有第一个参数位置有子命令候选；之后的参数返回 `None`，
+/// 交给 `complete_options` 去补选项（`--force` / `--yes`）。
 pub(crate) fn complete_deps_args(
     command_token: &str,
     arg_index: usize,
@@ -185,7 +188,7 @@ pub(crate) fn complete_deps_args(
         return None;
     }
     if arg_index != 1 {
-        return Some(Vec::new());
+        return None;
     }
 
     Some(
@@ -231,7 +234,7 @@ pub(crate) fn complete_remove_args(
     };
 
     let mut keys = Vec::new();
-    collect_removable_keys(&object, "", &mut keys);
+    collect_alias_keys(&object, "", &mut keys);
     Some(
         keys.into_iter()
             .filter(|key| key.starts_with(partial))
@@ -239,7 +242,50 @@ pub(crate) fn complete_remove_args(
     )
 }
 
-fn collect_removable_keys(object: &Map<String, Value>, prefix: &str, out: &mut Vec<String>) {
+/// 补全 `..set` 后面的已有 key 路径。
+///
+/// 与 `..remove` 不同，`..set` 后面还能接选项，所以非 key 位置或 `-` 开头
+/// 时返回 `None`，交给 `complete_options`；只有第一个参数位置才给 key 候选。
+pub(crate) fn complete_set_args(
+    command_token: &str,
+    arg_index: usize,
+    partial: &str,
+    layout: &PathLayout,
+) -> Option<Vec<String>> {
+    let command = match parse(command_token) {
+        ParseResult::Command(command) => command,
+        _ => return None,
+    };
+    if command.verb != Verb::Set {
+        return None;
+    }
+    if arg_index != 1 {
+        return None;
+    }
+    if partial.starts_with('-') {
+        return None;
+    }
+
+    let Ok(path) = resolve_target(command.scope, &command.stem, layout) else {
+        return Some(Vec::new());
+    };
+    let Ok(text) = fs::read_to_string(path) else {
+        return Some(Vec::new());
+    };
+    let Ok(Value::Object(object)) = serde_json::from_str::<Value>(&text) else {
+        return Some(Vec::new());
+    };
+
+    let mut keys = Vec::new();
+    collect_alias_keys(&object, "", &mut keys);
+    Some(
+        keys.into_iter()
+            .filter(|key| key.starts_with(partial))
+            .collect(),
+    )
+}
+
+fn collect_alias_keys(object: &Map<String, Value>, prefix: &str, out: &mut Vec<String>) {
     for (key, value) in object {
         if key.starts_with('$') {
             continue;
@@ -252,7 +298,7 @@ fn collect_removable_keys(object: &Map<String, Value>, prefix: &str, out: &mut V
         match value {
             Value::Object(inner) => {
                 out.push(path.clone());
-                collect_removable_keys(inner, &path, out);
+                collect_alias_keys(inner, &path, out);
             }
             Value::String(_) | Value::Bool(_) => out.push(path),
             _ => {}
@@ -496,7 +542,7 @@ mod tests {
                 "",
                 &layout
             ),
-            Some(Vec::new())
+            None
         );
         assert_eq!(
             complete_source_args("@@ops..init", &words(&["@@ops..init"]), "--", &layout),
@@ -560,6 +606,38 @@ mod tests {
             complete_remove_args("@@ops..remove", 1, "", &layout),
             Some(Vec::new())
         );
+    }
+
+    #[test]
+    fn complete_set_args_lists_existing_keys() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = PathLayout {
+            root_dir: temp.path().to_path_buf(),
+            alias_dir: temp.path().join("alias"),
+        };
+        fs::create_dir_all(&layout.alias_dir).unwrap();
+        fs::write(
+            layout.alias_dir.join("ops.byk.json"),
+            r#"{"build":"echo hi","web":{"$cwd":".","deploy":"echo d"},"$ignored":"x"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            complete_set_args("@@ops..set", 1, "", &layout),
+            Some(vec![
+                "build".to_string(),
+                "web".to_string(),
+                "web.deploy".to_string()
+            ])
+        );
+        assert_eq!(
+            complete_set_args("@@ops..set", 1, "web.", &layout),
+            Some(vec!["web.deploy".to_string()])
+        );
+        assert_eq!(complete_set_args("@@ops..set", 1, "--", &layout), None);
+        assert_eq!(complete_set_args("@@ops..set", 2, "", &layout), None);
+        assert_eq!(complete_set_args("@@ops..remove", 1, "", &layout), None);
+        assert_eq!(complete_set_args("bogus", 1, "", &layout), None);
     }
 
     #[test]

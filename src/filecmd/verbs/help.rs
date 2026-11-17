@@ -213,6 +213,17 @@ mod tests {
     }
 
     #[test]
+    fn command_help_for_deps_lists_force_and_uninstall_yes() {
+        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["deps"])).unwrap());
+
+        assert!(text.contains("@@ops..deps [install|uninstall|status] [options]"));
+        assert!(text.contains("  --force"));
+        assert!(text.contains("Reinstall dependencies from source (install)"));
+        assert!(text.contains("  --yes"));
+        assert!(text.contains("Skip the uninstall confirmation"));
+    }
+
+    #[test]
     fn local_and_anonymous_prefix() {
         let local = strip_ansi(&run(FileScope::Local, "ops", &[]).unwrap());
         assert!(local.contains("  @ops..init"));

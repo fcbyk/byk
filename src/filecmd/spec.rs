@@ -301,9 +301,15 @@ pub(crate) const OPTIONS: &[OptionInfo] = &[
     },
     OptionInfo {
         verb: Verb::Deps,
+        flag: "--force",
+        syntax: "--force",
+        description: "Reinstall dependencies from source (install)",
+    },
+    OptionInfo {
+        verb: Verb::Deps,
         flag: "--yes",
         syntax: "--yes",
-        description: "Skip confirmation",
+        description: "Skip the uninstall confirmation",
     },
 ];
 
