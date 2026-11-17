@@ -21,11 +21,12 @@ coverage:
         # 改动行允许比基准低 5%：单个分支没测到不该卡住整个 PR。
         threshold: 5%
 
-# 这两个文件只由 e2e（Python 驱动真实二进制）验证，cargo test 碰不到，
+# 这些文件只由 e2e（Python 驱动真实二进制）验证，cargo test 碰不到，
 # 覆盖率恒为 0。留在统计里会让任何改动它们的 PR 的 patch 覆盖率失真。
 ignore:
   - 'src/main.rs'
-  - 'src/core/api.rs'
+  - 'src/app.rs'
+  - 'src/api/mod.rs'
 
 # diff：本次改动逐行覆盖；files：受影响文件的覆盖率变化。
 # require_changes 让覆盖率没动时不发评论，减少噪音。

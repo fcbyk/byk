@@ -29,7 +29,7 @@ env:
 
 jobs:
   lint:
-    name: fmt + clippy
+    name: fmt + clippy + arch
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -44,6 +44,8 @@ jobs:
       - run: cargo fmt --all --check
 
       - run: cargo clippy --all-targets -- -D warnings
+
+      - run: python3 scripts/check_arch.py
 
   test:
     # linux 上的测试由 coverage job 兼任，这里只跑另外两个平台，
