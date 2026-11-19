@@ -202,6 +202,10 @@ byk @@ops..help set       # set 的用法与选项
 ```bash
 byk @@ops..clone @shared
 byk @@ops..clone ~/src/tool.byk.json
+byk @@ops..clone ~/src/tool               # 自动补成 tool.byk.json
+byk @@ops..clone ./tools/release          # 子目录里的 release.byk.json
+byk @@ops..clone ./tools/                 # tools/.byk.json
+byk @@ops..clone .                        # 当前目录的 .byk.json
 byk @@ops..clone https://example.com/tool.byk.json
 byk @@ops..clone -gh user/repo                     # 仓库根的 .byk.json
 byk @@ops..clone -gh user/repo@main/tools/release.byk.json
@@ -213,7 +217,7 @@ byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 | 来源 | 说明 |
 |------|------|
 | `@name` / `@@name` | 当前目录 / 全局目录里的别名文件 |
-| 路径 | 支持 `~`；相对路径按当前目录解析 |
+| 路径 | 支持 `~`；相对路径按当前目录解析；裸名字自动补 `.byk.json` |
 | `http://` / `https://` | 通过外部 `curl` 下载 |
 | `-gh` / `--github` | 从 GitHub 仓库读取 |
 | `-ge` / `--gitee` | 从 Gitee 仓库读取 |
@@ -240,6 +244,21 @@ byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 | `-gh user/repo@v1/tools/release` | `tools/release.byk.json` |
 | `-gh user/repo@v1/tools/` | `tools/.byk.json` |
 | `-gh user/repo@v1/` | 仓库根 `.byk.json` |
+
+本地路径的解析顺序：
+
+| 写法 | 读取 |
+|------|------|
+| `./tools/release.byk.json` | 原样 |
+| `./tools/release` | 先读字面 `release`；没有则补 `release.byk.json` |
+| `./tools/`、`.`、`..` | 该目录的 `.byk.json`（匿名文件） |
+| `./config.json`、`./hello.txt` | 原样；其他扩展名不补 |
+
+- 裸名字字面优先：`./tool` 先读 `tool`，不存在再回退 `tool.byk.json`。这样 `tool` 与 `tool.byk.json` 同时存在时两个都可达——显式写 `./tool.byk.json` 永远能命中后者。
+- 只有能构成合法别名文件名的裸名字才补后缀：`hello.txt`、`my tool` 这类保持字面，不会去找 `hello.txt.byk.json`——它本来就不是合法的别名文件名。
+- 裸名字最后落到一个目录时读该目录的 `.byk.json`，所以 `./tools`、`./tools/`、`.` 都能指向匿名文件。
+- `..link` 与 `..init --link` 的来源解析与这里完全一致。
+- 都找不到时错误会列出尝试过的候选：`Source not found: …` 与 `Also tried: …`。
 
 - 目标文件必须不存在，`..clone` 不会覆盖。
 - 本地来源会先校验：必须是 JSON 对象；链接文件（数组）会被拒绝。

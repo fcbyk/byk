@@ -150,6 +150,136 @@ def test_clone_to_local_destination(runner, tmp_path):
     assert read(tmp_path / "ops.byk.json") == {"build": "echo hi"}
 
 
+def test_clone_bare_path_appends_the_alias_suffix(runner, tmp_path):
+    (tmp_path / "src.byk.json").write_text(
+        '{"build": "echo hi"}', encoding="utf-8"
+    )
+
+    result = runner.run("@@ops..clone", str(tmp_path / "src"))
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo hi"
+    }
+
+
+def test_clone_prefers_the_literal_file_over_its_alias_sibling(runner, tmp_path):
+    (tmp_path / "src").write_text('{"build": "echo literal"}', encoding="utf-8")
+    (tmp_path / "src.byk.json").write_text(
+        '{"build": "echo suffixed"}', encoding="utf-8"
+    )
+
+    result = runner.run("@@ops..clone", str(tmp_path / "src"))
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo literal"
+    }
+
+
+def test_clone_can_still_name_the_alias_sibling_explicitly(runner, tmp_path):
+    (tmp_path / "src").write_text('{"build": "echo literal"}', encoding="utf-8")
+    (tmp_path / "src.byk.json").write_text(
+        '{"build": "echo suffixed"}', encoding="utf-8"
+    )
+
+    result = runner.run("@@ops..clone", str(tmp_path / "src.byk.json"))
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo suffixed"
+    }
+
+
+def test_clone_falls_back_to_a_literal_path(runner, tmp_path):
+    (tmp_path / "src").write_text('{"build": "echo literal"}', encoding="utf-8")
+
+    result = runner.run("@@ops..clone", str(tmp_path / "src"))
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo literal"
+    }
+
+
+def test_clone_trailing_slash_reads_the_anonymous_file(runner, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / ".byk.json").write_text(
+        '{"build": "echo anonymous"}', encoding="utf-8"
+    )
+
+    result = runner.run("@@ops..clone", str(project) + os.sep)
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo anonymous"
+    }
+
+
+def test_clone_directory_name_reads_the_anonymous_file(runner, tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / ".byk.json").write_text(
+        '{"build": "echo anonymous"}', encoding="utf-8"
+    )
+
+    result = runner.run("@@ops..clone", str(project))
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo anonymous"
+    }
+
+
+def test_clone_dot_reads_the_anonymous_file(runner, tmp_path):
+    (tmp_path / ".byk.json").write_text(
+        '{"build": "echo dot"}', encoding="utf-8"
+    )
+
+    result = runner.run("@@ops..clone", ".", cwd=str(tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo dot"
+    }
+
+
+def test_clone_keeps_other_extensions_literal(runner, tmp_path):
+    (tmp_path / "config.json").write_text(
+        '{"build": "echo config"}', encoding="utf-8"
+    )
+
+    result = runner.run("@@ops..clone", str(tmp_path / "config.json"))
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo config"
+    }
+
+
+def test_clone_missing_bare_source_lists_candidates(runner, tmp_path):
+    result = runner.run("@@ops..clone", str(tmp_path / "missing"))
+
+    assert result.returncode == 1
+    assert "Source not found:" in result.stderr
+    assert "missing.byk.json" in result.stderr
+    assert "Also tried:" in result.stderr
+
+
+def test_link_uses_the_same_bare_path_resolution(runner, tmp_path):
+    source = tmp_path / "src.byk.json"
+    source.write_text('{"build": "echo hi"}', encoding="utf-8")
+    runner.prepare_alias_file("ops", "{}\n")
+
+    result = runner.run("@@ops..link", str(tmp_path / "src"), cwd=str(tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == [
+        str(source.resolve())
+    ]
+
+
 def test_clone_refuses_existing_destination(runner):
     source = runner.prepare_alias_json("src", {"build": "echo hi"})
     dest = runner.prepare_alias_json("ops", {"keep": "echo keep"})

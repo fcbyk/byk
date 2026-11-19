@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
@@ -250,41 +250,134 @@ fn encode_segment(segment: &str) -> String {
 }
 
 fn load_local(spec: &str, layout: &PathLayout) -> Result<(PathBuf, Vec<u8>), String> {
-    let raw = if let Some(stem) = spec.strip_prefix("@@") {
+    if let Some(stem) = spec.strip_prefix("@@") {
         if !validate_filename(stem) {
             return Err(invalid_stem_message(stem));
         }
-        target_path(&layout.alias_dir, stem)
-    } else if let Some(stem) = spec.strip_prefix('@') {
+        return read_source(target_path(&layout.alias_dir, stem));
+    }
+    if let Some(stem) = spec.strip_prefix('@') {
         if !validate_filename(stem) {
             return Err(invalid_stem_message(stem));
         }
-        target_path(&current_dir()?, stem)
-    } else {
-        let expanded = expand_home(spec);
-        if expanded.is_relative() {
-            current_dir()?.join(expanded)
-        } else {
-            expanded
-        }
-    };
-
-    let metadata = match fs::metadata(&raw) {
-        Ok(metadata) => metadata,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Err(format!("Source not found: {}", raw.display()));
-        }
-        Err(e) => return Err(format!("Failed to inspect {}: {}", raw.display(), e)),
-    };
-    if !metadata.is_file() {
-        return Err(format!("Source is not a file: {}", raw.display()));
+        return read_source(target_path(&current_dir()?, stem));
     }
 
-    let target = canonical(&raw);
+    let expanded = expand_home(spec);
+    let raw = if expanded.is_relative() {
+        current_dir()?.join(expanded)
+    } else {
+        expanded
+    };
+    read_source(select_raw_source(spec, raw)?)
+}
+
+fn read_source(path: PathBuf) -> Result<(PathBuf, Vec<u8>), String> {
+    require_file(&path)?;
+    let target = canonical(&path);
     let data = fs::read(&target)
         .map_err(|e| format!("Failed to read source {}: {}", target.display(), e))?;
     validate(&data, &target.display().to_string())?;
     Ok((target, data))
+}
+
+/// 裸路径的解析规则：字面优先，找不到再补 `.byk.json`，目录则读匿名文件。
+///
+/// - 目录形态（`.`、`..`、结尾 `/`）直接指向目录里的 `.byk.json`。
+/// - 只有能构成合法别名文件名的裸名字才补后缀：`tool` 会试
+///   `tool.byk.json`，而 `hello.txt`、带空格的路径保持字面——它们的
+///   `.byk.json` 变体本来就不是合法的别名文件名。
+/// - 裸名字先读字面文件，保证 `tool` 在 `tool.byk.json` 也存在时仍然
+///   可达；字面缺失才回退 `tool.byk.json`。字面是目录时，再读该目录的
+///   `.byk.json`。
+fn select_raw_source(spec: &str, raw: PathBuf) -> Result<PathBuf, String> {
+    let last = Path::new(spec)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+
+    if is_dot_path(spec) || ends_with_separator(spec) {
+        let anonymous = raw.join(".byk.json");
+        require_file(&anonymous)?;
+        return Ok(anonymous);
+    }
+
+    if !validate_filename(last) {
+        require_file(&raw)?;
+        return Ok(raw);
+    }
+
+    let mut tried = Vec::with_capacity(3);
+
+    let raw_is_dir = match probe(&raw)? {
+        Some(meta) if meta.is_file() => return Ok(raw),
+        Some(meta) if meta.is_dir() => true,
+        Some(_) => return Err(format!("Source is not a file: {}", raw.display())),
+        None => false,
+    };
+    tried.push(raw.clone());
+
+    let suffixed = append_suffix(&raw, ".byk.json");
+    match probe(&suffixed)? {
+        Some(meta) if meta.is_file() => return Ok(suffixed),
+        _ => tried.push(suffixed),
+    }
+
+    if raw_is_dir {
+        let anonymous = raw.join(".byk.json");
+        match probe(&anonymous)? {
+            Some(meta) if meta.is_file() => return Ok(anonymous),
+            _ => tried.push(anonymous),
+        }
+    }
+
+    Err(source_not_found(&tried))
+}
+
+fn require_file(path: &Path) -> Result<(), String> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(()),
+        Ok(_) => Err(format!("Source is not a file: {}", path.display())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            Err(format!("Source not found: {}", path.display()))
+        }
+        Err(e) => Err(format!("Failed to inspect {}: {}", path.display(), e)),
+    }
+}
+
+fn probe(path: &Path) -> Result<Option<fs::Metadata>, String> {
+    match fs::metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("Failed to inspect {}: {}", path.display(), e)),
+    }
+}
+
+fn source_not_found(tried: &[PathBuf]) -> String {
+    let mut message = format!("Source not found: {}", tried[0].display());
+    if tried.len() > 1 {
+        let rest: Vec<String> = tried[1..]
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect();
+        message.push_str(&format!("\nAlso tried: {}", rest.join(", ")));
+    }
+    message
+}
+
+fn is_dot_path(spec: &str) -> bool {
+    let trimmed = spec.trim_end_matches(|c: char| c == '/' || (cfg!(windows) && c == '\\'));
+    trimmed == "." || trimmed == ".."
+}
+
+fn ends_with_separator(spec: &str) -> bool {
+    spec.ends_with('/') || (cfg!(windows) && spec.ends_with('\\'))
+}
+
+fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut text = path.as_os_str().to_os_string();
+    text.push(suffix);
+    PathBuf::from(text)
 }
 
 fn validate(data: &[u8], label: &str) -> Result<(), String> {
@@ -380,6 +473,170 @@ mod tests {
         let resolved = resolve("@@tool", &layout).unwrap();
 
         assert_eq!(resolved, canonical(&target));
+    }
+
+    #[test]
+    fn resolves_bare_name_with_alias_suffix() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = object_file(temp.path(), "tool.byk.json");
+
+        let resolved = resolve(&spec(&temp.path().join("tool")), &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&target));
+    }
+
+    #[test]
+    fn prefers_the_literal_file_over_its_alias_sibling() {
+        let temp = tempfile::tempdir().unwrap();
+        object_file(temp.path(), "tool.byk.json");
+        let literal = temp.path().join("tool");
+        fs::write(&literal, r#"{"cmd": "echo literal"}"#).unwrap();
+
+        let resolved = resolve(&spec(&literal), &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&literal));
+    }
+
+    #[test]
+    fn explicit_alias_sibling_stays_reachable() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = object_file(temp.path(), "tool.byk.json");
+        fs::write(temp.path().join("tool"), r#"{"cmd": "echo literal"}"#).unwrap();
+
+        let resolved = resolve(&spec(&target), &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&target));
+    }
+
+    #[test]
+    fn falls_back_to_a_literal_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let literal = temp.path().join("tool");
+        fs::write(&literal, r#"{"cmd": "echo literal"}"#).unwrap();
+
+        let resolved = resolve(&spec(&literal), &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&literal));
+    }
+
+    #[test]
+    fn keeps_other_extensions_literal() {
+        let temp = tempfile::tempdir().unwrap();
+        let literal = temp.path().join("config.json");
+        fs::write(&literal, r#"{"cmd": "echo hi"}"#).unwrap();
+
+        let resolved = resolve(&spec(&literal), &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&literal));
+    }
+
+    #[test]
+    fn never_appends_the_suffix_to_other_extensions() {
+        let temp = tempfile::tempdir().unwrap();
+        object_file(temp.path(), "hello.txt.byk.json");
+
+        let err = resolve(&spec(&temp.path().join("hello.txt")), &layout(&temp)).unwrap_err();
+
+        assert!(err.starts_with("Source not found:"), "{err}");
+        assert!(!err.contains("hello.txt.byk.json"), "{err}");
+    }
+
+    #[test]
+    fn keeps_hidden_names_literal() {
+        let temp = tempfile::tempdir().unwrap();
+        let literal = temp.path().join(".hidden");
+        fs::write(&literal, r#"{"cmd": "echo hi"}"#).unwrap();
+
+        let resolved = resolve(&spec(&literal), &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&literal));
+    }
+
+    #[test]
+    fn resolves_a_trailing_slash_to_the_anonymous_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("proj");
+        let target = object_file(&dir, ".byk.json");
+        let slashed = format!("{}/", dir.display());
+
+        let resolved = resolve(&slashed, &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&target));
+    }
+
+    #[test]
+    fn resolves_dot_to_the_anonymous_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = object_file(temp.path(), ".byk.json");
+
+        let resolved = select_raw_source(".", temp.path().to_path_buf()).unwrap();
+
+        assert_eq!(resolved, temp.path().join(".byk.json"));
+        assert_eq!(resolved, target);
+    }
+
+    #[test]
+    fn resolves_a_directory_name_to_its_anonymous_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("proj");
+        let target = object_file(&dir, ".byk.json");
+
+        let resolved = resolve(&spec(&dir), &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&target));
+    }
+
+    #[test]
+    fn prefers_the_suffixed_file_over_a_directory_anonymous_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("proj");
+        object_file(&dir, ".byk.json");
+        let target = object_file(temp.path(), "proj.byk.json");
+
+        let resolved = resolve(&spec(&dir), &layout(&temp)).unwrap();
+
+        assert_eq!(resolved, canonical(&target));
+    }
+
+    #[test]
+    fn missing_bare_name_lists_every_candidate() {
+        let temp = tempfile::tempdir().unwrap();
+        let bare = temp.path().join("tool");
+
+        let err = resolve(&spec(&bare), &layout(&temp)).unwrap_err();
+
+        assert!(err.starts_with("Source not found:"), "{err}");
+        assert!(err.contains("tool.byk.json"), "{err}");
+        assert!(err.contains("Also tried:"), "{err}");
+        assert!(err.contains("tool"), "{err}");
+    }
+
+    #[test]
+    fn explicit_byk_json_directory_is_not_a_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("dir.byk.json");
+        fs::create_dir_all(&dir).unwrap();
+
+        let err = resolve(&spec(&dir), &layout(&temp)).unwrap_err();
+
+        assert_eq!(err, format!("Source is not a file: {}", dir.display()));
+    }
+
+    #[test]
+    fn classifies_dot_paths_and_separators() {
+        assert!(is_dot_path("."));
+        assert!(is_dot_path("./"));
+        assert!(is_dot_path(".."));
+        assert!(is_dot_path("../"));
+        assert!(!is_dot_path("..x"));
+        assert!(ends_with_separator("a/b/"));
+        assert!(!ends_with_separator("a/b"));
+        // 只有能构成合法别名文件名的裸名字才补 `.byk.json`
+        assert!(validate_filename("tool"));
+        assert!(validate_filename("发布"));
+        assert!(!validate_filename("tool.txt"));
+        assert!(!validate_filename(".hidden"));
+        assert!(!validate_filename("my tool"));
     }
 
     #[test]

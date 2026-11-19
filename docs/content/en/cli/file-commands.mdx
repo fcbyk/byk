@@ -202,6 +202,10 @@ An unknown command lists every available file command.
 ```bash
 byk @@ops..clone @shared
 byk @@ops..clone ~/src/tool.byk.json
+byk @@ops..clone ~/src/tool               # resolved as tool.byk.json
+byk @@ops..clone ./tools/release          # release.byk.json in a subdirectory
+byk @@ops..clone ./tools/                 # tools/.byk.json
+byk @@ops..clone .                        # the current directory's .byk.json
 byk @@ops..clone https://example.com/tool.byk.json
 byk @@ops..clone -gh user/repo                     # the repository root .byk.json
 byk @@ops..clone -gh user/repo@main/tools/release.byk.json
@@ -213,7 +217,7 @@ Sources:
 | Source | Description |
 |--------|-------------|
 | `@name` / `@@name` | An alias file in the current / global directory |
-| Path | `~` expands; relative paths resolve from the current directory |
+| Path | `~` expands; relative paths resolve from the current directory; a bare name gets `.byk.json` |
 | `http://` / `https://` | Fetched through external `curl` |
 | `-gh` / `--github` | Read from a GitHub repository |
 | `-ge` / `--gitee` | Read from a Gitee repository |
@@ -240,6 +244,21 @@ Repository shorthand shape:
 | `-gh user/repo@v1/tools/release` | `tools/release.byk.json` |
 | `-gh user/repo@v1/tools/` | `tools/.byk.json` |
 | `-gh user/repo@v1/` | the repository root `.byk.json` |
+
+Local path resolution:
+
+| Input | Read |
+|-------|------|
+| `./tools/release.byk.json` | as written |
+| `./tools/release` | the literal `release` first, then `release.byk.json` |
+| `./tools/`, `.`, `..` | that directory's `.byk.json` (the anonymous file) |
+| `./config.json`, `./hello.txt` | as written; other extensions are never rewritten |
+
+- A bare name is literal first: `./tool` reads `tool`, and only falls back to `tool.byk.json` when `tool` is missing. So both stay reachable when they coexist — writing `./tool.byk.json` always addresses the alias file.
+- Only names that could legally be an alias file name get the suffix: `hello.txt` or `my tool` stay literal and are never probed as `hello.txt.byk.json`, which would not be a valid alias file name anyway.
+- When a bare name resolves to a directory, that directory's `.byk.json` is read, so `./tools`, `./tools/` and `.` all address the anonymous file.
+- `..link` and `..init --link` resolve sources exactly the same way.
+- When nothing matches, the error lists every candidate: `Source not found: …` plus `Also tried: …`.
 
 - The destination must not exist; `..clone` never overwrites.
 - A local source is validated first: it must be a JSON object, and a link file (array) is rejected.
