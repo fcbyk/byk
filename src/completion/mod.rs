@@ -779,7 +779,7 @@ mod tests {
         let env = TestEnv::new();
         env.add_alias_file("src", &json!({"build": "echo hi"}));
 
-        // 源已给之后仍能补 `-d`/`--deps`
+        // 源已给之后仍能补其余选项
         assert_eq!(
             candidates(&words(&["@@ops..clone", "@@src", "-"]), &env.layout),
             vec![
@@ -789,6 +789,8 @@ mod tests {
                 "--gitee".to_string(),
                 "-jd".to_string(),
                 "--jsdelivr".to_string(),
+                "-t".to_string(),
+                "--tap".to_string(),
                 "-d".to_string(),
                 "--deps".to_string()
             ]

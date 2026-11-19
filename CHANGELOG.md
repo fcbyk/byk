@@ -10,6 +10,8 @@
 
 - **`..clone` / `..link` / `..init --link`**: bare local paths are read literally, falling back to `.byk.json`; `.`, `..`, a trailing `/`, and directory names read that directory's `.byk.json`; names that cannot be alias files (`hello.txt`) are never suffixed
 
+- **`..clone --tap`**: new GitHub-only source that resolves a key through `byk.tap.json`; the full form prefers a read-only local index under `~/.byk/tap/` and falls back to the repository root, a bare `--tap <key>` searches all local indexes and accepts only a unique match, and the target is loaded as one hop
+
 ## v0.8.1 (2026-11-14)
 
 ### Features

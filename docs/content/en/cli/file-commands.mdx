@@ -209,6 +209,8 @@ byk @@ops..clone .                        # the current directory's .byk.json
 byk @@ops..clone https://example.com/tool.byk.json
 byk @@ops..clone -gh user/repo                     # the repository root .byk.json
 byk @@ops..clone -gh user/repo@main/tools/release.byk.json
+byk @@ops..clone --tap user/repo/build            # resolve `build` from byk.tap.json
+byk @@ops..clone -t user/repo@v1/build -d
 byk @@ops..clone https://example.com/tool.byk.json -d   # install $deps in the same go
 ```
 
@@ -222,6 +224,7 @@ Sources:
 | `-gh` / `--github` | Read from a GitHub repository |
 | `-ge` / `--gitee` | Read from a Gitee repository |
 | `-jd` / `--jsdelivr` | Read a GitHub file through jsDelivr |
+| `-t` / `--tap` | Resolve a key from a local or GitHub `byk.tap.json` |
 | `-d` / `--deps` | Also install the cloned file's `$deps` |
 
 Repository shorthand shape:
@@ -265,10 +268,46 @@ Local path resolution:
 - The result is an independent copy with no relationship to the source. Use `..link` for a live reference.
 - Aliases and groups marked `$clone: false` are dropped from the copy; marked groups keep children that re-expose themselves with `$clone: true`, and the tag never appears in the result. If nothing would remain, the clone is refused before writing. A copy that strips anything, or carries a tag at all, is re-serialised with keys sorted. `$private` does not affect cloning.
 - Either source freezes `$deps.base` into an absolute address and prints `Recorded $deps.base = …`. The form follows the source: **remote** writes an absolute http(s) directory URL, **local** writes a local absolute directory path. The fill-in rules are identical — the source file's directory when absent, resolved against the source file when relative (`.` / `../` / `sub/dir`), kept as-is when already absolute with only the trailing `/` added.
+- `$deps.base` is a best-effort anchor written by the program, not a portability guarantee. Each clone in a chain (`a ← b ← c`) re-freezes it, so the original source semantics can be lost. Don't hand-write it.
 - Neither form crosses into the other: a remote source rejects a local-path `base` (`/x`, `C:/x`), which is why **an alias file taken from the network cannot read local files**; a local source keeps an absolute URL as-is, and those assets still come off the network.
 - A `base` containing variables fails outright: a clone has no variable table, so `${CDN}` cannot be evaluated and guessing would bake a bogus address into the file. Writing it back re-serialises the whole document (keys sorted); files with neither `$deps` nor `$clone` stay byte-for-byte copies.
 - Remote sources require `curl`; without it you get an install hint. A 404 reports `Remote source not found: <url>` with a hint to check the repository, ref, and path — a directory path missing its trailing `/` lands here too.
 - Options may come before or after the source: `-gh user/repo@v1/tool -d` equals `-d -gh ...`.
+
+#### Tap index (`--tap`)
+
+A repository can publish many alias files without keeping them all at the root: `--tap` reads a routing table named `byk.tap.json` from the repository root.
+
+```bash
+git clone https://github.com/user/repo ~/.byk/tap/user/repo   # optional: byk only reads it
+byk @@ops..clone --tap user/repo/build
+byk @@ops..clone --tap build                      # search every local tap index
+byk @@ops..clone -t user/repo@v1/build -d
+```
+
+The index is a flat JSON object. Keys starting with `$` are reserved for metadata and never match:
+
+```json
+{
+  "build": "aliases/build.byk.json",
+  "release": "https://example.com/other/tool.byk.json"
+}
+```
+
+- Tap source shape: `<user>/<repo>[@<ref>]/<key>`. `<ref>` defaults to `HEAD`; `<key>` is exactly one path segment and cannot contain `/`, be `.` or `..`, or start with `$`.
+- `--tap` is GitHub-only and is itself a source form: it cannot be combined with `-gh`, `-ge`, or `-jd`.
+- **Local index first (full form).** Byk reads `~/.byk/tap/<user>/<repo>/byk.tap.json` when the spec has no `@<ref>`. When that file exists it is authoritative: parse errors, a missing key, a non-string entry, or a missing target all fail; only a missing index file falls back to GitHub. An explicit `@<ref>` always uses the remote index.
+- **Single-key shorthand.** `--tap <key>` with no `/` searches every valid `~/.byk/tap/<user>/<repo>/byk.tap.json` without fetching an index from the network. A unique match is cloned from that local index (a URL value still uses the remote clone path); when several repositories contain the key, the command lists the full forms `user/repo/key` and asks you to pick one; when none contain it, the command fails without any remote fallback.
+- The shorthand reads exactly two levels: `tap/<user>/<repo>/byk.tap.json`. Directory names must be valid GitHub usernames / repository names; invalid names and directories without an index are skipped. Unreadable or invalid indexes are reported as warnings and skipped, so uniqueness only covers readable indexes.
+- The shorthand has no `@ref`; use the full form to pin a ref, which reads the remote index.
+- `~/.byk/tap/` is a read-only cache: byk never creates, updates, or deletes it. Populate it yourself, for example `git clone https://github.com/user/repo ~/.byk/tap/user/repo`.
+- Values are literal pointers; no `.byk.json` suffix is added and directories are not followed. A target starting with `@` or `@@` is a literal file name, never an alias reference.
+  - Local index: a relative value resolves from the index's directory; absolute paths and `~` are local files; `http(s)` URLs still use the remote clone path.
+  - Remote index: a relative value resolves from the repository root; only `http(s)` URLs and repository-relative paths are allowed, never local paths.
+- Only one level is routed. The target must be an alias file, not another tap index: a target whose last segment is `byk.tap.json` is refused, and the resolved file is never followed as a second route.
+- `$deps.base` is anchored on the target's location, not the index. A local target freezes it to a local absolute directory inside the cache; a URL target keeps the http(s) directory URL.
+- A missing index reports `Tap index not found: …` with a hint to add `byk.tap.json`; a missing key lists the available keys.
+- Byk prints which index it used before routing: `Tap index: local <path>` or `Tap index: remote <url>`, followed by `Tap <key> -> <target>`.
 
 #### Clone and install dependencies (`-d`)
 
@@ -336,7 +375,7 @@ $ byk @@tool..deps i
 @@tool: 2 declared, 2 present — up to date
 ```
 
-- A relative `src` is joined with `$deps.base`; either one alone is an error, never a guess. `base` must be absolute on disk — the URL form means download, the local-path form means copy, and `..clone` picks it by source. Its relative forms only mean something at clone time.
+- A relative `src` is joined with `$deps.base`; either one alone is an error, never a guess. `base` must be absolute on disk — the URL form means download, the local-path form means copy, and `..clone` picks it by source. Its relative forms only mean something at clone time. The program writes `base`; it is a best-effort anchor, not a portability guarantee, so don't hand-write it.
 - Local entries are compared by source mtime: a newer source is reinstalled, a missing one fails with `cannot read` and its path instead of being skipped.
 - Works for global and local files alike: global assets land in `~/.byk/deps/@@<file-name>/`, local ones in `<file-dir>/.byk/deps/@<file-name>/` with a self-ignoring `.gitignore` (`*`).
 - The install manifest lives at `~/.byk/deps/@@<file-name>/.byk-deps.json` and records the last declaration plus where each asset landed. Deleting it just restarts the bookkeeping; the next install adopts whatever is already there.

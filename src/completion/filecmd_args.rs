@@ -442,6 +442,8 @@ mod tests {
                 "--gitee".to_string(),
                 "-jd".to_string(),
                 "--jsdelivr".to_string(),
+                "-t".to_string(),
+                "--tap".to_string(),
                 "-d".to_string(),
                 "--deps".to_string()
             ])
@@ -452,6 +454,7 @@ mod tests {
                 "--github".to_string(),
                 "--gitee".to_string(),
                 "--jsdelivr".to_string(),
+                "--tap".to_string(),
                 "--deps".to_string()
             ])
         );
@@ -462,6 +465,10 @@ mod tests {
         assert_eq!(
             complete_options("@@ops..clone", "-j"),
             Some(vec!["-jd".to_string()])
+        );
+        assert_eq!(
+            complete_options("@@ops..clone", "-t"),
+            Some(vec!["-t".to_string()])
         );
         assert_eq!(complete_options("@@ops..json", ""), Some(Vec::new()));
         assert_eq!(complete_options("@@ops..json", "x"), Some(Vec::new()));

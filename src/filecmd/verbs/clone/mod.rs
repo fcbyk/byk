@@ -1,5 +1,7 @@
 //! `..clone` 的入口参数解析。
 
+mod tap;
+
 use crate::filecmd::source;
 use crate::filecmd::spec::FileScope;
 use crate::model::PathLayout;
@@ -32,6 +34,16 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                 return Err("clone takes exactly one source".to_string());
             }
             source = Some(SourceArg::Forge(forge, spec.clone()));
+            continue;
+        }
+        if arg == "-t" || arg == "--tap" {
+            let spec = rest
+                .next()
+                .ok_or_else(|| format!("Option {} requires a value", arg))?;
+            if source.is_some() {
+                return Err("clone takes exactly one source".to_string());
+            }
+            source = Some(SourceArg::Tap(spec.clone()));
             continue;
         }
         if arg.starts_with('-') && arg != "-" {
@@ -70,7 +82,11 @@ mod imp {
     //! 这是 base 唯一一次能被解释的时刻，落盘之后的文件没有自己的位置信息。
     //! 两条路走不同的冻结函数，远程永远产不出本地路径形态。
 
+    use std::path::Path;
+
     use serde_json::{Map, Value};
+
+    use super::tap;
 
     use crate::deps::Origin;
     use crate::deps::freeze_base;
@@ -83,6 +99,7 @@ mod imp {
     use crate::model::build_file_key;
     use crate::resolve::{is_alias_value, is_meta_object, is_meta_only, parse_clone};
     use crate::utils::json;
+    use crate::utils::path::canonical;
 
     pub(crate) fn apply(
         scope: FileScope,
@@ -99,6 +116,7 @@ mod imp {
             SourceArg::Forge(forge, spec) => {
                 source::load(&source::forge_url(forge, &spec)?, layout)?
             }
+            SourceArg::Tap(spec) => load_tap(&spec, layout)?,
         };
         let path = create::destination(scope, stem, layout)?;
         let prepared = prepare(&loaded.data, &loaded.origin)?;
@@ -124,6 +142,137 @@ mod imp {
             install_deps(scope, stem, layout)?;
         }
         Ok(())
+    }
+
+    /// `--tap`：完整写法先找本地索引、缺失才回退远程；单 key 只搜本地。
+    fn load_tap(source: &str, layout: &PathLayout) -> Result<source::Loaded, String> {
+        match tap::parse_source(source)? {
+            tap::SourceSpec::Full(spec) => load_tap_full(&spec, layout),
+            tap::SourceSpec::Key(key) => load_tap_key(&key, layout),
+        }
+    }
+
+    /// 完整写法：本地索引命中后是权威的，解析错误、缺键、目标缺失都直接失败。
+    fn load_tap_full(spec: &tap::Spec, layout: &PathLayout) -> Result<source::Loaded, String> {
+        let local_path = spec.local_index_path(&layout.root_dir);
+        let local_data = match &local_path {
+            Some(path) => tap::read_local_index(path)?,
+            None => None,
+        };
+
+        if let (Some(path), Some(data)) = (local_path, local_data) {
+            let index = canonical(&path);
+            eprintln!("Tap index: local {}", index.display());
+            let label = index.display().to_string();
+            let value =
+                tap::select(&data, spec, &label).map_err(|err| local_index_hint(err, &index))?;
+            let target =
+                tap::local_target(&index, &value).map_err(|err| local_index_hint(err, &index))?;
+            return load_target(&spec.key, target, layout, Some(&index));
+        }
+
+        let url = spec.index_url();
+        eprintln!("Tap index: remote {}", url);
+        let data = source::fetch_tap_index(&url)?;
+        let value = tap::select(&data, spec, &url)?;
+        let target = tap::Target::Remote(tap::target_url(spec, &value)?);
+        load_target(&spec.key, target, layout, None)
+    }
+
+    /// 单 key：扫描所有本地 tap 索引；坏索引只警告并跳过，绝不回退远程。
+    fn load_tap_key(key: &str, layout: &PathLayout) -> Result<source::Loaded, String> {
+        let outcome = tap::search_local(&layout.root_dir, key)?;
+        for warning in &outcome.warnings {
+            eprintln!("{warning}");
+        }
+
+        match outcome.matches.as_slice() {
+            [] => Err(tap_key_not_found(key, &outcome, &layout.root_dir)),
+            [matched] => {
+                eprintln!("Tap index: local {}", matched.index_path.display());
+                let target = tap::local_target(&matched.index_path, &matched.value)?;
+                load_target(key, target, layout, None)
+            }
+            many => Err(tap_key_ambiguous(key, many)),
+        }
+    }
+
+    fn tap_key_not_found(key: &str, outcome: &tap::SearchOutcome, root: &Path) -> String {
+        let tap_root = root.join("tap");
+        if !outcome.tap_root_exists {
+            return format!(
+                "No local tap repositories found at {}\nHint: clone a repository to {}/<user>/<repo>",
+                tap_root.display(),
+                tap_root.display()
+            );
+        }
+
+        let total = outcome.searched + outcome.skipped;
+        if total == 0 {
+            return format!(
+                "No local tap indexes found under {}\nHint: a tap repository needs byk.tap.json at its root",
+                tap_root.display()
+            );
+        }
+
+        let noun = if total == 1 { "index" } else { "indexes" };
+        let mut message = format!(
+            "Tap key {:?} was not found in {} local tap {}",
+            key, total, noun
+        );
+        if outcome.skipped > 0 {
+            message.push_str(&format!(" ({} skipped)", outcome.skipped));
+        }
+        message.push_str(
+            "\nHint: use the full form --tap <user>/<repo>/<key> to address a specific repository or its remote index",
+        );
+        message
+    }
+
+    /// 歧义只列裸 spec，不带完整命令：用户可以回到历史命令里改前缀。
+    fn tap_key_ambiguous(key: &str, matches: &[tap::Match]) -> String {
+        let mut message = format!(
+            "Tap key {:?} exists in multiple local repositories. Use the full form:",
+            key
+        );
+        for matched in matches {
+            message.push_str(&format!("\n  {}/{}", matched.repo, key));
+        }
+        message
+    }
+
+    /// 打印路由结果并加载目标；目标形态决定走本地还是远程 clone。
+    fn load_target(
+        key: &str,
+        target: tap::Target,
+        layout: &PathLayout,
+        local_index: Option<&Path>,
+    ) -> Result<source::Loaded, String> {
+        let label = match &target {
+            tap::Target::Local(path) => path.display().to_string(),
+            tap::Target::Remote(url) => url.clone(),
+        };
+        // 先报路由结果：目标不存在时也能看出这个键指向了什么。
+        eprintln!("Tap {} -> {}", key, label);
+
+        match target {
+            tap::Target::Local(path) => source::load_file(&path).map_err(|err| match local_index {
+                Some(index) => format!(
+                    "{err}\nHint: the local tap index is authoritative; {} routes {:?} here. Update it or remove it to fall back to the remote index",
+                    index.display(),
+                    key
+                ),
+                None => err,
+            }),
+            tap::Target::Remote(url) => source::load(&url, layout),
+        }
+    }
+
+    fn local_index_hint(err: String, index: &Path) -> String {
+        format!(
+            "{err}\nHint: the local tap index is authoritative; update {} or remove it to fall back to the remote index",
+            index.display()
+        )
     }
 
     /// 克隆成功后再装依赖。
@@ -286,6 +435,7 @@ mod imp {
     pub(crate) enum SourceArg {
         Raw(String),
         Forge(source::Forge, String),
+        Tap(String),
     }
 }
 
@@ -496,6 +646,34 @@ mod tests {
             parse_args(&args(&["--bad"]))
                 .unwrap_err()
                 .starts_with("Unknown option:")
+        );
+    }
+
+    #[test]
+    fn parses_tap_sources() {
+        let tap = |values: &[&str]| match parse_args(&args(values)).unwrap().source {
+            SourceArg::Tap(spec) => spec,
+            other => panic!("expected a tap source, got {:?}", other),
+        };
+
+        assert_eq!(tap(&["--tap", "a/b/build"]), "a/b/build");
+        assert_eq!(tap(&["-t", "a/b@v1/build"]), "a/b@v1/build");
+        assert_eq!(
+            parse_args(&args(&["--tap"])).unwrap_err(),
+            "Option --tap requires a value"
+        );
+        assert_eq!(
+            parse_args(&args(&["-t"])).unwrap_err(),
+            "Option -t requires a value"
+        );
+        assert_eq!(
+            parse_args(&args(&["--tap", "a/b/k", "-gh", "c/d"])).unwrap_err(),
+            "clone takes exactly one source"
+        );
+        assert!(
+            parse_args(&args(&["-t", "a/b/k", "-d"]))
+                .unwrap()
+                .install_deps
         );
     }
 

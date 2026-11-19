@@ -397,6 +397,8 @@ def test_help_for_clone_shows_usage(runner):
     assert "Clone from a Gitee repository" in result.stdout
     assert "-jd, --jsdelivr <spec>" in result.stdout
     assert "Clone a GitHub file through jsDelivr" in result.stdout
+    assert "-t, --tap <spec>" in result.stdout
+    assert "Resolve a key from a local or GitHub byk.tap.json index" in result.stdout
 
 
 def test_clone_url_uses_curl(runner, tmp_path):
@@ -686,10 +688,550 @@ def test_clone_jsdelivr_invalid_spec_skips_curl(runner, tmp_path):
     assert not args_path.exists()
 
 
+def curl_urls(log):
+    return [line for line in log.read_text(encoding="utf-8").splitlines() if line.startswith("http")]
+
+
+def write_local_tap(runner, repo, index, files=None):
+    """在隔离的 ~/.byk/tap/<repo>/ 下放一份只读索引和可选的目标文件"""
+    root = runner.byk_dir / "tap" / repo
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "byk.tap.json").write_text(json.dumps(index), encoding="utf-8")
+    for name, content in (files or {}).items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, bytes):
+            path.write_bytes(content)
+        else:
+            path.write_text(content, encoding="utf-8")
+    return root
+
+
+def without_curl(tmp_path):
+    """PATH 里没有 curl：本地索引命中时命令仍应成功"""
+    bin_dir = tmp_path / "no-curl"
+    bin_dir.mkdir(exist_ok=True)
+    return {"PATH": str(bin_dir)}
+
+
+def test_clone_tap_routes_to_a_relative_target(runner, tmp_path):
+    env, log = install_routed_curl(
+        tmp_path,
+        {
+            "/byk.tap.json": b'{"build": "aliases/build.byk.json"}',
+            "/aliases/build.byk.json": b'{"build": "echo hi"}',
+        },
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 0, result.stderr
+    index = "https://raw.githubusercontent.com/aaa/bb/HEAD/byk.tap.json"
+    target = "https://raw.githubusercontent.com/aaa/bb/HEAD/aliases/build.byk.json"
+    assert curl_urls(log) == [index, target]
+    dest = runner.byk_dir / "alias" / "ops.byk.json"
+    assert read(dest) == {"build": "echo hi"}
+    assert result.stderr.splitlines() == [
+        f"Tap index: remote {index}",
+        f"Tap build -> {target}",
+        f"Cloned {target} to {dest}",
+    ]
+
+
+def test_clone_tap_short_flag_keeps_the_ref(runner, tmp_path):
+    env, log = install_routed_curl(
+        tmp_path,
+        {
+            "/byk.tap.json": b'{"build": "tools/build.byk.json"}',
+            "/tools/build.byk.json": b'{"build": "echo ref"}',
+        },
+    )
+
+    result = runner.run("@@ops..clone", "-t", "aaa/bb@v1/build", env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert curl_urls(log) == [
+        "https://raw.githubusercontent.com/aaa/bb/v1/byk.tap.json",
+        "https://raw.githubusercontent.com/aaa/bb/v1/tools/build.byk.json",
+    ]
+
+
+def test_clone_tap_accepts_a_full_url_target(runner, tmp_path):
+    env, log = install_routed_curl(
+        tmp_path,
+        {
+            "/byk.tap.json": b'{"build": "https://example.com/remote/tool.byk.json"}',
+            "/remote/tool.byk.json": b'{"run": "echo remote"}',
+        },
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert curl_urls(log) == [
+        "https://raw.githubusercontent.com/aaa/bb/HEAD/byk.tap.json",
+        "https://example.com/remote/tool.byk.json",
+    ]
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "run": "echo remote"
+    }
+
+
+def test_clone_tap_uses_a_local_index_without_network(runner, tmp_path):
+    repo = write_local_tap(
+        runner,
+        "aaa/bb",
+        {"build": "aliases/build.byk.json"},
+        {"aliases/build.byk.json": '{"build": "echo local"}'},
+    )
+    index = (repo / "byk.tap.json").resolve()
+    target = (repo / "aliases/build.byk.json").resolve()
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
+    )
+
+    assert result.returncode == 0, result.stderr
+    dest = runner.byk_dir / "alias" / "ops.byk.json"
+    assert read(dest) == {"build": "echo local"}
+    assert result.stderr.splitlines() == [
+        f"Tap index: local {index}",
+        f"Tap build -> {target}",
+        f"Cloned {target} to {dest}",
+    ]
+
+
+def test_clone_tap_local_index_key_miss_never_falls_back(runner, tmp_path):
+    write_local_tap(runner, "aaa/bb", {"deploy": "x.byk.json"})
+    env, args_path = install_fake_curl(
+        tmp_path, payload=b'{"build": "remote.byk.json"}'
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 1
+    assert "Tap key not found" in result.stderr
+    assert "Available: deploy" in result.stderr
+    assert "local tap index is authoritative" in result.stderr
+    assert not args_path.exists()
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_tap_local_index_parse_error_never_falls_back(runner, tmp_path):
+    repo = runner.byk_dir / "tap" / "aaa" / "bb"
+    repo.mkdir(parents=True)
+    (repo / "byk.tap.json").write_text("{not json", encoding="utf-8")
+    env, args_path = install_fake_curl(
+        tmp_path, payload=b'{"build": "remote.byk.json"}'
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 1
+    assert "Failed to parse tap index" in result.stderr
+    assert "local tap index is authoritative" in result.stderr
+    assert not args_path.exists()
+
+
+def test_clone_tap_local_index_that_is_a_directory_is_an_error(runner, tmp_path):
+    path = runner.byk_dir / "tap" / "aaa" / "bb" / "byk.tap.json"
+    path.mkdir(parents=True)
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 1
+    assert "Tap index is not a file" in result.stderr
+    assert not args_path.exists()
+
+
+def test_clone_tap_local_index_has_no_path_sugar(runner, tmp_path):
+    write_local_tap(
+        runner,
+        "aaa/bb",
+        {"build": "build"},
+        {"build.byk.json": '{"build": "echo sugar"}'},
+    )
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
+    )
+
+    assert result.returncode == 1
+    assert "Source not found" in result.stderr
+    assert "local tap index is authoritative" in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_tap_local_index_treats_at_names_as_literal_paths(runner, tmp_path):
+    write_local_tap(
+        runner,
+        "aaa/bb",
+        {"build": "@shared.byk.json"},
+        {"@shared.byk.json": '{"build": "echo at"}'},
+    )
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {"build": "echo at"}
+
+
+def test_clone_tap_local_index_accepts_an_absolute_target(runner, tmp_path):
+    absolute = tmp_path / "abs.byk.json"
+    absolute.write_text('{"build": "echo abs"}', encoding="utf-8")
+    write_local_tap(runner, "aaa/bb", {"build": str(absolute)})
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"Tap build -> {absolute.resolve()}" in result.stderr
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {"build": "echo abs"}
+
+
+def test_clone_tap_local_index_can_route_to_a_url(runner, tmp_path):
+    repo = write_local_tap(
+        runner,
+        "aaa/bb",
+        {"build": "https://example.com/remote/tool.byk.json"},
+    )
+    env, log = install_routed_curl(
+        tmp_path, {"/remote/tool.byk.json": b'{"run": "echo remote"}'}
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert f"Tap index: local {(repo / 'byk.tap.json').resolve()}" in result.stderr
+    assert "Tap build -> https://example.com/remote/tool.byk.json" in result.stderr
+    # 本地索引不联网，只有目标 URL 被下载
+    assert curl_urls(log) == ["https://example.com/remote/tool.byk.json"]
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "run": "echo remote"
+    }
+
+
+def test_clone_tap_ref_skips_the_local_index(runner, tmp_path):
+    write_local_tap(
+        runner,
+        "aaa/bb",
+        {"build": "local.byk.json"},
+        {"local.byk.json": '{"build": "echo local"}'},
+    )
+    env, log = install_routed_curl(
+        tmp_path,
+        {
+            "/byk.tap.json": b'{"build": "remote.byk.json"}',
+            "/remote.byk.json": b'{"build": "echo remote"}',
+        },
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb@v1/build", env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "Tap index: remote "
+        "https://raw.githubusercontent.com/aaa/bb/v1/byk.tap.json"
+        in result.stderr
+    )
+    assert curl_urls(log) == [
+        "https://raw.githubusercontent.com/aaa/bb/v1/byk.tap.json",
+        "https://raw.githubusercontent.com/aaa/bb/v1/remote.byk.json",
+    ]
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo remote"
+    }
+
+
+def test_clone_tap_local_index_anchors_the_base_on_the_local_target(runner, tmp_path):
+    repo = write_local_tap(
+        runner,
+        "aaa/bb",
+        {"build": "pkg/tool.byk.json"},
+        {
+            "pkg/tool.byk.json": (
+                '{"$deps": {"files": ["./bin/tool"]}, "run": "tool"}'
+            ),
+            "pkg/bin/tool": "tool",
+        },
+    )
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "aaa/bb/build", "-d", env=without_curl(tmp_path)
+    )
+
+    assert result.returncode == 0, result.stderr
+    base = f"{(repo / 'pkg').resolve()}/".replace("\\", "/")
+    assert f"Recorded $deps.base = {base}" in result.stderr
+    doc = read(runner.byk_dir / "alias" / "ops.byk.json")
+    assert doc["$deps"]["base"] == base
+    installed = runner.byk_dir / "deps" / "@@ops" / "tool"
+    assert installed.read_text(encoding="utf-8") == "tool"
+
+
+def test_clone_tap_missing_local_index_falls_back_to_remote(runner, tmp_path):
+    env, log = install_routed_curl(
+        tmp_path,
+        {
+            "/byk.tap.json": b'{"build": "aliases/build.byk.json"}',
+            "/aliases/build.byk.json": b'{"build": "echo remote"}',
+        },
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "Tap index: remote "
+        "https://raw.githubusercontent.com/aaa/bb/HEAD/byk.tap.json"
+        in result.stderr
+    )
+    assert not (runner.byk_dir / "tap").exists()
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo remote"
+    }
+
+
+def test_clone_tap_single_key_uses_a_unique_local_match(runner, tmp_path):
+    repo = write_local_tap(
+        runner,
+        "aaa/bb",
+        {"build": "aliases/build.byk.json"},
+        {"aliases/build.byk.json": '{"build": "echo single"}'},
+    )
+    write_local_tap(runner, "ccc/dd", {"deploy": "deploy.byk.json"})
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "build", env=without_curl(tmp_path)
+    )
+
+    assert result.returncode == 0, result.stderr
+    index = (repo / "byk.tap.json").resolve()
+    target = (repo / "aliases/build.byk.json").resolve()
+    dest = runner.byk_dir / "alias" / "ops.byk.json"
+    assert read(dest) == {"build": "echo single"}
+    assert result.stderr.splitlines() == [
+        f"Tap index: local {index}",
+        f"Tap build -> {target}",
+        f"Cloned {target} to {dest}",
+    ]
+
+
+def test_clone_tap_single_key_not_found_never_uses_the_network(runner, tmp_path):
+    write_local_tap(runner, "aaa/bb", {"deploy": "deploy.byk.json"})
+    env, args_path = install_fake_curl(
+        tmp_path, payload=b'{"build": "remote.byk.json"}'
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "build", env=env)
+
+    assert result.returncode == 1
+    assert 'Tap key "build" was not found in 1 local tap index' in result.stderr
+    assert "use the full form" in result.stderr
+    assert not args_path.exists()
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_tap_single_key_lists_full_forms_when_ambiguous(runner, tmp_path):
+    write_local_tap(
+        runner, "ccc/dd", {"build": "c.byk.json"}, {"c.byk.json": "{}"}
+    )
+    write_local_tap(
+        runner, "aaa/bb", {"build": "a.byk.json"}, {"a.byk.json": "{}"}
+    )
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run("@@ops..clone", "--tap", "build", env=env)
+
+    assert result.returncode == 1
+    assert result.stderr.splitlines() == [
+        'Tap key "build" exists in multiple local repositories. Use the full form:',
+        "  aaa/bb/build",
+        "  ccc/dd/build",
+    ]
+    assert not args_path.exists()
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_tap_single_key_warns_and_skips_a_broken_index(runner, tmp_path):
+    broken = runner.byk_dir / "tap" / "aaa" / "bb"
+    broken.mkdir(parents=True)
+    (broken / "byk.tap.json").write_text("{not json", encoding="utf-8")
+    repo = write_local_tap(
+        runner,
+        "ccc/dd",
+        {"build": "build.byk.json"},
+        {"build.byk.json": '{"build": "echo good"}'},
+    )
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "build", env=without_curl(tmp_path)
+    )
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stderr.splitlines()
+    assert lines[0].startswith("Warning: skipped local tap index aaa/bb:")
+    assert lines[1] == f"Tap index: local {(repo / 'byk.tap.json').resolve()}"
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "build": "echo good"
+    }
+
+
+def test_clone_tap_single_key_accepts_a_url_target(runner, tmp_path):
+    write_local_tap(
+        runner,
+        "aaa/bb",
+        {"build": "https://example.com/remote/tool.byk.json"},
+    )
+    env, log = install_routed_curl(
+        tmp_path, {"/remote/tool.byk.json": b'{"run": "echo remote"}'}
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "build", env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert "Tap build -> https://example.com/remote/tool.byk.json" in result.stderr
+    assert curl_urls(log) == ["https://example.com/remote/tool.byk.json"]
+    assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
+        "run": "echo remote"
+    }
+
+
+def test_clone_tap_single_key_missing_target_errors_without_network(runner, tmp_path):
+    write_local_tap(runner, "aaa/bb", {"build": "missing.byk.json"})
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "build", env=without_curl(tmp_path)
+    )
+
+    assert result.returncode == 1
+    assert "Tap index: local" in result.stderr
+    assert "Source not found" in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_tap_single_key_reports_a_missing_tap_root(runner, tmp_path):
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run("@@ops..clone", "--tap", "build", env=env)
+
+    assert result.returncode == 1
+    assert "No local tap repositories found at" in result.stderr
+    assert not args_path.exists()
+
+
+def test_clone_tap_missing_index_reports_where_to_add_it(runner, tmp_path):
+    env, _ = install_fake_curl(tmp_path, exit_code=22, stderr="404: Not Found")
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 1
+    assert (
+        "Tap index not found: "
+        "https://raw.githubusercontent.com/aaa/bb/HEAD/byk.tap.json"
+        in result.stderr
+    )
+    assert "add byk.tap.json at the repository root" in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_tap_missing_key_lists_available_keys(runner, tmp_path):
+    payload = b'{"deploy": "x", "build": "y", "$schema": "z"}'
+    env, args_path = install_fake_curl(tmp_path, payload=payload)
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/nope", env=env)
+
+    assert result.returncode == 1
+    assert "Tap key not found" in result.stderr
+    assert "Available: build, deploy" in result.stderr
+    assert "$schema" not in result.stderr
+    # 只取了索引，没有为不存在的键发第二次请求
+    assert args_path.read_text(encoding="utf-8").count("http") == 1
+
+
+def test_clone_tap_rejects_a_non_string_entry(runner, tmp_path):
+    env, _ = install_fake_curl(tmp_path, payload=b'{"build": 42}')
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 1
+    assert 'Tap entry "build" must be a string' in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_tap_refuses_a_target_that_is_another_index(runner, tmp_path):
+    env, log = install_routed_curl(
+        tmp_path, {"/byk.tap.json": b'{"build": "byk.tap.json"}'}
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+
+    assert result.returncode == 1
+    assert "not another tap index" in result.stderr
+    # 只路由一跳：第二次请求不该发出
+    assert len(curl_urls(log)) == 1
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_tap_is_mutually_exclusive_with_forge_sources(runner, tmp_path):
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run(
+        "@@ops..clone", "--tap", "aaa/bb/build", "-gh", "aaa/bb", env=env
+    )
+
+    assert result.returncode == 1
+    assert "clone takes exactly one source" in result.stderr
+    assert not args_path.exists()
+
+
+def test_clone_tap_invalid_spec_skips_curl(runner, tmp_path):
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb", env=env)
+
+    assert result.returncode == 1
+    assert "GitHub tap source must be" in result.stderr
+    assert not args_path.exists()
+
+
+def test_clone_tap_anchors_the_base_on_the_target_file(runner, tmp_path):
+    env, log = install_routed_curl(
+        tmp_path,
+        {
+            "/byk.tap.json": b'{"build": "pkg/deep/tool.byk.json"}',
+            "/pkg/deep/tool.byk.json": (
+                b'{"$deps": {"files": ["./bin/tool"]}, "run": "tool"}'
+            ),
+            "/pkg/deep/bin/tool": b"tool",
+        },
+    )
+
+    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", "-d", env=env)
+
+    assert result.returncode == 0, result.stderr
+    base = "https://raw.githubusercontent.com/aaa/bb/HEAD/pkg/deep/"
+    assert f"Recorded $deps.base = {base}" in result.stderr
+    doc = read(runner.byk_dir / "alias" / "ops.byk.json")
+    assert doc["$deps"]["base"] == base
+    # 落点由 `to` 决定（这里缺省，落在依赖目录根），与 src 的目录结构无关
+    assert (runner.byk_dir / "deps" / "@@ops" / "tool").read_bytes() == b"tool"
+    assert curl_urls(log) == [
+        "https://raw.githubusercontent.com/aaa/bb/HEAD/byk.tap.json",
+        "https://raw.githubusercontent.com/aaa/bb/HEAD/pkg/deep/tool.byk.json",
+        base + "bin/tool",
+    ]
+
+
 def test_clone_forge_options_are_completed(runner):
     short = runner.run("__api__", "complete", "@@ops..clone", "-g")
     long = runner.run("__api__", "complete", "@@ops..clone", "--")
     jd = runner.run("__api__", "complete", "@@ops..clone", "-j")
+    tap = runner.run("__api__", "complete", "@@ops..clone", "-t")
     both = runner.run(
         "__api__", "complete", "--with-descriptions", "@@ops..clone", "-"
     )
@@ -699,9 +1241,11 @@ def test_clone_forge_options_are_completed(runner):
         "--github",
         "--gitee",
         "--jsdelivr",
+        "--tap",
         "--deps",
     ]
     assert jd.stdout.splitlines() == ["-jd"]
+    assert tap.stdout.splitlines() == ["-t"]
     assert both.stdout.splitlines() == [
         "-gh\tClone from a GitHub repository",
         "--github\tClone from a GitHub repository",
@@ -709,6 +1253,8 @@ def test_clone_forge_options_are_completed(runner):
         "--gitee\tClone from a Gitee repository",
         "-jd\tClone a GitHub file through jsDelivr",
         "--jsdelivr\tClone a GitHub file through jsDelivr",
+        "-t\tResolve a key from a local or GitHub byk.tap.json index",
+        "--tap\tResolve a key from a local or GitHub byk.tap.json index",
         "-d\tAlso install the cloned file's dependencies",
         "--deps\tAlso install the cloned file's dependencies",
     ]

@@ -41,7 +41,7 @@ pub(crate) fn resolve(spec: &str, layout: &PathLayout) -> Result<PathBuf, String
 pub(crate) fn load(spec: &str, layout: &PathLayout) -> Result<Loaded, String> {
     match classify(spec)? {
         SourceKind::Url(url) => {
-            let data = fetch(url)?;
+            let data = fetch(url, FetchKind::Source)?;
             validate(&data, url)?;
             Ok(Loaded {
                 label: url.to_string(),
@@ -58,6 +58,19 @@ pub(crate) fn load(spec: &str, layout: &PathLayout) -> Result<Loaded, String> {
             })
         }
     }
+}
+
+/// 直接按路径读取别名文件。
+///
+/// 与 [`load`] 的区别是跳过 `@name` / `@@name` 与裸名补全：tap 索引里的值
+/// 是精确指针，`@foo` 也必须当普通文件名，不能被解释成别名。
+pub(crate) fn load_file(path: &Path) -> Result<Loaded, String> {
+    let (path, data) = read_source(path.to_path_buf())?;
+    Ok(Loaded {
+        label: path.display().to_string(),
+        data,
+        origin: Origin::File(path),
+    })
 }
 
 enum SourceKind<'a> {
@@ -97,7 +110,7 @@ impl Forge {
         }
     }
 
-    fn raw_url(self, user: &str, repo: &str, reference: &str, path: &str) -> String {
+    pub(crate) fn raw_url(self, user: &str, repo: &str, reference: &str, path: &str) -> String {
         match self {
             Self::Github => format!(
                 "https://raw.githubusercontent.com/{}/{}/{}/{}",
@@ -174,13 +187,13 @@ fn shape_error(forge: Forge) -> String {
 ///
 /// GitHub 与 Gitee 的用户名都不含 `.`，所以带点即主机；`localhost` 单独判一次。
 /// 以 `.` 开头的段（`.`、`..`、`.byk.json`）不算主机，交给形状检查报错。
-fn looks_like_host(segment: &str) -> bool {
+pub(crate) fn looks_like_host(segment: &str) -> bool {
     !segment.starts_with('.')
         && (segment.contains('.') || segment.eq_ignore_ascii_case("localhost"))
 }
 
 /// 去掉首段主机名后剩下的部分，用来拼「你是不是想写……」的提示。
-fn rest_after_host(spec: &str) -> String {
+pub(crate) fn rest_after_host(spec: &str) -> String {
     let mut parts = spec.splitn(2, '/');
     parts.next();
     parts.next().unwrap_or("").to_string()
@@ -236,7 +249,7 @@ fn split_forge_path(forge: Forge, path: &str) -> Result<(Vec<&str>, String), Str
     Ok((dirs, file))
 }
 
-fn encode_segment(segment: &str) -> String {
+pub(crate) fn encode_segment(segment: &str) -> String {
     let mut encoded = String::new();
     for byte in segment.bytes() {
         match byte {
@@ -389,7 +402,19 @@ fn validate(data: &[u8], label: &str) -> Result<(), String> {
     }
 }
 
-fn fetch(url: &str) -> Result<Vec<u8>, String> {
+/// 索引和普通来源共用同一次下载，但 404 的措辞与提示不同。
+#[derive(Clone, Copy)]
+enum FetchKind {
+    Source,
+    TapIndex,
+}
+
+/// 下载 `byk.tap.json`；404 时提示在仓库根目录补索引，而不是检查路径。
+pub(crate) fn fetch_tap_index(url: &str) -> Result<Vec<u8>, String> {
+    fetch(url, FetchKind::TapIndex)
+}
+
+fn fetch(url: &str, kind: FetchKind) -> Result<Vec<u8>, String> {
     let output = Command::new("curl")
         .args(["-fsSL", "--", url])
         .output()
@@ -408,13 +433,21 @@ fn fetch(url: &str) -> Result<Vec<u8>, String> {
         // 22 是 `-f` 下的 HTTP 错误，远程来源几乎总是 404：仓库/ref/路径三者
         // 有一个不对。裸 `curl failed (exit 22)` 只会让人去查网络。
         if code == 22 {
-            let mut message = format!("Remote source not found: {}", url);
+            let mut message = match kind {
+                FetchKind::Source => format!("Remote source not found: {}", url),
+                FetchKind::TapIndex => format!("Tap index not found: {}", url),
+            };
             if !reason.is_empty() {
                 message.push_str(&format!("\nServer said: {}", reason));
             }
-            message.push_str(
-                "\nHint: check the repository, ref, and path; a directory path must end with `/`",
-            );
+            message.push_str(match kind {
+                FetchKind::Source => {
+                    "\nHint: check the repository, ref, and path; a directory path must end with `/`"
+                }
+                FetchKind::TapIndex => {
+                    "\nHint: add byk.tap.json at the repository root"
+                }
+            });
             return Err(message);
         }
         return Err(if reason.is_empty() {

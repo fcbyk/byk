@@ -295,6 +295,12 @@ pub(crate) const OPTIONS: &[OptionInfo] = &[
     },
     OptionInfo {
         verb: Verb::Clone,
+        flag: "--tap",
+        syntax: "-t, --tap <spec>",
+        description: "Resolve a key from a local or GitHub byk.tap.json index",
+    },
+    OptionInfo {
+        verb: Verb::Clone,
         flag: "--deps",
         syntax: "-d, --deps",
         description: "Also install the cloned file's dependencies",
@@ -318,6 +324,7 @@ pub(crate) const OPTION_ALIASES: &[(&str, &str)] = &[
     ("-gh", "--github"),
     ("-ge", "--gitee"),
     ("-jd", "--jsdelivr"),
+    ("-t", "--tap"),
     ("-d", "--deps"),
 ];
 
