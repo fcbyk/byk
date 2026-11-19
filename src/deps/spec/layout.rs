@@ -64,21 +64,21 @@ mod tests {
         let project = PathBuf::from("/work/app");
 
         assert_eq!(
-            deps_dir_var("@@ops", true, &project, &root),
-            "/home/u/.byk/deps/@@ops"
+            PathBuf::from(deps_dir_var("@@ops", true, &project, &root)),
+            root.join("deps").join("@@ops")
         );
         assert_eq!(
-            deps_dir_var("@ops", false, &project, &root),
-            "/work/app/.byk/deps/@ops"
+            PathBuf::from(deps_dir_var("@ops", false, &project, &root)),
+            project.join(".byk").join("deps").join("@ops")
         );
         // 匿名文件：key 就是前缀本身
         assert_eq!(
             deps_dir("@", false, &project, &root),
-            PathBuf::from("/work/app/.byk/deps/@")
+            project.join(".byk").join("deps").join("@")
         );
         assert_eq!(
             deps_dir("@@", true, &project, &root),
-            PathBuf::from("/home/u/.byk/deps/@@")
+            root.join("deps").join("@@")
         );
     }
 }
