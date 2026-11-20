@@ -2,11 +2,11 @@
 
 ### Features
 
-- **`$deps`**: alias files can declare asset dependencies, installed into the file's own directory (`~/.byk/deps/<key>/` globally, `<file-dir>/.byk/deps/@<file>/` locally). `files[].src` accepts relative paths, anchored by `base`, which may be an http(s) address or a local directory — the former goes through `curl`, the latter is copied, and `extract` entries go through `tar`. `..clone -d` and `..deps install` do it in one call, `..deps status` reports the current state, and install converges the directory to the declaration; see the docs for details
+- **`$deps`**: alias files can declare dependencies — files, pip packages, and npm packages — installed into the file's own dedicated directory; `@file..deps install|status|uninstall` manages them, and `..clone -d` installs right after cloning
 
 - **`$clone`**: new inheritable field that keeps a file, group, or alias out of `..clone` copies while it stays fully usable locally; it does not affect the merged space, and a clone that would leave nothing is refused
 
-- **`__api__ expand`**: new `--no-builtins` flag expands only the file's `$var` declarations and leaves `byk_dir` / `work_dir` / `file_dir` unset
+- **`__api__ expand`**: new `--no-builtins` flag expands only the file's `$var` declarations and leaves `byk_dir` / `work_dir` / `file_dir` / `deps_dir` unset
 
 - **`..clone` / `..link` / `..init --link`**: bare local paths are read literally, falling back to `.byk.json`; `.`, `..`, a trailing `/`, and directory names read that directory's `.byk.json`; names that cannot be alias files (`hello.txt`) are never suffixed
 

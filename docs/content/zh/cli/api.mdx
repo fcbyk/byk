@@ -65,7 +65,7 @@ byk __api__
     {
       "name": "expand",
       "args": "[--no-builtins] <path>",
-      "description": "expand file-level $var in a JSON file without alias validation; --no-builtins leaves byk_dir/work_dir/file_dir unset"
+      "description": "expand file-level $var in a JSON file without alias validation; --no-builtins leaves byk_dir/work_dir/file_dir/deps_dir unset"
     },
     {
       "name": "check",
@@ -129,7 +129,7 @@ byk __api__ resolve @run.build --env staging
 两个字段的语义值得单独说清，插件的正确性基本都压在它们身上：
 
 - **`command` 在 `interactive` 时是模板**。交互别名的占位符值要问用户，而无终端时 byk 无法代答，所以原样返回 `deploy --env {env}` 并置 `mode: "interactive"`。调用方要么自己交互，要么把请求交回终端里的 byk；直接执行这个字符串等于跳过确认。
-- **`paths` 是生效值，不是配置值**。它已绝对化（相对条目以别名文件所在目录为基准）、只保留真实存在的目录，并且包含工作目录下的 `node_modules/.bin`。文件里写了但目录不存在的条目不会出现。
+- **`paths` 是生效值，不是配置值**。它已绝对化（相对条目以别名文件所在目录为基准）、只保留真实存在的目录，并且包含工作目录下的 `node_modules/.bin`；文件声明了 `$deps.pip` / `$deps.npm` 时，依赖目录里的 venv bin / `node_modules/.bin` 也会包含在内。文件里写了但目录不存在的条目不会出现。
 
 ```json title="byk __api__ resolve int"
 {
@@ -278,7 +278,7 @@ byk __api__ expand ./config.json
 - **不做别名结构校验**：没有 `$var`、没有 `$cmd`、甚至根不是对象都可以，只要是合法 JSON 就处理；除非传了 `--no-builtins`，内置变量照样展开
 - 不跟随 link 数组、不做继承、不执行任何内容
 
-`--no-builtins` 只属于 `__api__` 请求（`..json --expand` 没有）：三个内置变量不注入，除此以外 `$var` 的移除、名字检查与告警都和上面一致。`$var` 里显式声明同名变量时，它就是普通自定义变量。
+`--no-builtins` 只属于 `__api__` 请求（`..json --expand` 没有）：四个内置变量不注入，除此以外 `$var` 的移除、名字检查与告警都和上面一致。`$var` 里显式声明同名变量时，它就是普通自定义变量。
 
 `$var` 声明的问题（非法名字、自引用等）只写 stderr 告警，请求仍然成功，stdout 是一份完整 JSON；只有文件读不到、目标是目录、非法 UTF-8/JSON 才退出 1，stdout 为空。
 

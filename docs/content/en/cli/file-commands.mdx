@@ -66,6 +66,7 @@ byk @ops..init --link @shared        # link to ./shared.byk.json
 - Contents are always `{}` plus a trailing newline; an existing file is never overwritten.
 - `--link <source>` creates a **link file** (a single-element array) holding the source's canonical absolute path.
 - The source may be `@name` (current directory), `@@name` (global directory), or a path (`~` expands, relative paths resolve from the current directory). It must be an existing object alias file; a link file is rejected because links support only one level.
+- A bare local name is literal first and falls back to `.byk.json`; `.`, `..`, a trailing `/`, or a directory name reads that directory's `.byk.json` — the same local rules as `..clone`.
 - Creating a global file creates `~/.byk/alias/` when it does not exist.
 
 ### `..destroy`
@@ -328,7 +329,7 @@ byk @@ops..link @shared
 
 - Rewrites the addressed file into a single-element array pointing at the target's canonical absolute path.
 - Works only on an empty `{}` object or a file that is already a link; a non-empty alias file is refused.
-- The target must be a local object alias file; a URL is rejected with a hint to use `..clone`.
+- The target must be a local object alias file; a URL is rejected with a hint to use `..clone`. Local names follow the same rules as `..clone`: literal first, then `.byk.json`, with directories reading their `.byk.json`.
 - Pointing at itself is refused, and symlinks are not rewritten.
 - When the addressed file is missing, the error suggests `..init --link`.
 - When retargeting a global file whose dependency directory already exists, byk suggests running `..deps uninstall` first so you keep using the old target's assets.
@@ -337,10 +338,10 @@ byk @@ops..link @shared
 ### `..deps [install|uninstall|status]`
 
 ```bash
-byk @@tool..deps                       # current state: declared, present, outdated, stale
-byk @@tool..deps install               # sync the directory to the declaration
+byk @@tool..deps                       # current state: declared, present, missing, outdated, stale, unknown
+byk @@tool..deps install               # sync files and install declared packages
 byk @@tool..deps i                     # same, via an unambiguous prefix
-byk @@tool..deps i --force             # ignore the manifest and re-download everything
+byk @@tool..deps i --force             # ignore the manifest and re-download file entries
 byk @@tool..deps uninstall             # delete the whole dependency directory (interactive confirmation)
 byk @@tool..deps u                     # same; u / un / uni all work
 byk @@tool..deps uninstall --yes       # skip the uninstall confirmation
@@ -368,7 +369,7 @@ Syncing 2 declared entries in ~/.byk/deps/@@tool:
 Downloaded 1 file into ~/.byk/deps/@@tool
 ```
 
-When nothing changed it is a no-op and never touches the network:
+When no file entry changed and no packages are declared, it is a no-op and never touches the network:
 
 ```bash
 $ byk @@tool..deps i
@@ -378,11 +379,14 @@ $ byk @@tool..deps i
 - A relative `src` is joined with `$deps.base`; either one alone is an error, never a guess. `base` must be absolute on disk — the URL form means download, the local-path form means copy, and `..clone` picks it by source. Its relative forms only mean something at clone time. The program writes `base`; it is a best-effort anchor, not a portability guarantee, so don't hand-write it.
 - Local entries are compared by source mtime: a newer source is reinstalled, a missing one fails with `cannot read` and its path instead of being skipped.
 - Works for global and local files alike: global assets land in `~/.byk/deps/@@<file-name>/`, local ones in `<file-dir>/.byk/deps/@<file-name>/` with a self-ignoring `.gitignore` (`*`).
-- The install manifest lives at `~/.byk/deps/@@<file-name>/.byk-deps.json` and records the last declaration plus where each asset landed. Deleting it just restarts the bookkeeping; the next install adopts whatever is already there.
+- The install manifest lives at `<dedicated directory>/.byk-deps.json` and records the last declaration plus where each asset landed. Deleting it just restarts the bookkeeping; the next install adopts whatever is already there.
 - Only paths byk installed are ever removed: anything else in the directory is left alone with a warning.
 - The install step never asks twice and needs no `--yes`; `--force` is the only option, for cases the manifest cannot detect (assets corrupted from outside).
-- Absolute addresses are fetched with the system `curl`, local paths are copied with `fs::copy` (same temp-file-then-rename dance); extraction is delegated to the system `tar` on both paths, and a missing tool errors with an install hint. The summary says `Downloaded` either way and counts the local ones in parentheses (`Downloaded 3 files into … (1 local)`); a run with nothing local has no parentheses. `$deps.files` only fetches files, so the verb is about fetching, not about `$deps` as a whole.
-- Everything lands inside `~/.byk/deps/@@<file-name>/`. See [Dependencies](/cli/alias/config#dependencies) for the field reference.
+- Absolute addresses are fetched with the system `curl`, local paths are copied with `fs::copy` (same temp-file-then-rename dance); extraction is delegated to the system `tar` on both paths, and a missing tool errors with an install hint. The summary says `Downloaded` either way and counts the local ones in parentheses (`Downloaded 3 files into … (1 local)`); a run with nothing local has no parentheses. `$deps.files` only fetches files; `$deps.pip` and `$deps.npm` are handed to pip / npm themselves and are not part of the file manifest.
+- `$deps.pip` installs Python packages into `.venv` inside the dedicated directory: the venv is created with `python3` (`python` on Windows) when missing, then `pip install` runs. The venv's `bin` / `Scripts` is prepended to `PATH`; a missing Python fails with an install hint.
+- `$deps.npm` installs npm packages into the dedicated directory: a minimal `package.json` (`byk-deps`, `private`) is written when absent, then `npm install` runs. `node_modules/.bin` is prepended to `PATH`; a missing npm fails with an install hint.
+- Packages install on every run and are not tracked by `.byk-deps.json` — pip / npm decide what is current. `--force` only affects file entries, and removing a spec from the declaration does not uninstall it; `..deps uninstall` clears the whole directory. `files` is optional, so a declaration may contain only packages.
+- Everything lands inside the dedicated directory (`~/.byk/deps/@@<file-name>/` globally, `<file-dir>/.byk/deps/@<file-name>/` locally). See [Dependencies](/cli/alias/config#dependencies) for the field reference.
 - An `extract` entry lands on a directory and is marked `(extract)`; reinstalling replaces the whole directory, so files dropped from a newer archive never linger. Without `to` it unpacks into the dependency root, which only works as the sole entry (it replaces that whole directory):
 
 ```
@@ -396,17 +400,22 @@ Downloaded 2 files into ~/.byk/deps/@@tool
 - uninstall deletes the whole dependency directory; a missing directory is an error. status is read-only and writes to stdout, so it pipes well:
 
 ```
-@@tool: 3 declared, 2 present, 1 stale
+@@tool: 6 declared, 2 present, 1 stale
   ok        @@tool/bin/tool
   missing   @@tool/etc/cfg.json
   outdated  @@tool/dist
   stale     @@tool/bin/old-tool
+  ok        pip:click>=8.0
+  unknown   pip:git+https://example.com/tool.git
+  missing   npm:chalk
 Base: https://example.com/releases/v1/
 Deps directory: ~/.byk/deps/@@tool
 Hint: run `byk @@tool..deps i` to install the missing assets
 ```
 
-`--check` only validates the declaration itself: whether it parses, whether two entries collide on one target, and whether a relative `src` has a `base`. It never looks at what is installed — missing or outdated assets are runtime state, reported by `..deps status`.
+`unknown` marks a pip direct reference (URL / VCS): its package name cannot be determined locally, so byk reports it instead of guessing. Unknown entries count as neither present nor missing.
+
+`--check` only validates the declaration itself: whether it parses, whether two entries collide on one target, whether a relative `src` has a `base`, and whether package entries are non-empty strings. It never looks at what is installed — missing or outdated assets are runtime state, reported by `..deps status`.
 
 ## Completion
 
@@ -417,4 +426,4 @@ File-command completion covers:
 - command names after `..help`;
 - existing key paths after `..remove` (read from the target file; link files are not completed);
 - source arguments for `..clone`, `..link`, and `..init --link` (alias files starting with `@`);
-- subcommands after `..deps` (`install` / `uninstall` / `status`, global files only).
+- subcommands after `..deps` (`install` / `uninstall` / `status`).

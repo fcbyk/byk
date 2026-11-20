@@ -70,7 +70,7 @@ Scanned 2 alias files; 1 has problems (1 error).
   error: cannot load link target /Users/me/.byk/alias/missing.byk.json
 ```
 
-With no problems it prints `Scanned N alias files; no problems.` and exits 0; otherwise it exits 1. `Scanned` counts the candidate `*.byk.json` entries encountered, including invalid file names and broken symlinks. It currently covers file reading, JSON parsing, root type, alias and metadata field types, link files, invalid file names, broken symlinks, `$mode`, `$var`, and the `$deps` declaration (including `base` and target collisions). It only looks at configuration: whether dependencies are installed is runtime state, reported by `..deps status`. `--check` takes no alias argument — anything extra fails with `check takes no arguments`.
+With no problems it prints `Scanned N alias files; no problems.` and exits 0; otherwise it exits 1. `Scanned` counts the candidate `*.byk.json` entries encountered, including invalid file names and broken symlinks. It currently covers file reading, JSON parsing, root type, alias and metadata field types, link files, invalid file names, broken symlinks, `$mode`, `$var`, and the `$deps` declaration (including `base`, target collisions, and package entries). It only looks at configuration: whether dependencies are installed is runtime state, reported by `..deps status`. `--check` takes no alias argument — anything extra fails with `check takes no arguments`.
 
 ## Running Aliases
 
@@ -97,7 +97,7 @@ The exact syntax is pure file routing with no fallback:
 
 All of them exit with code 1. A `$`-prefixed segment is a reserved field or custom metadata and is never executed as an alias.
 
-Every alias file also has a set of reserved **file commands**: `@file..command` / `@@file..command` create, edit, clone, and inspect the file itself. See [File Commands](/cli/file-commands).
+Every alias file also has a set of reserved **file commands**: `@file..command` / `@@file..command` create, edit, clone, install dependencies for, and inspect the file itself. See [File Commands](/cli/file-commands).
 
 ## The `__api__` Program Interface
 

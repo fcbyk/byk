@@ -72,7 +72,7 @@ const REQUESTS: &[RequestInfo] = &[
     RequestInfo {
         name: "expand",
         args: "[--no-builtins] <path>",
-        description: "expand file-level $var in a JSON file without alias validation; --no-builtins leaves byk_dir/work_dir/file_dir unset",
+        description: "expand file-level $var in a JSON file without alias validation; --no-builtins leaves byk_dir/work_dir/file_dir/deps_dir unset",
     },
     RequestInfo {
         name: "check",

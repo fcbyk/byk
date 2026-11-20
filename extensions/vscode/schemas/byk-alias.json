@@ -43,14 +43,14 @@
           "default": "normal"
         },
         "$paths": {
-          "description": "文件级 PATH 目录列表，前置到 PATH 环境变量，子别名自动继承。支持 ~ 和相对路径。示例：[\"./scripts\", \"~/tools/bin\"]",
+          "description": "文件级 PATH 目录列表，前置到 PATH 环境变量，子别名自动继承。支持 ~ 和相对路径。声明 $deps.pip / $deps.npm 时，依赖目录的 venv bin / node_modules/.bin 会自动前置，无需写在这里。示例：[\"./scripts\", \"~/tools/bin\"]",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "$deps": {
-          "description": "文件级依赖声明。byk 把列出的文件取到本文件的专属目录（绝对地址用 curl 下载，本地路径直接复制）：全局别名落到 ~/.byk/deps/@@<文件名>/，局部别名落到 <文件所在目录>/.byk/deps/@<文件名>/，别名里用 ${deps_dir} 引用。安装：byk <文件key>..deps install，卸载：uninstall。安装是同步：缺的装、变的重下、声明里移除的删（清单记在专属目录的 .byk-deps.json）。解压交给系统 tar，归档条目拒绝越界路径。示例：{\"files\": [\"https://example.com/tool.tar.gz\", {\"src\": \"https://example.com/cli.tar.gz\", \"extract\": true, \"to\": \"opt\"}]}",
+          "description": "文件级依赖声明：files 取资产文件（绝对地址用 curl 下载，本地路径直接复制），pip / npm 装包到同一专属目录。全局别名落到 ~/.byk/deps/@@<文件名>/，局部别名落到 <文件所在目录>/.byk/deps/@<文件名>/，别名里用 ${deps_dir} 引用。安装：byk <文件key>..deps install，查看：status，卸载：uninstall。文件安装是同步：缺的装、变的重下、声明里移除的删（清单记在专属目录的 .byk-deps.json）；pip / npm 包每次安装都会执行。解压交给系统 tar，归档条目拒绝越界路径。示例：{\"files\": [\"https://example.com/tool.tar.gz\", {\"src\": \"https://example.com/cli.tar.gz\", \"extract\": true, \"to\": \"opt\"}]}",
           "type": "object",
           "properties": {
             "base": {

@@ -376,7 +376,7 @@ def test_api_expand_builtins_without_var(runner, tmp_path):
 
 
 def test_api_expand_no_builtins(runner, tmp_path):
-    """--no-builtins 只展开 $var，三个内置变量不注入"""
+    """--no-builtins 只展开 $var，四个内置变量不注入"""
     conf = tmp_path / "conf.json"
     conf.write_text(
         json.dumps(

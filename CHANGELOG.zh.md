@@ -2,9 +2,9 @@
 
 ### 新功能
 
-- **`$deps`**: 别名文件可以声明依赖资产，装到该文件自己的目录（全局 `~/.byk/deps/<key>/`，局部 `<文件目录>/.byk/deps/@<文件>/`）。`files[].src` 可以写相对路径，由 `base` 指明基准目录；`base` 既可以是 http(s) 地址，也可以是本机目录，前者走 `curl`、后者直接复制，`extract` 条目交给 `tar`。`..clone -d` 与 `..deps install` 一次装好，`..deps status` 报告现状；安装按声明收敛，详情见文档
+- **`$deps`**: 别名文件可以声明依赖——文件、pip 包与 npm 包——装到该文件自己的专属目录；`@文件..deps install|status|uninstall` 负责管理，`..clone -d` 在克隆后顺手装好
 - **`$clone`**: 新增可继承字段，让文件、分组或别名不进入 `..clone` 的副本；本机执行与合并空间不受影响，剔除后为空的 clone 会被拒绝
-- **`__api__ expand`**: 新增 `--no-builtins`，只展开文件自己的 `$var`，不注入 `byk_dir` / `work_dir` / `file_dir`
+- **`__api__ expand`**: 新增 `--no-builtins`，只展开文件自己的 `$var`，不注入 `byk_dir` / `work_dir` / `file_dir` / `deps_dir`
 - **`..clone` / `..link` / `..init --link`**: 本地裸路径先读字面文件，缺失时再补 `.byk.json`；`.`、`..`、结尾 `/` 与目录名读取目录里的 `.byk.json`；`hello.txt` 这类非法别名名不补后缀
 - **`..clone --tap`**: 新增的 GitHub 专用来源，通过 `byk.tap.json` 把 key 解析为别名文件或 URL；完整写法优先读 `~/.byk/tap/` 下的只读本地索引，缺失时回退仓库根目录；只写 `--tap <key>` 时搜索所有本地索引，唯一命中才克隆，目标只路由一跳
 

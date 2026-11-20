@@ -65,7 +65,7 @@ byk __api__
     {
       "name": "expand",
       "args": "[--no-builtins] <path>",
-      "description": "expand file-level $var in a JSON file without alias validation; --no-builtins leaves byk_dir/work_dir/file_dir unset"
+      "description": "expand file-level $var in a JSON file without alias validation; --no-builtins leaves byk_dir/work_dir/file_dir/deps_dir unset"
     },
     {
       "name": "check",
@@ -129,7 +129,7 @@ byk __api__ resolve @run.build --env staging
 Two fields deserve their own explanation, because a plugin's correctness rests on them:
 
 - **`command` is a template when `mode` is `interactive`.** The placeholder values have to be asked of a human, and byk cannot answer for one without a terminal, so it returns `deploy --env {env}` untouched with `mode: "interactive"`. The caller either prompts itself or hands the request back to byk in a terminal; executing that string directly skips the confirmation.
-- **`paths` is the effective value, not the configured one.** Entries are absolutised (relative ones against the alias file's directory), directories that do not exist are dropped, and the working directory's `node_modules/.bin` is included. An entry written in the file but pointing nowhere will not appear.
+- **`paths` is the effective value, not the configured one.** Entries are absolutised (relative ones against the alias file's directory), directories that do not exist are dropped, and the working directory's `node_modules/.bin` is included, along with the dependency directory's venv bin / `node_modules/.bin` when the file declares `$deps.pip` / `$deps.npm`. An entry written in the file but pointing nowhere will not appear.
 
 ```json title="byk __api__ resolve int"
 {
@@ -278,7 +278,7 @@ By default the rules match `..json --expand`:
 - **No alias-structure validation**: missing `$var`, missing `$cmd`, or even a non-object root are all fine as long as the JSON parses; built-ins expand unless `--no-builtins` is given
 - Does not follow link arrays, apply inheritance, or execute anything
 
-`--no-builtins` is available only on the `__api__` request (not on `..json --expand`): the three built-ins are left unset, while `$var` removal, name checks, and warnings behave exactly as above. A `$var` entry named after a built-in becomes an ordinary custom variable.
+`--no-builtins` is available only on the `__api__` request (not on `..json --expand`): the four built-ins are left unset, while `$var` removal, name checks, and warnings behave exactly as above. A `$var` entry named after a built-in becomes an ordinary custom variable.
 
 Problems with `$var` declarations (invalid names, self-references) only warn on stderr and the request still succeeds with a complete JSON document on stdout. Only an unreadable file, a directory, or invalid UTF-8/JSON exits 1 with an empty stdout.
 
