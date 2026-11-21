@@ -33,7 +33,12 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             if source.is_some() {
                 return Err("clone takes exactly one source".to_string());
             }
-            source = Some(SourceArg::Forge(forge, spec.clone()));
+            let cdn = if forge == source::Forge::Github {
+                optional_cdn(&mut rest)?
+            } else {
+                source::Cdn::Raw
+            };
+            source = Some(SourceArg::Forge(forge, cdn, spec.clone()));
             continue;
         }
         if arg == "-t" || arg == "--tap" {
@@ -62,11 +67,21 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     })
 }
 
+fn optional_cdn(rest: &mut std::slice::Iter<'_, String>) -> Result<source::Cdn, String> {
+    let Some(next) = rest.as_slice().first() else {
+        return Ok(source::Cdn::Raw);
+    };
+    if next.starts_with('-') {
+        return Ok(source::Cdn::Raw);
+    }
+    let value = rest.next().expect("peeked a value");
+    source::Cdn::parse(value)
+}
+
 fn forge_flag(flag: &str) -> Option<source::Forge> {
     match flag {
         "-gh" | "--github" => Some(source::Forge::Github),
         "-ge" | "--gitee" => Some(source::Forge::Gitee),
-        "-jd" | "--jsdelivr" => Some(source::Forge::Jsdelivr),
         _ => None,
     }
 }
@@ -113,8 +128,8 @@ mod imp {
 
         let loaded = match options.source {
             SourceArg::Raw(spec) => source::load(&spec, layout)?,
-            SourceArg::Forge(forge, spec) => {
-                source::load(&source::forge_url(forge, &spec)?, layout)?
+            SourceArg::Forge(forge, cdn, spec) => {
+                source::load(&source::forge_url(forge, cdn, &spec)?, layout)?
             }
             SourceArg::Tap(spec) => load_tap(&spec, layout)?,
         };
@@ -434,7 +449,7 @@ mod imp {
     #[derive(Debug)]
     pub(crate) enum SourceArg {
         Raw(String),
-        Forge(source::Forge, String),
+        Forge(source::Forge, source::Cdn, String),
         Tap(String),
     }
 }
@@ -598,33 +613,37 @@ mod tests {
     #[test]
     fn parses_forge_sources() {
         let forge = |values: &[&str]| match parse_args(&args(values)).unwrap().source {
-            SourceArg::Forge(forge, spec) => (forge, spec),
+            SourceArg::Forge(forge, cdn, spec) => (forge, cdn, spec),
             other => panic!("expected a forge source, got {:?}", other),
         };
 
         assert_eq!(
             forge(&["-gh", "a/b/c"]),
-            (source::Forge::Github, "a/b/c".to_string())
+            (source::Forge::Github, source::Cdn::Raw, "a/b/c".to_string())
         );
         assert_eq!(
             forge(&["--github", "a/b/"]),
-            (source::Forge::Github, "a/b/".to_string())
+            (source::Forge::Github, source::Cdn::Raw, "a/b/".to_string())
+        );
+        assert_eq!(
+            forge(&["-gh", "a/b/c", "jsdelivr"]),
+            (
+                source::Forge::Github,
+                source::Cdn::Jsdelivr,
+                "a/b/c".to_string()
+            )
+        );
+        assert_eq!(
+            forge(&["--github", "a/b/", "raw"]),
+            (source::Forge::Github, source::Cdn::Raw, "a/b/".to_string())
         );
         assert_eq!(
             forge(&["-ge", "a/b/c"]),
-            (source::Forge::Gitee, "a/b/c".to_string())
+            (source::Forge::Gitee, source::Cdn::Raw, "a/b/c".to_string())
         );
         assert_eq!(
             forge(&["--gitee", "a/b/"]),
-            (source::Forge::Gitee, "a/b/".to_string())
-        );
-        assert_eq!(
-            forge(&["-jd", "a/b/c"]),
-            (source::Forge::Jsdelivr, "a/b/c".to_string())
-        );
-        assert_eq!(
-            forge(&["--jsdelivr", "a/b/"]),
-            (source::Forge::Jsdelivr, "a/b/".to_string())
+            (source::Forge::Gitee, source::Cdn::Raw, "a/b/".to_string())
         );
         assert_eq!(
             parse_args(&args(&["--github"])).unwrap_err(),
@@ -635,12 +654,16 @@ mod tests {
             "Option -ge requires a value"
         );
         assert_eq!(
-            parse_args(&args(&["--jsdelivr"])).unwrap_err(),
-            "Option --jsdelivr requires a value"
+            parse_args(&args(&["-gh", "a/b", "nope"])).unwrap_err(),
+            "Unknown CDN: nope\nSupported: raw, jsdelivr, ghproxy"
         );
         assert_eq!(
-            parse_args(&args(&["-gh", "a", "b"])).unwrap_err(),
+            parse_args(&args(&["-gh", "a/b", "raw", "c/d"])).unwrap_err(),
             "clone takes exactly one source"
+        );
+        assert_eq!(
+            parse_args(&args(&["-jd", "a/b"])).unwrap_err(),
+            "Unknown option: -jd"
         );
         assert!(
             parse_args(&args(&["--bad"]))

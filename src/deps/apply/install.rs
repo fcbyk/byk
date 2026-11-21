@@ -2,10 +2,11 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::deps::spec::plan_entries;
+use crate::deps::spec::{CdnRoute, plan_entries};
 use crate::deps::types::{Declaration, Origin, PlannedAsset};
 
 use super::count_files;
@@ -18,7 +19,11 @@ use super::sync::{self, Change};
 ///
 /// `replace` 为真时覆盖已存在的目标：先取到同级临时文件，再 rename 过去，
 /// 覆盖是原子的，中途失败不会留下半个文件。
-pub(crate) fn install_file(asset: &PlannedAsset, replace: bool) -> Result<(), String> {
+pub(crate) fn install_file(
+    asset: &PlannedAsset,
+    replace: bool,
+    route: CdnRoute,
+) -> Result<(), String> {
     let index = asset.index;
 
     if !replace && asset.dest.symlink_metadata().is_ok() {
@@ -33,7 +38,7 @@ pub(crate) fn install_file(asset: &PlannedAsset, replace: bool) -> Result<(), St
         .map_err(|e| format!("files[{index}]: cannot create {}: {e}", parent.display()))?;
 
     let scratch = scratch_path(&asset.dest);
-    if let Err(message) = fetch(index, &asset.origin, &scratch) {
+    if let Err(message) = fetch(index, &asset.origin, &scratch, route) {
         let _ = fs::remove_file(&scratch);
         return Err(message);
     }
@@ -55,7 +60,11 @@ pub(crate) fn install_file(asset: &PlannedAsset, replace: bool) -> Result<(), St
 /// 解压一条资产。整目录替换：先解到同级的临时目录，再两跳 rename 换上去。
 ///
 /// 不能"解包覆盖"：新版本归档里删掉的文件，增量解包是删不掉的，会留下幽灵文件。
-pub(crate) fn install_archive(asset: &PlannedAsset, replace: bool) -> Result<(), String> {
+pub(crate) fn install_archive(
+    asset: &PlannedAsset,
+    replace: bool,
+    route: CdnRoute,
+) -> Result<(), String> {
     let index = asset.index;
     let parent = asset
         .dest
@@ -69,7 +78,7 @@ pub(crate) fn install_archive(asset: &PlannedAsset, replace: bool) -> Result<(),
     }
 
     let scratch = scratch_path(&asset.dest);
-    if let Err(message) = fetch(index, &asset.origin, &scratch) {
+    if let Err(message) = fetch(index, &asset.origin, &scratch, route) {
         let _ = fs::remove_file(&scratch);
         return Err(message);
     }
@@ -263,9 +272,9 @@ fn archive_entry_path(index: usize, entry: &str) -> Result<Option<Vec<String>>, 
 
 /// 把来源取到临时文件。两条路都只写 `out`，不碰 `dest`——rename 之前失败
 /// 都不会留下半个文件。
-fn fetch(index: usize, origin: &Origin, out: &Path) -> Result<(), String> {
+fn fetch(index: usize, origin: &Origin, out: &Path, route: CdnRoute) -> Result<(), String> {
     match origin {
-        Origin::Url(url) => download(index, url, out),
+        Origin::Url(url) => download(index, &route.url(url), out),
         Origin::File(path) => copy_local(index, path, out),
     }
 }
@@ -288,21 +297,19 @@ fn copy_local(index: usize, src: &Path, out: &Path) -> Result<(), String> {
 }
 
 fn download(index: usize, url: &str, out: &Path) -> Result<(), String> {
-    let output = Command::new("curl")
+    // 终端下让 curl 自己画进度条：`--progress-bar` 写 stderr，不捕获即可见。
+    // 非 TTY（脚本、E2E）保持静默，错误文本仍然稳定可断言。
+    if std::io::stderr().is_terminal() {
+        return download_with_progress(index, url, out);
+    }
+
+    let output = crate::net::curl()
         .args(["-fsSL", "-o"])
         .arg(out)
         .arg("--")
         .arg(url)
         .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                format!(
-                    "files[{index}]: curl is required to download dependencies\nHint: install curl and retry"
-                )
-            } else {
-                format!("files[{index}]: cannot run \"curl\": {e}")
-            }
-        })?;
+        .map_err(|e| curl_run_error(index, e))?;
 
     if !output.status.success() {
         return Err(format!(
@@ -311,6 +318,34 @@ fn download(index: usize, url: &str, out: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn download_with_progress(index: usize, url: &str, out: &Path) -> Result<(), String> {
+    let status = crate::net::curl()
+        .args(["-fL", "--progress-bar", "-o"])
+        .arg(out)
+        .arg("--")
+        .arg(url)
+        .status()
+        .map_err(|e| curl_run_error(index, e))?;
+
+    if !status.success() {
+        return Err(format!(
+            "files[{index}]: cannot download \"{url}\": curl failed (exit {})",
+            status.code().unwrap_or(-1)
+        ));
+    }
+    Ok(())
+}
+
+fn curl_run_error(index: usize, e: std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        format!(
+            "files[{index}]: curl is required to download dependencies\nHint: install curl and retry"
+        )
+    } else {
+        format!("files[{index}]: cannot run \"curl\": {e}")
+    }
 }
 
 #[cfg(unix)]
@@ -384,7 +419,8 @@ pub(crate) fn install_declaration(
     }
 
     if has_files {
-        sync_files(deps_dir, key, decl, &assets, force, retry_hint)?;
+        let route = CdnRoute::from_base(decl.base.as_ref());
+        sync_files(deps_dir, key, decl, &assets, route, force, retry_hint)?;
     }
 
     if has_pip {
@@ -404,6 +440,7 @@ fn sync_files(
     key: &str,
     decl: &Declaration,
     assets: &[PlannedAsset],
+    route: CdnRoute,
     force: bool,
     retry_hint: &str,
 ) -> Result<(), String> {
@@ -462,9 +499,9 @@ fn sync_files(
                 // 根上解压的落点就是专属目录，它一直都在，只能走替换路径
                 let replace = !matches!(change, Change::Add) || asset.dest.as_path() == deps_dir;
                 if asset.archive {
-                    install_archive(asset, replace)
+                    install_archive(asset, replace, route)
                 } else {
-                    install_file(asset, replace)
+                    install_file(asset, replace, route)
                 }
             }
         };

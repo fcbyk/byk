@@ -72,6 +72,24 @@ Scanned 2 alias files; 1 has problems (1 error).
 
 With no problems it prints `Scanned N alias files; no problems.` and exits 0; otherwise it exits 1. `Scanned` counts the candidate `*.byk.json` entries encountered, including invalid file names and broken symlinks. It currently covers file reading, JSON parsing, root type, alias and metadata field types, link files, invalid file names, broken symlinks, `$mode`, `$var`, and the `$deps` declaration (including `base`, target collisions, and package entries). It only looks at configuration: whether dependencies are installed is runtime state, reported by `..deps status`. `--check` takes no alias argument — anything extra fails with `check takes no arguments`.
 
+### Network proxy
+
+byk makes network requests in exactly two places: remote `..clone` fetches the source file, and `..deps i` downloads `$deps.files`. Both call the system `curl`, and the proxy is injected only into those curl child processes; aliases themselves, pip, and npm are untouched.
+
+Selection order:
+
+1. `BYK_USE_PROXY=false`: force a direct connection (`0` / `no` / `off` are equivalent, case-insensitive)
+2. The `BYK_PROXY` environment variable
+3. Existing `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` environment variables, passed to curl as-is and never overridden by byk
+4. The static system proxy of the current Windows user
+5. Direct connection (curl's default behavior)
+
+When `BYK_USE_PROXY` is absent or has any other value, proxying stays enabled — that is the default. `BYK_PROXY` reaches curl on its command line, so it beats `_curlrc`; other proxy environment variables are left to curl itself. `BYK_USE_PROXY=false` clears inherited proxy variables, skips the Windows system proxy, and makes curl ignore a proxy in `_curlrc`, which is useful for bypassing a broken proxy temporarily.
+
+Windows automatic proxy configuration (PAC, `AutoConfigURL`) and automatic detection (WPAD) require running a script or probing the network, which curl cannot do; when either is set, byk prints a one-line warning and falls back to a direct connection. The static proxy's exception list becomes curl's `no_proxy`, with `<local>` expanded to `localhost`, `127.0.0.1`, and `::1`. Other platforms never read system settings — use `BYK_PROXY`, `BYK_USE_PROXY`, or proxy environment variables.
+
+The proxy and ghproxy are independent layers: the proxy decides which network curl leaves through, while ghproxy rewrites which URL is downloaded. They compose, with traffic going through the local proxy first and reaching gh-proxy next.
+
 ## Running Aliases
 
 | Form | Description |

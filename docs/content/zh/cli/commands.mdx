@@ -72,6 +72,24 @@ Scanned 2 alias files; 1 has problems (1 error).
 
 没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。`Scanned` 统计的是遇到的候选 `*.byk.json` 目录项，包括非法文件名和断链的符号链接。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、非法文件名、断链符号链接、`$mode`、`$var`、`$deps` 声明（含 `base`、落点冲突与包条目）等。它只查配置本身——依赖装没装是运行时状态，用 `..deps status` 看。`--check` 不带别名参数，多写会报 `check takes no arguments`。
 
+### 网络代理
+
+byk 自己发起的网络请求只有两处：远程 `..clone` 取源文件，和 `..deps i` 下载 `$deps.files`。两者都调用系统 `curl`，代理只注入这些 curl 子进程；别名本身、pip、npm 都不受影响。
+
+选择顺序：
+
+1. `BYK_USE_PROXY=false`：强制直连（`0` / `no` / `off` 等价，忽略大小写）
+2. `BYK_PROXY` 环境变量
+3. 已有的 `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` 等环境变量，原样交给 curl，byk 不覆盖
+4. Windows 当前用户的静态系统代理
+5. 直连（沿用 curl 的默认行为）
+
+`BYK_USE_PROXY` 不存在或为其他值时视为开启代理，默认就是开启。`BYK_PROXY` 通过 curl 命令行传入，能压过 `_curlrc`；其他代理环境变量交给 curl 自己处理。`BYK_USE_PROXY=false` 会清掉继承的代理变量、跳过 Windows 系统代理，并让 curl 忽略 `_curlrc` 里的代理，用于单次绕过配错的代理。
+
+Windows 的自动代理配置（PAC，`AutoConfigURL`）和自动检测（WPAD）需要执行脚本或探测网络，curl 无法接手；遇到这两种设置会打印一行警告并退回直连。静态代理的例外列表会转成 curl 的 `no_proxy`，`<local>` 展开为 `localhost`、`127.0.0.1`、`::1`。其他平台不读取系统设置——用 `BYK_PROXY`、`BYK_USE_PROXY` 或代理环境变量。
+
+代理与 ghproxy 是两个独立层：代理决定“curl 从哪条网络出去”，ghproxy 改写“下载哪个 URL”。两者可以叠加，流量先从本地代理出去，再到达 gh-proxy。
+
 ## 执行别名
 
 | 形式 | 说明 |
@@ -134,5 +152,4 @@ byk __api__ paths root   # 免解析地拿一个目录
 4. 合并空间里的别名
 
 文件命令在步骤 3 之前就地处理：含 `..` 的 `@文件..命令` 不会走到别名查找。同时给出多个选项时，`-h` 优先，其次是 `--check`、`--paths`、`-v`。
-
 全部未命中时，输出 `Unrecognized command or alias: <word>`，并附上候选建议，退出码 1。

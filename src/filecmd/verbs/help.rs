@@ -204,12 +204,12 @@ mod tests {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"])).unwrap());
 
         assert!(text.contains("@@ops..clone <source> [options]"));
-        assert!(text.contains("-gh, --github <spec>"));
-        assert!(text.contains("Clone from a GitHub repository"));
+        assert!(text.contains("-gh, --github <spec> [<cdn>]"));
+        assert!(
+            text.contains("Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)")
+        );
         assert!(text.contains("-ge, --gitee <spec>"));
         assert!(text.contains("Clone from a Gitee repository"));
-        assert!(text.contains("-jd, --jsdelivr <spec>"));
-        assert!(text.contains("Clone a GitHub file through jsDelivr"));
         assert!(text.contains("-t, --tap <spec>"));
         assert!(text.contains("Resolve a key from a local or GitHub byk.tap.json index"));
     }

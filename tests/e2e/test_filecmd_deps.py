@@ -117,6 +117,33 @@ def test_fresh_install_downloads_and_records_manifest(runner, tmp_path):
     assert manifest["entries"][0]["exec"] is True
 
 
+def test_ghproxy_base_routes_absolute_github_urls(runner, tmp_path):
+    env, log = write_fake_curl(
+        tmp_path,
+        {
+            "/releases/latest/download/tool.zip": b"zip",
+            "/HEAD/tool": b"raw",
+        },
+    )
+    prepare_tool(
+        runner,
+        [
+            "https://github.com/u/r/releases/latest/download/tool.zip",
+            "tool",
+        ],
+        base="https://gh-proxy.com/https://raw.githubusercontent.com/u/r/HEAD/",
+    )
+
+    result = install(runner, env)
+
+    assert result.returncode == 0, result.stderr
+    # 绝对 GitHub 地址补上代理；相对地址经 base 已带前缀，不能再套一层
+    assert calls(log) == [
+        "https://gh-proxy.com/https://github.com/u/r/releases/latest/download/tool.zip",
+        "https://gh-proxy.com/https://raw.githubusercontent.com/u/r/HEAD/tool",
+    ]
+
+
 def test_second_install_is_a_noop(runner, tmp_path):
     env, log = write_fake_curl(tmp_path, {"/bin/tool": b"v1"})
     prepare_tool(runner, ["https://example.com/bin/tool"])

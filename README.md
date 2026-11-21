@@ -51,7 +51,7 @@ Four invocation forms:
 - `byk @file..command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `deps`, `destroy`, `clear`, `help`; `byk @file..help` lists them all
 - `byk __api__` — read-only interface for shell completion and editor plugins (hidden)
 
-Options: `--paths` lists the alias files byk scans, `--check` validates them, `-h` shows help and every alias, `-v` shows the version. Full descriptions live in [Options & Commands](https://cli.fcbyk.com/cli/commands) and [File Commands](https://cli.fcbyk.com/cli/file-commands).
+Options: `--paths` lists the alias files byk scans, `--check` validates them, `-h` shows help and every alias, `-v` shows the version. Downloads follow `BYK_USE_PROXY` / `BYK_PROXY`, existing proxy variables, and the Windows system proxy. Full descriptions live in [Options & Commands](https://cli.fcbyk.com/cli/commands) and [File Commands](https://cli.fcbyk.com/cli/file-commands).
 
 ## Installation
 

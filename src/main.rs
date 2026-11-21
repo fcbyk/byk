@@ -7,6 +7,7 @@ mod deps;
 mod execution;
 mod filecmd;
 mod model;
+mod net;
 mod options;
 mod resolve;
 mod utils;

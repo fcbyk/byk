@@ -210,6 +210,8 @@ byk @@ops..clone .                        # 当前目录的 .byk.json
 byk @@ops..clone https://example.com/tool.byk.json
 byk @@ops..clone -gh user/repo                     # 仓库根的 .byk.json
 byk @@ops..clone -gh user/repo@main/tools/release.byk.json
+byk @@ops..clone -gh user/repo jsdelivr            # 经 jsDelivr 读取
+byk @@ops..clone -gh user/repo ghproxy -d          # 经 gh-proxy 读取并装依赖
 byk @@ops..clone --tap user/repo/build            # 按 byk.tap.json 解析 build
 byk @@ops..clone -t user/repo@v1/build -d
 byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
@@ -222,11 +224,18 @@ byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 | `@name` / `@@name` | 当前目录 / 全局目录里的别名文件 |
 | 路径 | 支持 `~`；相对路径按当前目录解析；裸名字自动补 `.byk.json` |
 | `http://` / `https://` | 通过外部 `curl` 下载 |
-| `-gh` / `--github` | 从 GitHub 仓库读取 |
+| `-gh` / `--github` | 从 GitHub 仓库读取；可选第二个参数指定 CDN |
 | `-ge` / `--gitee` | 从 Gitee 仓库读取 |
-| `-jd` / `--jsdelivr` | 通过 jsDelivr 读取 GitHub 文件 |
 | `-t` / `--tap` | 从本地或 GitHub 的 `byk.tap.json` 解析一个键 |
 | `-d` / `--deps` | 克隆后接着装新文件的 `$deps` |
+
+`-gh` 的可选第二个参数是传输通道，省略等价于 `raw`：
+
+| CDN | 读取地址 |
+|-----|------|
+| `raw`（默认） | `raw.githubusercontent.com` |
+| `jsdelivr` | `cdn.jsdelivr.net` |
+| `ghproxy` | `gh-proxy.com`，把完整 raw URL 拼在域名后面 |
 
 仓库简写的格式：
 
@@ -296,7 +305,7 @@ byk @@ops..clone -t user/repo@v1/build -d
 ```
 
 - Tap 来源形态：`<user>/<repo>[@<ref>]/<key>`。`<ref>` 默认 `HEAD`；`<key>` 只能是单个路径段，不能含 `/`、不能是 `.` / `..`、不能以 `$` 开头。
-- `--tap` 只支持 GitHub，本身就是一个来源形态：不能与 `-gh`、`-ge`、`-jd` 同时使用。
+- `--tap` 只支持 GitHub，本身就是一个来源形态：不能与 `-gh`、`-ge` 同时使用。
 - **完整写法本地索引优先。** spec 不带 `@<ref>` 时，先读 `~/.byk/tap/<user>/<repo>/byk.tap.json`。这个文件存在就是权威：解析失败、缺键、value 非 string、目标不存在都会直接报错；只有索引文件本身不存在才回退 GitHub。写了 `@<ref>` 则始终使用远程索引。
 - **单 key 简写。** 只写 `--tap <key>`（不含 `/`）时，搜索所有合法的 `~/.byk/tap/<user>/<repo>/byk.tap.json`，只查本地索引、不联网拉取索引。唯一命中就从该索引克隆（value 是 URL 时仍走远程 clone）；多个仓库都有这个 key 时，列出 `user/repo/key` 完整写法让你自己选；一个都没有则直接失败，不回退远程。
 - 简写只读两层：`tap/<user>/<repo>/byk.tap.json`。目录名必须是合法的 GitHub 用户名 / 仓库名，非法目录和没有索引的目录跳过。读不了或解析失败的索引会打印警告并跳过，所以「唯一」只对可读索引成立。
@@ -382,6 +391,9 @@ $ byk @@tool..deps i
 - 已安装清单存在 `<专属目录>/.byk-deps.json`，记录上次声明的快照与落点。删除它等于重新开始记账，安装会重新「接管」现有文件。
 - 只删自己装过的路径：目录里多出来的文件永远不动，只提示一句。
 - 安装不二次确认，也不需要 `--yes`；`--force` 是唯一的选项，用于「文件资产被外部改坏」这类清单看不出的情况。
+- `$deps.base` 是 ghproxy 地址时（例如用 `..clone -gh ... ghproxy` 克隆），绝对 `github.com` / `raw.githubusercontent.com` 地址下载时会自动套上同一个代理，Release 资产同样加速；相对 `src` 经 base 拼出来已带前缀，不会重复套。jsdelivr 只镜像仓库文件，Release 资产仍直连。
+- 终端下每个文件显示 curl 原生进度条（写 stderr）；非 TTY 环境静默，错误文本保持稳定。
+- 下载用的 curl 优先看 `BYK_USE_PROXY`（`false` 强制直连），再读 `BYK_PROXY`、已有代理环境变量，Windows 上还会回落到静态系统代理；完整顺序见[选项与命令](/cli/commands)的代理一节。
 - 绝对地址交给系统 `curl`，本地路径直接 `fs::copy`（同样先落临时文件再 rename）；解压两条路都交给系统 `tar`，缺失时报错并提示安装。汇总行两种来源都写 `Downloaded`，其中来自本地复制的条数在括号里交代（`Downloaded 3 files into … (1 local)`），一条本地都没有时不出现括号——`$deps.files` 只负责取文件；`$deps.pip` 与 `$deps.npm` 交给 pip / npm 自己处理，不记账在文件清单里。
 - `$deps.pip` 把 Python 包装进专属目录里的 `.venv`：venv 缺失时用 `python3`（Windows 为 `python`）创建，然后执行 `pip install`。venv 的 `bin` / `Scripts` 会前置到 `PATH`；缺少 Python 时报错并提示安装。
 - `$deps.npm` 把 npm 包装进专属目录：缺失时写一个最小 `package.json`（`byk-deps`、`private`），然后执行 `npm install`。`node_modules/.bin` 会前置到 `PATH`；缺少 npm 时报错并提示安装。

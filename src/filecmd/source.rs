@@ -3,11 +3,11 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::Value;
 
 use crate::deps::Origin;
+use crate::deps::spec::gh_proxy_url;
 use crate::filecmd::io::path::target_path;
 use crate::filecmd::spec::invalid_stem_message;
 use crate::model::PathLayout;
@@ -98,7 +98,6 @@ fn classify(spec: &str) -> Result<SourceKind<'_>, String> {
 pub(crate) enum Forge {
     Github,
     Gitee,
-    Jsdelivr,
 }
 
 impl Forge {
@@ -106,7 +105,6 @@ impl Forge {
         match self {
             Self::Github => "GitHub",
             Self::Gitee => "Gitee",
-            Self::Jsdelivr => "jsDelivr",
         }
     }
 
@@ -120,16 +118,49 @@ impl Forge {
                 "https://gitee.com/{}/{}/raw/{}/{}",
                 user, repo, reference, path
             ),
+        }
+    }
+}
+
+/// GitHub 文件的传输通道；`raw` 是平台自身，其余是第三方加速。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Cdn {
+    Raw,
+    Jsdelivr,
+    Ghproxy,
+}
+
+impl Cdn {
+    pub(crate) const NAMES: [&'static str; 3] = ["raw", "jsdelivr", "ghproxy"];
+
+    pub(crate) fn parse(raw: &str) -> Result<Self, String> {
+        match raw {
+            "raw" => Ok(Self::Raw),
+            "jsdelivr" => Ok(Self::Jsdelivr),
+            "ghproxy" => Ok(Self::Ghproxy),
+            other => Err(format!(
+                "Unknown CDN: {}\nSupported: {}",
+                other,
+                Self::NAMES.join(", ")
+            )),
+        }
+    }
+
+    fn url(self, forge: Forge, user: &str, repo: &str, reference: &str, path: &str) -> String {
+        match self {
+            Self::Raw => forge.raw_url(user, repo, reference, path),
             Self::Jsdelivr => format!(
                 "https://cdn.jsdelivr.net/gh/{}/{}@{}/{}",
                 user, repo, reference, path
             ),
+            // gh-proxy 接收完整的上游 URL，直接拼在域名后面
+            Self::Ghproxy => gh_proxy_url(&forge.raw_url(user, repo, reference, path)),
         }
     }
 }
 
 /// 把 `<user>/<repo>[@<ref>][/<path>]` 展开为对应平台的 raw URL。
-pub(crate) fn forge_url(forge: Forge, spec: &str) -> Result<String, String> {
+pub(crate) fn forge_url(forge: Forge, cdn: Cdn, spec: &str) -> Result<String, String> {
     let mut parts = spec.splitn(3, '/');
     let user = parts.next().unwrap_or("");
     let repo_ref = parts.next().unwrap_or("");
@@ -168,7 +199,8 @@ pub(crate) fn forge_url(forge: Forge, spec: &str) -> Result<String, String> {
     segments.extend(dirs.iter().map(|segment| encode_segment(segment)));
     segments.push(encode_segment(&file));
 
-    Ok(forge.raw_url(
+    Ok(cdn.url(
+        forge,
         &segments[0],
         &segments[1],
         &segments[2],
@@ -415,7 +447,7 @@ pub(crate) fn fetch_tap_index(url: &str) -> Result<Vec<u8>, String> {
 }
 
 fn fetch(url: &str, kind: FetchKind) -> Result<Vec<u8>, String> {
-    let output = Command::new("curl")
+    let output = crate::net::curl()
         .args(["-fsSL", "--", url])
         .output()
         .map_err(|e| {
@@ -753,39 +785,39 @@ mod tests {
     #[test]
     fn forge_url_maps_shorthand() {
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb@v1").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb@v1").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/v1/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb/sss").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb/").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb/sss/xxx").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss/xxx").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss/xxx.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb@v1/sss").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb@v1/sss").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/v1/sss.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb@abc123/").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb@abc123/").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/abc123/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb/sss/xxx.byk.json").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss/xxx.byk.json").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss/xxx.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, "aaa/bb/sss/").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss/").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss/.byk.json"
         );
     }
@@ -793,19 +825,19 @@ mod tests {
     #[test]
     fn forge_url_maps_gitee() {
         assert_eq!(
-            forge_url(Forge::Gitee, "aaa/bb").unwrap(),
+            forge_url(Forge::Gitee, Cdn::Raw, "aaa/bb").unwrap(),
             "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Gitee, "aaa/bb/sss").unwrap(),
+            forge_url(Forge::Gitee, Cdn::Raw, "aaa/bb/sss").unwrap(),
             "https://gitee.com/aaa/bb/raw/HEAD/sss.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Gitee, "aaa/bb@v1/").unwrap(),
+            forge_url(Forge::Gitee, Cdn::Raw, "aaa/bb@v1/").unwrap(),
             "https://gitee.com/aaa/bb/raw/v1/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Gitee, "aaa/bb/dir/xxx").unwrap(),
+            forge_url(Forge::Gitee, Cdn::Raw, "aaa/bb/dir/xxx").unwrap(),
             "https://gitee.com/aaa/bb/raw/HEAD/dir/xxx.byk.json"
         );
     }
@@ -813,27 +845,50 @@ mod tests {
     #[test]
     fn forge_url_maps_jsdelivr() {
         assert_eq!(
-            forge_url(Forge::Jsdelivr, "aaa/bb").unwrap(),
+            forge_url(Forge::Github, Cdn::Jsdelivr, "aaa/bb").unwrap(),
             "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Jsdelivr, "aaa/bb/sss").unwrap(),
+            forge_url(Forge::Github, Cdn::Jsdelivr, "aaa/bb/sss").unwrap(),
             "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/sss.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Jsdelivr, "aaa/bb@v1/").unwrap(),
+            forge_url(Forge::Github, Cdn::Jsdelivr, "aaa/bb@v1/").unwrap(),
             "https://cdn.jsdelivr.net/gh/aaa/bb@v1/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Jsdelivr, "aaa/bb@abc123/dir/xxx").unwrap(),
+            forge_url(Forge::Github, Cdn::Jsdelivr, "aaa/bb@abc123/dir/xxx").unwrap(),
             "https://cdn.jsdelivr.net/gh/aaa/bb@abc123/dir/xxx.byk.json"
         );
     }
 
     #[test]
+    fn forge_url_maps_ghproxy() {
+        assert_eq!(
+            forge_url(Forge::Github, Cdn::Ghproxy, "aaa/bb").unwrap(),
+            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
+        );
+        assert_eq!(
+            forge_url(Forge::Github, Cdn::Ghproxy, "aaa/bb@v1/sss").unwrap(),
+            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/v1/sss.byk.json"
+        );
+    }
+
+    #[test]
+    fn cdn_parses_known_names() {
+        assert_eq!(Cdn::parse("raw").unwrap(), Cdn::Raw);
+        assert_eq!(Cdn::parse("jsdelivr").unwrap(), Cdn::Jsdelivr);
+        assert_eq!(Cdn::parse("ghproxy").unwrap(), Cdn::Ghproxy);
+
+        let err = Cdn::parse("fastgit").unwrap_err();
+        assert!(err.starts_with("Unknown CDN: fastgit"), "{err}");
+        assert!(err.contains("raw, jsdelivr, ghproxy"), "{err}");
+    }
+
+    #[test]
     fn forge_url_encodes_segments() {
         assert_eq!(
-            forge_url(Forge::Github, "aa a/bb@v 1/dir name/xy").unwrap(),
+            forge_url(Forge::Github, Cdn::Raw, "aa a/bb@v 1/dir name/xy").unwrap(),
             "https://raw.githubusercontent.com/aa%20a/bb/v%201/dir%20name/xy.byk.json"
         );
     }
@@ -842,23 +897,23 @@ mod tests {
     fn forge_url_rejects_bad_shape() {
         // 两段现在是合法的（仓库根），剩下的都是真的形状错误
         for spec in ["", ".byk.json", "aaa", "aaa/bb@/sss", "aaa/bb/../sss"] {
-            assert!(forge_url(Forge::Github, spec).is_err(), "{spec}");
+            assert!(forge_url(Forge::Github, Cdn::Raw, spec).is_err(), "{spec}");
         }
-        assert!(forge_url(Forge::Github, "aaa//sss").is_err());
-        assert!(forge_url(Forge::Github, "aaa/bb/sss//xxx").is_err());
+        assert!(forge_url(Forge::Github, Cdn::Raw, "aaa//sss").is_err());
+        assert!(forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss//xxx").is_err());
     }
 
     #[test]
     fn forge_url_rejects_a_host_prefix() {
-        let err = forge_url(Forge::Github, "github.com/aaa/bb").unwrap_err();
+        let err = forge_url(Forge::Github, Cdn::Raw, "github.com/aaa/bb").unwrap_err();
         assert!(err.contains("must not include a host"), "{err}");
         assert!(err.contains("Did you mean `aaa/bb`?"), "{err}");
 
-        let err = forge_url(Forge::Github, "www.github.com/aaa/bb/sss").unwrap_err();
+        let err = forge_url(Forge::Github, Cdn::Raw, "www.github.com/aaa/bb/sss").unwrap_err();
         assert!(err.contains("Did you mean `aaa/bb/sss`?"), "{err}");
 
         // 去掉主机后不到两段，就只能报形状错，别建议一个同样非法的写法
-        let err = forge_url(Forge::Github, "github.com/aaa").unwrap_err();
+        let err = forge_url(Forge::Github, Cdn::Raw, "github.com/aaa").unwrap_err();
         assert!(err.contains("must not include a host"), "{err}");
         assert!(!err.contains("Did you mean"), "{err}");
     }

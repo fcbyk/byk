@@ -278,20 +278,14 @@ pub(crate) const OPTIONS: &[OptionInfo] = &[
     OptionInfo {
         verb: Verb::Clone,
         flag: "--github",
-        syntax: "-gh, --github <spec>",
-        description: "Clone from a GitHub repository",
+        syntax: "-gh, --github <spec> [<cdn>]",
+        description: "Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)",
     },
     OptionInfo {
         verb: Verb::Clone,
         flag: "--gitee",
         syntax: "-ge, --gitee <spec>",
         description: "Clone from a Gitee repository",
-    },
-    OptionInfo {
-        verb: Verb::Clone,
-        flag: "--jsdelivr",
-        syntax: "-jd, --jsdelivr <spec>",
-        description: "Clone a GitHub file through jsDelivr",
     },
     OptionInfo {
         verb: Verb::Clone,
@@ -323,7 +317,6 @@ pub(crate) const OPTIONS: &[OptionInfo] = &[
 pub(crate) const OPTION_ALIASES: &[(&str, &str)] = &[
     ("-gh", "--github"),
     ("-ge", "--gitee"),
-    ("-jd", "--jsdelivr"),
     ("-t", "--tap"),
     ("-d", "--deps"),
 ];

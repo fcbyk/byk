@@ -137,6 +137,9 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     if let Some(sources) = file_complete::complete_source_args(&prev[0], prev, partial, layout) {
         return sources;
     }
+    if let Some(cdns) = file_complete::complete_clone_cdn(&prev[0], prev, partial) {
+        return cdns;
+    }
     file_complete::complete_options(&prev[0], partial).unwrap_or_default()
 }
 
@@ -787,8 +790,6 @@ mod tests {
                 "--github".to_string(),
                 "-ge".to_string(),
                 "--gitee".to_string(),
-                "-jd".to_string(),
-                "--jsdelivr".to_string(),
                 "-t".to_string(),
                 "--tap".to_string(),
                 "-d".to_string(),
@@ -801,6 +802,29 @@ mod tests {
         );
         // 第二个源不补
         assert!(candidates(&words(&["@@ops..clone", "@@src", "@"]), &env.layout).is_empty());
+    }
+
+    #[test]
+    fn candidates_clone_completes_cdns_after_github_spec() {
+        let env = TestEnv::new();
+
+        assert_eq!(
+            candidates(&words(&["@@ops..clone", "-gh", "aaa/bb", ""]), &env.layout),
+            vec![
+                "raw".to_string(),
+                "jsdelivr".to_string(),
+                "ghproxy".to_string()
+            ]
+        );
+        assert_eq!(
+            candidates(
+                &words(&["@@ops..clone", "--github", "aaa/bb", "js"]),
+                &env.layout
+            ),
+            vec!["jsdelivr".to_string()]
+        );
+        // Gitee 没有 CDN 参数
+        assert!(candidates(&words(&["@@ops..clone", "-ge", "aaa/bb", ""]), &env.layout).is_empty());
     }
 
     #[test]

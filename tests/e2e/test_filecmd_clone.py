@@ -391,12 +391,10 @@ def test_help_for_clone_shows_usage(runner):
     assert result.returncode == 0
     assert result.stdout.startswith("\n@@ops..clone <source> [options]\n")
     assert "Copy a local or remote alias file into this file" in result.stdout
-    assert "-gh, --github <spec>" in result.stdout
-    assert "Clone from a GitHub repository" in result.stdout
+    assert "-gh, --github <spec> [<cdn>]" in result.stdout
+    assert "Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)" in result.stdout
     assert "-ge, --gitee <spec>" in result.stdout
     assert "Clone from a Gitee repository" in result.stdout
-    assert "-jd, --jsdelivr <spec>" in result.stdout
-    assert "Clone a GitHub file through jsDelivr" in result.stdout
     assert "-t, --tap <spec>" in result.stdout
     assert "Resolve a key from a local or GitHub byk.tap.json index" in result.stdout
 
@@ -579,17 +577,24 @@ def test_clone_github_bare_repo_with_ref_reads_root_config(runner, tmp_path):
 def test_clone_bare_repo_hits_root_for_each_forge(runner, tmp_path):
     payload = b'{"build": "echo root"}'
     cases = [
-        ("-gh", "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"),
-        ("-ge", "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"),
-        ("-jd", "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json"),
+        (("-gh", "aaa/bb"), "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"),
+        (("-ge", "aaa/bb"), "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"),
+        (
+            ("-gh", "aaa/bb", "jsdelivr"),
+            "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json",
+        ),
+        (
+            ("-gh", "aaa/bb", "ghproxy"),
+            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json",
+        ),
     ]
     dest = runner.byk_dir / "alias" / "ops.byk.json"
 
-    for flag, url in cases:
-        case_dir = tmp_path / flag.strip("-")
+    for index, (args, url) in enumerate(cases):
+        case_dir = tmp_path / str(index)
         case_dir.mkdir()
         env, args_path = install_fake_curl(case_dir, payload=payload)
-        result = runner.run("@@ops..clone", flag, "aaa/bb", env=env)
+        result = runner.run("@@ops..clone", *args, env=env)
 
         assert result.returncode == 0, result.stderr
         assert args_path.read_text(encoding="utf-8").splitlines() == [
@@ -650,11 +655,11 @@ def test_clone_gitee_invalid_spec_skips_curl(runner, tmp_path):
     assert not args_path.exists()
 
 
-def test_clone_jsdelivr_shorthand(runner, tmp_path):
+def test_clone_github_through_jsdelivr(runner, tmp_path):
     payload = b'{"build": "echo cdn"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "-jd", "aaa/bb/sss", env=env)
+    result = runner.run("@@ops..clone", "-gh", "aaa/bb/sss", "jsdelivr", env=env)
 
     assert result.returncode == 0
     dest = runner.byk_dir / "alias" / "ops.byk.json"
@@ -666,25 +671,39 @@ def test_clone_jsdelivr_shorthand(runner, tmp_path):
     ]
 
 
-def test_clone_jsdelivr_long_flag_with_ref(runner, tmp_path):
+def test_clone_github_through_jsdelivr_with_ref(runner, tmp_path):
     payload = b'{"build": "echo cdn"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "--jsdelivr", "aaa/bb@v1/", env=env)
+    result = runner.run(
+        "@@ops..clone", "--github", "aaa/bb@v1/", "jsdelivr", "-d", env=env
+    )
 
-    assert result.returncode == 0
+    assert result.returncode == 0, result.stderr
     assert args_path.read_text(encoding="utf-8").splitlines()[-1] == (
         "https://cdn.jsdelivr.net/gh/aaa/bb@v1/.byk.json"
     )
 
 
-def test_clone_jsdelivr_invalid_spec_skips_curl(runner, tmp_path):
+def test_clone_github_unknown_cdn_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-jd", "aaa", env=env)
+    result = runner.run("@@ops..clone", "-gh", "aaa/bb", "fastgit", env=env)
 
     assert result.returncode == 1
-    assert "jsDelivr source must be" in result.stderr
+    assert "Unknown CDN: fastgit" in result.stderr
+    assert "raw, jsdelivr, ghproxy" in result.stderr
+    assert not args_path.exists()
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_github_with_invalid_spec_skips_curl(runner, tmp_path):
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run("@@ops..clone", "-gh", "aaa", "jsdelivr", env=env)
+
+    assert result.returncode == 1
+    assert "GitHub source must be" in result.stderr
     assert not args_path.exists()
 
 
@@ -1230,8 +1249,8 @@ def test_clone_tap_anchors_the_base_on_the_target_file(runner, tmp_path):
 def test_clone_forge_options_are_completed(runner):
     short = runner.run("__api__", "complete", "@@ops..clone", "-g")
     long = runner.run("__api__", "complete", "@@ops..clone", "--")
-    jd = runner.run("__api__", "complete", "@@ops..clone", "-j")
     tap = runner.run("__api__", "complete", "@@ops..clone", "-t")
+    cdn = runner.run("__api__", "complete", "@@ops..clone", "-gh", "aaa/bb", "")
     both = runner.run(
         "__api__", "complete", "--with-descriptions", "@@ops..clone", "-"
     )
@@ -1240,19 +1259,16 @@ def test_clone_forge_options_are_completed(runner):
     assert long.stdout.splitlines() == [
         "--github",
         "--gitee",
-        "--jsdelivr",
         "--tap",
         "--deps",
     ]
-    assert jd.stdout.splitlines() == ["-jd"]
     assert tap.stdout.splitlines() == ["-t"]
+    assert cdn.stdout.splitlines() == ["raw", "jsdelivr", "ghproxy"]
     assert both.stdout.splitlines() == [
-        "-gh\tClone from a GitHub repository",
-        "--github\tClone from a GitHub repository",
+        "-gh\tClone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)",
+        "--github\tClone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)",
         "-ge\tClone from a Gitee repository",
         "--gitee\tClone from a Gitee repository",
-        "-jd\tClone a GitHub file through jsDelivr",
-        "--jsdelivr\tClone a GitHub file through jsDelivr",
         "-t\tResolve a key from a local or GitHub byk.tap.json index",
         "--tap\tResolve a key from a local or GitHub byk.tap.json index",
         "-d\tAlso install the cloned file's dependencies",

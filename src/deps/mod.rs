@@ -1,6 +1,6 @@
 //! `$deps` 子系统：类型、声明解析、计划、布局与安装执行。
 //!
-//! 本模块是依赖图叶子：不 import 项目内其他模块。
+//! 本模块是依赖图叶子：除网络的 `crate::net` 外，不 import 项目内其他模块。
 
 pub(crate) mod apply;
 pub(crate) mod spec;

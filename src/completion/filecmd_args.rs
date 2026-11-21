@@ -9,6 +9,7 @@ use crate::model::PathLayout;
 use crate::resolve::validate_filename;
 
 use crate::filecmd::io::path::resolve_target;
+use crate::filecmd::source::Cdn;
 use crate::filecmd::spec::ParseResult;
 use crate::filecmd::spec::SUBCOMMANDS;
 use crate::filecmd::spec::{OPTION_ALIASES, OPTIONS, VERBS, Verb, parse, split_prefix};
@@ -132,6 +133,35 @@ pub(crate) fn complete_source_args(
         return Some(Vec::new());
     }
     Some(source_candidates(partial, layout))
+}
+
+/// 补全 `-gh <spec> ` 之后的 CDN 名。
+///
+/// 只有一个值的位置：紧跟在 `-gh` / `--github` 的 spec 后面。
+pub(crate) fn complete_clone_cdn(
+    command_token: &str,
+    prev: &[String],
+    partial: &str,
+) -> Option<Vec<String>> {
+    let command = match parse(command_token) {
+        ParseResult::Command(command) => command,
+        _ => return None,
+    };
+    if command.verb != Verb::Clone || partial.starts_with('-') || prev.len() < 3 {
+        return None;
+    }
+    let flag = &prev[prev.len() - 2];
+    if flag != "-gh" && flag != "--github" {
+        return None;
+    }
+
+    Some(
+        Cdn::NAMES
+            .iter()
+            .filter(|name| name.starts_with(partial))
+            .map(|name| (*name).to_string())
+            .collect(),
+    )
 }
 
 fn source_candidates(partial: &str, layout: &PathLayout) -> Vec<String> {
@@ -440,8 +470,6 @@ mod tests {
                 "--github".to_string(),
                 "-ge".to_string(),
                 "--gitee".to_string(),
-                "-jd".to_string(),
-                "--jsdelivr".to_string(),
                 "-t".to_string(),
                 "--tap".to_string(),
                 "-d".to_string(),
@@ -453,7 +481,6 @@ mod tests {
             Some(vec![
                 "--github".to_string(),
                 "--gitee".to_string(),
-                "--jsdelivr".to_string(),
                 "--tap".to_string(),
                 "--deps".to_string()
             ])
@@ -461,10 +488,6 @@ mod tests {
         assert_eq!(
             complete_options("@@ops..clone", "-g"),
             Some(vec!["-gh".to_string(), "-ge".to_string()])
-        );
-        assert_eq!(
-            complete_options("@@ops..clone", "-j"),
-            Some(vec!["-jd".to_string()])
         );
         assert_eq!(
             complete_options("@@ops..clone", "-t"),
@@ -557,6 +580,51 @@ mod tests {
         );
         assert_eq!(
             complete_source_args("@@ops..set", &words(&["@@ops..set"]), "@", &layout),
+            None
+        );
+    }
+
+    #[test]
+    fn complete_clone_cdn_after_github_spec() {
+        assert_eq!(
+            complete_clone_cdn(
+                "@@ops..clone",
+                &words(&["@@ops..clone", "-gh", "aaa/bb"]),
+                ""
+            ),
+            Some(vec![
+                "raw".to_string(),
+                "jsdelivr".to_string(),
+                "ghproxy".to_string()
+            ])
+        );
+        assert_eq!(
+            complete_clone_cdn(
+                "@@ops..clone",
+                &words(&["@@ops..clone", "--github", "aaa/bb"]),
+                "js"
+            ),
+            Some(vec!["jsdelivr".to_string()])
+        );
+        // 只对 `-gh` 生效；Gitee 或值已给完时交给其他补全
+        assert_eq!(
+            complete_clone_cdn(
+                "@@ops..clone",
+                &words(&["@@ops..clone", "-ge", "aaa/bb"]),
+                ""
+            ),
+            None
+        );
+        assert_eq!(
+            complete_clone_cdn(
+                "@@ops..clone",
+                &words(&["@@ops..clone", "-gh", "aaa/bb", "raw"]),
+                ""
+            ),
+            None
+        );
+        assert_eq!(
+            complete_clone_cdn("@@ops..link", &words(&["@@ops..link", "-gh", "a/b"]), ""),
             None
         );
     }

@@ -1,6 +1,6 @@
 //! `$deps` 的安装执行：资产下载、解压、pip/npm 与同步清单。
 //!
-//! 本子模块只依赖 `deps::spec` / `deps::types`，不 import 项目内其他模块。
+//! 本子模块只依赖 `deps::spec` / `deps::types` 与 `crate::net`，不 import 其他项目模块。
 
 mod install;
 mod packages;
