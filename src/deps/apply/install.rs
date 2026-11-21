@@ -127,6 +127,7 @@ pub(crate) fn remove_installed(path: &Path) -> Result<(), String> {
 }
 
 /// 只调整可执行位，不动内容：`exec` 为真补 755，为假退回 644。
+#[cfg_attr(not(unix), allow(unused_variables))]
 pub(crate) fn set_exec(asset: &PlannedAsset) -> Result<(), String> {
     #[cfg(unix)]
     {
