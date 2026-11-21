@@ -465,6 +465,35 @@ def test_clone_url_requires_curl(runner, tmp_path):
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
 
+def test_clone_github_direct_failure_suggests_cdn(runner, tmp_path):
+    env, _ = install_fake_curl(
+        tmp_path, exit_code=35, stderr="curl: (35) Recv failure: Connection reset by peer"
+    )
+
+    result = runner.run("@@ops..clone", "-gh", "aaa/bb/sss", env=env)
+
+    assert result.returncode == 1
+    assert "curl failed (exit 35)" in result.stderr
+    assert "Recv failure: Connection reset by peer" in result.stderr
+    assert "cannot reach GitHub directly" in result.stderr
+    assert "ghproxy" in result.stderr
+    assert "byk @@ops..clone -gh aaa/bb/sss ghproxy" in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_other_host_direct_failure_has_no_cdn_hint(runner, tmp_path):
+    env, _ = install_fake_curl(
+        tmp_path, exit_code=35, stderr="curl: (35) Recv failure: Connection reset by peer"
+    )
+
+    result = runner.run("@@ops..clone", "https://example.com/x.byk.json", env=env)
+
+    assert result.returncode == 1
+    assert "curl failed (exit 35)" in result.stderr
+    assert "cannot reach GitHub directly" not in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
 def test_clone_rejects_unsupported_scheme(runner):
     result = runner.run("@@ops..clone", "ftp://example.com/x.byk.json")
 

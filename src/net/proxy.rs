@@ -7,6 +7,7 @@
 use std::process::Command;
 use std::sync::OnceLock;
 
+#[cfg(any(windows, test))]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct ProxyEnv {
     http: Option<String>,
@@ -15,6 +16,7 @@ struct ProxyEnv {
     no_proxy: Option<String>,
 }
 
+#[cfg(any(windows, test))]
 impl ProxyEnv {
     fn apply_to(&self, command: &mut Command) {
         for (key, value) in [
@@ -44,6 +46,7 @@ enum Mode {
         no_proxy: Option<String>,
     },
     /// 协议分开的代理只能通过环境变量表达。
+    #[cfg(windows)]
     Env(ProxyEnv),
 }
 
@@ -69,6 +72,7 @@ fn apply_mode(mode: &Mode, command: &mut Command) {
                 command.args(["--noproxy", list]);
             }
         }
+        #[cfg(windows)]
         Mode::Env(env) => {
             remove_proxy_env(command);
             if env.no_proxy.is_some() {
@@ -156,6 +160,7 @@ fn remove_no_proxy_env(command: &mut Command) {
 }
 
 /// `ProxyServer` 有两种形态：裸 `host:port`（所有协议），或 `http=...;https=...;socks=...`。
+#[cfg(any(windows, test))]
 fn parse_server(raw: &str) -> Option<ProxyEnv> {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -195,6 +200,7 @@ fn parse_server(raw: &str) -> Option<ProxyEnv> {
     (env.http.is_some() || env.https.is_some() || env.all.is_some()).then_some(env)
 }
 
+#[cfg(any(windows, test))]
 fn with_scheme(value: &str, scheme: &str) -> String {
     if value.contains("://") {
         value.to_string()
@@ -204,6 +210,7 @@ fn with_scheme(value: &str, scheme: &str) -> String {
 }
 
 /// `ProxyOverride` 转成 curl 的 `no_proxy`；`<local>` 展开成回环地址。
+#[cfg(any(windows, test))]
 fn parse_bypass(raw: &str) -> Option<String> {
     let mut hosts: Vec<String> = Vec::new();
     let mut local = false;
@@ -227,6 +234,7 @@ fn parse_bypass(raw: &str) -> Option<String> {
     Some(hosts.join(","))
 }
 
+#[cfg(any(windows, test))]
 fn push_unique(hosts: &mut Vec<String>, value: &str) {
     if !hosts.iter().any(|seen| seen.eq_ignore_ascii_case(value)) {
         hosts.push(value.to_string());

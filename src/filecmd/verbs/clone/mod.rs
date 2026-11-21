@@ -127,9 +127,14 @@ mod imp {
         create::ensure_absent(&target)?;
 
         let loaded = match options.source {
-            SourceArg::Raw(spec) => source::load(&spec, layout)?,
+            SourceArg::Raw(spec) => source::load(&spec, layout, None)?,
             SourceArg::Forge(forge, cdn, spec) => {
-                source::load(&source::forge_url(forge, cdn, &spec)?, layout)?
+                let url = source::forge_url(forge, cdn, &spec)?;
+                source::load(
+                    &url,
+                    layout,
+                    github_retry(scope, stem, forge, cdn, &spec).as_deref(),
+                )?
             }
             SourceArg::Tap(spec) => load_tap(&spec, layout)?,
         };
@@ -157,6 +162,21 @@ mod imp {
             install_deps(scope, stem, layout)?;
         }
         Ok(())
+    }
+
+    /// `-gh` 走 raw 直连失败时，给一条改用 ghproxy 的完整重试命令随提示输出。
+    fn github_retry(
+        scope: FileScope,
+        stem: &str,
+        forge: source::Forge,
+        cdn: source::Cdn,
+        spec: &str,
+    ) -> Option<String> {
+        if forge != source::Forge::Github || cdn != source::Cdn::Raw {
+            return None;
+        }
+        let key = build_file_key(stem, scope.is_global());
+        Some(format!("byk {key}..clone -gh {spec} ghproxy"))
     }
 
     /// `--tap`：完整写法先找本地索引、缺失才回退远程；单 key 只搜本地。
@@ -279,7 +299,7 @@ mod imp {
                 ),
                 None => err,
             }),
-            tap::Target::Remote(url) => source::load(&url, layout),
+            tap::Target::Remote(url) => source::load(&url, layout, None),
         }
     }
 

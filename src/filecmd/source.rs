@@ -38,10 +38,12 @@ pub(crate) fn resolve(spec: &str, layout: &PathLayout) -> Result<PathBuf, String
 }
 
 /// 读取并校验来源；本地路径返回规范化路径，URL 通过外部 curl 获取。
-pub(crate) fn load(spec: &str, layout: &PathLayout) -> Result<Loaded, String> {
+///
+/// `retry` 是直连 GitHub 失败时随提示给出的重试命令（通常是改用 CDN 的完整命令）。
+pub(crate) fn load(spec: &str, layout: &PathLayout, retry: Option<&str>) -> Result<Loaded, String> {
     match classify(spec)? {
         SourceKind::Url(url) => {
-            let data = fetch(url, FetchKind::Source)?;
+            let data = fetch(url, FetchKind::Source, retry)?;
             validate(&data, url)?;
             Ok(Loaded {
                 label: url.to_string(),
@@ -443,10 +445,16 @@ enum FetchKind {
 
 /// 下载 `byk.tap.json`；404 时提示在仓库根目录补索引，而不是检查路径。
 pub(crate) fn fetch_tap_index(url: &str) -> Result<Vec<u8>, String> {
-    fetch(url, FetchKind::TapIndex)
+    fetch(url, FetchKind::TapIndex, None)
 }
 
-fn fetch(url: &str, kind: FetchKind) -> Result<Vec<u8>, String> {
+/// GitHub 直连地址；连不上通常是网络问题，值得提示改走 CDN。
+/// jsdelivr、gh-proxy 加工过的地址不在此列。
+fn is_github_direct(url: &str) -> bool {
+    url.starts_with("https://raw.githubusercontent.com/") || url.starts_with("https://github.com/")
+}
+
+fn fetch(url: &str, kind: FetchKind, retry: Option<&str>) -> Result<Vec<u8>, String> {
     let output = crate::net::curl()
         .args(["-fsSL", "--", url])
         .output()
@@ -482,11 +490,20 @@ fn fetch(url: &str, kind: FetchKind) -> Result<Vec<u8>, String> {
             });
             return Err(message);
         }
-        return Err(if reason.is_empty() {
+        let mut message = if reason.is_empty() {
             format!("curl failed (exit {}) for {}", code, url)
         } else {
             format!("curl failed (exit {}) for {}: {}", code, url, reason)
-        });
+        };
+        if let Some(command) = retry
+            && is_github_direct(url)
+        {
+            message.push_str(&format!(
+                "\nHint: the current network cannot reach GitHub directly; retry through a mirror CDN (ghproxy or jsdelivr):\n  {}",
+                command
+            ));
+        }
+        return Err(message);
     }
 
     Ok(output.stdout)
@@ -776,7 +793,7 @@ mod tests {
     fn rejects_unsupported_scheme() {
         let temp = tempfile::tempdir().unwrap();
 
-        let err = load("ftp://example.com/tool.byk.json", &layout(&temp)).unwrap_err();
+        let err = load("ftp://example.com/tool.byk.json", &layout(&temp), None).unwrap_err();
 
         assert!(err.starts_with("Unsupported source scheme:"));
         assert!(err.contains("only http and https"));
@@ -883,6 +900,26 @@ mod tests {
         let err = Cdn::parse("fastgit").unwrap_err();
         assert!(err.starts_with("Unknown CDN: fastgit"), "{err}");
         assert!(err.contains("raw, jsdelivr, ghproxy"), "{err}");
+    }
+
+    #[test]
+    fn github_direct_detects_raw_and_github_hosts_only() {
+        assert!(is_github_direct(
+            "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
+        ));
+        assert!(is_github_direct(
+            "https://github.com/aaa/bb/releases/download/x"
+        ));
+        assert!(!is_github_direct(
+            "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json"
+        ));
+        assert!(!is_github_direct(
+            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
+        ));
+        assert!(!is_github_direct(
+            "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"
+        ));
+        assert!(!is_github_direct("https://example.com/x.byk.json"));
     }
 
     #[test]
