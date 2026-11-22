@@ -130,7 +130,7 @@ mod tests {
                 scope: FileScope::Global,
                 stem: "ops".into(),
                 verb: Verb::Init,
-                arg_start: 1,
+                args: Vec::new(),
             }
         );
     }
@@ -143,7 +143,7 @@ mod tests {
                 scope: FileScope::Local,
                 stem: "ops".into(),
                 verb: Verb::Init,
-                arg_start: 1,
+                args: Vec::new(),
             }
         );
     }
@@ -162,12 +162,37 @@ mod tests {
                 scope: FileScope::Global,
                 stem: "ops".into(),
                 verb: Verb::Help,
-                arg_start: 0,
+                args: Vec::new(),
             }
         );
         assert_eq!(parse_ok("@@ops", &["--help"]).verb, Verb::Help);
-        assert_eq!(parse_ok("@@ops", &["--help"]).arg_start, 1);
+        assert_eq!(parse_ok("@@ops", &["--help"]).args, Vec::<String>::new());
         assert_eq!(parse_ok("@@ops", &["-h"]).verb, Verb::Help);
+    }
+
+    #[test]
+    fn parse_verb_help_flag_targets_the_verb() {
+        assert_eq!(
+            parse_ok("@@ops", &["init", "-h"]),
+            FileCommand {
+                scope: FileScope::Global,
+                stem: "ops".into(),
+                verb: Verb::Help,
+                args: vec!["init".into()],
+            }
+        );
+        assert_eq!(
+            parse_ok("@@ops", &["set", "build", "--help"]).args,
+            vec!["set".to_string()]
+        );
+    }
+
+    #[test]
+    fn help_is_not_a_verb() {
+        assert_eq!(
+            parse_err("@@ops", &["help"]),
+            FileCommandError::UnknownVerb("help".into())
+        );
     }
 
     #[test]
@@ -213,17 +238,20 @@ mod tests {
 
     #[test]
     fn describe_file_command_verbs() {
-        assert_eq!(describe_verb("init"), Some("Create an alias file"));
-        assert_eq!(describe_verb("destroy"), Some("Remove the alias file"));
+        assert_eq!(describe_verb("init"), Some("Create this alias file"));
+        assert_eq!(describe_verb("destroy"), Some("Delete this alias file"));
         assert_eq!(
             describe_verb("clear"),
-            Some("Reset this file to an empty object")
+            Some("Reset this alias file to an empty object")
         );
         assert_eq!(describe_verb("set"), Some("Create or update an alias"));
         assert_eq!(describe_verb("remove"), Some("Remove an alias or group"));
-        assert_eq!(describe_verb("json"), Some("Show the alias file JSON"));
-        assert_eq!(describe_verb("path"), Some("Print the absolute path"));
-        assert_eq!(describe_verb("rename"), Some("Rename the alias file"));
+        assert_eq!(describe_verb("json"), Some("Show this alias file's JSON"));
+        assert_eq!(
+            describe_verb("path"),
+            Some("Print this alias file's absolute path")
+        );
+        assert_eq!(describe_verb("rename"), Some("Rename this alias file"));
         assert_eq!(
             describe_verb("clone"),
             Some("Copy a local or remote alias file into this file")
@@ -232,7 +260,7 @@ mod tests {
             describe_verb("link"),
             Some("Point this file at another alias file")
         );
-        assert_eq!(describe_verb("help"), Some("Show this help"));
+        assert_eq!(describe_verb("help"), None);
         assert_eq!(describe_verb("ops.init"), None);
     }
 
@@ -244,7 +272,7 @@ mod tests {
                 scope: FileScope::Global,
                 stem: "ops".into(),
                 verb: Verb::Destroy,
-                arg_start: 1,
+                args: Vec::new(),
             }
         );
     }

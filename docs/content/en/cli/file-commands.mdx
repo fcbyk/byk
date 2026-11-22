@@ -18,7 +18,7 @@ Commands are separated from the file token by a space. A bare `@file` / `@@file`
 byk @@ops init                            # create ~/.byk/alias/ops.byk.json
 byk @@ops set build --cmd "pnpm build"    # add the build alias
 byk @@ops json                            # inspect the file
-byk @@ops help                            # list all file commands
+byk @@ops -h                              # list all file commands
 ```
 
 ## Addressing
@@ -35,7 +35,7 @@ byk @@ops help                            # list all file commands
 - Mutating commands only write the addressed file; sources of `clone`, `link`, and `init --link` are read-only.
 - `set` and `remove` refuse to rewrite a link file (single-element array); edit the link target instead. `clear` empties the link file itself.
 - When a command that requires the file finds it missing but the other side (current or global directory) has a file with the same name, the error suggests switching the prefix; `path` does not require the file to exist.
-- Mutating commands print status to stderr; `json`, `path`, and `help` write data to stdout, so pipes and `$(...)` work as expected.
+- Mutating commands print status to stderr; `json`, `path`, and help output go to stdout, so pipes and `$(...)` work as expected.
 
 ## Command Index
 
@@ -52,7 +52,6 @@ byk @@ops help                            # list all file commands
 | `clone` | Copy a local or remote alias file |
 | `link` | Turn the current file into a link to another file |
 | `deps` | Install, uninstall, or inspect the file's declared dependencies |
-| `help` | Show commands, usage, and options |
 
 ## Creating and Deleting
 
@@ -187,14 +186,15 @@ byk @@ops rename tools
 - For a link file, only the link file is renamed; its target is untouched.
 - For a global file, the dependency directory `~/.byk/deps/@@<old-name>` is renamed to `@@<new-name>` along with the file, so `${deps_dir}` keeps pointing at the right place.
 
-### `help`
+### `--help` / `-h`
 
 ```bash
-byk @@ops help           # command index
-byk @@ops help set       # usage and options for set
+byk @@ops -h             # command index
+byk @@ops set -h         # usage and options for set
+byk @@ops set build -h   # also shows help for set
 ```
 
-An unknown command lists every available file command.
+The index first says whether this is a local or global alias file and points at `<command> -h` for a single command, then prints `FilePath` (the absolute path, marked `(not created yet)` when missing or `(link)` for a link file), Usage, Options, and Commands. A single command's help shows its description, `FilePath`, Usage, and Options. An unknown command lists every available file command.
 
 ## Cloning and Linking
 
@@ -344,7 +344,13 @@ byk @@ops link @shared
 - When retargeting a global file whose dependency directory already exists, byk suggests running `deps uninstall` first so you keep using the old target's assets.
 - For link behaviour, path resolution, and identity rules, see [Single Link](/cli/alias/config#single-link).
 
-### `deps [install|uninstall|status]`
+### `deps [COMMAND]`
+
+| Subcommand | Purpose |
+|------------|---------|
+| `install` | Install the declared files, pip packages, and npm packages |
+| `uninstall` | Remove this file's dependency directory |
+| `status` | Show what is declared, installed, or stale |
 
 ```bash
 byk @@tool deps                       # current state: declared, present, missing, outdated, stale, unknown
@@ -422,7 +428,7 @@ Downloaded 2 files into ~/.byk/deps/@@tool
   missing   npm:chalk
 Base: https://example.com/releases/v1/
 Deps directory: ~/.byk/deps/@@tool
-Hint: run `byk @@tool deps i` to install the missing assets
+Hint: run `byk @@tool deps install` to install the missing assets
 ```
 
 `unknown` marks a pip direct reference (URL / VCS): its package name cannot be determined locally, so byk reports it instead of guessing. Unknown entries count as neither present nor missing.
@@ -434,8 +440,7 @@ Hint: run `byk @@tool deps i` to install the missing assets
 File-command completion covers:
 
 - file names after `@` / `@@`, and verbs after the file token and a space;
-- options after a command (for example `set --`);
-- command names after `help`;
+- options after a command (for example `set --`), including `--help` / `-h`;
 - existing key paths after `remove` (read from the target file; link files are not completed);
 - source arguments for `clone`, `link`, and `init --link` (alias files starting with `@`);
 - subcommands after `deps` (`install` / `uninstall` / `status`).

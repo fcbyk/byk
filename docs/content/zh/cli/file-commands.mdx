@@ -18,7 +18,7 @@ byk @@文件 命令 [参数...]    # 全局目录 ~/.byk/alias/
 byk @@ops init                            # 创建 ~/.byk/alias/ops.byk.json
 byk @@ops set build --cmd "pnpm build"    # 写入 build 别名
 byk @@ops json                            # 查看文件内容
-byk @@ops help                            # 列出全部文件命令
+byk @@ops -h                              # 列出全部文件命令
 ```
 
 ## 寻址
@@ -35,7 +35,7 @@ byk @@ops help                            # 列出全部文件命令
 - 改写类命令只写被寻址的这个文件；`clone`、`link`、`init --link` 的来源只读。
 - `set` 与 `remove` 拒绝改写链接文件（单元素数组）；要改内容请直接编辑链接目标。`clear` 清空的是链接文件自身。
 - 需要文件存在的命令在目标缺失时，如果另一侧（当前目录 / 全局目录）有同名文件，会提示换用 `@` 或 `@@`；`path` 不要求文件存在。
-- 修改类命令的提示写 stderr；`json`、`path`、`help` 的数据写 stdout，方便管道和 `$(...)`。
+- 修改类命令的提示写 stderr；`json`、`path` 与帮助输出写 stdout，方便管道和 `$(...)`。
 
 ## 命令一览
 
@@ -52,7 +52,6 @@ byk @@ops help                            # 列出全部文件命令
 | `clone` | 从本地或远程复制一份别名文件 |
 | `link` | 把当前文件改为指向另一个文件的链接 |
 | `deps` | 安装、卸载或查看本文件声明的依赖 |
-| `help` | 查看命令列表、用法与选项 |
 
 ## 创建与删除
 
@@ -187,14 +186,15 @@ byk @@ops rename tools
 - 链接文件改的是链接文件本身，目标不动。
 - 全局文件的依赖目录 `~/.byk/deps/@@<旧名>` 会同步改名为 `@@<新名>`，别名里的 `${deps_dir}` 指向不变。
 
-### `help`
+### `--help` / `-h`
 
 ```bash
-byk @@ops help           # 命令列表
-byk @@ops help set       # set 的用法与选项
+byk @@ops -h             # 命令列表
+byk @@ops set -h         # set 的用法与选项
+byk @@ops set build -h   # 同样是 set 的帮助
 ```
 
-未知命令会列出全部可用命令。
+命令列表会先说明这是当前还是全局别名文件，并提示用 `<command> -h` 查看单个命令；随后是 `FilePath`（绝对路径，未创建时标注 `(not created yet)`，链接文件标注 `(link)`）、Usage、Options、Commands。单个命令的帮助依次给出描述、`FilePath`、Usage 与 Options。未知命令会列出全部可用命令。
 
 ## 克隆与链接
 
@@ -344,7 +344,13 @@ byk @@ops link @shared
 - 全局文件改指向时，如果它的依赖目录已存在，会提醒先 `deps uninstall`，避免继续用旧目标的资产。
 - 链接后的行为、路径基准与身份归属见 [单链接](/cli/alias/config#单链接)。
 
-### `deps [install|uninstall|status]`
+### `deps [COMMAND]`
+
+| 子命令 | 作用 |
+|--------|------|
+| `install` | 安装声明的文件、pip 包与 npm 包 |
+| `uninstall` | 删除本文件的依赖目录 |
+| `status` | 查看声明、已安装与过期状态 |
 
 ```bash
 byk @@tool deps                       # 查看现状：声明几条、到位几条，哪些缺失、过期、多余或未知
@@ -422,20 +428,19 @@ Downloaded 2 files into ~/.byk/deps/@@tool
   missing   npm:chalk
 Base: https://example.com/releases/v1/
 Deps directory: ~/.byk/deps/@@tool
-Hint: run `byk @@tool deps i` to install the missing assets
+Hint: run `byk @@tool deps install` to install the missing assets
 ```
 
 `unknown` 表示 pip 的 URL / VCS 直接引用：本地拿不到包名，byk 如实标注而不去猜。这类条目既不算到位，也不算缺失。
 
-`--check` 只校验声明本身：能不能解析、落点是否冲突、相对 `src` 有没有 `base`、包条目是否非空字符串，不碰装没装。缺哪条、旧没旧是运行时状态，用 `deps status` 看，或者在执行前跑一次 `deps i`。
+`--check` 只校验声明本身：能不能解析、落点是否冲突、相对 `src` 有没有 `base`、包条目是否非空字符串，不碰装没装。缺哪条、旧没旧是运行时状态，用 `deps status` 看，或者在执行前跑一次 `deps install`。
 
 ## 补全
 
 文件命令的补全覆盖：
 
 - `@` / `@@` 后的文件名；敲完文件名和空格后补动词；
-- 命令后的选项（如 `set --`）；
-- `help` 后面的命令名；
+- 命令后的选项（如 `set --`），以及 `--help` / `-h`；
 - `remove` 后面的已有 key 路径（读目标文件，链接文件不补）；
 - `clone`、`link`、`init --link` 的来源参数（以 `@` 开头的别名文件）；
 - `deps` 后面的子命令（`install` / `uninstall` / `status`）。

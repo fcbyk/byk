@@ -1,15 +1,27 @@
 //! `help`：列出文件命令；指定命令时显示用法与选项。
+//!
+//! 输出格式与 `byk -h` 对齐：Usage / Options / Commands。
+
+use std::path::Path;
 
 use colored::Colorize;
+use serde_json::Value;
 
+use crate::filecmd::io::path::resolve_target;
 use crate::filecmd::spec::FileScope;
-use crate::filecmd::spec::{OPTIONS, VERBS, VerbInfo, unknown_verb_message};
+use crate::filecmd::spec::{OPTIONS, SUBCOMMANDS, VERBS, Verb, VerbInfo, unknown_verb_message};
+use crate::model::PathLayout;
 use crate::utils::display::get_display_width;
 
-pub(crate) fn run(scope: FileScope, stem: &str, args: &[String]) -> Result<String, String> {
+pub(crate) fn run(
+    scope: FileScope,
+    stem: &str,
+    args: &[String],
+    layout: &PathLayout,
+) -> Result<String, String> {
     match args {
-        [] => Ok(render_index(scope, stem)),
-        [command] => render_command(scope, stem, command),
+        [] => Ok(render_index(scope, stem, layout)),
+        [command] => render_command(scope, stem, command, layout),
         _ => Err("help takes at most one command".to_string()),
     }
 }
@@ -21,55 +33,125 @@ fn base(scope: FileScope, stem: &str) -> String {
     }
 }
 
-fn render_index(scope: FileScope, stem: &str) -> String {
-    let base = base(scope, stem);
+fn help_options() -> Vec<(String, &'static str)> {
+    vec![("--help, -h".to_string(), "Show this help")]
+}
+
+/// `FilePath:` 的值：绝对路径，附带存在状态（未创建 / 链接文件）。
+fn target_line(scope: FileScope, stem: &str, layout: &PathLayout) -> String {
+    let Ok(path) = resolve_target(scope, stem, layout) else {
+        return "-".to_string();
+    };
+    let marker = if !path.exists() {
+        " (not created yet)".yellow().to_string()
+    } else if is_link_file(&path) {
+        " (link)".yellow().to_string()
+    } else {
+        String::new()
+    };
+    format!("{}{}", path.display(), marker)
+}
+
+fn is_link_file(path: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    matches!(
+        serde_json::from_str::<Value>(&text),
+        Ok(Value::Array(items)) if items.len() == 1 && items[0].is_string()
+    )
+}
+
+fn render_index(scope: FileScope, stem: &str, layout: &PathLayout) -> String {
     let commands: Vec<(String, &'static str)> = VERBS
         .iter()
-        .map(|info| (format!("{} {}", base, info.name), info.description))
+        .map(|info| (info.name.to_string(), info.description))
         .collect();
+    let kind = match scope {
+        FileScope::Local => "local",
+        FileScope::Global => "global",
+    };
+    let base = base(scope, stem);
 
     let mut output = String::from("\n");
-    output.push_str(&render_section("File commands:", &commands));
-    output.push('\n');
     output.push_str(&format!(
-        "Use {} <command> to see usage and options.\n",
-        format!("{} help", base).cyan().bold()
+        "Commands for this {} alias file. Run `byk {} <command> -h` for details.\n\n",
+        kind, base
     ));
+    output.push_str(&format!(
+        "{} {}\n",
+        "FilePath:".green().bold(),
+        target_line(scope, stem, layout)
+    ));
+    output.push_str(&format!(
+        "{} byk {} [OPTIONS] [COMMAND] [ARGS]...\n",
+        "Usage:".green().bold(),
+        base
+    ));
+    output.push('\n');
+    output.push_str(&render_section("Options:", &help_options()));
+    output.push('\n');
+    output.push_str(&render_section("Commands:", &commands));
     output.push('\n');
     output
 }
 
-fn render_command(scope: FileScope, stem: &str, name: &str) -> Result<String, String> {
+fn render_command(
+    scope: FileScope,
+    stem: &str,
+    name: &str,
+    layout: &PathLayout,
+) -> Result<String, String> {
     let Some(info) = VERBS.iter().find(|info| info.name == name) else {
         return Err(unknown_verb_message(name));
     };
-    Ok(render_verb(&base(scope, stem), info))
+    Ok(render_verb(
+        &base(scope, stem),
+        info,
+        &target_line(scope, stem, layout),
+    ))
 }
 
-fn render_verb(base: &str, info: &VerbInfo) -> String {
+fn render_verb(base: &str, info: &VerbInfo, target: &str) -> String {
     let options: Vec<(String, &'static str)> = OPTIONS
         .iter()
         .filter(|option| option.verb == info.verb)
         .map(|option| (option.syntax.to_string(), option.description))
         .collect();
 
-    let mut usage = format!("{} {}", base, info.name).cyan().bold().to_string();
+    let mut usage = format!(
+        "{} byk {} {} [OPTIONS]",
+        "Usage:".green().bold(),
+        base,
+        info.name
+    );
     if !info.usage.is_empty() {
         usage.push(' ');
         usage.push_str(info.usage);
     }
-    if !options.is_empty() {
-        usage.push_str(" [options]");
-    }
+
+    let mut entries = help_options();
+    entries.extend(options);
+
+    let subcommands: Vec<(String, &'static str)> = if info.verb == Verb::Deps {
+        SUBCOMMANDS
+            .iter()
+            .map(|(name, description)| ((*name).to_string(), *description))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let mut output = String::from("\n");
-    output.push_str(&usage);
-    output.push('\n');
     output.push_str(info.description);
-    output.push('\n');
-    if !options.is_empty() {
+    output.push_str("\n\n");
+    output.push_str(&format!("{} {}\n", "FilePath:".green().bold(), target));
+    output.push_str(&usage);
+    output.push_str("\n\n");
+    output.push_str(&render_section("Options:", &entries));
+    if !subcommands.is_empty() {
         output.push('\n');
-        output.push_str(&render_section("Options:", &options));
+        output.push_str(&render_section("Commands:", &subcommands));
     }
     output.push('\n');
     output
@@ -101,10 +183,19 @@ fn render_section(title: &str, entries: &[(String, &'static str)]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|v| v.to_string()).collect()
+    }
+
+    fn layout() -> PathLayout {
+        PathLayout {
+            root_dir: PathBuf::from("/root"),
+            alias_dir: PathBuf::from("/root/alias"),
+        }
     }
 
     fn strip_ansi(s: &str) -> String {
@@ -131,79 +222,111 @@ mod tests {
     }
 
     #[test]
-    fn lists_commands_without_options() {
-        let text = strip_ansi(&run(FileScope::Global, "ops", &[]).unwrap());
+    fn index_describes_the_addressed_file() {
+        let text = strip_ansi(&run(FileScope::Global, "ops", &[], &layout()).unwrap());
 
-        assert!(text.starts_with("\nFile commands:\n"));
+        assert!(text.starts_with(
+            "\nCommands for this global alias file. Run `byk @@ops <command> -h` for details.\n\nFilePath: "
+        ));
+        assert!(text.contains(
+            "ops.byk.json (not created yet)\nUsage: byk @@ops [OPTIONS] [COMMAND] [ARGS]...\n\n"
+        ));
+        assert!(text.contains("Options:\n  --help, -h  Show this help\n"));
+        assert!(text.contains("Commands:\n"));
+        assert!(text.contains("  init     Create this alias file\n"));
+        assert!(text.contains("  destroy  Delete this alias file\n"));
+        assert!(text.contains("  clear    Reset this alias file to an empty object\n"));
+        assert!(text.contains("  set      Create or update an alias\n"));
+        assert!(text.contains("  remove   Remove an alias or group\n"));
+        assert!(text.contains("  json     Show this alias file's JSON\n"));
+        assert!(text.contains("  path     Print this alias file's absolute path\n"));
+        assert!(text.contains("  rename   Rename this alias file\n"));
+        assert!(text.contains("  clone    Copy a local or remote alias file into this file\n"));
+        assert!(text.contains("  link     Point this file at another alias file\n"));
+        assert!(
+            text.contains("  deps     Install, uninstall, or inspect this file's dependencies\n")
+        );
+        assert!(!text.contains("  help "));
         assert!(text.ends_with("\n\n"));
-        assert!(text.contains("  @@ops init"));
-        assert!(text.contains("Create an alias file"));
-        assert!(text.contains("  @@ops clear"));
-        assert!(text.contains("Reset this file to an empty object"));
-        assert!(text.contains("  @@ops set"));
-        assert!(text.contains("Create or update an alias"));
-        assert!(text.contains("  @@ops remove"));
-        assert!(text.contains("Remove an alias or group"));
-        assert!(text.contains("  @@ops path"));
-        assert!(text.contains("Print the absolute path"));
-        assert!(text.contains("  @@ops rename"));
-        assert!(text.contains("Rename the alias file"));
-        assert!(text.contains("  @@ops clone"));
-        assert!(text.contains("Copy a local or remote alias file into this file"));
-        assert!(text.contains("  @@ops link"));
-        assert!(text.contains("Point this file at another alias file"));
-        assert!(text.contains("  @@ops help"));
-        assert!(text.contains("Show this help"));
-        assert!(!text.contains("Options:"));
-        assert!(text.contains("Use @@ops help <command> to see usage and options."));
+    }
+
+    #[test]
+    fn target_line_marks_missing_plain_and_link_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = PathLayout {
+            root_dir: temp.path().to_path_buf(),
+            alias_dir: temp.path().join("alias"),
+        };
+        std::fs::create_dir_all(&layout.alias_dir).unwrap();
+
+        let missing = strip_ansi(&run(FileScope::Global, "ops", &[], &layout).unwrap());
+        assert!(missing.contains("ops.byk.json (not created yet)"));
+
+        std::fs::write(layout.alias_dir.join("ops.byk.json"), "{}\n").unwrap();
+        let plain = strip_ansi(&run(FileScope::Global, "ops", &[], &layout).unwrap());
+        assert!(plain.contains("ops.byk.json\nUsage:"));
+
+        std::fs::write(
+            layout.alias_dir.join("ops.byk.json"),
+            "[\"/tmp/other.byk.json\"]\n",
+        )
+        .unwrap();
+        let link = strip_ansi(&run(FileScope::Global, "ops", &[], &layout).unwrap());
+        assert!(link.contains("ops.byk.json (link)"));
     }
 
     #[test]
     fn command_help_shows_usage_and_options() {
-        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["set"])).unwrap());
+        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["set"]), &layout()).unwrap());
 
-        assert!(text.starts_with("\n@@ops set [key] [options]\nCreate or update an alias\n"));
-        assert!(text.ends_with("\n\n"));
-        assert!(text.contains("\nOptions:\n"));
+        assert!(text.starts_with("\nCreate or update an alias\n\nFilePath: "));
+        assert!(text.contains("\nUsage: byk @@ops set [OPTIONS] [key]\n\nOptions:\n"));
+        assert!(text.contains("  --help, -h"));
+        assert!(text.contains("Show this help"));
         assert!(text.contains("  --cmd <command>"));
         assert!(text.contains("Set the alias command"));
         assert!(text.contains("  --priority <n>"));
         assert!(text.contains("  --paths <dir>"));
         assert!(text.contains("  --unset <fields>"));
-        assert!(!text.contains("@@ops init"));
+        assert!(text.ends_with("\n\n"));
     }
 
     #[test]
-    fn command_help_without_options_omits_section() {
-        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["path"])).unwrap());
+    fn command_help_still_lists_help_option_without_other_options() {
+        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["path"]), &layout()).unwrap());
 
-        assert!(text.starts_with("\n@@ops path\nPrint the absolute path\n"));
-        assert!(!text.contains("Options:"));
+        assert!(text.starts_with("\nPrint this alias file's absolute path\n\nFilePath: "));
+        assert!(text.contains("\nUsage: byk @@ops path [OPTIONS]\n\nOptions:\n"));
+        assert!(text.contains("  --help, -h  Show this help"));
     }
 
     #[test]
     fn command_help_includes_positional_placeholders() {
-        let rename = strip_ansi(&run(FileScope::Global, "ops", &args(&["rename"])).unwrap());
-        assert!(rename.contains("@@ops rename <new-name>"));
+        let rename =
+            strip_ansi(&run(FileScope::Global, "ops", &args(&["rename"]), &layout()).unwrap());
+        assert!(rename.contains("Usage: byk @@ops rename [OPTIONS] <new-name>"));
 
-        let link = strip_ansi(&run(FileScope::Global, "ops", &args(&["link"])).unwrap());
-        assert!(link.contains("@@ops link <target>"));
+        let link = strip_ansi(&run(FileScope::Global, "ops", &args(&["link"]), &layout()).unwrap());
+        assert!(link.contains("Usage: byk @@ops link [OPTIONS] <target>"));
 
-        let clone = strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"])).unwrap());
-        assert!(clone.contains("@@ops clone <source>"));
+        let clone =
+            strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"]), &layout()).unwrap());
+        assert!(clone.contains("Usage: byk @@ops clone [OPTIONS] <source>"));
 
-        let init = strip_ansi(&run(FileScope::Global, "ops", &args(&["init"])).unwrap());
-        assert!(init.contains("@@ops init [options]"));
+        let init = strip_ansi(&run(FileScope::Global, "ops", &args(&["init"]), &layout()).unwrap());
+        assert!(init.contains("Usage: byk @@ops init [OPTIONS]"));
 
-        let remove = strip_ansi(&run(FileScope::Global, "ops", &args(&["remove"])).unwrap());
-        assert!(remove.contains("@@ops remove <key>"));
+        let remove =
+            strip_ansi(&run(FileScope::Global, "ops", &args(&["remove"]), &layout()).unwrap());
+        assert!(remove.contains("Usage: byk @@ops remove [OPTIONS] <key>"));
     }
 
     #[test]
     fn command_help_for_clone_shows_github_option() {
-        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"])).unwrap());
+        let text =
+            strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"]), &layout()).unwrap());
 
-        assert!(text.contains("@@ops clone <source> [options]"));
+        assert!(text.contains("Usage: byk @@ops clone [OPTIONS] <source>"));
         assert!(text.contains("-gh, --github <spec> [<cdn>]"));
         assert!(
             text.contains("Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)")
@@ -215,44 +338,61 @@ mod tests {
     }
 
     #[test]
-    fn command_help_for_deps_lists_force_and_uninstall_yes() {
-        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["deps"])).unwrap());
+    fn command_help_for_deps_lists_options_and_subcommands() {
+        let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["deps"]), &layout()).unwrap());
 
-        assert!(text.contains("@@ops deps [install|uninstall|status] [options]"));
+        assert!(text.contains("Usage: byk @@ops deps [OPTIONS] [COMMAND]"));
         assert!(text.contains("  --force"));
         assert!(text.contains("Reinstall dependencies from source (install)"));
         assert!(text.contains("  --yes"));
         assert!(text.contains("Skip the uninstall confirmation"));
+        assert!(text.contains("\nCommands:\n"));
+        assert!(text.contains("  install    Install the declared files, pip and npm packages"));
+        assert!(text.contains("  uninstall  Remove this file's dependency directory"));
+        assert!(text.contains("  status     Show what is declared, installed, or stale"));
     }
 
     #[test]
     fn local_and_anonymous_prefix() {
-        let local = strip_ansi(&run(FileScope::Local, "ops", &[]).unwrap());
-        assert!(local.contains("  @ops init"));
+        let local = strip_ansi(&run(FileScope::Local, "ops", &[], &layout()).unwrap());
+        assert!(local.starts_with(
+            "\nCommands for this local alias file. Run `byk @ops <command> -h` for details.\n\nFilePath: "
+        ));
+        assert!(local.contains("Usage: byk @ops [OPTIONS]"));
+        assert!(local.contains("  init     Create this alias file"));
 
-        let anonymous = strip_ansi(&run(FileScope::Global, "", &[]).unwrap());
-        assert!(anonymous.contains("  @@ init"));
+        let anonymous = strip_ansi(&run(FileScope::Global, "", &[], &layout()).unwrap());
+        assert!(anonymous.contains("Usage: byk @@ [OPTIONS]"));
 
-        let local_set = strip_ansi(&run(FileScope::Local, "ops", &args(&["set"])).unwrap());
-        assert!(local_set.contains("@ops set [key] [options]"));
+        let local_set =
+            strip_ansi(&run(FileScope::Local, "ops", &args(&["set"]), &layout()).unwrap());
+        assert!(local_set.contains("Usage: byk @ops set [OPTIONS] [key]"));
 
-        let anonymous_set = strip_ansi(&run(FileScope::Global, "", &args(&["set"])).unwrap());
-        assert!(anonymous_set.contains("@@ set [key] [options]"));
+        let anonymous_set =
+            strip_ansi(&run(FileScope::Global, "", &args(&["set"]), &layout()).unwrap());
+        assert!(anonymous_set.contains("Usage: byk @@ set [OPTIONS] [key]"));
     }
 
     #[test]
     fn rejects_unknown_command() {
-        let err = run(FileScope::Global, "ops", &args(&["bogus"])).unwrap_err();
+        let err = run(FileScope::Global, "ops", &args(&["bogus"]), &layout()).unwrap_err();
 
         assert!(err.starts_with("Unknown file command: \"bogus\""));
         assert!(err.contains(
-            "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, deps, help"
+            "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, deps"
         ));
+        assert!(!err.contains(", help"));
     }
 
     #[test]
     fn rejects_extra_arguments() {
-        let err = run(FileScope::Global, "ops", &args(&["set", "extra"])).unwrap_err();
+        let err = run(
+            FileScope::Global,
+            "ops",
+            &args(&["set", "extra"]),
+            &layout(),
+        )
+        .unwrap_err();
 
         assert_eq!(err, "help takes at most one command");
     }

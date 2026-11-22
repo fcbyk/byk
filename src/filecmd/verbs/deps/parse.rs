@@ -1,6 +1,6 @@
 //! `deps` 的 verb/选项解析。
 
-use crate::filecmd::spec::SUBCOMMANDS;
+use crate::filecmd::spec::subcommand_names;
 
 #[derive(Debug)]
 pub(super) enum Action {
@@ -14,9 +14,7 @@ pub(super) fn parse_args(args: &[String]) -> Result<Action, String> {
         return Ok(Action::Status);
     };
 
-    let candidates: Vec<&str> = SUBCOMMANDS
-        .iter()
-        .copied()
+    let candidates: Vec<&str> = subcommand_names()
         .filter(|name| name.starts_with(verb.as_str()))
         .collect();
     let name = match candidates.as_slice() {
@@ -25,7 +23,7 @@ pub(super) fn parse_args(args: &[String]) -> Result<Action, String> {
             return Err(format!(
                 "Unknown deps subcommand: {:?}\nAvailable: {}",
                 verb,
-                SUBCOMMANDS.join(", ")
+                subcommand_names().collect::<Vec<_>>().join(", ")
             ));
         }
         _ => {

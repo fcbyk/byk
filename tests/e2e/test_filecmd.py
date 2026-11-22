@@ -87,20 +87,31 @@ def test_bare_file_token_prints_file_command_help(runner):
 
     assert result.returncode == 0
     assert result.stderr == ""
-    assert "File commands:" in result.stdout
-    assert any(line.startswith("  @@ops init") for line in result.stdout.splitlines())
+    assert "Usage: byk @@ops [OPTIONS] [COMMAND] [ARGS]..." in result.stdout
+    assert "Options:" in result.stdout
+    assert "Commands:" in result.stdout
+    assert any(line.startswith("  init ") for line in result.stdout.splitlines())
     assert "Unrecognized" not in result.stderr
 
 
-def test_help_flag_matches_help_verb(runner):
+def test_help_flags_match_the_bare_form(runner):
+    bare = runner.run("@@ops")
     long_flag = runner.run("@@ops", "--help")
     short_flag = runner.run("@@ops", "-h")
-    verb = runner.run("@@ops", "help")
 
     assert long_flag.returncode == 0
-    assert long_flag.stdout == verb.stdout
+    assert long_flag.stdout == bare.stdout
     assert short_flag.returncode == 0
-    assert short_flag.stdout == verb.stdout
+    assert short_flag.stdout == bare.stdout
+
+
+def test_help_flag_after_verb_shows_verb_help(runner):
+    result = runner.run("@@ops", "init", "-h")
+
+    assert result.returncode == 0
+    assert "Usage: byk @@ops init [OPTIONS]" in result.stdout
+    assert "Create this alias file" in result.stdout
+    assert "--link" in result.stdout
 
 
 def test_complete_offers_verbs_after_file_token(runner):
@@ -125,8 +136,9 @@ def test_resolve_rejects_file_command_without_creating_file(runner):
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
 
-def test_help_does_not_mention_file_commands(runner):
+def test_main_help_does_not_mention_file_commands(runner):
     result = runner.run("-h")
 
     assert result.returncode == 0
-    assert "File commands:" not in result.stdout
+    assert "Usage: byk [OPTIONS] [ALIAS] [ARGS]..." in result.stdout
+    assert "Commands:" not in result.stdout

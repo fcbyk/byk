@@ -1,42 +1,64 @@
-def test_help_lists_commands_without_options(runner):
-    result = runner.run("@@ops", "help")
+def test_file_home_matches_main_help_layout(runner):
+    bare = runner.run("@@ops")
+    long_flag = runner.run("@@ops", "--help")
+    short_flag = runner.run("@@ops", "-h")
 
-    assert result.returncode == 0
-    assert result.stderr == ""
-    assert result.stdout.startswith("\n")
-    assert result.stdout.endswith("\n\n")
-    lines = result.stdout.splitlines()
+    assert bare.returncode == 0
+    assert bare.stderr == ""
+    assert bare.stdout == long_flag.stdout == short_flag.stdout
+    assert bare.stdout.startswith("\nCommands for this global alias file. Run `byk @@ops <command> -h` for details.\n\nFilePath: ")
+    assert bare.stdout.endswith("\n\n")
+
+    lines = bare.stdout.splitlines()
     assert lines[0] == ""
-    assert lines[1] == "File commands:"
-    assert "  @@ops init     Create an alias file" in lines
-    assert "  @@ops destroy  Remove the alias file" in lines
-    assert "  @@ops clear    Reset this file to an empty object" in lines
-    assert "  @@ops set      Create or update an alias" in lines
-    assert "  @@ops remove   Remove an alias or group" in lines
-    assert "  @@ops json     Show the alias file JSON" in lines
-    assert "  @@ops path     Print the absolute path" in lines
-    assert "  @@ops rename   Rename the alias file" in lines
-    assert (
-        "  @@ops clone    Copy a local or remote alias file into this file"
-        in lines
+    assert lines[1] == (
+        "Commands for this global alias file. "
+        "Run `byk @@ops <command> -h` for details."
     )
-    assert "  @@ops link     Point this file at another alias file" in lines
-    assert "  @@ops help     Show this help" in lines
-    assert "Options:" not in lines
-    assert "Use @@ops help <command> to see usage and options." in lines
+    assert lines[2] == ""
+    assert lines[3].startswith("FilePath: ")
+    assert lines[3].endswith("ops.byk.json (not created yet)")
+    assert lines[4] == "Usage: byk @@ops [OPTIONS] [COMMAND] [ARGS]..."
+    assert lines[5] == ""
+    assert lines[6] == "Options:"
+    assert lines[7] == "  --help, -h  Show this help"
+    assert lines[8] == ""
+    assert lines[9] == "Commands:"
+    assert "  init     Create this alias file" in lines
+    assert "  destroy  Delete this alias file" in lines
+    assert "  clear    Reset this alias file to an empty object" in lines
+    assert "  set      Create or update an alias" in lines
+    assert "  remove   Remove an alias or group" in lines
+    assert "  json     Show this alias file's JSON" in lines
+    assert "  path     Print this alias file's absolute path" in lines
+    assert "  rename   Rename this alias file" in lines
+    assert "  clone    Copy a local or remote alias file into this file" in lines
+    assert "  link     Point this file at another alias file" in lines
+    assert "  deps     Install, uninstall, or inspect this file's dependencies" in lines
+    assert not any(line.startswith("  help ") for line in lines)
 
 
 def test_help_for_command_shows_usage_and_options(runner):
-    result = runner.run("@@ops", "help", "set")
+    short_flag = runner.run("@@ops", "set", "-h")
+    long_flag = runner.run("@@ops", "set", "--help")
 
-    assert result.returncode == 0
-    assert result.stderr == ""
-    assert result.stdout.startswith("\n@@ops set [key] [options]\n")
-    assert result.stdout.endswith("\n\n")
-    lines = result.stdout.splitlines()
-    assert lines[1] == "@@ops set [key] [options]"
-    assert lines[2] == "Create or update an alias"
+    assert short_flag.returncode == 0
+    assert short_flag.stderr == ""
+    assert short_flag.stdout == long_flag.stdout
+    assert short_flag.stdout.startswith(
+        "\nCreate or update an alias\n\nFilePath: "
+    )
+    assert short_flag.stdout.endswith("\n\n")
+
+    lines = short_flag.stdout.splitlines()
+    assert lines[1] == "Create or update an alias"
+    assert lines[3].startswith("FilePath: ")
+    assert lines[3].endswith("ops.byk.json (not created yet)")
+    assert (
+        "Usage: byk @@ops set [OPTIONS] [key]" in short_flag.stdout
+    )
     assert "Options:" in lines
+    assert any(line.startswith("  --help, -h") and "Show this help" in line for line in lines)
     assert "  --cmd <command>       Set the alias command" in lines
     assert "  --cwd <path>          Set the working directory" in lines
     assert "  --mode <mode>         Set the execution mode" in lines
@@ -55,92 +77,91 @@ def test_help_for_command_shows_usage_and_options(runner):
     assert not any("@@ops init" in line for line in lines)
 
 
-def test_help_for_command_without_options(runner):
-    result = runner.run("@@ops", "help", "path")
+def test_help_flag_after_arguments_targets_the_verb(runner):
+    expected = runner.run("@@ops", "set", "-h")
+    result = runner.run("@@ops", "set", "build", "-h")
 
     assert result.returncode == 0
-    assert result.stdout.startswith("\n@@ops path\nPrint the absolute path\n")
-    assert "Options:" not in result.stdout
+    assert result.stdout == expected.stdout
+
+
+def test_help_for_command_without_options(runner):
+    result = runner.run("@@ops", "path", "-h")
+
+    assert result.returncode == 0
+    assert result.stdout.startswith(
+        "\nPrint this alias file's absolute path\n\nFilePath: "
+    )
+    assert "Usage: byk @@ops path [OPTIONS]" in result.stdout
+    assert "  --help, -h  Show this help" in result.stdout
 
 
 def test_help_local_and_anonymous_prefixes(runner):
-    local = runner.run("@ops", "help")
-    anonymous = runner.run("@@", "help")
+    local = runner.run("@ops", "-h")
+    anonymous = runner.run("@@", "-h")
 
     assert local.returncode == 0
-    assert any(line.startswith("  @ops init") for line in local.stdout.splitlines())
+    assert local.stdout.startswith(
+        "\nCommands for this local alias file. "
+        "Run `byk @ops <command> -h` for details.\n\nFilePath: "
+    )
+    assert "Usage: byk @ops [OPTIONS] [COMMAND] [ARGS]..." in local.stdout
+    assert any(line.startswith("  init ") for line in local.stdout.splitlines())
     assert anonymous.returncode == 0
-    assert any(line.startswith("  @@ init") for line in anonymous.stdout.splitlines())
-    assert any(line.startswith("  @@ help") for line in anonymous.stdout.splitlines())
+    assert anonymous.stdout.startswith(
+        "\nCommands for this global alias file. "
+        "Run `byk @@ <command> -h` for details.\n\nFilePath: "
+    )
+    assert "Usage: byk @@ [OPTIONS] [COMMAND] [ARGS]..." in anonymous.stdout
+    assert any(line.startswith("  init ") for line in anonymous.stdout.splitlines())
 
-    local_set = runner.run("@ops", "help", "set")
-    anonymous_set = runner.run("@@", "help", "set")
+    local_set = runner.run("@ops", "set", "-h")
+    anonymous_set = runner.run("@@", "set", "-h")
     assert local_set.returncode == 0
-    assert "@ops set [key] [options]" in local_set.stdout
+    assert "Usage: byk @ops set [OPTIONS] [key]" in local_set.stdout
     assert anonymous_set.returncode == 0
-    assert "@@ set [key] [options]" in anonymous_set.stdout
+    assert "Usage: byk @@ set [OPTIONS] [key]" in anonymous_set.stdout
 
 
-def test_help_rejects_extra_arguments(runner):
-    result = runner.run("@@ops", "help", "set", "extra")
+def test_help_is_not_a_command(runner):
+    result = runner.run("@@ops", "help")
 
     assert result.returncode == 1
-    assert "help takes at most one command" in result.stderr
+    assert 'Unknown file command: "help"' in result.stderr
+    assert (
+        "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, deps"
+        in result.stderr
+    )
+    assert "help" not in result.stderr.split("Available:", 1)[1].split("Hint:", 1)[0]
 
 
-def test_help_rejects_unknown_command(runner):
-    result = runner.run("@@ops", "help", "bogus")
+def test_unknown_command_lists_available_commands(runner):
+    result = runner.run("@@ops", "bogus")
 
     assert result.returncode == 1
     assert 'Unknown file command: "bogus"' in result.stderr
     assert (
-        "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, deps, help"
+        "Available: init, destroy, clear, set, remove, json, path, rename, clone, link, deps"
         in result.stderr
     )
 
 
-def test_help_is_completed_with_description(runner):
-    result = runner.run("__api__", "complete", "--with-descriptions", "@@ops", "")
+def test_help_flags_are_completed(runner):
+    verbs = runner.run("__api__", "complete", "@@ops", "")
+    short = runner.run("__api__", "complete", "@@ops", "-")
+    options = runner.run("__api__", "complete", "@@ops", "set", "--")
 
-    assert result.returncode == 0
-    assert "help\tShow this help" in result.stdout.splitlines()
-
-
-def test_help_argument_completes_command_names(runner):
-    result = runner.run("__api__", "complete", "@@ops", "help", "")
-
-    assert result.returncode == 0
-    assert result.stdout.splitlines() == [
-        "init",
-        "destroy",
-        "clear",
-        "set",
-        "remove",
-        "json",
-        "path",
-        "rename",
-        "clone",
-        "link",
-        "deps",
-    ]
+    assert verbs.returncode == 0
+    assert "help" not in verbs.stdout.splitlines()
+    assert "init" in verbs.stdout.splitlines()
+    assert short.returncode == 0
+    assert short.stdout.splitlines() == ["--help", "-h"]
+    assert options.returncode == 0
+    assert "--help" in options.stdout.splitlines()
 
 
-def test_help_argument_completion_excludes_help(runner):
-    result = runner.run("__api__", "complete", "@@ops", "help", "h")
-
-    assert result.returncode == 0
-    assert result.stdout == ""
-
-
-def test_help_argument_completion_stops_after_command(runner):
-    result = runner.run("__api__", "complete", "@@ops", "help", "set", "")
-
-    assert result.returncode == 0
-    assert result.stdout == ""
-
-
-def test_resolve_rejects_help(runner):
-    result = runner.run("__api__", "resolve", "@@ops", "help")
+def test_resolve_rejects_help_flag(runner):
+    result = runner.run("__api__", "resolve", "@@ops", "-h")
 
     assert result.returncode == 1
     assert "file command" in result.stderr

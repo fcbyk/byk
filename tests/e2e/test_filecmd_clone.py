@@ -386,11 +386,13 @@ def test_link_and_init_link_complete_sources(runner):
 
 
 def test_help_for_clone_shows_usage(runner):
-    result = runner.run("@@ops", "help", "clone")
+    result = runner.run("@@ops", "clone", "-h")
 
     assert result.returncode == 0
-    assert result.stdout.startswith("\n@@ops clone <source> [options]\n")
-    assert "Copy a local or remote alias file into this file" in result.stdout
+    assert result.stdout.startswith(
+        "\nCopy a local or remote alias file into this file\n\nFilePath: "
+    )
+    assert "Usage: byk @@ops clone [OPTIONS] <source>" in result.stdout
     assert "-gh, --github <spec> [<cdn>]" in result.stdout
     assert "Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)" in result.stdout
     assert "-ge, --gitee <spec>" in result.stdout

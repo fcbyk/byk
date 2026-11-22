@@ -4,8 +4,26 @@
 
 use crate::resolve::validate_filename;
 
-/// `deps` 的子命令；顺序即错误提示与补全顺序。
-pub(crate) const SUBCOMMANDS: [&str; 3] = ["install", "uninstall", "status"];
+/// `deps` 的子命令与说明；顺序即帮助、错误提示与补全顺序。
+pub(crate) const SUBCOMMANDS: [(&str, &str); 3] = [
+    (
+        "install",
+        "Install the declared files, pip and npm packages",
+    ),
+    ("uninstall", "Remove this file's dependency directory"),
+    ("status", "Show what is declared, installed, or stale"),
+];
+
+pub(crate) fn subcommand_names() -> impl Iterator<Item = &'static str> {
+    SUBCOMMANDS.iter().map(|(name, _)| *name)
+}
+
+pub(crate) fn describe_subcommand(name: &str) -> Option<&'static str> {
+    SUBCOMMANDS
+        .iter()
+        .find(|(candidate, _)| *candidate == name)
+        .map(|(_, description)| *description)
+}
 
 /// `@` 指向当前目录，`@@` 指向全局别名目录。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,10 +51,10 @@ pub(crate) struct FileCommand {
     pub(crate) scope: FileScope,
     pub(crate) stem: String,
     pub(crate) verb: Verb,
-    /// 动词自身参数在完整命令行参数里的起始下标。
+    /// 动词后面的参数。
     ///
-    /// 缺省动词时没有参数；`-h` / `--help` 跳过这个 flag 本身。
-    pub(crate) arg_start: usize,
+    /// 帮助请求把目标命令放在这里：`init -h` → `["init"]`。
+    pub(crate) args: Vec<String>,
 }
 
 /// 解析结果。`@file` / `@@file` 一旦归文件命令处理，失败时不再回退到别名查找。
@@ -95,19 +113,19 @@ pub(crate) const VERBS: &[VerbInfo] = &[
     VerbInfo {
         name: "init",
         verb: Verb::Init,
-        description: "Create an alias file",
+        description: "Create this alias file",
         usage: "",
     },
     VerbInfo {
         name: "destroy",
         verb: Verb::Destroy,
-        description: "Remove the alias file",
+        description: "Delete this alias file",
         usage: "",
     },
     VerbInfo {
         name: "clear",
         verb: Verb::Clear,
-        description: "Reset this file to an empty object",
+        description: "Reset this alias file to an empty object",
         usage: "",
     },
     VerbInfo {
@@ -125,19 +143,19 @@ pub(crate) const VERBS: &[VerbInfo] = &[
     VerbInfo {
         name: "json",
         verb: Verb::Json,
-        description: "Show the alias file JSON",
+        description: "Show this alias file's JSON",
         usage: "",
     },
     VerbInfo {
         name: "path",
         verb: Verb::Path,
-        description: "Print the absolute path",
+        description: "Print this alias file's absolute path",
         usage: "",
     },
     VerbInfo {
         name: "rename",
         verb: Verb::Rename,
-        description: "Rename the alias file",
+        description: "Rename this alias file",
         usage: "<new-name>",
     },
     VerbInfo {
@@ -156,15 +174,16 @@ pub(crate) const VERBS: &[VerbInfo] = &[
         name: "deps",
         verb: Verb::Deps,
         description: "Install, uninstall, or inspect this file's dependencies",
-        usage: "[install|uninstall|status]",
-    },
-    VerbInfo {
-        name: "help",
-        verb: Verb::Help,
-        description: "Show this help",
-        usage: "[command]",
+        usage: "[COMMAND]",
     },
 ];
+
+/// 文件命令的帮助开关；`-h` / `--help` 不是命令，而是选项。
+pub(crate) const HELP_FLAGS: [&str; 2] = ["--help", "-h"];
+
+pub(crate) fn is_help_flag(arg: &str) -> bool {
+    HELP_FLAGS.contains(&arg)
+}
 
 pub(crate) struct OptionInfo {
     pub(crate) verb: Verb,
@@ -369,7 +388,7 @@ pub(crate) fn is_file_head(token: &str) -> bool {
 
 /// 解析 `@file <verb> [args...]` / `@@file <verb> [args...]`。
 ///
-/// 首个参数是动词；缺省动词和 `-h` / `--help` 都映射到 `help`。
+/// 首个参数是动词；缺省动词、`-h` / `--help`、以及动词后的帮助开关都走帮助。
 pub(crate) fn parse(command_name: &str, args: &[String]) -> ParseResult {
     let Some((prefix, stem)) = split_head(command_name) else {
         return ParseResult::NotFileCommand;
@@ -384,21 +403,31 @@ pub(crate) fn parse(command_name: &str, args: &[String]) -> ParseResult {
         return ParseResult::Error(FileCommandError::InvalidStem(stem.to_string()));
     }
 
-    let (verb, arg_start) = match args.first().map(String::as_str) {
-        None => (Verb::Help, 0),
-        Some("-h") | Some("--help") => (Verb::Help, 1),
-        Some(name) => match Verb::parse(name) {
-            Some(verb) => (verb, 1),
-            None => return ParseResult::Error(FileCommandError::UnknownVerb(name.to_string())),
-        },
+    let build = |verb: Verb, args: Vec<String>| {
+        ParseResult::Command(FileCommand {
+            scope,
+            stem: stem.to_string(),
+            verb,
+            args,
+        })
     };
 
-    ParseResult::Command(FileCommand {
-        scope,
-        stem: stem.to_string(),
-        verb,
-        arg_start,
-    })
+    let Some(name) = args.first().map(String::as_str) else {
+        return build(Verb::Help, Vec::new());
+    };
+    if is_help_flag(name) {
+        return build(Verb::Help, Vec::new());
+    }
+
+    let Some(verb) = Verb::parse(name) else {
+        return ParseResult::Error(FileCommandError::UnknownVerb(name.to_string()));
+    };
+    let rest = &args[1..];
+    if rest.iter().any(|arg| is_help_flag(arg)) {
+        return build(Verb::Help, vec![name.to_string()]);
+    }
+
+    build(verb, rest.to_vec())
 }
 
 /// token 是否属于文件命令命名空间（含非法形式）。

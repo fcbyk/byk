@@ -16,9 +16,7 @@ use verbs::{clear, clone, deps, destroy, help, init, json, link, path, remove, r
 pub(crate) fn run(command_name: &str, args: &[String], layout: &PathLayout) -> Option<i32> {
     match parse(command_name, args) {
         ParseResult::NotFileCommand => None,
-        ParseResult::Command(command) => {
-            Some(dispatch(&command, &args[command.arg_start..], layout))
-        }
+        ParseResult::Command(command) => Some(dispatch(&command, layout)),
         ParseResult::Error(err) => {
             eprintln!("{}", err.render(command_name));
             Some(1)
@@ -26,7 +24,8 @@ pub(crate) fn run(command_name: &str, args: &[String], layout: &PathLayout) -> O
     }
 }
 
-fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayout) -> i32 {
+fn dispatch(command: &FileCommand, layout: &PathLayout) -> i32 {
+    let args = command.args.as_slice();
     let result = match command.verb {
         Verb::Init => init::run(command.scope, &command.stem, args, layout).map(|path| {
             eprintln!("Created {}", path.display());
@@ -109,7 +108,7 @@ fn dispatch(command: &FileCommand, args: &[String], layout: &PathLayout) -> i32 
             }
             Err(message) => Err(message),
         },
-        Verb::Help => help::run(command.scope, &command.stem, args)
+        Verb::Help => help::run(command.scope, &command.stem, args, layout)
             .and_then(|text| write_stdout(text.as_bytes())),
     };
 

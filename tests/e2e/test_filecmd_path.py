@@ -58,7 +58,7 @@ def test_path_is_completed_with_description(runner):
     result = runner.run("__api__", "complete", "--with-descriptions", "@@ops", "p")
 
     assert result.returncode == 0
-    assert result.stdout.splitlines() == ["path\tPrint the absolute path"]
+    assert result.stdout.splitlines() == ["path\tPrint this alias file's absolute path"]
 
 
 def test_resolve_rejects_path(runner):

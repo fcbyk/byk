@@ -126,7 +126,7 @@ def test_rename_is_completed_with_description(runner):
     assert result.returncode == 0
     assert result.stdout.splitlines() == [
         "remove\tRemove an alias or group",
-        "rename\tRename the alias file",
+        "rename\tRename this alias file",
     ]
 
 

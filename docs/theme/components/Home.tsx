@@ -303,7 +303,7 @@ export function BykHome() {
           </div>
           <div className="b-tile">
             <span className="b-tile__label">{t('homeTile6Label')}</span>
-            <p className="b-tile__cmd">byk @@ops help</p>
+            <p className="b-tile__cmd">byk @@ops -h</p>
             <p className="b-tile__desc">{t('homeTile6Desc')}</p>
           </div>
           <div className="b-tile">

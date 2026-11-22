@@ -218,12 +218,14 @@ def test_remove_key_completion_stops_after_key(runner):
 
 
 def test_help_for_remove_shows_usage(runner):
-    result = runner.run("@@ops", "help", "remove")
+    result = runner.run("@@ops", "remove", "-h")
 
     assert result.returncode == 0
-    assert result.stdout.startswith("\n@@ops remove <key>\n")
-    assert "Remove an alias or group" in result.stdout
-    assert "Options:" not in result.stdout
+    assert result.stdout.startswith(
+        "\nRemove an alias or group\n\nFilePath: "
+    )
+    assert "Usage: byk @@ops remove [OPTIONS] <key>" in result.stdout
+    assert "  --help, -h  Show this help" in result.stdout
 
 
 def test_resolve_rejects_remove(runner):

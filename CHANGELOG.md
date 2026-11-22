@@ -3,6 +3,7 @@
 ### Breaking Changes
 
 - **file commands**: the `@file..verb` form is gone — write `byk @file <verb>` (and `byk @@file <verb>`) instead. The separator is now a space, so it no longer collides with the precise alias syntax `@file.key`. `byk @file` on its own, `-h`, or `--help` prints that file's command help
+- **file help**: the `help` file command is gone — use `-h` / `--help` (`byk @file -h`, `byk @file init -h`). File-command help now mirrors `byk -h`: the index names the local/global file and shows `FilePath` (with `(not created yet)` / `(link)` markers), and every command's help repeats the target path above Usage with its description first
 - **`clone`**: the `-jd` / `--jsdelivr` source is gone; read GitHub through a CDN with `-gh <spec> jsdelivr` instead
 
 ### Features

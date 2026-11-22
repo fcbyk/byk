@@ -93,7 +93,9 @@ fn describe_in(candidate: &str, prefer_file_option: bool) -> Option<&'static str
         "--version" | "-v" => Some("Print version"),
         "--paths" => Some("Print CLI paths and file locations"),
         "--check" => Some("Check alias files for problems"),
-        _ => file_spec::describe_option(candidate).or_else(|| file_spec::describe_verb(candidate)),
+        _ => file_spec::describe_option(candidate)
+            .or_else(|| file_spec::describe_verb(candidate))
+            .or_else(|| file_spec::describe_subcommand(candidate)),
     }
 }
 
@@ -630,8 +632,7 @@ mod tests {
                 "rename".to_string(),
                 "clone".to_string(),
                 "link".to_string(),
-                "deps".to_string(),
-                "help".to_string()
+                "deps".to_string()
             ]
         );
         // 精确别名不受影响
@@ -643,7 +644,11 @@ mod tests {
         let env = TestEnv::new();
         assert_eq!(
             candidates(&words(&["@@ops", "json", "--"]), &env.layout),
-            vec!["--expand".to_string(), "--no-check".to_string()]
+            vec![
+                "--help".to_string(),
+                "--expand".to_string(),
+                "--no-check".to_string()
+            ]
         );
         assert_eq!(
             candidates(&words(&["@@ops", "json", "--n"]), &env.layout),
@@ -651,7 +656,7 @@ mod tests {
         );
         assert_eq!(
             candidates(&words(&["@@ops", "destroy", "--"]), &env.layout),
-            vec!["--yes".to_string()]
+            vec!["--help".to_string(), "--yes".to_string()]
         );
         assert!(candidates(&words(&["@@ops", "json", ""]), &env.layout).is_empty());
         assert!(candidates(&words(&["@@ops", "json", "--expand", ""]), &env.layout).is_empty());
@@ -659,30 +664,17 @@ mod tests {
     }
 
     #[test]
-    fn candidates_help_completes_command_names() {
+    fn candidates_file_command_help_flags() {
         let env = TestEnv::new();
         assert_eq!(
-            candidates(&words(&["@@ops", "help", ""]), &env.layout),
-            vec![
-                "init".to_string(),
-                "destroy".to_string(),
-                "clear".to_string(),
-                "set".to_string(),
-                "remove".to_string(),
-                "json".to_string(),
-                "path".to_string(),
-                "rename".to_string(),
-                "clone".to_string(),
-                "link".to_string(),
-                "deps".to_string()
-            ]
+            candidates(&words(&["@@ops", "--"]), &env.layout),
+            vec!["--help".to_string()]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "help", "s"]), &env.layout),
-            vec!["set".to_string()]
+            candidates(&words(&["@@ops", "-"]), &env.layout),
+            vec!["--help".to_string(), "-h".to_string()]
         );
-        assert!(candidates(&words(&["@@ops", "help", "help"]), &env.layout).is_empty());
-        assert!(candidates(&words(&["@@ops", "help", "set", ""]), &env.layout).is_empty());
+        assert!(candidates(&words(&["@@ops", "help", ""]), &env.layout).is_empty());
     }
 
     #[test]
@@ -691,6 +683,7 @@ mod tests {
         assert_eq!(
             candidates(&words(&["@@ops", "set", "build", "--"]), &env.layout),
             vec![
+                "--help".to_string(),
                 "--cmd".to_string(),
                 "--cwd".to_string(),
                 "--mode".to_string(),
@@ -723,7 +716,11 @@ mod tests {
         );
         assert_eq!(
             candidates(&words(&["@@ops", "deps", "install", "--"]), &env.layout),
-            vec!["--force".to_string(), "--yes".to_string()]
+            vec![
+                "--help".to_string(),
+                "--force".to_string(),
+                "--yes".to_string()
+            ]
         );
         assert_eq!(
             candidates(&words(&["@@ops", "deps", "install", "--f"]), &env.layout),
@@ -731,7 +728,11 @@ mod tests {
         );
         assert_eq!(
             candidates(&words(&["@@ops", "deps", "uninstall", "--"]), &env.layout),
-            vec!["--force".to_string(), "--yes".to_string()]
+            vec![
+                "--help".to_string(),
+                "--force".to_string(),
+                "--yes".to_string()
+            ]
         );
         assert!(candidates(&words(&["@@ops", "deps", "install", "x"]), &env.layout).is_empty());
     }
@@ -780,6 +781,8 @@ mod tests {
         assert_eq!(
             candidates(&words(&["@@ops", "clone", "@@src", "-"]), &env.layout),
             vec![
+                "--help".to_string(),
+                "-h".to_string(),
                 "-gh".to_string(),
                 "--github".to_string(),
                 "-ge".to_string(),
@@ -854,6 +857,7 @@ mod tests {
         assert_eq!(
             candidates(&words(&["@@ops", "set", "build", "--"]), &env.layout),
             vec![
+                "--help".to_string(),
                 "--cmd".to_string(),
                 "--cwd".to_string(),
                 "--mode".to_string(),
@@ -889,7 +893,7 @@ mod tests {
         assert_eq!(format_candidate("build", true, false, None), "build");
         assert_eq!(
             format_candidate("init", true, false, None),
-            "init\tCreate an alias file"
+            "init\tCreate this alias file"
         );
         assert_eq!(
             format_candidate("--paths", true, false, None),

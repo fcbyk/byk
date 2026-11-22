@@ -568,18 +568,17 @@ def test_api_complete_with_descriptions_file_command_verbs(runner):
     r = runner.run("__api__", "complete", "--with-descriptions", "@@ops", "")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == [
-        "init\tCreate an alias file",
-        "destroy\tRemove the alias file",
-        "clear\tReset this file to an empty object",
+        "init\tCreate this alias file",
+        "destroy\tDelete this alias file",
+        "clear\tReset this alias file to an empty object",
         "set\tCreate or update an alias",
         "remove\tRemove an alias or group",
-        "json\tShow the alias file JSON",
-        "path\tPrint the absolute path",
-        "rename\tRename the alias file",
+        "json\tShow this alias file's JSON",
+        "path\tPrint this alias file's absolute path",
+        "rename\tRename this alias file",
         "clone\tCopy a local or remote alias file into this file",
         "link\tPoint this file at another alias file",
         "deps\tInstall, uninstall, or inspect this file's dependencies",
-        "help\tShow this help",
     ]
 
 

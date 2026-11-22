@@ -11,8 +11,8 @@ use crate::resolve::validate_filename;
 use crate::filecmd::io::path::resolve_target;
 use crate::filecmd::source::Cdn;
 use crate::filecmd::spec::FileScope;
-use crate::filecmd::spec::SUBCOMMANDS;
-use crate::filecmd::spec::{OPTION_ALIASES, OPTIONS, VERBS, Verb, split_head};
+use crate::filecmd::spec::subcommand_names;
+use crate::filecmd::spec::{HELP_FLAGS, OPTION_ALIASES, OPTIONS, VERBS, Verb, split_head};
 
 /// 补全 `@file <verb> ...`。
 ///
@@ -29,31 +29,23 @@ pub(crate) fn complete(prev: &[String], partial: &str, layout: &PathLayout) -> O
         FileScope::Local
     };
 
-    // 刚敲完文件 token：补动词
+    // 刚敲完文件 token：补动词；`-` 开头则补帮助开关
     if prev.len() == 1 {
         if partial.starts_with('-') {
-            return Some(Vec::new());
+            return Some(help_flags(partial));
         }
         return Some(verb_candidates(partial));
     }
 
-    let verb = match prev[1].as_str() {
-        "-h" | "--help" => Verb::Help,
-        name => match Verb::parse(name) {
-            Some(verb) => verb,
-            None => return Some(Vec::new()),
-        },
+    let verb = match Verb::parse(&prev[1]) {
+        Some(verb) => verb,
+        None => return Some(Vec::new()),
     };
     let args = &prev[2..];
     let arg_index = args.len();
 
     match verb {
-        Verb::Help => {
-            if arg_index == 0 {
-                return Some(help_arg_candidates(partial));
-            }
-            Some(Vec::new())
-        }
+        Verb::Help => Some(Vec::new()),
         Verb::Deps => {
             if arg_index == 0 {
                 return Some(subcommand_candidates(partial));
@@ -94,22 +86,19 @@ fn verb_candidates(partial: &str) -> Vec<String> {
         .collect()
 }
 
-/// `help` 后面只补其他动词，不再补 `help` 自己。
-fn help_arg_candidates(partial: &str) -> Vec<String> {
-    VERBS
+/// `-h` / `--help` 是每个文件命令都有的帮助开关。
+fn help_flags(partial: &str) -> Vec<String> {
+    HELP_FLAGS
         .iter()
-        .filter(|info| info.verb != Verb::Help)
-        .map(|info| info.name)
-        .filter(|name| name.starts_with(partial))
-        .map(str::to_string)
+        .filter(|flag| flag.starts_with(partial))
+        .map(|flag| (*flag).to_string())
         .collect()
 }
 
 fn subcommand_candidates(partial: &str) -> Vec<String> {
-    SUBCOMMANDS
-        .iter()
+    subcommand_names()
         .filter(|name| name.starts_with(partial))
-        .map(|name| (*name).to_string())
+        .map(str::to_string)
         .collect()
 }
 
@@ -119,7 +108,7 @@ fn options(verb: Verb, partial: &str) -> Option<Vec<String>> {
         return Some(Vec::new());
     }
 
-    let mut candidates = Vec::new();
+    let mut candidates = help_flags(partial);
     for info in OPTIONS.iter().filter(|info| info.verb == verb) {
         for (alias, flag) in OPTION_ALIASES {
             if *flag == info.flag && alias.starts_with(partial) {
@@ -298,8 +287,7 @@ mod tests {
                 "rename".to_string(),
                 "clone".to_string(),
                 "link".to_string(),
-                "deps".to_string(),
-                "help".to_string()
+                "deps".to_string()
             ])
         );
         assert_eq!(
@@ -314,6 +302,14 @@ mod tests {
             complete(&words(&["@"]), "i", &layout),
             Some(vec!["init".to_string()])
         );
+        assert_eq!(
+            complete(&words(&["@@ops"]), "--", &layout),
+            Some(vec!["--help".to_string()])
+        );
+        assert_eq!(
+            complete(&words(&["@@ops"]), "-", &layout),
+            Some(vec!["--help".to_string(), "-h".to_string()])
+        );
     }
 
     #[test]
@@ -321,10 +317,6 @@ mod tests {
         let (_temp, layout) = fixture();
         assert_eq!(complete(&words(&["@@ops.init"]), "", &layout), None);
         assert_eq!(complete(&words(&["ops"]), "i", &layout), None);
-        assert_eq!(
-            complete(&words(&["@@ops"]), "--", &layout),
-            Some(Vec::new())
-        );
         assert_eq!(
             complete(&words(&["@@ops", "explode"]), "", &layout),
             Some(Vec::new())
@@ -336,19 +328,33 @@ mod tests {
         let (_temp, layout) = fixture();
         let opts = |verb: &str, partial: &str| complete(&words(&["@@ops", verb]), partial, &layout);
 
-        assert_eq!(opts("init", "--"), Some(vec!["--link".to_string()]));
+        assert_eq!(
+            opts("init", "--"),
+            Some(vec!["--help".to_string(), "--link".to_string()])
+        );
         assert_eq!(opts("init", "--l"), Some(vec!["--link".to_string()]));
         assert_eq!(
             opts("json", "--"),
-            Some(vec!["--expand".to_string(), "--no-check".to_string()])
+            Some(vec![
+                "--help".to_string(),
+                "--expand".to_string(),
+                "--no-check".to_string()
+            ])
         );
         assert_eq!(opts("json", "--e"), Some(vec!["--expand".to_string()]));
         assert_eq!(opts("json", "--n"), Some(vec!["--no-check".to_string()]));
-        assert_eq!(opts("destroy", "--"), Some(vec!["--yes".to_string()]));
-        assert_eq!(opts("clear", "--"), Some(vec!["--yes".to_string()]));
+        assert_eq!(
+            opts("destroy", "--"),
+            Some(vec!["--help".to_string(), "--yes".to_string()])
+        );
+        assert_eq!(
+            opts("clear", "--"),
+            Some(vec!["--help".to_string(), "--yes".to_string()])
+        );
         assert_eq!(
             opts("set", "--"),
             Some(vec![
+                "--help".to_string(),
                 "--cmd".to_string(),
                 "--cwd".to_string(),
                 "--mode".to_string(),
@@ -366,11 +372,13 @@ mod tests {
             opts("set", "--c"),
             Some(vec!["--cmd".to_string(), "--cwd".to_string()])
         );
-        assert_eq!(opts("link", "--"), Some(Vec::new()));
-        assert_eq!(opts("remove", "--"), Some(Vec::new()));
+        assert_eq!(opts("link", "--"), Some(vec!["--help".to_string()]));
+        assert_eq!(opts("remove", "--"), Some(vec!["--help".to_string()]));
         assert_eq!(
             opts("clone", "-"),
             Some(vec![
+                "--help".to_string(),
+                "-h".to_string(),
                 "-gh".to_string(),
                 "--github".to_string(),
                 "-ge".to_string(),
@@ -384,6 +392,7 @@ mod tests {
         assert_eq!(
             opts("clone", "--"),
             Some(vec![
+                "--help".to_string(),
                 "--github".to_string(),
                 "--gitee".to_string(),
                 "--tap".to_string(),
@@ -397,36 +406,6 @@ mod tests {
         assert_eq!(opts("clone", "-t"), Some(vec!["-t".to_string()]));
         assert_eq!(opts("json", ""), Some(Vec::new()));
         assert_eq!(opts("json", "x"), Some(Vec::new()));
-    }
-
-    #[test]
-    fn complete_help_args_lists_verbs_without_help() {
-        let (_temp, layout) = fixture();
-        assert_eq!(
-            complete(&words(&["@@ops", "help"]), "", &layout),
-            Some(
-                [
-                    "init", "destroy", "clear", "set", "remove", "json", "path", "rename", "clone",
-                    "link", "deps"
-                ]
-                .iter()
-                .map(|name| name.to_string())
-                .collect()
-            )
-        );
-        assert_eq!(
-            complete(&words(&["@@ops", "help"]), "s", &layout),
-            Some(vec!["set".to_string()])
-        );
-        assert_eq!(
-            complete(&words(&["@@ops", "help", "set"]), "", &layout),
-            Some(Vec::new())
-        );
-        // `--help` 等价于 help 动词
-        assert_eq!(
-            complete(&words(&["@@ops", "--help"]), "s", &layout),
-            Some(vec!["set".to_string()])
-        );
     }
 
     #[test]
@@ -464,7 +443,7 @@ mod tests {
         );
         assert_eq!(
             complete(&words(&["@@ops", "init"]), "--", &layout),
-            Some(vec!["--link".to_string()])
+            Some(vec!["--help".to_string(), "--link".to_string()])
         );
         assert_eq!(
             complete(&words(&["@@ops", "set"]), "@", &layout),
@@ -576,6 +555,7 @@ mod tests {
         assert_eq!(
             complete(&words(&["@@ops", "set"]), "--", &layout),
             Some(vec![
+                "--help".to_string(),
                 "--cmd".to_string(),
                 "--cwd".to_string(),
                 "--mode".to_string(),
