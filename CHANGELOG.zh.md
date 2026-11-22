@@ -2,12 +2,13 @@
 
 ### 破坏性变更
 
-- **`..clone`**: 移除 `-jd` / `--jsdelivr`，改用 `-gh <spec> jsdelivr` 指定 CDN
+- **文件命令**: 移除 `@文件..命令` 写法，改为 `byk @文件 命令`（全局是 `byk @@文件 命令`）。分隔符改成空格，不再和精确别名语法 `@文件.key` 混淆。只写 `byk @文件`、或加 `-h` / `--help`，会显示该文件的命令帮助
+- **`clone`**: 移除 `-jd` / `--jsdelivr`，改用 `-gh <spec> jsdelivr` 指定 CDN
 
 ### 新功能
 
 - **`$paths`**: 现在和 `$cwd` / `$mode` 一样可继承——可写在文件、分组或别名对象上；子级写了就整体覆盖继承列表（不合并），`[]` 表示清空，让单条别名回到系统 `PATH`
-- **`..clone -gh`**: 新增可选的第二个参数指定 CDN（`raw` 默认、`jsdelivr`、`ghproxy`），后续增加镜像不必再加开关
+- **`clone -gh`**: 新增可选的第二个参数指定 CDN（`raw` 默认、`jsdelivr`、`ghproxy`），后续增加镜像不必再加开关
 - **`$deps`**: `base` 是 ghproxy 地址时，下载绝对 GitHub 地址（含 Release 资产）自动沿用同一个代理，相对条目不会重复套壳；jsdelivr 仍只覆盖仓库文件
 - **`$deps`**: 终端下显示 curl 原生下载进度条；非 TTY 保持静默，错误文本不变
 - **网络**: `BYK_USE_PROXY=false` 可强制直连；否则下载依次跟随 `BYK_PROXY`、已有代理环境变量与 Windows 静态系统代理。例外列表转成 `no_proxy`，遇到 PAC/WPAD 只警告。代理只注入 curl 子进程，不改别名执行环境，也不影响 pip / npm

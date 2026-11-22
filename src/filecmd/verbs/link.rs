@@ -1,4 +1,4 @@
-//! `..link` 的入口参数解析。
+//! `link` 的入口参数解析。
 
 use std::path::PathBuf;
 
@@ -24,7 +24,7 @@ fn parse_args(args: &[String]) -> Result<&str, String> {
 }
 
 mod imp {
-    //! `..link`：把当前文件改写为指向另一个别名文件的链接。
+    //! `link`：把当前文件改写为指向另一个别名文件的链接。
 
     use std::fs;
     use std::io;
@@ -56,7 +56,7 @@ mod imp {
                     FileScope::Global => "@@",
                 };
                 return Err(format!(
-                    "File not found: {}\nHint: create it with {}{}..init --link {}",
+                    "File not found: {}\nHint: create it with {}{} init --link {}",
                     path.display(),
                     prefix,
                     stem,
@@ -188,7 +188,7 @@ mod imp {
             let err = apply(FileScope::Global, "tools", &spec(&target), &layout).unwrap_err();
 
             assert!(err.starts_with("File not found:"));
-            assert!(err.contains("@@tools..init --link"));
+            assert!(err.contains("@@tools init --link"));
         }
 
         #[test]

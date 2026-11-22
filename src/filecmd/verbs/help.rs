@@ -1,4 +1,4 @@
-//! `..help`：列出文件命令；指定命令时显示用法与选项。
+//! `help`：列出文件命令；指定命令时显示用法与选项。
 
 use colored::Colorize;
 
@@ -25,7 +25,7 @@ fn render_index(scope: FileScope, stem: &str) -> String {
     let base = base(scope, stem);
     let commands: Vec<(String, &'static str)> = VERBS
         .iter()
-        .map(|info| (format!("{}..{}", base, info.name), info.description))
+        .map(|info| (format!("{} {}", base, info.name), info.description))
         .collect();
 
     let mut output = String::from("\n");
@@ -33,7 +33,7 @@ fn render_index(scope: FileScope, stem: &str) -> String {
     output.push('\n');
     output.push_str(&format!(
         "Use {} <command> to see usage and options.\n",
-        format!("{}..help", base).cyan().bold()
+        format!("{} help", base).cyan().bold()
     ));
     output.push('\n');
     output
@@ -53,7 +53,7 @@ fn render_verb(base: &str, info: &VerbInfo) -> String {
         .map(|option| (option.syntax.to_string(), option.description))
         .collect();
 
-    let mut usage = format!("{}..{}", base, info.name).cyan().bold().to_string();
+    let mut usage = format!("{} {}", base, info.name).cyan().bold().to_string();
     if !info.usage.is_empty() {
         usage.push(' ');
         usage.push_str(info.usage);
@@ -136,33 +136,33 @@ mod tests {
 
         assert!(text.starts_with("\nFile commands:\n"));
         assert!(text.ends_with("\n\n"));
-        assert!(text.contains("  @@ops..init"));
+        assert!(text.contains("  @@ops init"));
         assert!(text.contains("Create an alias file"));
-        assert!(text.contains("  @@ops..clear"));
+        assert!(text.contains("  @@ops clear"));
         assert!(text.contains("Reset this file to an empty object"));
-        assert!(text.contains("  @@ops..set"));
+        assert!(text.contains("  @@ops set"));
         assert!(text.contains("Create or update an alias"));
-        assert!(text.contains("  @@ops..remove"));
+        assert!(text.contains("  @@ops remove"));
         assert!(text.contains("Remove an alias or group"));
-        assert!(text.contains("  @@ops..path"));
+        assert!(text.contains("  @@ops path"));
         assert!(text.contains("Print the absolute path"));
-        assert!(text.contains("  @@ops..rename"));
+        assert!(text.contains("  @@ops rename"));
         assert!(text.contains("Rename the alias file"));
-        assert!(text.contains("  @@ops..clone"));
+        assert!(text.contains("  @@ops clone"));
         assert!(text.contains("Copy a local or remote alias file into this file"));
-        assert!(text.contains("  @@ops..link"));
+        assert!(text.contains("  @@ops link"));
         assert!(text.contains("Point this file at another alias file"));
-        assert!(text.contains("  @@ops..help"));
+        assert!(text.contains("  @@ops help"));
         assert!(text.contains("Show this help"));
         assert!(!text.contains("Options:"));
-        assert!(text.contains("Use @@ops..help <command> to see usage and options."));
+        assert!(text.contains("Use @@ops help <command> to see usage and options."));
     }
 
     #[test]
     fn command_help_shows_usage_and_options() {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["set"])).unwrap());
 
-        assert!(text.starts_with("\n@@ops..set [key] [options]\nCreate or update an alias\n"));
+        assert!(text.starts_with("\n@@ops set [key] [options]\nCreate or update an alias\n"));
         assert!(text.ends_with("\n\n"));
         assert!(text.contains("\nOptions:\n"));
         assert!(text.contains("  --cmd <command>"));
@@ -170,40 +170,40 @@ mod tests {
         assert!(text.contains("  --priority <n>"));
         assert!(text.contains("  --paths <dir>"));
         assert!(text.contains("  --unset <fields>"));
-        assert!(!text.contains("@@ops..init"));
+        assert!(!text.contains("@@ops init"));
     }
 
     #[test]
     fn command_help_without_options_omits_section() {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["path"])).unwrap());
 
-        assert!(text.starts_with("\n@@ops..path\nPrint the absolute path\n"));
+        assert!(text.starts_with("\n@@ops path\nPrint the absolute path\n"));
         assert!(!text.contains("Options:"));
     }
 
     #[test]
     fn command_help_includes_positional_placeholders() {
         let rename = strip_ansi(&run(FileScope::Global, "ops", &args(&["rename"])).unwrap());
-        assert!(rename.contains("@@ops..rename <new-name>"));
+        assert!(rename.contains("@@ops rename <new-name>"));
 
         let link = strip_ansi(&run(FileScope::Global, "ops", &args(&["link"])).unwrap());
-        assert!(link.contains("@@ops..link <target>"));
+        assert!(link.contains("@@ops link <target>"));
 
         let clone = strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"])).unwrap());
-        assert!(clone.contains("@@ops..clone <source>"));
+        assert!(clone.contains("@@ops clone <source>"));
 
         let init = strip_ansi(&run(FileScope::Global, "ops", &args(&["init"])).unwrap());
-        assert!(init.contains("@@ops..init [options]"));
+        assert!(init.contains("@@ops init [options]"));
 
         let remove = strip_ansi(&run(FileScope::Global, "ops", &args(&["remove"])).unwrap());
-        assert!(remove.contains("@@ops..remove <key>"));
+        assert!(remove.contains("@@ops remove <key>"));
     }
 
     #[test]
     fn command_help_for_clone_shows_github_option() {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"])).unwrap());
 
-        assert!(text.contains("@@ops..clone <source> [options]"));
+        assert!(text.contains("@@ops clone <source> [options]"));
         assert!(text.contains("-gh, --github <spec> [<cdn>]"));
         assert!(
             text.contains("Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)")
@@ -218,7 +218,7 @@ mod tests {
     fn command_help_for_deps_lists_force_and_uninstall_yes() {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["deps"])).unwrap());
 
-        assert!(text.contains("@@ops..deps [install|uninstall|status] [options]"));
+        assert!(text.contains("@@ops deps [install|uninstall|status] [options]"));
         assert!(text.contains("  --force"));
         assert!(text.contains("Reinstall dependencies from source (install)"));
         assert!(text.contains("  --yes"));
@@ -228,16 +228,16 @@ mod tests {
     #[test]
     fn local_and_anonymous_prefix() {
         let local = strip_ansi(&run(FileScope::Local, "ops", &[]).unwrap());
-        assert!(local.contains("  @ops..init"));
+        assert!(local.contains("  @ops init"));
 
         let anonymous = strip_ansi(&run(FileScope::Global, "", &[]).unwrap());
-        assert!(anonymous.contains("  @@..init"));
+        assert!(anonymous.contains("  @@ init"));
 
         let local_set = strip_ansi(&run(FileScope::Local, "ops", &args(&["set"])).unwrap());
-        assert!(local_set.contains("@ops..set [key] [options]"));
+        assert!(local_set.contains("@ops set [key] [options]"));
 
         let anonymous_set = strip_ansi(&run(FileScope::Global, "", &args(&["set"])).unwrap());
-        assert!(anonymous_set.contains("@@..set [key] [options]"));
+        assert!(anonymous_set.contains("@@ set [key] [options]"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! `..rename` 的入口参数解析。
+//! `rename` 的入口参数解析。
 
 use std::path::PathBuf;
 
@@ -26,7 +26,7 @@ fn parse_args(args: &[String]) -> Result<&str, String> {
 }
 
 mod imp {
-    //! `..rename`：重命名别名文件。
+    //! `rename`：重命名别名文件。
 
     use std::fs;
     use std::io;

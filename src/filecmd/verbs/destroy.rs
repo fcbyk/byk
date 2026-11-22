@@ -1,4 +1,4 @@
-//! `..destroy` 的入口参数解析。
+//! `destroy` 的入口参数解析。
 
 use crate::filecmd::spec::FileScope;
 use crate::model::PathLayout;
@@ -23,7 +23,7 @@ fn parse_args(args: &[String]) -> Result<bool, String> {
 }
 
 mod imp {
-    //! `..destroy`：删除别名文件。
+    //! `destroy`：删除别名文件。
 
     use std::fs;
     use std::io;

@@ -1,4 +1,4 @@
-//! 文件命令路由：解析 `@file..verb` / `@@file..verb`，在别名查找之前处理。
+//! 文件命令路由：解析 `@file <verb>` / `@@file <verb>`，在别名查找之前处理。
 
 pub(crate) mod io;
 pub(crate) mod prompt;
@@ -14,9 +14,11 @@ use verbs::{clear, clone, deps, destroy, help, init, json, link, path, remove, r
 
 /// 命中文件命令时返回退出码；未命中返回 `None`，交由别名查找。
 pub(crate) fn run(command_name: &str, args: &[String], layout: &PathLayout) -> Option<i32> {
-    match parse(command_name) {
+    match parse(command_name, args) {
         ParseResult::NotFileCommand => None,
-        ParseResult::Command(command) => Some(dispatch(&command, args, layout)),
+        ParseResult::Command(command) => {
+            Some(dispatch(&command, &args[command.arg_start..], layout))
+        }
         ParseResult::Error(err) => {
             eprintln!("{}", err.render(command_name));
             Some(1)

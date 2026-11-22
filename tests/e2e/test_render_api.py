@@ -296,10 +296,10 @@ def test_api_file_rejects_unknown_option(runner):
 
 
 def test_api_file_matches_filecmd_path(runner, tmp_path):
-    """file 的 path 与 @..path 输出的绝对路径一致"""
+    """file 的 path 与 @ path 输出的绝对路径一致"""
     r = runner.run("__api__", "file", "@ops", cwd=str(tmp_path))
     api_path = json.loads(r.stdout)["path"]
-    r = runner.run("@ops..path", cwd=str(tmp_path))
+    r = runner.run("@ops", "path", cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr
     assert r.stdout == f"{api_path}\n"
 
@@ -565,21 +565,21 @@ def test_api_complete_with_descriptions_flags(runner):
 
 
 def test_api_complete_with_descriptions_file_command_verbs(runner):
-    r = runner.run("__api__", "complete", "--with-descriptions", "@@ops..")
+    r = runner.run("__api__", "complete", "--with-descriptions", "@@ops", "")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == [
-        "@@ops..init\tCreate an alias file",
-        "@@ops..destroy\tRemove the alias file",
-        "@@ops..clear\tReset this file to an empty object",
-        "@@ops..set\tCreate or update an alias",
-        "@@ops..remove\tRemove an alias or group",
-        "@@ops..json\tShow the alias file JSON",
-        "@@ops..path\tPrint the absolute path",
-        "@@ops..rename\tRename the alias file",
-        "@@ops..clone\tCopy a local or remote alias file into this file",
-        "@@ops..link\tPoint this file at another alias file",
-        "@@ops..deps\tInstall, uninstall, or inspect this file's dependencies",
-        "@@ops..help\tShow this help",
+        "init\tCreate an alias file",
+        "destroy\tRemove the alias file",
+        "clear\tReset this file to an empty object",
+        "set\tCreate or update an alias",
+        "remove\tRemove an alias or group",
+        "json\tShow the alias file JSON",
+        "path\tPrint the absolute path",
+        "rename\tRename the alias file",
+        "clone\tCopy a local or remote alias file into this file",
+        "link\tPoint this file at another alias file",
+        "deps\tInstall, uninstall, or inspect this file's dependencies",
+        "help\tShow this help",
     ]
 
 

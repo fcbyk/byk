@@ -20,7 +20,7 @@ pub(crate) fn validate(key: &str) -> Result<(), String> {
         }
         if segment.starts_with('$') {
             return Err(format!(
-                "Invalid alias key: {:?} is a metadata field\nHint: remove metadata with `..set <key> --unset`",
+                "Invalid alias key: {:?} is a metadata field\nHint: remove metadata with `set <key> --unset`",
                 segment
             ));
         }

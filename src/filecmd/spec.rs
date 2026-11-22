@@ -4,7 +4,7 @@
 
 use crate::resolve::validate_filename;
 
-/// `..deps` 的子命令；顺序即错误提示与补全顺序。
+/// `deps` 的子命令；顺序即错误提示与补全顺序。
 pub(crate) const SUBCOMMANDS: [&str; 3] = ["install", "uninstall", "status"];
 
 /// `@` 指向当前目录，`@@` 指向全局别名目录。
@@ -33,9 +33,13 @@ pub(crate) struct FileCommand {
     pub(crate) scope: FileScope,
     pub(crate) stem: String,
     pub(crate) verb: Verb,
+    /// 动词自身参数在完整命令行参数里的起始下标。
+    ///
+    /// 缺省动词时没有参数；`-h` / `--help` 跳过这个 flag 本身。
+    pub(crate) arg_start: usize,
 }
 
-/// 解析结果。出现 `..` 即归文件命令处理，失败时不再回退到别名查找。
+/// 解析结果。`@file` / `@@file` 一旦归文件命令处理，失败时不再回退到别名查找。
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ParseResult {
     NotFileCommand,
@@ -45,8 +49,6 @@ pub(crate) enum ParseResult {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum FileCommandError {
-    MissingVerb,
-    InvalidVerb(String),
     UnknownVerb(String),
     InvalidStem(String),
 }
@@ -54,17 +56,11 @@ pub(crate) enum FileCommandError {
 impl FileCommandError {
     pub(crate) fn render(&self, token: &str) -> String {
         match self {
-            Self::MissingVerb => {
-                format!(
-                    "Invalid file command: {}\nHint: missing verb after `..`",
-                    token
-                )
-            }
-            Self::InvalidVerb(verb) => format!(
-                "Invalid file command: {}\nHint: invalid verb {:?}",
-                token, verb
+            Self::UnknownVerb(verb) => format!(
+                "{}\nHint: to run an alias from this file, use {}.<key>",
+                unknown_verb_message(verb),
+                token
             ),
-            Self::UnknownVerb(verb) => unknown_verb_message(verb),
             Self::InvalidStem(stem) => invalid_stem_message(stem),
         }
     }
@@ -330,13 +326,6 @@ impl Verb {
     }
 }
 
-pub(crate) fn verb_info(verb: Verb) -> &'static VerbInfo {
-    VERBS
-        .iter()
-        .find(|info| info.verb == verb)
-        .expect("registered verb")
-}
-
 pub(crate) fn invalid_stem_message(stem: &str) -> String {
     format!(
         "Invalid file name: {:?}\nHint: file name cannot contain `.`, `@`, `/` or spaces",
@@ -364,61 +353,67 @@ pub(crate) fn split_prefix(token: &str) -> Option<(&'static str, &str)> {
     }
 }
 
-pub(crate) fn parse(token: &str) -> ParseResult {
-    let Some((prefix, rest)) = split_prefix(token) else {
+/// `@file` / `@@file` 的文件命令头；带点号的是精确别名语法，返回 `None`。
+pub(crate) fn split_head(token: &str) -> Option<(&'static str, &str)> {
+    let (prefix, rest) = split_prefix(token)?;
+    if rest.contains('.') {
+        return None;
+    }
+    Some((prefix, rest))
+}
+
+/// token 是否是文件命令头（不看后面的动词）。
+pub(crate) fn is_file_head(token: &str) -> bool {
+    split_head(token).is_some()
+}
+
+/// 解析 `@file <verb> [args...]` / `@@file <verb> [args...]`。
+///
+/// 首个参数是动词；缺省动词和 `-h` / `--help` 都映射到 `help`。
+pub(crate) fn parse(command_name: &str, args: &[String]) -> ParseResult {
+    let Some((prefix, stem)) = split_head(command_name) else {
         return ParseResult::NotFileCommand;
     };
-
-    let Some(sep) = rest.find("..") else {
-        return ParseResult::NotFileCommand;
-    };
-
     let scope = if prefix == "@@" {
         FileScope::Global
     } else {
         FileScope::Local
     };
-    let stem = &rest[..sep];
-    let verb = &rest[sep + 2..];
 
-    if verb.is_empty() {
-        return ParseResult::Error(FileCommandError::MissingVerb);
-    }
-    if !is_valid_verb(verb) {
-        return ParseResult::Error(FileCommandError::InvalidVerb(verb.to_string()));
-    }
     if !validate_filename(stem) {
         return ParseResult::Error(FileCommandError::InvalidStem(stem.to_string()));
     }
 
-    match Verb::parse(verb) {
-        Some(verb) => ParseResult::Command(FileCommand {
-            scope,
-            stem: stem.to_string(),
-            verb,
-        }),
-        None => ParseResult::Error(FileCommandError::UnknownVerb(verb.to_string())),
-    }
-}
+    let (verb, arg_start) = match args.first().map(String::as_str) {
+        None => (Verb::Help, 0),
+        Some("-h") | Some("--help") => (Verb::Help, 1),
+        Some(name) => match Verb::parse(name) {
+            Some(verb) => (verb, 1),
+            None => return ParseResult::Error(FileCommandError::UnknownVerb(name.to_string())),
+        },
+    };
 
-fn is_valid_verb(verb: &str) -> bool {
-    verb.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    ParseResult::Command(FileCommand {
+        scope,
+        stem: stem.to_string(),
+        verb,
+        arg_start,
+    })
 }
 
 /// token 是否属于文件命令命名空间（含非法形式）。
 ///
 /// 供只读接口判断：命中后不能继续当作别名解析或执行。
-pub(crate) fn claims(token: &str) -> bool {
-    !matches!(parse(token), ParseResult::NotFileCommand)
+pub(crate) fn claims(command_name: &str, args: &[String]) -> bool {
+    !matches!(parse(command_name, args), ParseResult::NotFileCommand)
 }
 
-/// 文件命令动词的静态描述；非文件命令或非法形式返回 `None`。
-pub(crate) fn describe(token: &str) -> Option<&'static str> {
-    match parse(token) {
-        ParseResult::Command(command) => Some(verb_info(command.verb).description),
-        ParseResult::NotFileCommand | ParseResult::Error(_) => None,
-    }
+/// 动词的静态描述；未知动词返回 `None`。
+pub(crate) fn describe_verb(name: &str) -> Option<&'static str> {
+    VERBS
+        .iter()
+        .find(|info| info.name == name)
+        .map(|info| info.description)
 }
 
 /// 文件命令选项的静态描述；未知选项返回 `None`。

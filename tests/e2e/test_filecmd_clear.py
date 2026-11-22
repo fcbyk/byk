@@ -4,7 +4,7 @@ import os
 def test_clear_object_with_yes(runner):
     path = runner.prepare_alias_json("ops", {"build": "echo build"})
 
-    result = runner.run("@@ops..clear", "--yes")
+    result = runner.run("@@ops", "clear", "--yes")
 
     assert result.returncode == 0
     assert result.stdout == ""
@@ -16,7 +16,7 @@ def test_clear_link_file_does_not_touch_target(runner):
     target = runner.prepare_alias_json("shared", {"build": "echo hi"})
     link_file = runner.prepare_alias_file("ops", '["shared.byk.json"]')
 
-    result = runner.run("@@ops..clear", "--yes")
+    result = runner.run("@@ops", "clear", "--yes")
 
     assert result.returncode == 0
     assert link_file.read_text() == "{}\n"
@@ -28,8 +28,8 @@ def test_clear_local_and_anonymous(runner, tmp_path):
     local.write_text('{"build": "echo local"}', encoding="utf-8")
     anonymous = runner.prepare_alias_file("", '{"build": "echo anon"}')
 
-    local_result = runner.run("@ops..clear", "--yes", cwd=str(tmp_path))
-    anonymous_result = runner.run("@@..clear", "--yes")
+    local_result = runner.run("@ops", "clear", "--yes", cwd=str(tmp_path))
+    anonymous_result = runner.run("@@", "clear", "--yes")
 
     assert local_result.returncode == 0
     assert local.read_text() == "{}\n"
@@ -40,7 +40,7 @@ def test_clear_local_and_anonymous(runner, tmp_path):
 def test_clear_already_empty_is_a_noop(runner):
     path = runner.prepare_alias_file("ops", "{}\n")
 
-    result = runner.run("@@ops..clear")
+    result = runner.run("@@ops", "clear")
 
     assert result.returncode == 0
     assert "Already empty" in result.stderr
@@ -50,7 +50,7 @@ def test_clear_already_empty_is_a_noop(runner):
 def test_clear_non_tty_requires_yes(runner):
     path = runner.prepare_alias_json("ops", {"build": "echo build"})
 
-    result = runner.run("@@ops..clear")
+    result = runner.run("@@ops", "clear")
 
     assert result.returncode == 1
     assert "--yes" in result.stderr
@@ -62,7 +62,7 @@ def test_clear_interactive_requires_matching_stem(runner):
         "ops", {"build": "echo build", "group": {"test": "echo test"}}
     )
 
-    result = runner.run("@@ops..clear", input="ops\n", tty_stderr=True)
+    result = runner.run("@@ops", "clear", input="ops\n", tty_stderr=True)
 
     assert result.returncode == 0
     assert "This will clear:" in result.stderr
@@ -75,7 +75,7 @@ def test_clear_interactive_requires_matching_stem(runner):
 def test_clear_interactive_wrong_input_cancels(runner):
     path = runner.prepare_alias_json("ops", {"build": "echo build"})
 
-    result = runner.run("@@ops..clear", input="nope\n", tty_stderr=True)
+    result = runner.run("@@ops", "clear", input="nope\n", tty_stderr=True)
 
     assert result.returncode == 0
     assert "Confirmation does not match. Cancelled." in result.stderr
@@ -85,7 +85,7 @@ def test_clear_interactive_wrong_input_cancels(runner):
 def test_clear_interactive_eof_cancels(runner):
     path = runner.prepare_alias_json("ops", {"build": "echo build"})
 
-    result = runner.run("@@ops..clear", input="", tty_stderr=True)
+    result = runner.run("@@ops", "clear", input="", tty_stderr=True)
 
     assert result.returncode == 0
     assert "Cancelled." in result.stderr
@@ -96,7 +96,7 @@ def test_clear_interactive_link_note(runner):
     target = runner.prepare_alias_json("shared", {"build": "echo hi"})
     link_file = runner.prepare_alias_file("ops", '["shared.byk.json"]')
 
-    result = runner.run("@@ops..clear", input="ops\n", tty_stderr=True)
+    result = runner.run("@@ops", "clear", input="ops\n", tty_stderr=True)
 
     assert result.returncode == 0
     assert "link file; its target will not be touched" in result.stderr
@@ -107,7 +107,7 @@ def test_clear_interactive_link_note(runner):
 def test_clear_interactive_unreadable_note(runner):
     path = runner.prepare_alias_file("ops", "{not json")
 
-    result = runner.run("@@ops..clear", input="ops\n", tty_stderr=True)
+    result = runner.run("@@ops", "clear", input="ops\n", tty_stderr=True)
 
     assert result.returncode == 0
     assert "(content cannot be summarized)" in result.stderr
@@ -117,7 +117,7 @@ def test_clear_interactive_unreadable_note(runner):
 def test_clear_invalid_json_with_yes(runner):
     path = runner.prepare_alias_file("ops", "{not json")
 
-    result = runner.run("@@ops..clear", "--yes")
+    result = runner.run("@@ops", "clear", "--yes")
 
     assert result.returncode == 0
     assert path.read_text() == "{}\n"
@@ -128,7 +128,7 @@ def test_clear_refuses_symlink(runner):
     link_file = runner.byk_dir / "alias" / "ops.byk.json"
     os.symlink(real, link_file)
 
-    result = runner.run("@@ops..clear", "--yes")
+    result = runner.run("@@ops", "clear", "--yes")
 
     assert result.returncode == 1
     assert "Refusing to clear symlink" in result.stderr
@@ -140,7 +140,7 @@ def test_clear_refuses_directory(runner):
     path = runner.byk_dir / "alias" / "ops.byk.json"
     path.mkdir(parents=True)
 
-    result = runner.run("@@ops..clear", "--yes")
+    result = runner.run("@@ops", "clear", "--yes")
 
     assert result.returncode == 1
     assert "Refusing to clear directory" in result.stderr
@@ -148,7 +148,7 @@ def test_clear_refuses_directory(runner):
 
 
 def test_clear_missing_file(runner):
-    result = runner.run("@@ops..clear", "--yes")
+    result = runner.run("@@ops", "clear", "--yes")
 
     assert result.returncode == 1
     assert "File not found" in result.stderr
@@ -157,7 +157,7 @@ def test_clear_missing_file(runner):
 def test_clear_rejects_extra_arguments(runner):
     path = runner.prepare_alias_json("ops", {})
 
-    result = runner.run("@@ops..clear", "--yes", "extra")
+    result = runner.run("@@ops", "clear", "--yes", "extra")
 
     assert result.returncode == 1
     assert "clear accepts only --yes" in result.stderr
@@ -166,7 +166,7 @@ def test_clear_rejects_extra_arguments(runner):
 
 def test_clear_yes_option_is_completed_with_description(runner):
     result = runner.run(
-        "__api__", "complete", "--with-descriptions", "@@ops..clear", "--"
+        "__api__", "complete", "--with-descriptions", "@@ops", "clear", "--"
     )
 
     assert result.returncode == 0
@@ -174,17 +174,17 @@ def test_clear_yes_option_is_completed_with_description(runner):
 
 
 def test_clear_is_completed_with_description(runner):
-    result = runner.run("__api__", "complete", "--with-descriptions", "@@ops..c")
+    result = runner.run("__api__", "complete", "--with-descriptions", "@@ops", "c")
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == [
-        "@@ops..clear\tReset this file to an empty object",
-        "@@ops..clone\tCopy a local or remote alias file into this file",
+        "clear\tReset this file to an empty object",
+        "clone\tCopy a local or remote alias file into this file",
     ]
 
 
 def test_resolve_rejects_clear(runner):
-    result = runner.run("__api__", "resolve", "@@ops..clear")
+    result = runner.run("__api__", "resolve", "@@ops", "clear")
 
     assert result.returncode == 1
     assert "file command" in result.stderr

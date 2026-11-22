@@ -1,4 +1,4 @@
-//! `..deps install` 的命令适配：计算位置后交给 `deps::apply`。
+//! `deps install` 的命令适配：计算位置后交给 `deps::apply`。
 
 use super::{deps_command, deps_dir_of};
 use crate::deps::Declaration;

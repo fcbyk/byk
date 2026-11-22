@@ -1,4 +1,4 @@
-//! `..path`：输出目标文件的绝对路径。
+//! `path`：输出目标文件的绝对路径。
 
 use crate::filecmd::io::path::resolve_target;
 use crate::filecmd::spec::FileScope;

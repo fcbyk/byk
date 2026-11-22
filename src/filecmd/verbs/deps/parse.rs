@@ -1,4 +1,4 @@
-//! `..deps` 的 verb/选项解析。
+//! `deps` 的 verb/选项解析。
 
 use crate::filecmd::spec::SUBCOMMANDS;
 

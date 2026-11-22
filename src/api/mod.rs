@@ -257,7 +257,7 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
             let command_args = &args[2..];
 
             // 文件命令不是别名：只读接口绝不能执行或创建文件
-            if file_spec::claims(key) {
+            if file_spec::claims(key, command_args) {
                 fail("resolve", &format!("not an alias (file command): {}", key));
             }
 

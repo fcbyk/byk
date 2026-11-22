@@ -57,7 +57,7 @@ pub fn display_path(path: &Path) -> String {
 /// 路径 → 落盘字面量：统一 `/` 分隔。
 ///
 /// Windows 的 `Path::display()` 会给反斜杠，写进 JSON 得转义成 `\\`，diff
-/// 和 `..deps status` 都难看；而 Windows 的文件 API 认 `/`，所以存储形态一律
+/// 和 `deps status` 都难看；而 Windows 的文件 API 认 `/`，所以存储形态一律
 /// 正斜杠，只在真正操作文件时才交回 `PathBuf`。
 #[cfg(test)]
 mod tests {

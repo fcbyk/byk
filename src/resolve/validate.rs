@@ -1,6 +1,6 @@
 //! 扫描期校验：字段类型、`$mode` 取值与 `$deps` 声明。
 //!
-//! 校验只产出诊断，不改动别名数据；依赖装没装属于 `..deps status`，
+//! 校验只产出诊断，不改动别名数据；依赖装没装属于 `deps status`，
 //! 不属于配置检查。
 
 use std::path::Path;
@@ -32,7 +32,7 @@ pub(super) fn push_doc_diagnostic(
 
 /// `$deps` 的扫描期校验：局部文件拒绝；全局文件校验声明本身——能不能解析、
 /// 落点是否冲突、相对 `src` 有没有 base。只报告，不改动别名数据，也不看装没装：
-/// 依赖装没装是运行时状态，属于 `..deps status`，不属于配置检查。
+/// 依赖装没装是运行时状态，属于 `deps status`，不属于配置检查。
 pub(super) fn validate_deps_declaration(
     value: serde_json::Value,
     stem: &str,

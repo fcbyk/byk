@@ -1,4 +1,4 @@
-//! `..deps status` 的查询：声明、落点与当前状态。
+//! `deps status` 的查询：声明、落点与当前状态。
 
 use std::path::{Path, PathBuf};
 

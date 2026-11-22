@@ -41,7 +41,7 @@ pub(crate) fn resolve_target(
 
 /// 解析文件 key（`@name` / `@@name` / `@` / `@@`）为目标地址。
 ///
-/// 与 `..path` 共用文件名校验和 scope 选择；不读取文件，也不要求文件存在。
+/// 与 `path` 共用文件名校验和 scope 选择；不读取文件，也不要求文件存在。
 pub(crate) fn address_for_key(key: &str, layout: &PathLayout) -> Result<FileAddress, String> {
     let Some((prefix, stem)) = split_prefix(key) else {
         return Err(format!(
@@ -85,7 +85,7 @@ pub(crate) fn not_found_message(
             FileScope::Global => ("local", "@"),
         };
         message.push_str(&format!(
-            "\nHint: a {} file exists at {}; use {}{}..{}",
+            "\nHint: a {} file exists at {}; use {}{} {}",
             label,
             other.display(),
             prefix,
@@ -101,18 +101,22 @@ pub(crate) fn not_found_message(
 mod tests {
     use super::*;
     use crate::filecmd::spec::{
-        FileCommand, FileCommandError, ParseResult, Verb, claims, describe, parse,
+        FileCommand, FileCommandError, ParseResult, Verb, claims, describe_verb, parse,
     };
 
-    fn parse_ok(token: &str) -> FileCommand {
-        match parse(token) {
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    fn parse_ok(head: &str, values: &[&str]) -> FileCommand {
+        match parse(head, &args(values)) {
             ParseResult::Command(command) => command,
             other => panic!("expected command, got {:?}", other),
         }
     }
 
-    fn parse_err(token: &str) -> FileCommandError {
-        match parse(token) {
+    fn parse_err(head: &str, values: &[&str]) -> FileCommandError {
+        match parse(head, &args(values)) {
             ParseResult::Error(err) => err,
             other => panic!("expected error, got {:?}", other),
         }
@@ -121,11 +125,12 @@ mod tests {
     #[test]
     fn parse_global_init() {
         assert_eq!(
-            parse_ok("@@ops..init"),
+            parse_ok("@@ops", &["init"]),
             FileCommand {
                 scope: FileScope::Global,
                 stem: "ops".into(),
                 verb: Verb::Init,
+                arg_start: 1,
             }
         );
     }
@@ -133,50 +138,50 @@ mod tests {
     #[test]
     fn parse_local_init() {
         assert_eq!(
-            parse_ok("@ops..init"),
+            parse_ok("@ops", &["init"]),
             FileCommand {
                 scope: FileScope::Local,
                 stem: "ops".into(),
                 verb: Verb::Init,
+                arg_start: 1,
             }
         );
     }
 
     #[test]
     fn parse_anonymous_files() {
-        assert_eq!(parse_ok("@@..init").stem, "");
-        assert_eq!(parse_ok("@..init").scope, FileScope::Local);
+        assert_eq!(parse_ok("@@", &["init"]).stem, "");
+        assert_eq!(parse_ok("@", &["init"]).scope, FileScope::Local);
+    }
+
+    #[test]
+    fn parse_bare_file_shows_help() {
+        assert_eq!(
+            parse_ok("@@ops", &[]),
+            FileCommand {
+                scope: FileScope::Global,
+                stem: "ops".into(),
+                verb: Verb::Help,
+                arg_start: 0,
+            }
+        );
+        assert_eq!(parse_ok("@@ops", &["--help"]).verb, Verb::Help);
+        assert_eq!(parse_ok("@@ops", &["--help"]).arg_start, 1);
+        assert_eq!(parse_ok("@@ops", &["-h"]).verb, Verb::Help);
     }
 
     #[test]
     fn parse_exact_alias_is_not_a_file_command() {
-        assert_eq!(parse("@@ops.init"), ParseResult::NotFileCommand);
-        assert_eq!(parse("@ops.init.prod"), ParseResult::NotFileCommand);
-        assert_eq!(parse("ops.init"), ParseResult::NotFileCommand);
-    }
-
-    #[test]
-    fn parse_missing_verb() {
-        assert_eq!(parse_err("@@ops.."), FileCommandError::MissingVerb);
-        assert_eq!(parse_err("@@.."), FileCommandError::MissingVerb);
-    }
-
-    #[test]
-    fn parse_invalid_verb() {
-        assert_eq!(
-            parse_err("@@ops...init"),
-            FileCommandError::InvalidVerb(".init".into())
-        );
-        assert_eq!(
-            parse_err("@@ops..init.prod"),
-            FileCommandError::InvalidVerb("init.prod".into())
-        );
+        assert_eq!(parse("@@ops.init", &[]), ParseResult::NotFileCommand);
+        assert_eq!(parse("@ops.init.prod", &[]), ParseResult::NotFileCommand);
+        assert_eq!(parse("ops.init", &[]), ParseResult::NotFileCommand);
+        assert_eq!(parse("@@ops.", &[]), ParseResult::NotFileCommand);
     }
 
     #[test]
     fn parse_unknown_verb() {
         assert_eq!(
-            parse_err("@@ops..explode"),
+            parse_err("@@ops", &["explode"]),
             FileCommandError::UnknownVerb("explode".into())
         );
     }
@@ -184,66 +189,62 @@ mod tests {
     #[test]
     fn parse_invalid_stem() {
         assert_eq!(
-            parse_err("@@a/b..init"),
+            parse_err("@@a/b", &["init"]),
             FileCommandError::InvalidStem("a/b".into())
         );
         assert_eq!(
-            parse_err("@@a.b..init"),
-            FileCommandError::InvalidStem("a.b".into())
-        );
-        assert_eq!(
-            parse_err("@@a b..init"),
+            parse_err("@@a b", &["init"]),
             FileCommandError::InvalidStem("a b".into())
         );
         assert_eq!(
-            parse_err("@@@ops..init"),
+            parse_err("@@@ops", &["init"]),
             FileCommandError::InvalidStem("@ops".into())
         );
     }
 
     #[test]
     fn claims_file_command_namespace() {
-        assert!(claims("@@ops..init"));
-        assert!(claims("@@ops.."));
-        assert!(claims("@@ops..explode"));
-        assert!(!claims("@@ops.init"));
-        assert!(!claims("normal"));
+        assert!(claims("@@ops", &args(&["init"])));
+        assert!(claims("@@ops", &args(&["explode"])));
+        assert!(claims("@@ops", &[]));
+        assert!(!claims("@@ops.init", &[]));
+        assert!(!claims("normal", &args(&["init"])));
     }
 
     #[test]
     fn describe_file_command_verbs() {
-        assert_eq!(describe("@@ops..init"), Some("Create an alias file"));
-        assert_eq!(describe("@ops..destroy"), Some("Remove the alias file"));
+        assert_eq!(describe_verb("init"), Some("Create an alias file"));
+        assert_eq!(describe_verb("destroy"), Some("Remove the alias file"));
         assert_eq!(
-            describe("@@ops..clear"),
+            describe_verb("clear"),
             Some("Reset this file to an empty object")
         );
-        assert_eq!(describe("@@ops..set"), Some("Create or update an alias"));
-        assert_eq!(describe("@@ops..remove"), Some("Remove an alias or group"));
-        assert_eq!(describe("@@..json"), Some("Show the alias file JSON"));
-        assert_eq!(describe("@@ops..path"), Some("Print the absolute path"));
-        assert_eq!(describe("@@ops..rename"), Some("Rename the alias file"));
+        assert_eq!(describe_verb("set"), Some("Create or update an alias"));
+        assert_eq!(describe_verb("remove"), Some("Remove an alias or group"));
+        assert_eq!(describe_verb("json"), Some("Show the alias file JSON"));
+        assert_eq!(describe_verb("path"), Some("Print the absolute path"));
+        assert_eq!(describe_verb("rename"), Some("Rename the alias file"));
         assert_eq!(
-            describe("@@ops..clone"),
+            describe_verb("clone"),
             Some("Copy a local or remote alias file into this file")
         );
         assert_eq!(
-            describe("@@ops..link"),
+            describe_verb("link"),
             Some("Point this file at another alias file")
         );
-        assert_eq!(describe("@@ops..help"), Some("Show this help"));
-        assert_eq!(describe("@@ops.init"), None);
-        assert_eq!(describe("@ops"), None);
+        assert_eq!(describe_verb("help"), Some("Show this help"));
+        assert_eq!(describe_verb("ops.init"), None);
     }
 
     #[test]
     fn parse_global_destroy() {
         assert_eq!(
-            parse_ok("@@ops..destroy"),
+            parse_ok("@@ops", &["destroy"]),
             FileCommand {
                 scope: FileScope::Global,
                 stem: "ops".into(),
                 verb: Verb::Destroy,
+                arg_start: 1,
             }
         );
     }

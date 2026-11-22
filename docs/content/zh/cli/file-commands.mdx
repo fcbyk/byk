@@ -8,104 +8,104 @@ description: 绑定在别名文件上的保留命令：创建、修改、克隆�
 每个别名文件都自带一组保留命令，用来创建、修改和查看这个文件本身：
 
 ```bash
-byk @文件..命令 [参数...]     # 当前目录
-byk @@文件..命令 [参数...]    # 全局目录 ~/.byk/alias/
+byk @文件 命令 [参数...]     # 当前目录
+byk @@文件 命令 [参数...]    # 全局目录 ~/.byk/alias/
 ```
 
-`..` 是保留分隔符。以 `@` / `@@` 开头且含 `..` 的形式不会再被当作别名，所以 `byk @@ops..set` 永远走文件命令，不会去找一个叫 `@@ops..set` 的别名。
+动词与文件 token 之间用空格分隔。不带点号的 `@文件` / `@@文件` 后面跟动词时永远走文件命令；带点号的 `@文件.key` 是精确别名，所以 `byk @@ops set` 与 `byk @@ops.set` 不会混淆。只写 `byk @@ops` 会显示该文件的命令帮助。
 
 ```bash
-byk @@ops..init                            # 创建 ~/.byk/alias/ops.byk.json
-byk @@ops..set build --cmd "pnpm build"    # 写入 build 别名
-byk @@ops..json                            # 查看文件内容
-byk @@ops..help                            # 列出全部文件命令
+byk @@ops init                            # 创建 ~/.byk/alias/ops.byk.json
+byk @@ops set build --cmd "pnpm build"    # 写入 build 别名
+byk @@ops json                            # 查看文件内容
+byk @@ops help                            # 列出全部文件命令
 ```
 
 ## 寻址
 
 | 写法 | 目标文件 |
 |------|----------|
-| `@ops..json` | 当前目录 `./ops.byk.json` |
-| `@@ops..json` | 全局目录 `~/.byk/alias/ops.byk.json` |
-| `@..json` | 当前目录匿名文件 `./.byk.json` |
-| `@@..json` | 全局匿名文件 `~/.byk/alias/.byk.json` |
+| `@ops json` | 当前目录 `./ops.byk.json` |
+| `@@ops json` | 全局目录 `~/.byk/alias/ops.byk.json` |
+| `@ json` | 当前目录匿名文件 `./.byk.json` |
+| `@@ json` | 全局匿名文件 `~/.byk/alias/.byk.json` |
 
 - 文件名不能包含 `.`、`@`、`/` 或空格；支持字母、数字、`-`、`_` 与中文。
-- `..` 取第一个出现的位置；后面的命令名只允许字母、数字、`-`、`_`。
+- 省略动词（只写 `@文件`）、或写 `-h` / `--help`，都会显示该文件的命令帮助。
 - 改写类命令只写被寻址的这个文件；`clone`、`link`、`init --link` 的来源只读。
-- `..set` 与 `..remove` 拒绝改写链接文件（单元素数组）；要改内容请直接编辑链接目标。`..clear` 清空的是链接文件自身。
-- 需要文件存在的命令在目标缺失时，如果另一侧（当前目录 / 全局目录）有同名文件，会提示换用 `@` 或 `@@`；`..path` 不要求文件存在。
+- `set` 与 `remove` 拒绝改写链接文件（单元素数组）；要改内容请直接编辑链接目标。`clear` 清空的是链接文件自身。
+- 需要文件存在的命令在目标缺失时，如果另一侧（当前目录 / 全局目录）有同名文件，会提示换用 `@` 或 `@@`；`path` 不要求文件存在。
 - 修改类命令的提示写 stderr；`json`、`path`、`help` 的数据写 stdout，方便管道和 `$(...)`。
 
 ## 命令一览
 
 | 命令 | 作用 |
 |------|------|
-| `..init` | 创建空别名文件或链接文件 |
-| `..destroy` | 删除别名文件 |
-| `..clear` | 重置为空对象 `{}` |
-| `..set` | 创建或修改别名、文件级元数据 |
-| `..remove` | 删除别名或整个分组 |
-| `..json` | 输出文件内容 |
-| `..path` | 输出文件绝对路径 |
-| `..rename` | 重命名别名文件 |
-| `..clone` | 从本地或远程复制一份别名文件 |
-| `..link` | 把当前文件改为指向另一个文件的链接 |
-| `..deps` | 安装、卸载或查看本文件声明的依赖 |
-| `..help` | 查看命令列表、用法与选项 |
+| `init` | 创建空别名文件或链接文件 |
+| `destroy` | 删除别名文件 |
+| `clear` | 重置为空对象 `{}` |
+| `set` | 创建或修改别名、文件级元数据 |
+| `remove` | 删除别名或整个分组 |
+| `json` | 输出文件内容 |
+| `path` | 输出文件绝对路径 |
+| `rename` | 重命名别名文件 |
+| `clone` | 从本地或远程复制一份别名文件 |
+| `link` | 把当前文件改为指向另一个文件的链接 |
+| `deps` | 安装、卸载或查看本文件声明的依赖 |
+| `help` | 查看命令列表、用法与选项 |
 
 ## 创建与删除
 
-### `..init`
+### `init`
 
 ```bash
-byk @@ops..init                      # 创建空文件 {}
-byk @ops..init --link @shared        # 创建指向 ./shared.byk.json 的链接
+byk @@ops init                      # 创建空文件 {}
+byk @ops init --link @shared        # 创建指向 ./shared.byk.json 的链接
 ```
 
 - 内容固定为 `{}` 加一个结尾换行；不会覆盖已存在的文件。
 - `--link <source>` 创建**链接文件**（单元素数组），保存来源文件的规范化绝对路径。
 - 来源可以是 `@name`（当前目录）、`@@name`（全局目录）或路径（`~` 展开，相对路径按当前目录解析）。来源必须是已存在的对象别名文件；指向链接文件时会被拒绝，链接只支持一层。
-- 本地裸名先读字面文件，缺失时再补 `.byk.json`；`.`、`..`、结尾 `/` 与目录名读取目录里的 `.byk.json`——与 `..clone` 的本地规则相同。
+- 本地裸名先读字面文件，缺失时再补 `.byk.json`；`.`、`..`、结尾 `/` 与目录名读取目录里的 `.byk.json`——与 `clone` 的本地规则相同。
 - 创建全局文件时，`~/.byk/alias/` 不存在会自动创建。
 
-### `..destroy`
+### `destroy`
 
 ```bash
-byk @@ops..destroy        # 交互确认
-byk @@ops..destroy --yes  # 跳过确认
+byk @@ops destroy        # 交互确认
+byk @@ops destroy --yes  # 跳过确认
 ```
 
 - 删除被寻址的文件。交互确认要求输入文件名；非 TTY 环境必须带 `--yes`。
 - 符号链接只删除链接本身，不碰目标；目录会被拒绝。
 - 全局文件会连带删除它的依赖目录 `~/.byk/deps/@@<文件名>`。
 
-### `..clear`
+### `clear`
 
 ```bash
-byk @@ops..clear --yes
+byk @@ops clear --yes
 ```
 
 - 把文件重置为 `{}`。已经为空时只提示 `Already empty`，不写盘。
 - 链接文件清空的是链接文件自身，目标内容不动。
-- 拒绝清空符号链接，需要删除链接时用 `..destroy`。
-- 与 `..destroy` 一样，非 TTY 环境需要 `--yes`。
+- 拒绝清空符号链接，需要删除链接时用 `destroy`。
+- 与 `destroy` 一样，非 TTY 环境需要 `--yes`。
 
 ## 编辑别名
 
-### `..set`
+### `set`
 
 ```bash
-byk @@ops..set <key> [选项...]    # 编辑某个别名
-byk @@ops..set [选项...]          # 编辑文件级元数据
+byk @@ops set <key> [选项...]    # 编辑某个别名
+byk @@ops set [选项...]          # 编辑文件级元数据
 ```
 
 第一个不以 `-` 开头的参数是别名 key；带点号表示分组路径，不存在的中间分组会自动创建。
 
 ```bash
-byk @@ops..set build --cmd "pnpm build"
-byk @@ops..set web.deploy --cmd "deploy.sh" --cwd ./web --mode interactive
-byk @@ops..set build --unset mode
+byk @@ops set build --cmd "pnpm build"
+byk @@ops set web.deploy --cmd "deploy.sh" --cwd ./web --mode interactive
+byk @@ops set build --unset mode
 ```
 
 别名级选项：
@@ -132,33 +132,33 @@ byk @@ops..set build --unset mode
 | `--unset <fields>` | 删除元数据，可组合 `priority,paths,cwd,mode` |
 
 ```bash
-byk @@ops..set --priority 10 --paths ./bin --paths ~/tools/bin --private
+byk @@ops set --priority 10 --paths ./bin --paths ~/tools/bin --private
 ```
 
 - 给字符串别名加元数据时，会转成 `{ "$cmd": ... }` 对象形式；删掉多余的元数据后会自动折叠回字符串。
 - `--private` 可继承；`--no-private` 在子级写入 `false`，用来重新暴露 private 分组里的别名。详见 [可见性](/cli/alias/config#可见性)。
 - key 不能以 `$` 开头；元数据字段请用上面的选项，不要直接写进 key。
 
-### `..remove`
+### `remove`
 
 ```bash
-byk @@ops..remove build
-byk @@ops..remove web.deploy
+byk @@ops remove build
+byk @@ops remove web.deploy
 ```
 
 - 按点号路径删除别名或整个子树。
 - 删除后只剩 `$` 元数据的空分组会一并剪掉。
 - key 不存在会报错，不会静默成功。
-- 删除单个元数据字段用 `..set <key> --unset <fields>`。
+- 删除单个元数据字段用 `set <key> --unset <fields>`。
 
 ## 查看
 
-### `..json`
+### `json`
 
 ```bash
-byk @@ops..json               # 校验后原样输出
-byk @@ops..json --no-check    # 不校验，原样输出
-byk @@ops..json --expand      # 展开变量并格式化
+byk @@ops json               # 校验后原样输出
+byk @@ops json --no-check    # 不校验，原样输出
+byk @@ops json --expand      # 展开变量并格式化
 ```
 
 - 默认只校验 JSON，输出**精确的原始字节**：不重排、不补换行。
@@ -167,19 +167,19 @@ byk @@ops..json --expand      # 展开变量并格式化
 - `--expand` 与 `--no-check` 不能同时使用。
 - 链接文件输出数组本身，不跟随目标。
 
-### `..path`
+### `path`
 
 ```bash
-byk @@ops..path
+byk @@ops path
 # /Users/me/.byk/alias/ops.byk.json
 ```
 
 输出绝对路径，不要求文件存在，也不接受参数。
 
-### `..rename`
+### `rename`
 
 ```bash
-byk @@ops..rename tools
+byk @@ops rename tools
 ```
 
 - 在同一个作用域内改名（`@` 只改当前目录，`@@` 只改全局目录）。
@@ -187,34 +187,34 @@ byk @@ops..rename tools
 - 链接文件改的是链接文件本身，目标不动。
 - 全局文件的依赖目录 `~/.byk/deps/@@<旧名>` 会同步改名为 `@@<新名>`，别名里的 `${deps_dir}` 指向不变。
 
-### `..help`
+### `help`
 
 ```bash
-byk @@ops..help           # 命令列表
-byk @@ops..help set       # set 的用法与选项
+byk @@ops help           # 命令列表
+byk @@ops help set       # set 的用法与选项
 ```
 
 未知命令会列出全部可用命令。
 
 ## 克隆与链接
 
-### `..clone <source>`
+### `clone <source>`
 
 ```bash
-byk @@ops..clone @shared
-byk @@ops..clone ~/src/tool.byk.json
-byk @@ops..clone ~/src/tool               # 自动补成 tool.byk.json
-byk @@ops..clone ./tools/release          # 子目录里的 release.byk.json
-byk @@ops..clone ./tools/                 # tools/.byk.json
-byk @@ops..clone .                        # 当前目录的 .byk.json
-byk @@ops..clone https://example.com/tool.byk.json
-byk @@ops..clone -gh user/repo                     # 仓库根的 .byk.json
-byk @@ops..clone -gh user/repo@main/tools/release.byk.json
-byk @@ops..clone -gh user/repo jsdelivr            # 经 jsDelivr 读取
-byk @@ops..clone -gh user/repo ghproxy -d          # 经 gh-proxy 读取并装依赖
-byk @@ops..clone --tap user/repo/build            # 按 byk.tap.json 解析 build
-byk @@ops..clone -t user/repo@v1/build -d
-byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
+byk @@ops clone @shared
+byk @@ops clone ~/src/tool.byk.json
+byk @@ops clone ~/src/tool               # 自动补成 tool.byk.json
+byk @@ops clone ./tools/release          # 子目录里的 release.byk.json
+byk @@ops clone ./tools/                 # tools/.byk.json
+byk @@ops clone .                        # 当前目录的 .byk.json
+byk @@ops clone https://example.com/tool.byk.json
+byk @@ops clone -gh user/repo                     # 仓库根的 .byk.json
+byk @@ops clone -gh user/repo@main/tools/release.byk.json
+byk @@ops clone -gh user/repo jsdelivr            # 经 jsDelivr 读取
+byk @@ops clone -gh user/repo ghproxy -d          # 经 gh-proxy 读取并装依赖
+byk @@ops clone --tap user/repo/build            # 按 byk.tap.json 解析 build
+byk @@ops clone -t user/repo@v1/build -d
+byk @@ops clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 ```
 
 来源可以是：
@@ -270,12 +270,12 @@ byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 - 裸名字字面优先：`./tool` 先读 `tool`，不存在再回退 `tool.byk.json`。这样 `tool` 与 `tool.byk.json` 同时存在时两个都可达——显式写 `./tool.byk.json` 永远能命中后者。
 - 只有能构成合法别名文件名的裸名字才补后缀：`hello.txt`、`my tool` 这类保持字面，不会去找 `hello.txt.byk.json`——它本来就不是合法的别名文件名。
 - 裸名字最后落到一个目录时读该目录的 `.byk.json`，所以 `./tools`、`./tools/`、`.` 都能指向匿名文件。
-- `..link` 与 `..init --link` 的来源解析与这里完全一致。
+- `link` 与 `init --link` 的来源解析与这里完全一致。
 - 都找不到时错误会列出尝试过的候选：`Source not found: …` 与 `Also tried: …`。
 
-- 目标文件必须不存在，`..clone` 不会覆盖。
+- 目标文件必须不存在，`clone` 不会覆盖。
 - 本地来源会先校验：必须是 JSON 对象；链接文件（数组）会被拒绝。
-- 内容是独立副本，与来源不再有关系。想要实时引用请用 `..link`。
+- 内容是独立副本，与来源不再有关系。想要实时引用请用 `link`。
 - 标了 `$clone: false` 的别名和分组不会进入副本；分组里写 `$clone: true` 的子级仍会保留，标记本身不会出现在结果里。如果剔除后什么都不剩，clone 会在落盘前失败。含标记或发生过剔除的副本会重新序列化（键按字典序）。`$private` 不影响 clone。
 - 来源顺手把 `$deps.base` 冻结成绝对地址并打印一行 `Recorded $deps.base = …`。形态跟着来源走：**远程**写成绝对 http(s) 目录 URL，**本地**写成本机绝对目录路径。补的规则一致——没写就按源文件所在目录补上，写了相对形态（`.`、`../`、`sub/dir`）就相对源文件解析，写了绝对地址则原样保留，只补结尾的 `/`。
 - `$deps.base` 是程序写入的尽力锚点，不构成可移植性担保：克隆链路（`a ← b ← c`）每跳都会重新冻结，最初的来源语义可能丢失。不建议手写 base。
@@ -290,9 +290,9 @@ byk @@ops..clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 
 ```bash
 git clone https://github.com/user/repo ~/.byk/tap/user/repo   # 可选：byk 只读
-byk @@ops..clone --tap user/repo/build
-byk @@ops..clone --tap build                      # 搜索所有本地 tap 索引
-byk @@ops..clone -t user/repo@v1/build -d
+byk @@ops clone --tap user/repo/build
+byk @@ops clone --tap build                      # 搜索所有本地 tap 索引
+byk @@ops clone -t user/repo@v1/build -d
 ```
 
 索引是一个扁平 JSON 对象；`$` 开头的键保留给元数据，永远不参与匹配：
@@ -322,38 +322,38 @@ byk @@ops..clone -t user/repo@v1/build -d
 #### 克隆并安装依赖（`-d`）
 
 ```bash
-byk @@hello..clone https://example.com/hello.byk.json -d
+byk @@hello clone https://example.com/hello.byk.json -d
 ```
 
-- 克隆落盘后立刻读新文件的 `$deps`：有就按 `..deps i` 的同步语义装好（新建的 key 没有清单，等于首次安装）；没有就跳过，不当成错误。
-- `-d` 对局部文件同样有效：依赖落在当前目录的 `.byk/deps/@<文件名>/` 里，和 `..deps i` 一致。
+- 克隆落盘后立刻读新文件的 `$deps`：有就按 `deps i` 的同步语义装好（新建的 key 没有清单，等于首次安装）；没有就跳过，不当成错误。
+- `-d` 对局部文件同样有效：依赖落在当前目录的 `.byk/deps/@<文件名>/` 里，和 `deps i` 一致。
 - 安装不二次确认，也不需要 `--yes`：从 clone 到资产就位是一条命令的事，适合脚本与非交互环境。
-- 装依赖失败**不**回滚克隆：文件已经落盘且合法，按提示重跑 `@@<file>..deps i` 即可，已就位的资产不会重复下载。
+- 装依赖失败**不**回滚克隆：文件已经落盘且合法，按提示重跑 `@@<file> deps i` 即可，已就位的资产不会重复下载。
 
-### `..link <target>`
+### `link <target>`
 
 ```bash
-byk @@ops..link @shared
+byk @@ops link @shared
 ```
 
 - 把被寻址的文件改写为单元素数组，指向目标文件的规范化绝对路径。
 - 只能作用于空对象 `{}` 或已经是链接的文件；有内容的普通别名文件会被拒绝。
-- 目标必须是本地的对象别名文件；URL 会被拒绝并提示改用 `..clone`。本地名称遵循与 `..clone` 相同的规则：先读字面文件，再补 `.byk.json`，目录名则读取目录里的 `.byk.json`。
+- 目标必须是本地的对象别名文件；URL 会被拒绝并提示改用 `clone`。本地名称遵循与 `clone` 相同的规则：先读字面文件，再补 `.byk.json`，目录名则读取目录里的 `.byk.json`。
 - 拒绝指向自己，也拒绝改写符号链接。
-- 被寻址文件不存在时，会提示用 `..init --link` 创建。
-- 全局文件改指向时，如果它的依赖目录已存在，会提醒先 `..deps uninstall`，避免继续用旧目标的资产。
+- 被寻址文件不存在时，会提示用 `init --link` 创建。
+- 全局文件改指向时，如果它的依赖目录已存在，会提醒先 `deps uninstall`，避免继续用旧目标的资产。
 - 链接后的行为、路径基准与身份归属见 [单链接](/cli/alias/config#单链接)。
 
-### `..deps [install|uninstall|status]`
+### `deps [install|uninstall|status]`
 
 ```bash
-byk @@tool..deps                       # 查看现状：声明几条、到位几条，哪些缺失、过期、多余或未知
-byk @@tool..deps install               # 同步文件并安装声明的包
-byk @@tool..deps i                     # 同上，取无歧义前缀
-byk @@tool..deps i --force             # 忽略清单，重下文件条目
-byk @@tool..deps uninstall             # 删除整个依赖目录（交互确认）
-byk @@tool..deps u                     # 同上；u / un / uni 都认
-byk @@tool..deps uninstall --yes       # 删除时跳过确认
+byk @@tool deps                       # 查看现状：声明几条、到位几条，哪些缺失、过期、多余或未知
+byk @@tool deps install               # 同步文件并安装声明的包
+byk @@tool deps i                     # 同上，取无歧义前缀
+byk @@tool deps i --force             # 忽略清单，重下文件条目
+byk @@tool deps uninstall             # 删除整个依赖目录（交互确认）
+byk @@tool deps u                     # 同上；u / un / uni 都认
+byk @@tool deps uninstall --yes       # 删除时跳过确认
 ```
 
 子命令取 `install` / `uninstall` / `status`，也接受无歧义前缀；不带子命令等于 `status`。
@@ -371,7 +371,7 @@ byk @@tool..deps uninstall --yes       # 删除时跳过确认
 | 完全一致 | `keep`，跳过 |
 
 ```bash
-$ byk @@tool..deps i
+$ byk @@tool deps i
 Syncing 2 declared entries in ~/.byk/deps/@@tool:
   update  @@tool/bin/tool <- https://example.com/v2/tool
   keep    @@tool/etc/cfg.json
@@ -381,23 +381,23 @@ Downloaded 1 file into ~/.byk/deps/@@tool
 文件条目都没变、也没有声明包时是空操作，不产生任何请求：
 
 ```bash
-$ byk @@tool..deps i
+$ byk @@tool deps i
 @@tool: 2 declared, 2 present — up to date
 ```
 
-- `src` 写相对路径时靠 `$deps.base` 拼成绝对地址；两者缺一就报错，不会去猜。base 落盘后必须是绝对地址——URL 形态对应下载，本机路径形态对应复制（`..clone` 按来源决定写哪种）。相对写法只在 `..clone` 时才有意义。base 由程序写入，是尽力锚点而非可移植性担保，不建议手写。
+- `src` 写相对路径时靠 `$deps.base` 拼成绝对地址；两者缺一就报错，不会去猜。base 落盘后必须是绝对地址——URL 形态对应下载，本机路径形态对应复制（`clone` 按来源决定写哪种）。相对写法只在 `clone` 时才有意义。base 由程序写入，是尽力锚点而非可移植性担保，不建议手写。
 - 本地条目按源文件 mtime 判新旧：源比装好的那份新就重装；源不在了就报 `cannot read` 并给出路径，不安静跳过。
 - 全局与局部都支持：全局落到 `~/.byk/deps/@@<文件名>/`，局部落到 `<文件所在目录>/.byk/deps/@<文件名>/` 并自带 `.gitignore`（内容 `*`）。
 - 已安装清单存在 `<专属目录>/.byk-deps.json`，记录上次声明的快照与落点。删除它等于重新开始记账，安装会重新「接管」现有文件。
 - 只删自己装过的路径：目录里多出来的文件永远不动，只提示一句。
 - 安装不二次确认，也不需要 `--yes`；`--force` 是唯一的选项，用于「文件资产被外部改坏」这类清单看不出的情况。
-- `$deps.base` 是 ghproxy 地址时（例如用 `..clone -gh ... ghproxy` 克隆），绝对 `github.com` / `raw.githubusercontent.com` 地址下载时会自动套上同一个代理，Release 资产同样加速；相对 `src` 经 base 拼出来已带前缀，不会重复套。jsdelivr 只镜像仓库文件，Release 资产仍直连。
+- `$deps.base` 是 ghproxy 地址时（例如用 `clone -gh ... ghproxy` 克隆），绝对 `github.com` / `raw.githubusercontent.com` 地址下载时会自动套上同一个代理，Release 资产同样加速；相对 `src` 经 base 拼出来已带前缀，不会重复套。jsdelivr 只镜像仓库文件，Release 资产仍直连。
 - 终端下每个文件显示 curl 原生进度条（写 stderr）；非 TTY 环境静默，错误文本保持稳定。
 - 下载用的 curl 优先看 `BYK_USE_PROXY`（`false` 强制直连），再读 `BYK_PROXY`、已有代理环境变量，Windows 上还会回落到静态系统代理；完整顺序见[选项与命令](/cli/commands)的代理一节。
 - 绝对地址交给系统 `curl`，本地路径直接 `fs::copy`（同样先落临时文件再 rename）；解压两条路都交给系统 `tar`，缺失时报错并提示安装。汇总行两种来源都写 `Downloaded`，其中来自本地复制的条数在括号里交代（`Downloaded 3 files into … (1 local)`），一条本地都没有时不出现括号——`$deps.files` 只负责取文件；`$deps.pip` 与 `$deps.npm` 交给 pip / npm 自己处理，不记账在文件清单里。
 - `$deps.pip` 把 Python 包装进专属目录里的 `.venv`：venv 缺失时用 `python3`（Windows 为 `python`）创建，然后执行 `pip install`。venv 的 `bin` / `Scripts` 会前置到 `PATH`；缺少 Python 时报错并提示安装。
 - `$deps.npm` 把 npm 包装进专属目录：缺失时写一个最小 `package.json`（`byk-deps`、`private`），然后执行 `npm install`。`node_modules/.bin` 会前置到 `PATH`；缺少 npm 时报错并提示安装。
-- 包每次安装都会执行，且不记进 `.byk-deps.json`——是否最新由 pip / npm 判断。`--force` 只影响文件条目；从声明里删掉某个包不会卸载它，想清空整个目录用 `..deps uninstall`。`files` 可以省略，所以声明里可以只有包。
+- 包每次安装都会执行，且不记进 `.byk-deps.json`——是否最新由 pip / npm 判断。`--force` 只影响文件条目；从声明里删掉某个包不会卸载它，想清空整个目录用 `deps uninstall`。`files` 可以省略，所以声明里可以只有包。
 - 落点都圈在专属目录内（全局 `~/.byk/deps/@@<文件名>/`，局部 `<文件所在目录>/.byk/deps/@<文件名>/`）。字段说明见 [依赖](/cli/alias/config#依赖)。
 - 带 `extract` 的条目落点是目录，用 `(extract)` 标注；重装时整目录替换，旧归档里没有的文件不会留下。省略 `to` 表示解到专属目录根，这种条目必须单独存在（它会换掉整个目录）：
 
@@ -422,20 +422,20 @@ Downloaded 2 files into ~/.byk/deps/@@tool
   missing   npm:chalk
 Base: https://example.com/releases/v1/
 Deps directory: ~/.byk/deps/@@tool
-Hint: run `byk @@tool..deps i` to install the missing assets
+Hint: run `byk @@tool deps i` to install the missing assets
 ```
 
 `unknown` 表示 pip 的 URL / VCS 直接引用：本地拿不到包名，byk 如实标注而不去猜。这类条目既不算到位，也不算缺失。
 
-`--check` 只校验声明本身：能不能解析、落点是否冲突、相对 `src` 有没有 `base`、包条目是否非空字符串，不碰装没装。缺哪条、旧没旧是运行时状态，用 `..deps status` 看，或者在执行前跑一次 `..deps i`。
+`--check` 只校验声明本身：能不能解析、落点是否冲突、相对 `src` 有没有 `base`、包条目是否非空字符串，不碰装没装。缺哪条、旧没旧是运行时状态，用 `deps status` 看，或者在执行前跑一次 `deps i`。
 
 ## 补全
 
 文件命令的补全覆盖：
 
-- `@` / `@@` 后的文件名，输入 `..` 后补命令名；
-- 命令后的选项（如 `..set --`）；
-- `..help` 后面的命令名；
-- `..remove` 后面的已有 key 路径（读目标文件，链接文件不补）；
-- `..clone`、`..link`、`..init --link` 的来源参数（以 `@` 开头的别名文件）；
-- `..deps` 后面的子命令（`install` / `uninstall` / `status`）。
+- `@` / `@@` 后的文件名；敲完文件名和空格后补动词；
+- 命令后的选项（如 `set --`）；
+- `help` 后面的命令名；
+- `remove` 后面的已有 key 路径（读目标文件，链接文件不补）；
+- `clone`、`link`、`init --link` 的来源参数（以 `@` 开头的别名文件）；
+- `deps` 后面的子命令（`install` / `uninstall` / `status`）。

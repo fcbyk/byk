@@ -35,12 +35,12 @@ byk deploy          # asks for {env}, confirms, then runs
 To use it from any directory, put the file in `~/.byk/alias/`. Opening an editor there is awkward, so let byk edit it (`@@` targets the global directory):
 
 ```bash
-byk @@ops..init                          # create ~/.byk/alias/ops.byk.json
-byk @@ops..set clean --cmd "cargo clean" # add one entry
-byk @@ops..json                          # look at what is there now
+byk @@ops init                          # create ~/.byk/alias/ops.byk.json
+byk @@ops set clean --cmd "cargo clean" # add one entry
+byk @@ops json                          # look at what is there now
 ```
 
-Already have one in a project? `byk @@run..clone @run` copies it over.
+Already have one in a project? `byk @@run clone @run` copies it over.
 
 ## CLI
 
@@ -48,7 +48,7 @@ Four invocation forms:
 
 - `byk <alias> [args...]` — look it up across the current and global directories, then run it
 - `byk @file.key` / `@@file.key` — route straight to one exact file
-- `byk @file..command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `deps`, `destroy`, `clear`, `help`; `byk @file..help` lists them all
+- `byk @file command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `deps`, `destroy`, `clear`, `help`; `byk @file help` lists them all
 - `byk __api__` — read-only interface for shell completion and editor plugins (hidden)
 
 Options: `--paths` lists the alias files byk scans, `--check` validates them, `-h` shows help and every alias, `-v` shows the version. Downloads follow `BYK_USE_PROXY` / `BYK_PROXY`, existing proxy variables, and the Windows system proxy. Full descriptions live in [Options & Commands](https://cli.fcbyk.com/cli/commands) and [File Commands](https://cli.fcbyk.com/cli/file-commands).

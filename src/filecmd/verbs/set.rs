@@ -1,4 +1,4 @@
-//! `..set` 的入口参数解析。
+//! `set` 的入口参数解析。
 
 use std::path::PathBuf;
 
@@ -250,7 +250,7 @@ fn validate_conflicts(parsed: &SetArgs) -> Result<(), String> {
 }
 
 mod imp {
-    //! `..set`：在当前文件中创建或更新一个别名。
+    //! `set`：在当前文件中创建或更新一个别名。
 
     use std::path::PathBuf;
 
@@ -295,7 +295,7 @@ mod imp {
             FileScope::Local => "@",
             FileScope::Global => "@@",
         };
-        let hint = format!("Hint: create it with {}{}..init", prefix, stem);
+        let hint = format!("Hint: create it with {}{} init", prefix, stem);
 
         edit::object(
             scope,
@@ -941,7 +941,7 @@ mod tests {
         .unwrap_err();
 
         assert!(err.starts_with("File not found:"));
-        assert!(err.contains("@@ops..init"));
+        assert!(err.contains("@@ops init"));
     }
 
     #[test]

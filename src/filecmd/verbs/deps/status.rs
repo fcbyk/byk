@@ -1,4 +1,4 @@
-//! `..deps status`：渲染状态报告。
+//! `deps status`：渲染状态报告。
 
 use super::{Outcome, declaration, deps_command, deps_dir_of, no_declaration};
 use crate::deps::apply;

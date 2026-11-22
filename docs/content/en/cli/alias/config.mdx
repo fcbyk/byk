@@ -37,7 +37,7 @@ type AliasFileJSON =
       $cwd?: string;           // file- or group-level working directory, inherited by child aliases
       $mode?: 'normal' | 'interactive' | 'silent';  // file- or group-level mode, inherited by child aliases
       $private?: boolean;      // file- or group-level visibility, inherited by child aliases; private aliases stay out of the merged space
-      $clone?: boolean;        // file- or group-level copy tag, inherited by child aliases; false keeps a subtree out of ..clone copies
+      $clone?: boolean;        // file- or group-level copy tag, inherited by child aliases; false keeps a subtree out of  clone copies
       $paths?: string[];       // file-, group- or alias-level PATH directories; a child value replaces the inherited list entirely
       $deps?: Deps;            // file-level dependencies: assets, pip packages, npm packages
       $var?: Record<string, string | Record<string, string>>;  // file-level variables
@@ -79,7 +79,7 @@ byk 开发.测试
 | `$description` | string | Help-page description text (not inheritable) |
 | `$recursive` | boolean | Allow re-entering this alias on the call chain (not inheritable), defaults to `false` — see [Recursion Guard](#recursion-guard) |
 | `$private` | boolean | Keep this subtree out of the merged space, reachable only through exact calls (inheritable), defaults to `false` — see [Visibility](#visibility) |
-| `$clone` | boolean | Keep this subtree out of `..clone` copies (inheritable), defaults to `true` — see [Cloning](#cloning) |
+| `$clone` | boolean | Keep this subtree out of `clone` copies (inheritable), defaults to `true` — see [Cloning](#cloning) |
 
 :::note
 An object containing `$cmd` is an alias leaf node. An object with only `$cwd` / `$mode` / `$private` / `$clone` but no `$cmd` is a **group with inherited properties** and is not executable itself.
@@ -341,10 +341,10 @@ Both scopes follow the same rules, only the root differs: global dependencies st
 The declaration itself never touches the network — installing is an explicit verb:
 
 ```bash
-byk @@tool..deps install      # fetch files and install declared packages
-byk @@tool..deps status       # declared, present, missing, stale
-byk @@tool..deps uninstall    # delete the whole dedicated directory
-byk @@tool..clone <source> -d # or install them right after cloning
+byk @@tool deps install      # fetch files and install declared packages
+byk @@tool deps status       # declared, present, missing, stale
+byk @@tool deps uninstall    # delete the whole dedicated directory
+byk @@tool clone <source> -d # or install them right after cloning
 ```
 
 ```json title="~/.byk/alias/tool.byk.json"
@@ -368,7 +368,7 @@ byk @@tool..clone <source> -d # or install them right after cloning
 | Rule | Description |
 |------|-------------|
 | String shorthand | Equals `{ "src": "..." }`; the file name is derived from the last segment of the address |
-| `base` | The resolution base for relative `src`, as a **directory**. On disk it must be absolute: a remote clone writes an absolute http(s) URL, a local clone writes a local absolute path. **You normally do not write this by hand** — `..clone` records it for you. A hand-written value must be a literal: an absolute URL, an absolute path, or a relative form that `..clone` will interpret (`.`, `../`, `sub/dir`). Variables are not supported |
+| `base` | The resolution base for relative `src`, as a **directory**. On disk it must be absolute: a remote clone writes an absolute http(s) URL, a local clone writes a local absolute path. **You normally do not write this by hand** — `clone` records it for you. A hand-written value must be a literal: an absolute URL, an absolute path, or a relative form that `clone` will interpret (`.`, `../`, `sub/dir`). Variables are not supported |
 | `src` | An absolute http(s) URL, or a path relative to `base` (`./x`, `../x`, `bin/tool`); variables are expanded before validation, so a value like `${url}` is fine. Absolute addresses are fetched with the system `curl`, local paths are copied directly, and a missing `curl` errors with an install hint |
 | `to` | A subdirectory relative to the dedicated directory (root by default); `/` separated only, `..`, absolute paths and backslashes rejected |
 | `name` | The saved file name, overriding the derived value; mutually exclusive with `extract` |
@@ -379,9 +379,9 @@ byk @@tool..clone <source> -d # or install them right after cloning
 | Sync (`files`) | The declaration is the desired state: missing assets are added, changed ones replaced, removed ones deleted; the manifest in `.byk-deps.json` means unchanged assets are never re-downloaded |
 | Scoped removal | Only paths recorded in the manifest and no longer declared are deleted; anything else is left in place with a warning |
 | Confirmation | install no longer asks twice: it prints each file / pip / npm action, then runs; `uninstall` still confirms |
-| Linkage | `..rename` renames the dedicated directory along, `..destroy` deletes it, `..link` warns about a stale directory when retargeting |
+| Linkage | `rename` renames the dedicated directory along, `destroy` deletes it, `link` warns about a stale directory when retargeting |
 
-**Packages install alongside file entries.** `$deps.pip` and `$deps.npm` run on every `..deps install` — pip and npm decide what is current — so `--force` only affects file entries. Neither is recorded in `.byk-deps.json`: removing a spec from the declaration does not uninstall it; `..deps uninstall` clears the whole directory instead. `..deps status` lists each package as `pip:<spec>` / `npm:<spec>`; a pip direct reference (URL or VCS) is `unknown` because there is no package name to check locally. `files` is optional, so a declaration may contain only packages.
+**Packages install alongside file entries.** `$deps.pip` and `$deps.npm` run on every `deps install` — pip and npm decide what is current — so `--force` only affects file entries. Neither is recorded in `.byk-deps.json`: removing a spec from the declaration does not uninstall it; `deps uninstall` clears the whole directory instead. `deps status` lists each package as `pip:<spec>` / `npm:<spec>`; a pip direct reference (URL or VCS) is `unknown` because there is no package name to check locally. `files` is optional, so a declaration may contain only packages.
 
 **`base` is the only field clone rewrites.** A landed alias file lives in `~/.byk/alias/` and carries no location of its own, so relative paths can only be interpreted at clone time. The form it is frozen into depends on where the bytes came from, and that form decides how assets are fetched:
 
@@ -392,27 +392,27 @@ byk @@tool..clone <source> -d # or install them right after cloning
 
 Neither side crosses into the other: **a remote clone only ever writes the URL form, so an alias file you got from the network cannot read local files.** That is not enforced by a check — the local-path form simply never reaches it.
 
-**ghproxy extends to the download layer.** When `base` is a `https://gh-proxy.com/...` URL, `..deps i` also routes absolute `github.com` / `raw.githubusercontent.com` addresses through the same proxy, so release assets are accelerated too. Relative `src` entries already carry the prefix through `base` and are never wrapped twice. jsdelivr only mirrors repository files, so a jsdelivr `base` leaves absolute addresses alone.
+**ghproxy extends to the download layer.** When `base` is a `https://gh-proxy.com/...` URL, `deps i` also routes absolute `github.com` / `raw.githubusercontent.com` addresses through the same proxy, so release assets are accelerated too. Relative `src` entries already carry the prefix through `base` and are never wrapped twice. jsdelivr only mirrors repository files, so a jsdelivr `base` leaves absolute addresses alone.
 
 ghproxy rewrites the URL, not the network egress. The local proxy used for downloads is chosen by `BYK_USE_PROXY`, `BYK_PROXY`, proxy environment variables, or the static Windows system proxy; see [Options & Commands](/cli/commands).
 
 The fill-in rules are the same for both, only the base point and the product differ: absent means the source file's directory, a relative form (`.`, `../`, `sub/dir`) is resolved against the source file, and an absolute address (URL or path) is kept as-is with only the trailing `/` added. The base point is always the **source file's** directory, never the destination directory — the relative paths in `files` were written against the source document, and those files are not sitting next to `~/.byk/alias/`.
 
-Writing `base` back makes clone re-serialise the document (keys sorted). Files with neither `$deps` nor `$clone` are untouched and stay byte-for-byte copies; when `base` already holds the value about to be written, nothing is rewritten either, so cloning twice produces no diff. **Cloning rejects variables in `base`.** A clone has no variable table, so `"base": "${CDN}"` cannot be evaluated; guessing a value would bake a bogus address into the file, so clone fails and tells you to fix the source. (Reading is laxer: `..deps i` expands variables first, so a hand-written `${CDN}` that resolves to an absolute address still works. The restriction is about clone, and the editor schema follows the clone side.) `base` is meant to be a literal written by a program: clone freezes it once, and every later reader sees the same thing.
+Writing `base` back makes clone re-serialise the document (keys sorted). Files with neither `$deps` nor `$clone` are untouched and stay byte-for-byte copies; when `base` already holds the value about to be written, nothing is rewritten either, so cloning twice produces no diff. **Cloning rejects variables in `base`.** A clone has no variable table, so `"base": "${CDN}"` cannot be evaluated; guessing a value would bake a bogus address into the file, so clone fails and tells you to fix the source. (Reading is laxer: `deps i` expands variables first, so a hand-written `${CDN}` that resolves to an absolute address still works. The restriction is about clone, and the editor schema follows the clone side.) `base` is meant to be a literal written by a program: clone freezes it once, and every later reader sees the same thing.
 
 A local `base` is not portable: it names an absolute path on this machine and means nothing on another. Local dependencies are meant to be local development aids — do not expect a shared alias file to keep working.
 
 On Windows there is one more rule: a `/sub`-style base has no drive letter, so Windows resolves it against the current drive and the same file points somewhere else after a `cd`. Only relative paths and drive-letter absolutes (`C:/share/`) are accepted; `/sub` fails with an error.
 
-**Local entries are compared by the source file's mtime**: a source newer than the installed copy triggers a reinstall, so editing a local build artefact and rerunning `..deps i` takes effect (use `--force` for an unconditional rebuild). URL entries have no such notion — the same address is the same content, so `keep` is always safe. A missing source file is reported with its path instead of a quiet "up to date".
+**Local entries are compared by the source file's mtime**: a source newer than the installed copy triggers a reinstall, so editing a local build artefact and rerunning `deps i` takes effect (use `--force` for an unconditional rebuild). URL entries have no such notion — the same address is the same content, so `keep` is always safe. A missing source file is reported with its path instead of a quiet "up to date".
 
 Reference the dedicated directory with `${deps_dir}`. byk owns that directory: installing syncs file entries to the declaration, so do not keep anything there that must survive an install.
 
-`--check` only validates the declaration itself (does it parse, do two entries collide, does a relative `src` have a `base`, are package entries non-empty strings); what is missing or outdated is `..deps status`'s job.
+`--check` only validates the declaration itself (does it parse, do two entries collide, does a relative `src` have a `base`, are package entries non-empty strings); what is missing or outdated is `deps status`'s job.
 
 `$var`, `$paths` and `$deps` itself all go through variable substitution first, so custom variables like `${version}` can build URLs.
 
-A local file that wants dependencies: first create a global link with `..init --link`. The declaration travels with the target file, while the install location follows the link file's key. See [Single Link](#single-link).
+A local file that wants dependencies: first create a global link with `init --link`. The declaration travels with the target file, while the install location follows the link file's key. See [Single Link](#single-link).
 
 ### Variables
 
@@ -674,7 +674,7 @@ To keep a whole file out of the merged space, put `$private` at the file root:
 
 ### Cloning
 
-`$clone: false` marks a subtree as personal: `..clone` never copies it. It is a copy-time tag only — it does not affect the merged space, execution, completion, or any other lookup.
+`$clone: false` marks a subtree as personal: `clone` never copies it. It is a copy-time tag only — it does not affect the merged space, execution, completion, or any other lookup.
 
 Like `$private`, it has three levels of inheritance: file → group → alias, with the closest level winning. A child can set `true` to expose its subtree again.
 
@@ -686,12 +686,12 @@ Like `$private`, it has three levels of inheritance: file → group → alias, w
 }
 ```
 
-Cloning this file yields only `shared.whoami`; `deploy` is dropped. If nothing would be left, `..clone` refuses and writes no file. The tag itself never appears in the copy.
+Cloning this file yields only `shared.whoami`; `deploy` is dropped. If nothing would be left, `clone` refuses and writes no file. The tag itself never appears in the copy.
 
 `$private` and `$clone` are independent: write both when an alias should stay out of the merged space **and** out of cloned copies.
 
 :::note
-`$clone` only governs `byk ..clone`. `cp`, git, and fetching the file by other means still see the original bytes — it is a declaration, not encryption.
+`$clone` only governs `byk  clone`. `cp`, git, and fetching the file by other means still see the original bytes — it is a declaration, not encryption.
 :::
 
 ### Exact Execution Syntax

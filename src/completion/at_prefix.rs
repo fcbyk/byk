@@ -5,16 +5,8 @@ use std::collections::HashMap;
 use crate::model::MergedNode;
 use crate::resolve;
 
-use super::filecmd_args as file_complete;
-
 /// 补全 `@` / `@@`：先补文件 key，输入点号后补该文件内的别名路径。
-///
-/// `..` 是文件命令分隔符，出现两个点后只补动词。
 pub(crate) fn complete_at_prefix(partial: &str, layout: &crate::model::PathLayout) -> Vec<String> {
-    if let Some(verbs) = file_complete::complete_verbs(partial) {
-        return verbs;
-    }
-
     // 点号之后只需要目标文件：直接解析它，不扫描其余文件
     if let Some(dot_idx) = partial.find('.') {
         let file_key = &partial[..dot_idx];

@@ -1,4 +1,4 @@
-//! `..remove` 的入口参数解析。
+//! `remove` 的入口参数解析。
 
 use std::path::PathBuf;
 
@@ -27,7 +27,7 @@ fn parse_args(args: &[String]) -> Result<&str, String> {
 }
 
 mod imp {
-    //! `..remove`：删除当前文件中的一个别名或整个分组。
+    //! `remove`：删除当前文件中的一个别名或整个分组。
 
     use std::path::PathBuf;
 

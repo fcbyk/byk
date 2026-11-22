@@ -1,4 +1,4 @@
-//! `..clone` 的入口参数解析。
+//! `clone` 的入口参数解析。
 
 mod tap;
 
@@ -87,11 +87,11 @@ fn forge_flag(flag: &str) -> Option<source::Forge> {
 }
 
 mod imp {
-    //! `..clone`：把另一个别名文件复制为当前文件。
+    //! `clone`：把另一个别名文件复制为当前文件。
     //!
     //! `-d` 在同一次调用里接着装 `$deps`：克隆先落盘，再读新文件的声明。
     //! 装依赖失败不回滚——文件本身已经合法，缺的只是资产，重跑
-    //! `@@<file>..deps i` 即可补齐。
+    //! `@@<file> deps install` 即可补齐。
     //!
     //! 远程来源把 `$deps.base` 冻结成绝对 URL，本地来源冻结成本机绝对路径：
     //! 这是 base 唯一一次能被解释的时刻，落盘之后的文件没有自己的位置信息。
@@ -176,7 +176,7 @@ mod imp {
             return None;
         }
         let key = build_file_key(stem, scope.is_global());
-        Some(format!("byk {key}..clone -gh {spec} ghproxy"))
+        Some(format!("byk {key} clone -gh {spec} ghproxy"))
     }
 
     /// `--tap`：完整写法先找本地索引、缺失才回退远程；单 key 只搜本地。
@@ -312,9 +312,12 @@ mod imp {
 
     /// 克隆成功后再装依赖。
     ///
-    /// 安装不二次确认，进度直接打出来；失败不回滚，提示重跑 `..deps i` 比删掉更安全。
+    /// 安装不二次确认，进度直接打出来；失败不回滚，提示重跑 `deps install` 比删掉更安全。
     fn install_deps(scope: FileScope, stem: &str, layout: &PathLayout) -> Result<(), String> {
-        let hint = format!("byk {}..deps i", build_file_key(stem, scope.is_global()));
+        let hint = format!(
+            "byk {} deps install",
+            build_file_key(stem, scope.is_global())
+        );
         let fail = |err: String| {
             format!("Failed to install dependencies: {err}\nHint: run `{hint}` to retry")
         };
@@ -390,7 +393,7 @@ mod imp {
             strip.changed = true;
         }
 
-        // 全部剪空时拒绝落盘：`..clone` 不该产出一个空对象
+        // 全部剪空时拒绝落盘：`clone` 不该产出一个空对象
         let empty = is_meta_only(object);
         if empty && (!root_clone || strip.removed) {
             return Err("Nothing to clone: every alias is marked $clone: false".to_string());

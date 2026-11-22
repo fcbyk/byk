@@ -1,4 +1,4 @@
-//! `..json` 的选项解析。
+//! `json` 的选项解析。
 
 use crate::filecmd::spec::FileScope;
 use crate::model::PathLayout;
@@ -28,7 +28,7 @@ fn parse_args(args: &[String]) -> Result<Mode, String> {
 }
 
 mod imp {
-    //! `..json`：输出别名文件；`--expand` 展开文件级变量。
+    //! `json`：输出别名文件；`--expand` 展开文件级变量。
 
     use std::fs;
     use std::io;

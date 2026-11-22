@@ -70,11 +70,11 @@ Scanned 2 alias files; 1 has problems (1 error).
   error: cannot load link target /Users/me/.byk/alias/missing.byk.json
 ```
 
-没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。`Scanned` 统计的是遇到的候选 `*.byk.json` 目录项，包括非法文件名和断链的符号链接。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、非法文件名、断链符号链接、`$mode`、`$var`、`$deps` 声明（含 `base`、落点冲突与包条目）等。它只查配置本身——依赖装没装是运行时状态，用 `..deps status` 看。`--check` 不带别名参数，多写会报 `check takes no arguments`。
+没有任何问题时输出 `Scanned N alias files; no problems.` 并返回 0；有问题返回 1。`Scanned` 统计的是遇到的候选 `*.byk.json` 目录项，包括非法文件名和断链的符号链接。目前覆盖：文件读取、JSON 解析、根类型、别名与元数据字段类型、链接文件、非法文件名、断链符号链接、`$mode`、`$var`、`$deps` 声明（含 `base`、落点冲突与包条目）等。它只查配置本身——依赖装没装是运行时状态，用 `deps status` 看。`--check` 不带别名参数，多写会报 `check takes no arguments`。
 
 ### 网络代理
 
-byk 自己发起的网络请求只有两处：远程 `..clone` 取源文件，和 `..deps i` 下载 `$deps.files`。两者都调用系统 `curl`，代理只注入这些 curl 子进程；别名本身、pip、npm 都不受影响。
+byk 自己发起的网络请求只有两处：远程 `clone` 取源文件，和 `deps i` 下载 `$deps.files`。两者都调用系统 `curl`，代理只注入这些 curl 子进程；别名本身、pip、npm 都不受影响。
 
 选择顺序：
 
@@ -115,7 +115,7 @@ byk @@work.deploy        # ~/.byk/alias/work.byk.json 的 deploy
 
 以上都以退出码 1 结束。`$` 开头的段是保留字段或自定义元数据，永远不会被当作别名执行。
 
-每个别名文件还带一组保留的**文件命令**：用 `@文件..命令` / `@@文件..命令` 创建、编辑、克隆、安装依赖和查看文件本身。完整列表见 [文件命令](/cli/file-commands)。
+每个别名文件还带一组保留的**文件命令**：用 `@文件 命令` / `@@文件 命令` 创建、编辑、克隆、安装依赖和查看文件本身。完整列表见 [文件命令](/cli/file-commands)。
 
 ## 程序接口 `__api__`
 
@@ -151,5 +151,5 @@ byk __api__ paths root   # 免解析地拿一个目录
 3. `@file.key` / `@@file.key` 精确执行
 4. 合并空间里的别名
 
-文件命令在步骤 3 之前就地处理：含 `..` 的 `@文件..命令` 不会走到别名查找。同时给出多个选项时，`-h` 优先，其次是 `--check`、`--paths`、`-v`。
+文件命令在步骤 3 之前就地处理：不带点号的 `@文件` 后面跟动词时不会走到别名查找。同时给出多个选项时，`-h` 优先，其次是 `--check`、`--paths`、`-v`。
 全部未命中时，输出 `Unrecognized command or alias: <word>`，并附上候选建议，退出码 1。

@@ -25,7 +25,7 @@
           "type": "boolean"
         },
         "$clone": {
-          "description": "为 false 时不进入 ..clone 的副本，整份文件默认不可复制。子别名自动继承；子级写 true 可重新暴露。默认 true。只影响 ..clone，不影响合并空间与执行。",
+          "description": "为 false 时不进入 clone 的副本，整份文件默认不可复制。子别名自动继承；子级写 true 可重新暴露。默认 true。只影响 clone，不影响合并空间与执行。",
           "type": "boolean"
         },
         "$cwd": {
@@ -50,11 +50,11 @@
           }
         },
         "$deps": {
-          "description": "文件级依赖声明：files 取资产文件（绝对地址用 curl 下载，本地路径直接复制），pip / npm 装包到同一专属目录。全局别名落到 ~/.byk/deps/@@<文件名>/，局部别名落到 <文件所在目录>/.byk/deps/@<文件名>/，别名里用 ${deps_dir} 引用。安装：byk <文件key>..deps install，查看：status，卸载：uninstall。文件安装是同步：缺的装、变的重下、声明里移除的删（清单记在专属目录的 .byk-deps.json）；pip / npm 包每次安装都会执行。解压交给系统 tar，归档条目拒绝越界路径。示例：{\"files\": [\"https://example.com/tool.tar.gz\", {\"src\": \"https://example.com/cli.tar.gz\", \"extract\": true, \"to\": \"opt\"}]}",
+          "description": "文件级依赖声明：files 取资产文件（绝对地址用 curl 下载，本地路径直接复制），pip / npm 装包到同一专属目录。全局别名落到 ~/.byk/deps/@@<文件名>/，局部别名落到 <文件所在目录>/.byk/deps/@<文件名>/，别名里用 ${deps_dir} 引用。安装：byk <文件key> deps install，查看：status，卸载：uninstall。文件安装是同步：缺的装、变的重下、声明里移除的删（清单记在专属目录的 .byk-deps.json）；pip / npm 包每次安装都会执行。解压交给系统 tar，归档条目拒绝越界路径。示例：{\"files\": [\"https://example.com/tool.tar.gz\", {\"src\": \"https://example.com/cli.tar.gz\", \"extract\": true, \"to\": \"opt\"}]}",
           "type": "object",
           "properties": {
             "base": {
-              "description": "相对 src 的解析基准：目录。通常由 ..clone 写入，不建议手写。远程 clone 写绝对 http(s) URL，本地 clone 写本机绝对路径；手写只认字面量（绝对 URL、绝对路径，或 clone 时才被解释的相对形态 . 、../、sub/dir），不支持变量。落盘之后必须是绝对地址——文档已经没有自己的位置信息，猜不出来源。",
+              "description": "相对 src 的解析基准：目录。通常由 clone 写入，不建议手写。远程 clone 写绝对 http(s) URL，本地 clone 写本机绝对路径；手写只认字面量（绝对 URL、绝对路径，或 clone 时才被解释的相对形态 . 、../、sub/dir），不支持变量。落盘之后必须是绝对地址——文档已经没有自己的位置信息，猜不出来源。",
               "type": "string",
               "pattern": "^(?!.*\\$\\{)(?!~)(?!//)(?!.*[\\\\?#]).+$"
             },
@@ -150,7 +150,7 @@
           "type": "boolean"
         },
         "$clone": {
-          "description": "为 false 时不进入 ..clone 的副本；子级自动继承，写 true 可重新暴露。默认 true。只影响 ..clone。",
+          "description": "为 false 时不进入 clone 的副本；子级自动继承，写 true 可重新暴露。默认 true。只影响 clone。",
           "type": "boolean"
         },
         "$cwd": {

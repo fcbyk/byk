@@ -35,7 +35,7 @@ def test_clone_copies_source_bytes(runner):
         "src", '{\n  "z": "echo z",\n\n  "a": "echo a"\n}'
     )
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 0
     assert result.stdout == ""
@@ -60,7 +60,7 @@ def test_clone_skips_aliases_marked_clone_false(runner):
         },
     )
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 0
     assert "Skipped 2 aliases marked $clone: false" in result.stderr
@@ -75,7 +75,7 @@ def test_clone_refuses_when_every_alias_is_marked(runner):
         "src", {"$clone": False, "deploy": "echo hi"}
     )
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 1
     assert "Nothing to clone" in result.stderr
@@ -92,7 +92,7 @@ def test_clone_file_level_false_allows_reexposed_children(runner):
         },
     )
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 0
     assert "Skipped 1 alias marked $clone: false" in result.stderr
@@ -109,7 +109,7 @@ def test_remote_clone_strips_aliases_marked_clone_false(runner, tmp_path):
     env, _ = install_fake_curl(tmp_path, payload=payload)
 
     result = runner.run(
-        "@@ops..clone", "https://example.com/tool.byk.json", env=env
+        "@@ops", "clone", "https://example.com/tool.byk.json", env=env
     )
 
     assert result.returncode == 0
@@ -121,7 +121,7 @@ def test_remote_clone_strips_aliases_marked_clone_false(runner, tmp_path):
 def test_clone_global_name(runner):
     runner.prepare_alias_json("src", {"build": "echo hi"})
 
-    result = runner.run("@@ops..clone", "@@src")
+    result = runner.run("@@ops", "clone", "@@src")
 
     assert result.returncode == 0
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -133,7 +133,7 @@ def test_clone_local_name(runner, tmp_path):
     source = tmp_path / "src.byk.json"
     source.write_text('{"build": "echo local"}', encoding="utf-8")
 
-    result = runner.run("@@ops..clone", "@src", cwd=str(tmp_path))
+    result = runner.run("@@ops", "clone", "@src", cwd=str(tmp_path))
 
     assert result.returncode == 0
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -144,7 +144,7 @@ def test_clone_local_name(runner, tmp_path):
 def test_clone_to_local_destination(runner, tmp_path):
     source = runner.prepare_alias_json("src", {"build": "echo hi"})
 
-    result = runner.run("@ops..clone", str(source), cwd=str(tmp_path))
+    result = runner.run("@ops", "clone", str(source), cwd=str(tmp_path))
 
     assert result.returncode == 0
     assert read(tmp_path / "ops.byk.json") == {"build": "echo hi"}
@@ -155,7 +155,7 @@ def test_clone_bare_path_appends_the_alias_suffix(runner, tmp_path):
         '{"build": "echo hi"}', encoding="utf-8"
     )
 
-    result = runner.run("@@ops..clone", str(tmp_path / "src"))
+    result = runner.run("@@ops", "clone", str(tmp_path / "src"))
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -169,7 +169,7 @@ def test_clone_prefers_the_literal_file_over_its_alias_sibling(runner, tmp_path)
         '{"build": "echo suffixed"}', encoding="utf-8"
     )
 
-    result = runner.run("@@ops..clone", str(tmp_path / "src"))
+    result = runner.run("@@ops", "clone", str(tmp_path / "src"))
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -183,7 +183,7 @@ def test_clone_can_still_name_the_alias_sibling_explicitly(runner, tmp_path):
         '{"build": "echo suffixed"}', encoding="utf-8"
     )
 
-    result = runner.run("@@ops..clone", str(tmp_path / "src.byk.json"))
+    result = runner.run("@@ops", "clone", str(tmp_path / "src.byk.json"))
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -194,7 +194,7 @@ def test_clone_can_still_name_the_alias_sibling_explicitly(runner, tmp_path):
 def test_clone_falls_back_to_a_literal_path(runner, tmp_path):
     (tmp_path / "src").write_text('{"build": "echo literal"}', encoding="utf-8")
 
-    result = runner.run("@@ops..clone", str(tmp_path / "src"))
+    result = runner.run("@@ops", "clone", str(tmp_path / "src"))
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -209,7 +209,7 @@ def test_clone_trailing_slash_reads_the_anonymous_file(runner, tmp_path):
         '{"build": "echo anonymous"}', encoding="utf-8"
     )
 
-    result = runner.run("@@ops..clone", str(project) + os.sep)
+    result = runner.run("@@ops", "clone", str(project) + os.sep)
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -224,7 +224,7 @@ def test_clone_directory_name_reads_the_anonymous_file(runner, tmp_path):
         '{"build": "echo anonymous"}', encoding="utf-8"
     )
 
-    result = runner.run("@@ops..clone", str(project))
+    result = runner.run("@@ops", "clone", str(project))
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -237,7 +237,7 @@ def test_clone_dot_reads_the_anonymous_file(runner, tmp_path):
         '{"build": "echo dot"}', encoding="utf-8"
     )
 
-    result = runner.run("@@ops..clone", ".", cwd=str(tmp_path))
+    result = runner.run("@@ops", "clone", ".", cwd=str(tmp_path))
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -250,7 +250,7 @@ def test_clone_keeps_other_extensions_literal(runner, tmp_path):
         '{"build": "echo config"}', encoding="utf-8"
     )
 
-    result = runner.run("@@ops..clone", str(tmp_path / "config.json"))
+    result = runner.run("@@ops", "clone", str(tmp_path / "config.json"))
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -259,7 +259,7 @@ def test_clone_keeps_other_extensions_literal(runner, tmp_path):
 
 
 def test_clone_missing_bare_source_lists_candidates(runner, tmp_path):
-    result = runner.run("@@ops..clone", str(tmp_path / "missing"))
+    result = runner.run("@@ops", "clone", str(tmp_path / "missing"))
 
     assert result.returncode == 1
     assert "Source not found:" in result.stderr
@@ -272,7 +272,7 @@ def test_link_uses_the_same_bare_path_resolution(runner, tmp_path):
     source.write_text('{"build": "echo hi"}', encoding="utf-8")
     runner.prepare_alias_file("ops", "{}\n")
 
-    result = runner.run("@@ops..link", str(tmp_path / "src"), cwd=str(tmp_path))
+    result = runner.run("@@ops", "link", str(tmp_path / "src"), cwd=str(tmp_path))
 
     assert result.returncode == 0, result.stderr
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == [
@@ -284,7 +284,7 @@ def test_clone_refuses_existing_destination(runner):
     source = runner.prepare_alias_json("src", {"build": "echo hi"})
     dest = runner.prepare_alias_json("ops", {"keep": "echo keep"})
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 1
     assert "File already exists" in result.stderr
@@ -295,7 +295,7 @@ def test_clone_refuses_link_source(runner):
     source = runner.prepare_alias_file("src", '["shared.byk.json"]')
     target = runner.prepare_alias_json("shared", {"build": "echo hi"})
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 1
     assert "Source is itself a link" in result.stderr
@@ -306,7 +306,7 @@ def test_clone_refuses_link_source(runner):
 def test_clone_missing_source(runner):
     missing = runner.home / "missing.byk.json"
 
-    result = runner.run("@@ops..clone", str(missing))
+    result = runner.run("@@ops", "clone", str(missing))
 
     assert result.returncode == 1
     assert "Source not found" in result.stderr
@@ -316,7 +316,7 @@ def test_clone_refuses_directory_source(runner):
     source = runner.home / "dir.byk.json"
     source.mkdir()
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 1
     assert "Source is not a file" in result.stderr
@@ -325,7 +325,7 @@ def test_clone_refuses_directory_source(runner):
 def test_clone_invalid_json_source(runner):
     source = runner.prepare_alias_file("src", "{not json")
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 1
     assert "Failed to parse source" in result.stderr
@@ -334,14 +334,14 @@ def test_clone_invalid_json_source(runner):
 def test_clone_non_object_source(runner):
     source = runner.prepare_alias_file("src", "42")
 
-    result = runner.run("@@ops..clone", str(source))
+    result = runner.run("@@ops", "clone", str(source))
 
     assert result.returncode == 1
     assert "Source must be a JSON object" in result.stderr
 
 
 def test_clone_rejects_invalid_name(runner):
-    result = runner.run("@@ops..clone", "@@a/b")
+    result = runner.run("@@ops", "clone", "@@a/b")
 
     assert result.returncode == 1
     assert "Invalid file name" in result.stderr
@@ -350,7 +350,7 @@ def test_clone_rejects_invalid_name(runner):
 def test_clone_rejects_extra_arguments(runner):
     source = runner.prepare_alias_json("src", {"build": "echo hi"})
 
-    result = runner.run("@@ops..clone", str(source), "extra")
+    result = runner.run("@@ops", "clone", str(source), "extra")
 
     assert result.returncode == 1
     assert "clone takes exactly one source" in result.stderr
@@ -361,9 +361,9 @@ def test_clone_source_completion_lists_alias_files(runner, tmp_path):
     runner.prepare_alias_json("src", {"build": "echo hi"})
     (tmp_path / "local.byk.json").write_text("{}", encoding="utf-8")
 
-    global_only = runner.run("__api__", "complete", "@@ops..clone", "@@")
-    both = runner.run("__api__", "complete", "@@ops..clone", "@", cwd=str(tmp_path))
-    path_partial = runner.run("__api__", "complete", "@@ops..clone", "./")
+    global_only = runner.run("__api__", "complete", "@@ops", "clone", "@@")
+    both = runner.run("__api__", "complete", "@@ops", "clone", "@", cwd=str(tmp_path))
+    path_partial = runner.run("__api__", "complete", "@@ops", "clone", "./")
 
     assert global_only.returncode == 0
     assert global_only.stdout.splitlines() == ["@@src"]
@@ -376,8 +376,8 @@ def test_clone_source_completion_lists_alias_files(runner, tmp_path):
 def test_link_and_init_link_complete_sources(runner):
     runner.prepare_alias_json("src", {"build": "echo hi"})
 
-    link = runner.run("__api__", "complete", "@@ops..link", "@@")
-    init = runner.run("__api__", "complete", "@@ops..init", "--link", "@@")
+    link = runner.run("__api__", "complete", "@@ops", "link", "@@")
+    init = runner.run("__api__", "complete", "@@ops", "init", "--link", "@@")
 
     assert link.returncode == 0
     assert link.stdout.splitlines() == ["@@src"]
@@ -386,10 +386,10 @@ def test_link_and_init_link_complete_sources(runner):
 
 
 def test_help_for_clone_shows_usage(runner):
-    result = runner.run("@@ops..help", "clone")
+    result = runner.run("@@ops", "help", "clone")
 
     assert result.returncode == 0
-    assert result.stdout.startswith("\n@@ops..clone <source> [options]\n")
+    assert result.stdout.startswith("\n@@ops clone <source> [options]\n")
     assert "Copy a local or remote alias file into this file" in result.stdout
     assert "-gh, --github <spec> [<cdn>]" in result.stdout
     assert "Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)" in result.stdout
@@ -404,7 +404,7 @@ def test_clone_url_uses_curl(runner, tmp_path):
     payload = b'{\n  "z": "echo z",\n\n  "a": "echo a"\n}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", url, env=env)
+    result = runner.run("@@ops", "clone", url, env=env)
 
     assert result.returncode == 0
     assert url in result.stderr
@@ -420,7 +420,7 @@ def test_clone_url_uses_curl(runner, tmp_path):
 def test_clone_url_rejects_invalid_json(runner, tmp_path):
     env, _ = install_fake_curl(tmp_path, payload=b"{not json")
 
-    result = runner.run("@@ops..clone", "https://example.com/x.byk.json", env=env)
+    result = runner.run("@@ops", "clone", "https://example.com/x.byk.json", env=env)
 
     assert result.returncode == 1
     assert "Failed to parse source https://example.com/x.byk.json" in result.stderr
@@ -430,7 +430,7 @@ def test_clone_url_rejects_invalid_json(runner, tmp_path):
 def test_clone_url_rejects_non_object(runner, tmp_path):
     env, _ = install_fake_curl(tmp_path, payload=b"42")
 
-    result = runner.run("@@ops..clone", "https://example.com/x.byk.json", env=env)
+    result = runner.run("@@ops", "clone", "https://example.com/x.byk.json", env=env)
 
     assert result.returncode == 1
     assert "Source must be a JSON object" in result.stderr
@@ -440,7 +440,7 @@ def test_clone_url_rejects_non_object(runner, tmp_path):
 def test_clone_url_reports_curl_failure(runner, tmp_path):
     env, _ = install_fake_curl(tmp_path, exit_code=22, stderr="boom")
 
-    result = runner.run("@@ops..clone", "https://example.com/x.byk.json", env=env)
+    result = runner.run("@@ops", "clone", "https://example.com/x.byk.json", env=env)
 
     assert result.returncode == 1
     assert "Remote source not found: https://example.com/x.byk.json" in result.stderr
@@ -454,7 +454,7 @@ def test_clone_url_requires_curl(runner, tmp_path):
     empty_bin.mkdir()
 
     result = runner.run(
-        "@@ops..clone",
+        "@@ops", "clone",
         "https://example.com/x.byk.json",
         env={"PATH": str(empty_bin)},
     )
@@ -470,14 +470,14 @@ def test_clone_github_direct_failure_suggests_cdn(runner, tmp_path):
         tmp_path, exit_code=35, stderr="curl: (35) Recv failure: Connection reset by peer"
     )
 
-    result = runner.run("@@ops..clone", "-gh", "aaa/bb/sss", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "aaa/bb/sss", env=env)
 
     assert result.returncode == 1
     assert "curl failed (exit 35)" in result.stderr
     assert "Recv failure: Connection reset by peer" in result.stderr
     assert "cannot reach GitHub directly" in result.stderr
     assert "ghproxy" in result.stderr
-    assert "byk @@ops..clone -gh aaa/bb/sss ghproxy" in result.stderr
+    assert "byk @@ops clone -gh aaa/bb/sss ghproxy" in result.stderr
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
 
@@ -486,7 +486,7 @@ def test_clone_other_host_direct_failure_has_no_cdn_hint(runner, tmp_path):
         tmp_path, exit_code=35, stderr="curl: (35) Recv failure: Connection reset by peer"
     )
 
-    result = runner.run("@@ops..clone", "https://example.com/x.byk.json", env=env)
+    result = runner.run("@@ops", "clone", "https://example.com/x.byk.json", env=env)
 
     assert result.returncode == 1
     assert "curl failed (exit 35)" in result.stderr
@@ -495,7 +495,7 @@ def test_clone_other_host_direct_failure_has_no_cdn_hint(runner, tmp_path):
 
 
 def test_clone_rejects_unsupported_scheme(runner):
-    result = runner.run("@@ops..clone", "ftp://example.com/x.byk.json")
+    result = runner.run("@@ops", "clone", "ftp://example.com/x.byk.json")
 
     assert result.returncode == 1
     assert "Unsupported source scheme" in result.stderr
@@ -507,7 +507,7 @@ def test_clone_existing_destination_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=payload)
     dest = runner.prepare_alias_json("ops", {"keep": "echo keep"})
 
-    result = runner.run("@@ops..clone", "https://example.com/x.byk.json", env=env)
+    result = runner.run("@@ops", "clone", "https://example.com/x.byk.json", env=env)
 
     assert result.returncode == 1
     assert "File already exists" in result.stderr
@@ -518,18 +518,18 @@ def test_clone_existing_destination_skips_curl(runner, tmp_path):
 def test_link_rejects_url(runner):
     runner.prepare_alias_file("ops", "{}\n")
 
-    result = runner.run("@@ops..link", "https://example.com/x.byk.json")
+    result = runner.run("@@ops", "link", "https://example.com/x.byk.json")
 
     assert result.returncode == 1
     assert "Remote source is not supported here" in result.stderr
-    assert "use ..clone" in result.stderr
+    assert "use `byk <file> clone`" in result.stderr
 
 
 def test_clone_github_shorthand(runner, tmp_path):
     payload = b'{"build": "echo hi"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "-gh", "aaa/bb/sss", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "aaa/bb/sss", env=env)
 
     assert result.returncode == 0
     dest = runner.byk_dir / "alias" / "ops.byk.json"
@@ -545,7 +545,7 @@ def test_clone_github_long_flag_with_ref(runner, tmp_path):
     payload = b'{"build": "echo hi"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "--github", "aaa/bb@v1/", env=env)
+    result = runner.run("@@ops", "clone", "--github", "aaa/bb@v1/", env=env)
 
     assert result.returncode == 0
     assert args_path.read_text(encoding="utf-8").splitlines()[-1] == (
@@ -558,7 +558,7 @@ def test_clone_github_requires_curl(runner, tmp_path):
     empty_bin.mkdir()
 
     result = runner.run(
-        "@@ops..clone", "-gh", "aaa/bb/sss", env={"PATH": str(empty_bin)}
+        "@@ops", "clone", "-gh", "aaa/bb/sss", env={"PATH": str(empty_bin)}
     )
 
     assert result.returncode == 1
@@ -569,7 +569,7 @@ def test_clone_github_requires_curl(runner, tmp_path):
 def test_clone_github_invalid_spec_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-gh", "aaa", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "aaa", env=env)
 
     assert result.returncode == 1
     assert "GitHub source must be" in result.stderr
@@ -581,7 +581,7 @@ def test_clone_github_bare_repo_reads_root_config(runner, tmp_path):
     payload = b'{"build": "echo root"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "-gh", "aaa/bb", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "aaa/bb", env=env)
 
     assert result.returncode == 0
     assert args_path.read_text(encoding="utf-8").splitlines() == [
@@ -595,7 +595,7 @@ def test_clone_github_bare_repo_reads_root_config(runner, tmp_path):
 def test_clone_github_bare_repo_with_ref_reads_root_config(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "--github", "aaa/bb@v1", env=env)
+    result = runner.run("@@ops", "clone", "--github", "aaa/bb@v1", env=env)
 
     assert result.returncode == 0
     assert args_path.read_text(encoding="utf-8").splitlines()[-1] == (
@@ -623,7 +623,7 @@ def test_clone_bare_repo_hits_root_for_each_forge(runner, tmp_path):
         case_dir = tmp_path / str(index)
         case_dir.mkdir()
         env, args_path = install_fake_curl(case_dir, payload=payload)
-        result = runner.run("@@ops..clone", *args, env=env)
+        result = runner.run("@@ops", "clone", *args, env=env)
 
         assert result.returncode == 0, result.stderr
         assert args_path.read_text(encoding="utf-8").splitlines() == [
@@ -637,7 +637,7 @@ def test_clone_bare_repo_hits_root_for_each_forge(runner, tmp_path):
 def test_clone_rejects_a_host_in_spec(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-gh", "github.com/aaa/bb", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "github.com/aaa/bb", env=env)
 
     assert result.returncode == 1
     assert "must not include a host" in result.stderr
@@ -650,7 +650,7 @@ def test_clone_gitee_shorthand(runner, tmp_path):
     payload = b'{"build": "echo gitee"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "-ge", "aaa/bb/sss", env=env)
+    result = runner.run("@@ops", "clone", "-ge", "aaa/bb/sss", env=env)
 
     assert result.returncode == 0
     dest = runner.byk_dir / "alias" / "ops.byk.json"
@@ -666,7 +666,7 @@ def test_clone_gitee_long_flag_with_ref(runner, tmp_path):
     payload = b'{"build": "echo gitee"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "--gitee", "aaa/bb@v1/", env=env)
+    result = runner.run("@@ops", "clone", "--gitee", "aaa/bb@v1/", env=env)
 
     assert result.returncode == 0
     assert args_path.read_text(encoding="utf-8").splitlines()[-1] == (
@@ -677,7 +677,7 @@ def test_clone_gitee_long_flag_with_ref(runner, tmp_path):
 def test_clone_gitee_invalid_spec_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-ge", "aaa", env=env)
+    result = runner.run("@@ops", "clone", "-ge", "aaa", env=env)
 
     assert result.returncode == 1
     assert "Gitee source must be" in result.stderr
@@ -688,7 +688,7 @@ def test_clone_github_through_jsdelivr(runner, tmp_path):
     payload = b'{"build": "echo cdn"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "-gh", "aaa/bb/sss", "jsdelivr", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "aaa/bb/sss", "jsdelivr", env=env)
 
     assert result.returncode == 0
     dest = runner.byk_dir / "alias" / "ops.byk.json"
@@ -705,7 +705,7 @@ def test_clone_github_through_jsdelivr_with_ref(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
     result = runner.run(
-        "@@ops..clone", "--github", "aaa/bb@v1/", "jsdelivr", "-d", env=env
+        "@@ops", "clone", "--github", "aaa/bb@v1/", "jsdelivr", "-d", env=env
     )
 
     assert result.returncode == 0, result.stderr
@@ -717,7 +717,7 @@ def test_clone_github_through_jsdelivr_with_ref(runner, tmp_path):
 def test_clone_github_unknown_cdn_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-gh", "aaa/bb", "fastgit", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "aaa/bb", "fastgit", env=env)
 
     assert result.returncode == 1
     assert "Unknown CDN: fastgit" in result.stderr
@@ -729,7 +729,7 @@ def test_clone_github_unknown_cdn_skips_curl(runner, tmp_path):
 def test_clone_github_with_invalid_spec_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "-gh", "aaa", "jsdelivr", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "aaa", "jsdelivr", env=env)
 
     assert result.returncode == 1
     assert "GitHub source must be" in result.stderr
@@ -771,7 +771,7 @@ def test_clone_tap_routes_to_a_relative_target(runner, tmp_path):
         },
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 0, result.stderr
     index = "https://raw.githubusercontent.com/aaa/bb/HEAD/byk.tap.json"
@@ -795,7 +795,7 @@ def test_clone_tap_short_flag_keeps_the_ref(runner, tmp_path):
         },
     )
 
-    result = runner.run("@@ops..clone", "-t", "aaa/bb@v1/build", env=env)
+    result = runner.run("@@ops", "clone", "-t", "aaa/bb@v1/build", env=env)
 
     assert result.returncode == 0, result.stderr
     assert curl_urls(log) == [
@@ -813,7 +813,7 @@ def test_clone_tap_accepts_a_full_url_target(runner, tmp_path):
         },
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 0, result.stderr
     assert curl_urls(log) == [
@@ -836,7 +836,7 @@ def test_clone_tap_uses_a_local_index_without_network(runner, tmp_path):
     target = (repo / "aliases/build.byk.json").resolve()
 
     result = runner.run(
-        "@@ops..clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
+        "@@ops", "clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
     )
 
     assert result.returncode == 0, result.stderr
@@ -855,7 +855,7 @@ def test_clone_tap_local_index_key_miss_never_falls_back(runner, tmp_path):
         tmp_path, payload=b'{"build": "remote.byk.json"}'
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 1
     assert "Tap key not found" in result.stderr
@@ -873,7 +873,7 @@ def test_clone_tap_local_index_parse_error_never_falls_back(runner, tmp_path):
         tmp_path, payload=b'{"build": "remote.byk.json"}'
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 1
     assert "Failed to parse tap index" in result.stderr
@@ -886,7 +886,7 @@ def test_clone_tap_local_index_that_is_a_directory_is_an_error(runner, tmp_path)
     path.mkdir(parents=True)
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 1
     assert "Tap index is not a file" in result.stderr
@@ -902,7 +902,7 @@ def test_clone_tap_local_index_has_no_path_sugar(runner, tmp_path):
     )
 
     result = runner.run(
-        "@@ops..clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
+        "@@ops", "clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
     )
 
     assert result.returncode == 1
@@ -920,7 +920,7 @@ def test_clone_tap_local_index_treats_at_names_as_literal_paths(runner, tmp_path
     )
 
     result = runner.run(
-        "@@ops..clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
+        "@@ops", "clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
     )
 
     assert result.returncode == 0, result.stderr
@@ -933,7 +933,7 @@ def test_clone_tap_local_index_accepts_an_absolute_target(runner, tmp_path):
     write_local_tap(runner, "aaa/bb", {"build": str(absolute)})
 
     result = runner.run(
-        "@@ops..clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
+        "@@ops", "clone", "--tap", "aaa/bb/build", env=without_curl(tmp_path)
     )
 
     assert result.returncode == 0, result.stderr
@@ -951,7 +951,7 @@ def test_clone_tap_local_index_can_route_to_a_url(runner, tmp_path):
         tmp_path, {"/remote/tool.byk.json": b'{"run": "echo remote"}'}
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 0, result.stderr
     assert f"Tap index: local {(repo / 'byk.tap.json').resolve()}" in result.stderr
@@ -978,7 +978,7 @@ def test_clone_tap_ref_skips_the_local_index(runner, tmp_path):
         },
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb@v1/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb@v1/build", env=env)
 
     assert result.returncode == 0, result.stderr
     assert (
@@ -1009,7 +1009,7 @@ def test_clone_tap_local_index_anchors_the_base_on_the_local_target(runner, tmp_
     )
 
     result = runner.run(
-        "@@ops..clone", "--tap", "aaa/bb/build", "-d", env=without_curl(tmp_path)
+        "@@ops", "clone", "--tap", "aaa/bb/build", "-d", env=without_curl(tmp_path)
     )
 
     assert result.returncode == 0, result.stderr
@@ -1030,7 +1030,7 @@ def test_clone_tap_missing_local_index_falls_back_to_remote(runner, tmp_path):
         },
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 0, result.stderr
     assert (
@@ -1054,7 +1054,7 @@ def test_clone_tap_single_key_uses_a_unique_local_match(runner, tmp_path):
     write_local_tap(runner, "ccc/dd", {"deploy": "deploy.byk.json"})
 
     result = runner.run(
-        "@@ops..clone", "--tap", "build", env=without_curl(tmp_path)
+        "@@ops", "clone", "--tap", "build", env=without_curl(tmp_path)
     )
 
     assert result.returncode == 0, result.stderr
@@ -1075,7 +1075,7 @@ def test_clone_tap_single_key_not_found_never_uses_the_network(runner, tmp_path)
         tmp_path, payload=b'{"build": "remote.byk.json"}'
     )
 
-    result = runner.run("@@ops..clone", "--tap", "build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "build", env=env)
 
     assert result.returncode == 1
     assert 'Tap key "build" was not found in 1 local tap index' in result.stderr
@@ -1093,7 +1093,7 @@ def test_clone_tap_single_key_lists_full_forms_when_ambiguous(runner, tmp_path):
     )
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "--tap", "build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "build", env=env)
 
     assert result.returncode == 1
     assert result.stderr.splitlines() == [
@@ -1117,7 +1117,7 @@ def test_clone_tap_single_key_warns_and_skips_a_broken_index(runner, tmp_path):
     )
 
     result = runner.run(
-        "@@ops..clone", "--tap", "build", env=without_curl(tmp_path)
+        "@@ops", "clone", "--tap", "build", env=without_curl(tmp_path)
     )
 
     assert result.returncode == 0, result.stderr
@@ -1139,7 +1139,7 @@ def test_clone_tap_single_key_accepts_a_url_target(runner, tmp_path):
         tmp_path, {"/remote/tool.byk.json": b'{"run": "echo remote"}'}
     )
 
-    result = runner.run("@@ops..clone", "--tap", "build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "build", env=env)
 
     assert result.returncode == 0, result.stderr
     assert "Tap build -> https://example.com/remote/tool.byk.json" in result.stderr
@@ -1153,7 +1153,7 @@ def test_clone_tap_single_key_missing_target_errors_without_network(runner, tmp_
     write_local_tap(runner, "aaa/bb", {"build": "missing.byk.json"})
 
     result = runner.run(
-        "@@ops..clone", "--tap", "build", env=without_curl(tmp_path)
+        "@@ops", "clone", "--tap", "build", env=without_curl(tmp_path)
     )
 
     assert result.returncode == 1
@@ -1165,7 +1165,7 @@ def test_clone_tap_single_key_missing_target_errors_without_network(runner, tmp_
 def test_clone_tap_single_key_reports_a_missing_tap_root(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "--tap", "build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "build", env=env)
 
     assert result.returncode == 1
     assert "No local tap repositories found at" in result.stderr
@@ -1175,7 +1175,7 @@ def test_clone_tap_single_key_reports_a_missing_tap_root(runner, tmp_path):
 def test_clone_tap_missing_index_reports_where_to_add_it(runner, tmp_path):
     env, _ = install_fake_curl(tmp_path, exit_code=22, stderr="404: Not Found")
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 1
     assert (
@@ -1191,7 +1191,7 @@ def test_clone_tap_missing_key_lists_available_keys(runner, tmp_path):
     payload = b'{"deploy": "x", "build": "y", "$schema": "z"}'
     env, args_path = install_fake_curl(tmp_path, payload=payload)
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/nope", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/nope", env=env)
 
     assert result.returncode == 1
     assert "Tap key not found" in result.stderr
@@ -1204,7 +1204,7 @@ def test_clone_tap_missing_key_lists_available_keys(runner, tmp_path):
 def test_clone_tap_rejects_a_non_string_entry(runner, tmp_path):
     env, _ = install_fake_curl(tmp_path, payload=b'{"build": 42}')
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 1
     assert 'Tap entry "build" must be a string' in result.stderr
@@ -1216,7 +1216,7 @@ def test_clone_tap_refuses_a_target_that_is_another_index(runner, tmp_path):
         tmp_path, {"/byk.tap.json": b'{"build": "byk.tap.json"}'}
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", env=env)
 
     assert result.returncode == 1
     assert "not another tap index" in result.stderr
@@ -1229,7 +1229,7 @@ def test_clone_tap_is_mutually_exclusive_with_forge_sources(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
     result = runner.run(
-        "@@ops..clone", "--tap", "aaa/bb/build", "-gh", "aaa/bb", env=env
+        "@@ops", "clone", "--tap", "aaa/bb/build", "-gh", "aaa/bb", env=env
     )
 
     assert result.returncode == 1
@@ -1240,7 +1240,7 @@ def test_clone_tap_is_mutually_exclusive_with_forge_sources(runner, tmp_path):
 def test_clone_tap_invalid_spec_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb", env=env)
 
     assert result.returncode == 1
     assert "GitHub tap source must be" in result.stderr
@@ -1259,7 +1259,7 @@ def test_clone_tap_anchors_the_base_on_the_target_file(runner, tmp_path):
         },
     )
 
-    result = runner.run("@@ops..clone", "--tap", "aaa/bb/build", "-d", env=env)
+    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build", "-d", env=env)
 
     assert result.returncode == 0, result.stderr
     base = "https://raw.githubusercontent.com/aaa/bb/HEAD/pkg/deep/"
@@ -1276,12 +1276,12 @@ def test_clone_tap_anchors_the_base_on_the_target_file(runner, tmp_path):
 
 
 def test_clone_forge_options_are_completed(runner):
-    short = runner.run("__api__", "complete", "@@ops..clone", "-g")
-    long = runner.run("__api__", "complete", "@@ops..clone", "--")
-    tap = runner.run("__api__", "complete", "@@ops..clone", "-t")
-    cdn = runner.run("__api__", "complete", "@@ops..clone", "-gh", "aaa/bb", "")
+    short = runner.run("__api__", "complete", "@@ops", "clone", "-g")
+    long = runner.run("__api__", "complete", "@@ops", "clone", "--")
+    tap = runner.run("__api__", "complete", "@@ops", "clone", "-t")
+    cdn = runner.run("__api__", "complete", "@@ops", "clone", "-gh", "aaa/bb", "")
     both = runner.run(
-        "__api__", "complete", "--with-descriptions", "@@ops..clone", "-"
+        "__api__", "complete", "--with-descriptions", "@@ops", "clone", "-"
     )
 
     assert short.stdout.splitlines() == ["-gh", "-ge"]
@@ -1351,7 +1351,7 @@ WITH_TWO_DEPS = (
 def test_clone_install_deps_skips_without_declaration(runner):
     source = runner.prepare_alias_json("src", {"build": "echo hi"})
 
-    result = runner.run("@@ops..clone", str(source), "-d")
+    result = runner.run("@@ops", "clone", str(source), "-d")
 
     assert result.returncode == 0
     assert "Cloned" in result.stderr
@@ -1362,7 +1362,7 @@ def test_clone_install_deps_skips_without_declaration(runner):
 def test_clone_install_deps_combines_with_forge(runner, tmp_path):
     env, log = install_routed_curl(tmp_path, {"/.byk.json": b'{"build": "echo hi"}'})
 
-    result = runner.run("@@ops..clone", "-gh", "aaa/bb@v1/", "-d", env=env)
+    result = runner.run("@@ops", "clone", "-gh", "aaa/bb@v1/", "-d", env=env)
 
     assert result.returncode == 0
     assert "declares no $deps" in result.stderr
@@ -1378,7 +1378,7 @@ def test_clone_into_local_installs_into_the_project(runner, tmp_path):
     )
 
     result = runner.run(
-        "@ops..clone",
+        "@ops", "clone",
         "https://example.com/hello.byk.json",
         "-d",
         cwd=str(tmp_path),
@@ -1401,7 +1401,7 @@ def test_clone_install_deps_installs_without_prompt(runner, tmp_path):
 
     # 没有 tty、没有 stdin：安装不再二次确认
     result = runner.run(
-        "@@ops..clone", "https://example.com/hello.byk.json", "-d", env=env
+        "@@ops", "clone", "https://example.com/hello.byk.json", "-d", env=env
     )
 
     assert result.returncode == 0
@@ -1424,20 +1424,20 @@ def test_clone_install_deps_reports_failure(runner, tmp_path):
     )
 
     result = runner.run(
-        "@@ops..clone", "https://example.com/hello.byk.json", "-d", env=env
+        "@@ops", "clone", "https://example.com/hello.byk.json", "-d", env=env
     )
 
     assert result.returncode == 1
     assert "Failed to install dependencies" in result.stderr
     assert "already written in this run" in result.stderr
-    assert "byk @@ops..deps i" in result.stderr
+    assert "byk @@ops deps install" in result.stderr
     assert (runner.byk_dir / "alias" / "ops.byk.json").is_file()
 
 
 def test_clone_rejects_yes_without_install_deps(runner):
     source = runner.prepare_alias_json("src", {"build": "echo hi"})
 
-    result = runner.run("@@ops..clone", str(source), "-y")
+    result = runner.run("@@ops", "clone", str(source), "-y")
 
     assert result.returncode == 1
     assert "Unknown option: -y" in result.stderr
@@ -1445,7 +1445,7 @@ def test_clone_rejects_yes_without_install_deps(runner):
 
 
 def test_resolve_rejects_clone(runner):
-    result = runner.run("__api__", "resolve", "@@ops..clone")
+    result = runner.run("__api__", "resolve", "@@ops", "clone")
 
     assert result.returncode == 1
     assert "file command" in result.stderr
@@ -1467,7 +1467,7 @@ def test_remote_clone_freezes_the_base_and_resolves_relative_src(runner, tmp_pat
     )
 
     result = runner.run(
-        "@@ops..clone", "https://example.com/aaa/bbb/hello.byk.json", "-d", env=env
+        "@@ops", "clone", "https://example.com/aaa/bbb/hello.byk.json", "-d", env=env
     )
 
     assert result.returncode == 0, result.stderr
@@ -1492,7 +1492,7 @@ def test_remote_clone_resolves_a_relative_base(runner, tmp_path):
     )
 
     result = runner.run(
-        "@@ops..clone", "https://example.com/a/b/hello.byk.json", "-d", env=env
+        "@@ops", "clone", "https://example.com/a/b/hello.byk.json", "-d", env=env
     )
 
     assert result.returncode == 0, result.stderr
@@ -1510,7 +1510,7 @@ def test_local_clone_freezes_the_base_to_the_source_directory(runner, tmp_path):
     )
     (project / "tool").write_text("#!/bin/sh\necho tool\n", encoding="utf-8")
 
-    cloned = runner.run("@@ops..clone", str(source))
+    cloned = runner.run("@@ops", "clone", str(source))
     assert cloned.returncode == 0, cloned.stderr
     want = f"{project}/".replace("\\", "/")
     assert f"Recorded $deps.base = {want}" in cloned.stderr
@@ -1520,7 +1520,7 @@ def test_local_clone_freezes_the_base_to_the_source_directory(runner, tmp_path):
     # 声明一字未改：相对写法留在文件里，解析结果只出现在清单里
     assert doc["$deps"]["files"] == ["./tool"]
 
-    result = runner.run("@@ops..deps", "i")
+    result = runner.run("@@ops", "deps", "i")
     assert result.returncode == 0, result.stderr
     installed = runner.byk_dir / "deps" / "@@ops" / "tool"
     assert installed.read_text(encoding="utf-8") == "#!/bin/sh\necho tool\n"
@@ -1535,7 +1535,7 @@ def test_local_clone_installs_without_any_network(runner, tmp_path):
 
     # PATH 里没有 curl：本地来源根本不该调用它
     result = runner.run(
-        "@@ops..clone",
+        "@@ops", "clone",
         str(source),
         "-d",
         env={"PATH": str(tmp_path / "empty-bin")},
@@ -1551,9 +1551,9 @@ def test_local_deps_i_reports_a_missing_source(runner, tmp_path):
     source = project / "src.byk.json"
     source.write_text('{"$deps": {"files": ["./tool"]}}', encoding="utf-8")
 
-    assert runner.run("@@ops..clone", str(source)).returncode == 0
+    assert runner.run("@@ops", "clone", str(source)).returncode == 0
     # 源文件后来没了：静默跳过会让人以为装好了
-    result = runner.run("@@ops..deps", "i")
+    result = runner.run("@@ops", "deps", "i")
 
     assert result.returncode == 1
     assert "cannot read" in result.stderr
@@ -1565,7 +1565,7 @@ def test_deps_i_reports_a_relative_src_without_base(runner):
         "ops", {"$deps": {"files": ["../hhh.js"]}, "run": "tool"}
     )
 
-    result = runner.run("@@ops..deps", "i")
+    result = runner.run("@@ops", "deps", "i")
 
     assert result.returncode == 1
     assert 'relative path but "$deps.base" is not set' in result.stderr
@@ -1582,7 +1582,7 @@ def test_remote_clone_rejects_a_variable_base(runner, tmp_path):
     env, _ = install_routed_curl(tmp_path, {"/p/var.byk.json": body})
 
     result = runner.run(
-        "@@ops..clone", "https://example.com/p/var.byk.json", "-d", env=env
+        "@@ops", "clone", "https://example.com/p/var.byk.json", "-d", env=env
     )
 
     assert result.returncode == 1
@@ -1597,7 +1597,7 @@ def test_remote_clone_rejects_a_leading_slash_base(runner, tmp_path):
     env, _ = install_routed_curl(tmp_path, {"/p/slash.byk.json": body})
 
     result = runner.run(
-        "@@ops..clone", "https://example.com/p/slash.byk.json", env=env
+        "@@ops", "clone", "https://example.com/p/slash.byk.json", env=env
     )
 
     assert result.returncode == 1
@@ -1609,7 +1609,7 @@ def test_deps_i_names_an_unexpanded_variable_in_base(runner):
         "ops", {"$deps": {"base": "${NOPE}", "files": ["x.js"]}}
     )
 
-    result = runner.run("@@ops..deps", "i")
+    result = runner.run("@@ops", "deps", "i")
 
     assert result.returncode == 1
     assert '"${NOPE}" was not expanded' in result.stderr

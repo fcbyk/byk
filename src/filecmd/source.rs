@@ -21,7 +21,7 @@ pub(crate) struct Loaded {
     pub(crate) data: Vec<u8>,
     /// 来源的绝对地址：远程是 URL，本地是规范化后的路径。
     ///
-    /// `..clone` 靠它把 `$deps.base` 冻结成绝对地址——一旦落盘，这份文件
+    /// `clone` 靠它把 `$deps.base` 冻结成绝对地址——一旦落盘，这份文件
     /// 就再也没有自己的位置信息了。形态还决定冻结成 URL 还是本机路径。
     pub(crate) origin: Origin,
 }
@@ -30,7 +30,7 @@ pub(crate) struct Loaded {
 pub(crate) fn resolve(spec: &str, layout: &PathLayout) -> Result<PathBuf, String> {
     match classify(spec)? {
         SourceKind::Url(_) => Err(format!(
-            "Remote source is not supported here: {}\nHint: use ..clone for URLs",
+            "Remote source is not supported here: {}\nHint: use `byk <file> clone` for URLs",
             spec
         )),
         SourceKind::Local => load_local(spec, layout).map(|(path, _)| path),
@@ -786,7 +786,7 @@ mod tests {
         let err = resolve("https://example.com/tool.byk.json", &layout(&temp)).unwrap_err();
 
         assert!(err.starts_with("Remote source is not supported here:"));
-        assert!(err.contains("use ..clone for URLs"));
+        assert!(err.contains("clone` for URLs"));
     }
 
     #[test]

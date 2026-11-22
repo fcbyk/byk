@@ -413,7 +413,7 @@ pub(crate) fn install_declaration(
     let has_npm = !decl.npm.is_empty();
     if !has_files && !has_pip && !has_npm {
         return Err(
-            "nothing to install: $deps.files, $deps.pip and $deps.npm are all empty\nHint: run `..deps uninstall` to remove the whole directory"
+            "nothing to install: $deps.files, $deps.pip and $deps.npm are all empty\nHint: run `deps uninstall` to remove the whole directory"
                 .to_string(),
         );
     }
@@ -523,7 +523,7 @@ fn sync_files(
     for entry in &inspection.diff.removed {
         if entry.dest.is_empty() {
             eprintln!(
-                "Warning: cannot remove the dependency root declared by {}; clear it with `..deps uninstall`",
+                "Warning: cannot remove the dependency root declared by {}; clear it with `deps uninstall`",
                 entry.src
             );
             continue;

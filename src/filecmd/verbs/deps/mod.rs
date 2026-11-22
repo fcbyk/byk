@@ -1,6 +1,6 @@
-//! `..deps`：安装、卸载或查看别名文件声明的依赖。
+//! `deps`：安装、卸载或查看别名文件声明的依赖。
 //!
-//! 语法为 `<scope><stem>..deps <verb>`，verb 取 `install` / `uninstall` /
+//! 语法为 `<scope><stem> deps <verb>`，verb 取 `install` / `uninstall` /
 //! `status` 之一，也认无歧义前缀（`i` / `u` / `s`）。不带 verb 等于 `status`。
 //! 全局文件的依赖目录是 `~/.byk/deps/@@<stem>/`，局部文件是
 //! `<文件所在目录>/.byk/deps/@<stem>/`：目录本身就是身份，跟着项目走。
@@ -69,9 +69,12 @@ fn file_dir_of(scope: FileScope, layout: &PathLayout) -> PathBuf {
     }
 }
 
-/// 提示里那条可复制的命令：`@@hello..deps i` / `@hello..deps i`。
+/// 提示里那条可复制的命令：`@@hello deps install` / `@hello deps install`。
 fn deps_command(scope: FileScope, stem: &str) -> String {
-    format!("byk {}..deps i", build_file_key(stem, scope.is_global()))
+    format!(
+        "byk {} deps install",
+        build_file_key(stem, scope.is_global())
+    )
 }
 
 fn deps_dir_of(scope: FileScope, stem: &str, layout: &PathLayout) -> PathBuf {
@@ -158,20 +161,20 @@ fn uninstall(scope: FileScope, stem: &str, deps_dir: &Path, yes: bool) -> Result
 
 // ── 联动：rename / destroy / link 对依赖目录的处理 ──────────────────────
 
-/// `..rename` 成功后把依赖目录一起改名；目录不存在时静默跳过。
+/// `rename` 成功后把依赖目录一起改名；目录不存在时静默跳过。
 pub(crate) fn rename_dir(scope: FileScope, from_stem: &str, to_stem: &str, layout: &PathLayout) {
     let from = deps_dir_of(scope, from_stem, layout);
     let to = deps_dir_of(scope, to_stem, layout);
     apply::rename_dir(&from, &to);
 }
 
-/// `..destroy` 成功后删除依赖目录；目录不存在时静默跳过。
+/// `destroy` 成功后删除依赖目录；目录不存在时静默跳过。
 pub(crate) fn remove_dir(scope: FileScope, stem: &str, layout: &PathLayout) {
     let dir = deps_dir_of(scope, stem, layout);
     apply::remove_dir(&dir, scope.is_global());
 }
 
-/// `..link` 改指向时提醒旧的依赖目录还在。
+/// `link` 改指向时提醒旧的依赖目录还在。
 pub(crate) fn warn_stale_dir(scope: FileScope, stem: &str, layout: &PathLayout) {
     let dir = deps_dir_of(scope, stem, layout);
     let key = build_file_key(stem, scope.is_global());

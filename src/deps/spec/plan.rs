@@ -35,7 +35,7 @@ pub(crate) fn plan_entries(
         };
 
         // 标签跟着**落点**走：解压条目的落点是目录，压缩包文件名不该出现在
-        // 标签里——否则日志和 `..deps status` 会暗示一个根本不存在的路径。
+        // 标签里——否则日志和 `deps status` 会暗示一个根本不存在的路径。
         let base = if entry.to.is_empty() {
             key.to_string()
         } else {

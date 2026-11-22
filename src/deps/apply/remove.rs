@@ -39,7 +39,7 @@ fn prune_local_root(deps_dir: &Path) {
     }
 }
 
-/// `..rename` 成功后把依赖目录一起改名；目录不存在时静默跳过。
+/// `rename` 成功后把依赖目录一起改名；目录不存在时静默跳过。
 pub(crate) fn rename_dir(from: &Path, to: &Path) {
     if !from.is_dir() {
         return;
@@ -55,7 +55,7 @@ pub(crate) fn rename_dir(from: &Path, to: &Path) {
     eprintln!("Moved {} to {}", from.display(), to.display());
 }
 
-/// `..destroy` 成功后删除依赖目录；目录不存在时静默跳过。
+/// `destroy` 成功后删除依赖目录；目录不存在时静默跳过。
 pub(crate) fn remove_dir(dir: &Path, is_global: bool) {
     if !dir.is_dir() {
         return;
@@ -74,11 +74,11 @@ pub(crate) fn remove_dir(dir: &Path, is_global: bool) {
     eprintln!("Removed {}", dir.display());
 }
 
-/// `..link` 改指向时提醒旧的依赖目录还在。
+/// `link` 改指向时提醒旧的依赖目录还在。
 pub(crate) fn warn_stale_dir(dir: &Path, key: &str) {
     if dir.is_dir() {
         eprintln!(
-            "Warning: this file still has a dependency directory at {};\nHint: run `{}..deps uninstall` first if the new target needs different assets",
+            "Warning: this file still has a dependency directory at {};\nHint: run `{} deps uninstall` first if the new target needs different assets",
             dir.display(),
             key
         );

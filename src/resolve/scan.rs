@@ -419,7 +419,7 @@ fn parse_alias_file(
         }
     };
 
-    // $clone 只被 `..clone` 读取：扫描阶段不消费，校验后移除以免泄漏进别名数据
+    // $clone 只被 `clone` 读取：扫描阶段不消费，校验后移除以免泄漏进别名数据
     if let Some(raw) = obj.remove("$clone")
         && !is_valid_clone(&raw)
     {

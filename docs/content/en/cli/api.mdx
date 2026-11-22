@@ -98,13 +98,13 @@ grp.inner
 
 **Only aliases stop at the first word.** An alias is a single dotted token (`grp.inner`), so once a word is closed by a space everything after it is passed to the target command as-is and byk cannot know what belongs there — `complete grp ''` (Tab after `byk grp `) returns nothing instead of listing `inner` as a subcommand. When the cursor sits after a space the shell passes one empty word, and that empty word is exactly what separates "still typing the first word" from "first word already finished".
 
-File commands are the exception: their arguments are interpreted by byk itself, so `..help` completes command names, `..remove` completes existing keys in the file, `..clone` / `..link` / `..init --link` complete source files, and a command completes its own options. The list lives in [File Commands - Completion](/cli/file-commands#completion).
+File commands are the exception: their arguments are interpreted by byk itself, so `help` completes command names, `remove` completes existing keys in the file, `clone` / `link` / `init --link` complete source files, and a command completes its own options. The list lives in [File Commands - Completion](/cli/file-commands#completion).
 
 Each call is a read-only scan, and scan-time warnings about alias files (an invalid variable name, say) still go to stderr — stdout holds candidates only, which is why the completion script can wrap it in `$(...)`.
 
 ## resolve `<key> [args...]`
 
-Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`@run.build`, `@@ops.deploy`). File commands are not aliases: `@file..command` is rejected with exit code 1, and so is a path segment that starts with `$` (a reserved field or custom metadata).
+Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`@run.build`, `@@ops.deploy`). File commands are not aliases: `@file command` is rejected with exit code 1, and so is a path segment that starts with `$` (a reserved field or custom metadata).
 
 :::warning Not `file.key`
 `run.build` is a **dotted path**, looked up as a group name inside the merged space, and will usually miss. File keys take a prefix: `@run.build`.
@@ -211,7 +211,7 @@ byk __api__ file @run
 
 It accepts the same key forms as file commands: `@name` (working directory), `@@name` (global alias directory), `@` / `@@` (the anonymous `.byk.json`). `path` matches an entry in `paths.aliasFiles`; `key`, `scope`, and `dir` come on top.
 
-- **No existence check**: it answers "where would this land under byk's rules", the same path `@run..path` prints, plus `scope` and `dir`.
+- **No existence check**: it answers "where would this land under byk's rules", the same path `@run path` prints, plus `scope` and `dir`.
 - **Address only, not content**: to learn which file an alias came from and what it finally runs, use `resolve`.
 - **Links are not followed**: the result is the location of the link file itself, not its target.
 - **Alias keys are rejected**: the dot in `@run.build` makes it an invalid filename, exiting 1.
@@ -270,7 +270,7 @@ byk __api__ expand ./config.json
 }
 ```
 
-By default the rules match `..json --expand`:
+By default the rules match `json --expand`:
 
 - Expands `${byk_dir}`, `${work_dir}`, `${file_dir}`, and a top-level `$var`; `$var` may override a built-in name; `${deps_dir}` is additionally injected when the target sits inside the global alias directory
 - Removes the top-level `$var` after expansion
@@ -278,7 +278,7 @@ By default the rules match `..json --expand`:
 - **No alias-structure validation**: missing `$var`, missing `$cmd`, or even a non-object root are all fine as long as the JSON parses; built-ins expand unless `--no-builtins` is given
 - Does not follow link arrays, apply inheritance, or execute anything
 
-`--no-builtins` is available only on the `__api__` request (not on `..json --expand`): the four built-ins are left unset, while `$var` removal, name checks, and warnings behave exactly as above. A `$var` entry named after a built-in becomes an ordinary custom variable.
+`--no-builtins` is available only on the `__api__` request (not on `json --expand`): the four built-ins are left unset, while `$var` removal, name checks, and warnings behave exactly as above. A `$var` entry named after a built-in becomes an ordinary custom variable.
 
 Problems with `$var` declarations (invalid names, self-references) only warn on stderr and the request still succeeds with a complete JSON document on stdout. Only an unreadable file, a directory, or invalid UTF-8/JSON exits 1 with an empty stdout.
 

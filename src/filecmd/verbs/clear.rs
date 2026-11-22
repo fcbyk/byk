@@ -1,4 +1,4 @@
-//! `..clear` 的入口参数解析。
+//! `clear` 的入口参数解析。
 
 use crate::filecmd::spec::FileScope;
 use crate::model::PathLayout;
@@ -23,7 +23,7 @@ fn parse_args(args: &[String]) -> Result<bool, String> {
 }
 
 mod imp {
-    //! `..clear`：把当前文件重置为空对象。
+    //! `clear`：把当前文件重置为空对象。
 
     use std::fs;
     use std::io;
@@ -64,7 +64,7 @@ mod imp {
 
         if metadata.file_type().is_symlink() {
             return Err(format!(
-                "Refusing to clear symlink: {}\nHint: use ..destroy to remove the link",
+                "Refusing to clear symlink: {}\nHint: use destroy to remove the link",
                 target.display()
             ));
         }

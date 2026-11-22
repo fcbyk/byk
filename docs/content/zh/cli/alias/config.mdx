@@ -37,7 +37,7 @@ type AliasFileJSON =
       $cwd?: string;           // 文件级 / 分组级工作目录，子别名自动继承
       $mode?: 'normal' | 'interactive' | 'silent';  // 文件级 / 分组级执行方式，子别名自动继承
       $private?: boolean;      // 文件级 / 分组级私有，子别名自动继承；私有别名不进合并空间
-      $clone?: boolean;        // 文件级 / 分组级复制标记，子别名自动继承；false 不进 ..clone 的副本
+      $clone?: boolean;        // 文件级 / 分组级复制标记，子别名自动继承；false 不进  clone 的副本
       $paths?: string[];       // 文件级 / 分组级 / 别名级 PATH 目录列表，子别名自动继承，子级整体覆盖
       $deps?: Deps;            // 文件级依赖：资产文件、pip 包、npm 包
       $var?: Record<string, string | Record<string, string>>;  // 文件级变量
@@ -66,7 +66,7 @@ type AliasFileJSON =
 | `$description` | string | 帮助页描述文本（不可继承） |
 | `$recursive` | boolean | 放行调用链上的重复进入（不可继承），默认 `false`，见[递归保护](#递归保护) |
 | `$private` | boolean | 不进入合并空间，只能精确调用（可继承），默认 `false`，见[可见性](#可见性) |
-| `$clone` | boolean | 不进入 `..clone` 的副本（可继承），默认 `true`，见[克隆](#克隆) |
+| `$clone` | boolean | 不进入 `clone` 的副本（可继承），默认 `true`，见[克隆](#克隆) |
 
 :::note
 含 `$cmd` 的 object 是别名叶子节点。只有 `$cwd` / `$mode` / `$private` / `$clone` 而没有 `$cmd` 的 object 是**带继承属性的分组**，本身不可执行。
@@ -336,10 +336,10 @@ Aliases:
 声明本身不触发任何网络行为，安装是显式动词：
 
 ```bash
-byk @@tool..deps install      # 取回文件并安装声明的包
-byk @@tool..deps status       # 声明、到位、缺失、过期
-byk @@tool..deps uninstall    # 删除整个专属目录
-byk @@tool..clone <source> -d # 或者在克隆时顺手装好
+byk @@tool deps install      # 取回文件并安装声明的包
+byk @@tool deps status       # 声明、到位、缺失、过期
+byk @@tool deps uninstall    # 删除整个专属目录
+byk @@tool clone <source> -d # 或者在克隆时顺手装好
 ```
 
 ```json title="~/.byk/alias/tool.byk.json"
@@ -363,7 +363,7 @@ byk @@tool..clone <source> -d # 或者在克隆时顺手装好
 | 规则 | 说明 |
 |------|------|
 | 字符串简写 | 等于 `{ "src": "..." }`，文件名从地址末段推导 |
-| `base` | 相对 `src` 的解析基准，**目录**。落盘后必须是绝对地址：远程 clone 写绝对 http(s) URL，本地 clone 写本机绝对路径。**这个字段通常不用手写**，`..clone` 会替你写入。手写只认字面量——绝对 URL、绝对路径，或 clone 时会被解释的相对写法（`.`、`../`、`sub/dir`）；不支持变量 |
+| `base` | 相对 `src` 的解析基准，**目录**。落盘后必须是绝对地址：远程 clone 写绝对 http(s) URL，本地 clone 写本机绝对路径。**这个字段通常不用手写**，`clone` 会替你写入。手写只认字面量——绝对 URL、绝对路径，或 clone 时会被解释的相对写法（`.`、`../`、`sub/dir`）；不支持变量 |
 | `src` | 绝对 http(s) URL，或相对 `base` 的路径（`./x`、`../x`、`bin/tool`）；变量先展开再校验，所以可以写 `${url}` 这类以变量开头的地址。绝对地址交给系统 `curl`，本地路径直接复制，`curl` 缺失时报错并提示安装 |
 | `to` | 相对专属目录的子目录（默认根），只认 `/` 分隔，拒绝 `..`、绝对路径与反斜杠 |
 | `name` | 保存的文件名，覆盖 URL 推导值；与 `extract` 互斥 |
@@ -374,11 +374,11 @@ byk @@tool..clone <source> -d # 或者在克隆时顺手装好
 | 同步（`files`） | 声明是期望状态：缺的装、变的重下、移除的删；已安装清单在 `.byk-deps.json`，没变的不重下 |
 | 不越权 | 只删清单里记过、且声明里已移除的路径；目录里其他文件不动，只提示 |
 | 确认 | install 不再二次确认：先打印每条文件 / pip / npm 动作，然后直接执行；`uninstall` 仍要确认 |
-| 联动 | `..rename` 同步改名专属目录，`..destroy` 连带删除，`..link` 改指向时会提醒旧的依赖目录 |
+| 联动 | `rename` 同步改名专属目录，`destroy` 连带删除，`link` 改指向时会提醒旧的依赖目录 |
 
-**包与文件条目一起安装。** `$deps.pip` 与 `$deps.npm` 每次 `..deps install` 都会执行——由 pip / npm 自己判断是否最新——所以 `--force` 只影响文件条目。它们不记进 `.byk-deps.json`：从声明里删掉某个包不会卸载它，想清空整个目录用 `..deps uninstall`。`..deps status` 把每个包列为 `pip:<规格>` / `npm:<规格>`；pip 的 URL / VCS 直接引用显示为 `unknown`，因为本地拿不到包名来比对。`files` 可以省略，所以声明里可以只有包。
+**包与文件条目一起安装。** `$deps.pip` 与 `$deps.npm` 每次 `deps install` 都会执行——由 pip / npm 自己判断是否最新——所以 `--force` 只影响文件条目。它们不记进 `.byk-deps.json`：从声明里删掉某个包不会卸载它，想清空整个目录用 `deps uninstall`。`deps status` 把每个包列为 `pip:<规格>` / `npm:<规格>`；pip 的 URL / VCS 直接引用显示为 `unknown`，因为本地拿不到包名来比对。`files` 可以省略，所以声明里可以只有包。
 
-**`base` 是 clone 唯一会改写的字段。** 落盘的别名文件住在 `~/.byk/alias/`，它没有自己的位置信息，所以相对路径只有在 `..clone` 那一刻才能解释。写成什么形态取决于来源，而形态本身就决定了资产怎么取：
+**`base` 是 clone 唯一会改写的字段。** 落盘的别名文件住在 `~/.byk/alias/`，它没有自己的位置信息，所以相对路径只有在 `clone` 那一刻才能解释。写成什么形态取决于来源，而形态本身就决定了资产怎么取：
 
 | clone 来源 | 落盘的 `base` | 资产怎么取 |
 |---|---|---|
@@ -387,23 +387,23 @@ byk @@tool..clone <source> -d # 或者在克隆时顺手装好
 
 两条路互不越界：**远程 clone 只会写出 URL 形态，所以从网上拿到的别名文件读不了本机文件**。这不是靠检查挡住的，而是它根本拿不到本地路径这种写法。
 
-**ghproxy 会延伸到下载层。** `base` 是 `https://gh-proxy.com/...` 时，`..deps i` 下载绝对 `github.com` / `raw.githubusercontent.com` 地址也会套上同一个代理，Release 资产同样加速；相对 `src` 经 base 拼出来已经带前缀，不会重复套。jsdelivr 只镜像仓库文件，base 是 jsdelivr 时绝对地址保持原样。
+**ghproxy 会延伸到下载层。** `base` 是 `https://gh-proxy.com/...` 时，`deps i` 下载绝对 `github.com` / `raw.githubusercontent.com` 地址也会套上同一个代理，Release 资产同样加速；相对 `src` 经 base 拼出来已经带前缀，不会重复套。jsdelivr 只镜像仓库文件，base 是 jsdelivr 时绝对地址保持原样。
 
 ghproxy 改写的是 URL，不是网络出口。下载走的本地代理由 `BYK_USE_PROXY`、`BYK_PROXY`、代理环境变量或 Windows 静态系统代理决定，见[选项与命令](/cli/commands)。
 
 补 `base` 的规则两边一致，只是基准和产物不同：没写就按源文件所在目录补上，写了相对形态（`.`、`../`、`sub/dir`）就相对源文件解析，写了绝对地址（URL 或路径）就原样保留，只补结尾的 `/`。基准一律是**源文件**所在目录，不是落盘的目标目录——`files` 里的相对路径是作者照着源文档写的，`~/.byk/alias/` 旁边没有那些文件。
 
-补写 `base` 会让 clone 重新序列化整份文档（键按字典序重排）。既没有 `$deps` 也没有 `$clone` 的文件不受影响，仍是字节级副本；`base` 已经等于将要写入的值时也不改写，重复 clone 不会产生 diff。**clone 不接受 `base` 里的变量。** clone 期没有变量表，`"base": "${CDN}"` 求不出值，猜一个写死只会把作者意图烧成假地址，见到它会直接失败并提示改源文件。（读取期更宽：`..deps i` 会先展开变量，所以手写的 `${CDN}` 只要展开成绝对地址仍然能装。这条限制只针对 clone，编辑器里的 schema 按 clone 的口径提示。）base 定位就是"程序写的字面量"：clone 冻结一次，之后谁读都一样。
+补写 `base` 会让 clone 重新序列化整份文档（键按字典序重排）。既没有 `$deps` 也没有 `$clone` 的文件不受影响，仍是字节级副本；`base` 已经等于将要写入的值时也不改写，重复 clone 不会产生 diff。**clone 不接受 `base` 里的变量。** clone 期没有变量表，`"base": "${CDN}"` 求不出值，猜一个写死只会把作者意图烧成假地址，见到它会直接失败并提示改源文件。（读取期更宽：`deps i` 会先展开变量，所以手写的 `${CDN}` 只要展开成绝对地址仍然能装。这条限制只针对 clone，编辑器里的 schema 按 clone 的口径提示。）base 定位就是"程序写的字面量"：clone 冻结一次，之后谁读都一样。
 
 本地 base 是不可移植的：它写的是这台机器上的绝对路径，换机器就失效。本地依赖的定位就是"本机开发工具"，别指望把它分享出去还能用。
 
 Windows 上还有一条：`/sub` 这种没有盘符的根路径挂在"当前盘"上，换个工作目录就指向别处，所以只认相对路径和盘符开头的绝对路径（`C:/share/`），`/sub` 直接报错。
 
-**本地条目按源文件的 mtime 判新旧**：源比装好的那份新就重装，所以改完本地产物再跑一次 `..deps i` 就生效（想无条件重来用 `--force`）。URL 条目没有这个概念——同一个地址就是同一份内容，`keep` 永远安全。源文件不存在时报错并给出路径，不会安静地报 up to date。
+**本地条目按源文件的 mtime 判新旧**：源比装好的那份新就重装，所以改完本地产物再跑一次 `deps i` 就生效（想无条件重来用 `--force`）。URL 条目没有这个概念——同一个地址就是同一份内容，`keep` 永远安全。源文件不存在时报错并给出路径，不会安静地报 up to date。
 
 别名里用 `${deps_dir}` 引用专属目录。这个目录由 byk 托管：安装时按声明同步文件条目，别往里手放需要长期保存的东西。
 
-`--check` 只校验这份声明本身（能不能解析、落点是否冲突、相对 `src` 有没有 `base`、包条目是否非空字符串）；缺哪条、旧没旧要看 `..deps status`。
+`--check` 只校验这份声明本身（能不能解析、落点是否冲突、相对 `src` 有没有 `base`、包条目是否非空字符串）；缺哪条、旧没旧要看 `deps status`。
 
 `$var`、`$paths` 与 `$deps` 自身都会先经过变量替换，可以用 `${version}` 之类的自定义变量拼 URL。
 
@@ -669,7 +669,7 @@ byk @@ops.build     # 精确调用走链接的 key
 
 ### 克隆
 
-`$clone: false` 把一段别名标成"自己的"：`..clone` 永远不复制它。它只是复制期的标签，不影响合并空间、执行、补全或任何其他查找。
+`$clone: false` 把一段别名标成"自己的"：`clone` 永远不复制它。它只是复制期的标签，不影响合并空间、执行、补全或任何其他查找。
 
 和 `$private` 一样支持三级继承：文件级 → 分组级 → 别名级，越靠近别名优先级越高；子级写 `true` 可以重新暴露。
 
@@ -681,12 +681,12 @@ byk @@ops.build     # 精确调用走链接的 key
 }
 ```
 
-clone 这个文件只会得到 `shared.whoami`，`deploy` 被剔除。如果剔除后什么都不剩，`..clone` 会直接拒绝、不落盘。这个标记本身也不会出现在副本里。
+clone 这个文件只会得到 `shared.whoami`，`deploy` 被剔除。如果剔除后什么都不剩，`clone` 会直接拒绝、不落盘。这个标记本身也不会出现在副本里。
 
 `$private` 和 `$clone` 相互独立：既要避开合并空间、又要避开 clone 副本时，两个都写。
 
 :::note
-`$clone` 只约束 `byk ..clone`。`cp`、git、用其他方式拉取文件仍然能看到原始字节——它是声明式约定，不是加密。
+`$clone` 只约束 `byk  clone`。`cp`、git、用其他方式拉取文件仍然能看到原始字节——它是声明式约定，不是加密。
 :::
 
 ### 精确执行语法

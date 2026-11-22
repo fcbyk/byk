@@ -35,12 +35,12 @@ byk deploy          # 先问 {env}，确认后执行
 想在任何目录都能用，把文件放进 `~/.byk/alias/`。那里不方便随手开编辑器，就让 byk 自己改（`@@` 指全局目录）：
 
 ```bash
-byk @@ops..init                          # 建 ~/.byk/alias/ops.byk.json
-byk @@ops..set clean --cmd "cargo clean" # 加一条
-byk @@ops..json                          # 看一眼现在写了什么
+byk @@ops init                          # 建 ~/.byk/alias/ops.byk.json
+byk @@ops set clean --cmd "cargo clean" # 加一条
+byk @@ops json                          # 看一眼现在写了什么
 ```
 
-项目里已经有现成的，`byk @@run..clone @run` 可以直接复制过去。
+项目里已经有现成的，`byk @@run clone @run` 可以直接复制过去。
 
 ## 命令行
 
@@ -48,7 +48,7 @@ byk @@ops..json                          # 看一眼现在写了什么
 
 - `byk <别名> [参数...]` —— 在当前目录与全局目录的别名里查找并执行
 - `byk @文件.key` / `@@文件.key` —— 精确路由到某一个文件
-- `byk @文件..命令` —— 文件命令，`init`、`set`、`remove`、`json`、`path`、`rename`、`clone`、`link`、`deps`、`destroy`、`clear`、`help`；`byk @文件..help` 一次列全
+- `byk @文件 命令` —— 文件命令，`init`、`set`、`remove`、`json`、`path`、`rename`、`clone`、`link`、`deps`、`destroy`、`clear`、`help`；`byk @文件 help` 一次列全
 - `byk __api__` —— 给 shell 补全与编辑器插件的只读接口（隐藏）
 
 选项：`--paths` 列出 byk 扫描到的别名文件，`--check` 检查这些文件写得对不对，`-h` 看帮助与全部别名，`-v` 看版本。下载会跟随 `BYK_USE_PROXY` / `BYK_PROXY`、已有代理变量与 Windows 系统代理。完整说明见 [选项与命令](https://cli.fcbyk.com/zh/cli/commands) 和 [文件命令](https://cli.fcbyk.com/zh/cli/file-commands)。

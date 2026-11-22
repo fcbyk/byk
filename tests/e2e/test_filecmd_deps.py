@@ -73,7 +73,7 @@ def prepare_tool(runner, files, extra=None, base=None):
 
 
 def install(runner, env, *args):
-    return runner.run("@@tool..deps", "i", *args, env=env)
+    return runner.run("@@tool", "deps", "i", *args, env=env)
 
 
 def local_base(tmp_path):
@@ -321,7 +321,7 @@ def test_manifest_with_escaping_dest_is_rejected(runner):
         encoding="utf-8",
     )
 
-    result = runner.run("@@tool..deps", "i")
+    result = runner.run("@@tool", "deps", "i")
 
     assert result.returncode == 1
     assert 'a ".." segment' in result.stderr
@@ -353,7 +353,7 @@ def test_partial_failure_keeps_what_landed(runner, tmp_path):
 
     assert result.returncode == 1
     assert "already written in this run" in result.stderr
-    assert "byk @@tool..deps i" in result.stderr
+    assert "byk @@tool deps install" in result.stderr
     # 清单只记真正落盘的那条，下一次安装接着做
     assert [entry["dest"] for entry in manifest_of(runner)["entries"]] == ["tool"]
 
@@ -408,7 +408,7 @@ def test_root_extract_actually_downloads(runner, tmp_path):
         runner, [{"src": "https://example.com/v1.tar.gz", "extract": True}]
     )
 
-    status = runner.run("@@tool..deps")
+    status = runner.run("@@tool", "deps")
     assert "0 present" in status.stdout
     assert "missing  @@tool" in status.stdout
 
@@ -426,7 +426,7 @@ def test_root_extract_actually_downloads(runner, tmp_path):
     again = install(runner, env)
     assert "up to date" in again.stderr
 
-    ok = runner.run("@@tool..deps")
+    ok = runner.run("@@tool", "deps")
     assert "1 present" in ok.stdout
     assert "ok       @@tool" in ok.stdout
 
@@ -472,7 +472,7 @@ def test_root_extract_rejects_other_entries(runner):
         ],
     )
 
-    result = runner.run("@@tool..deps", "i")
+    result = runner.run("@@tool", "deps", "i")
 
     assert result.returncode == 1
     assert "must be the only entry" in result.stderr
@@ -501,7 +501,7 @@ def test_extract_install_is_idempotent(runner, tmp_path):
 def test_empty_declaration_is_an_error(runner):
     prepare_tool(runner, [])
 
-    result = runner.run("@@tool..deps", "i")
+    result = runner.run("@@tool", "deps", "i")
 
     assert result.returncode == 1
     assert "nothing to install" in result.stderr
@@ -510,7 +510,7 @@ def test_empty_declaration_is_an_error(runner):
 def test_install_rejects_yes_flag(runner):
     prepare_tool(runner, ["https://example.com/tool"])
 
-    result = runner.run("@@tool..deps", "install", "--yes")
+    result = runner.run("@@tool", "deps", "install", "--yes")
 
     assert result.returncode == 1
     assert "Unknown option: --yes" in result.stderr
@@ -520,7 +520,7 @@ def test_install_rejects_yes_flag(runner):
 def test_deps_rejects_unknown_subcommand(runner):
     prepare_tool(runner, ["https://example.com/tool"])
 
-    result = runner.run("@@tool..deps", "upgrade")
+    result = runner.run("@@tool", "deps", "upgrade")
 
     assert result.returncode == 1
     assert "Unknown deps subcommand" in result.stderr
@@ -541,7 +541,7 @@ def test_local_deps_install_into_the_project(runner, tmp_path):
     env, _ = write_fake_curl(tmp_path, {"/tool": b"local"})
     prepare_local(tmp_path, ["https://example.com/tool"])
 
-    result = runner.run("@tool..deps", "i", cwd=str(tmp_path), env=env)
+    result = runner.run("@tool", "deps", "i", cwd=str(tmp_path), env=env)
 
     assert result.returncode == 0
     local_deps = tmp_path / ".byk" / "deps" / "@tool"
@@ -561,7 +561,7 @@ def test_local_deps_do_not_mix_between_projects(runner, tmp_path):
         env, _ = write_fake_curl(project, {"/tool": payload})
         prepare_local(project, ["https://example.com/tool"])
 
-        result = runner.run("@tool..deps", "i", cwd=str(project), env=env)
+        result = runner.run("@tool", "deps", "i", cwd=str(project), env=env)
         assert result.returncode == 0, result.stderr
 
     assert (project_a / ".byk" / "deps" / "@tool" / "tool").read_bytes() == b"A"
@@ -575,7 +575,7 @@ def test_local_deps_dir_expands_in_the_file(runner, tmp_path):
         extra={"$paths": ["${deps_dir}"], "run": "tool"},
     )
 
-    result = runner.run("@tool..json", "--expand", cwd=str(tmp_path))
+    result = runner.run("@tool", "json", "--expand", cwd=str(tmp_path))
 
     assert result.returncode == 0
     assert f"{tmp_path}/.byk/deps/@tool" in result.stdout
@@ -584,10 +584,10 @@ def test_local_deps_dir_expands_in_the_file(runner, tmp_path):
 def test_destroy_removes_local_deps(runner, tmp_path):
     env, _ = write_fake_curl(tmp_path, {"/tool": b"x"})
     prepare_local(tmp_path, ["https://example.com/tool"])
-    runner.run("@tool..deps", "i", cwd=str(tmp_path), env=env)
+    runner.run("@tool", "deps", "i", cwd=str(tmp_path), env=env)
     assert (tmp_path / ".byk" / "deps" / "@tool").is_dir()
 
-    result = runner.run("@tool..destroy", "--yes", cwd=str(tmp_path))
+    result = runner.run("@tool", "destroy", "--yes", cwd=str(tmp_path))
 
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / ".byk").exists(), "空壳目录也要收掉"
@@ -606,7 +606,7 @@ def test_check_ignores_install_state_of_local_deps(runner, tmp_path):
 def test_status_without_declaration_errors(runner):
     runner.prepare_alias_json("tool", {"run": "tool --version"})
 
-    result = runner.run("@@tool..deps")
+    result = runner.run("@@tool", "deps")
 
     assert result.returncode == 1
     assert 'declares no "$deps"' in result.stderr
@@ -653,7 +653,7 @@ def seed_status_fixture(runner):
 def test_status_reports_four_states(runner):
     seed_status_fixture(runner)
 
-    result = runner.run("@@tool..deps")
+    result = runner.run("@@tool", "deps")
 
     assert result.returncode == 0
     assert result.stderr == ""
@@ -664,7 +664,7 @@ def test_status_reports_four_states(runner):
         "  outdated @@tool/cfg/c.json",
         "  stale    @@tool/old.bin",
         f"Deps directory: {deps_dir(runner)}",
-        "Hint: run `byk @@tool..deps i` to install the missing assets",
+        "Hint: run `byk @@tool deps install` to install the missing assets",
     ]
 
 
@@ -687,7 +687,7 @@ def test_status_explains_stale_only(runner):
         encoding="utf-8",
     )
 
-    result = runner.run("@@tool..deps")
+    result = runner.run("@@tool", "deps")
 
     assert result.returncode == 0
     assert "1 stale" in result.stdout
@@ -695,14 +695,14 @@ def test_status_explains_stale_only(runner):
 
 
 def test_check_ignores_install_state(runner):
-    """缺、旧、多余都是运行时状态，`--check` 不报——那是 `..deps status` 的事。"""
+    """缺、旧、多余都是运行时状态，`--check` 不报——那是 `deps status` 的事。"""
     seed_status_fixture(runner)
 
     result = runner.run("--check")
 
     assert result.returncode == 0
     assert "no problems" in result.stdout
-    assert "..deps" not in result.stdout
+    assert "deps" not in result.stdout
 
 
 def test_check_is_clean_after_install(runner, tmp_path):
@@ -717,9 +717,9 @@ def test_check_is_clean_after_install(runner, tmp_path):
 
 
 def test_deps_completion_accepts_short_prefixes(runner):
-    short = runner.run("__api__", "complete", "@@tool..deps", "u")
-    status = runner.run("__api__", "complete", "@@tool..deps", "s")
-    empty = runner.run("__api__", "complete", "@@tool..deps", "")
+    short = runner.run("__api__", "complete", "@@tool", "deps", "u")
+    status = runner.run("__api__", "complete", "@@tool", "deps", "s")
+    empty = runner.run("__api__", "complete", "@@tool", "deps", "")
 
     assert short.stdout.splitlines() == ["uninstall"]
     assert status.stdout.splitlines() == ["status"]
@@ -772,7 +772,7 @@ def test_status_shows_the_base(runner, tmp_path):
     prepare_tool(runner, ["tool"], base="https://example.com/dist/")
     assert install(runner, env).returncode == 0
 
-    result = runner.run("@@tool..deps")
+    result = runner.run("@@tool", "deps")
 
     assert result.returncode == 0
     assert "Base: https://example.com/dist/\n" in result.stdout
@@ -781,7 +781,7 @@ def test_status_shows_the_base(runner, tmp_path):
 def test_status_flags_a_missing_base(runner):
     prepare_tool(runner, ["./tool"])
 
-    result = runner.run("@@tool..deps")
+    result = runner.run("@@tool", "deps")
 
     assert result.returncode == 1
     assert 'relative path but "$deps.base" is not set' in result.stderr
@@ -796,7 +796,7 @@ def test_a_local_source_says_how_many_came_from_disk(runner, tmp_path):
     (tmp_path / "proj" / "tool").write_text("v1", encoding="utf-8")
     prepare_tool(runner, ["tool"], base=base)
 
-    result = runner.run("@@tool..deps", "i")
+    result = runner.run("@@tool", "deps", "i")
 
     deps_root = deps_dir(runner)
     assert result.returncode == 0, result.stderr
@@ -811,12 +811,12 @@ def test_a_newer_local_source_is_reinstalled(runner, tmp_path):
     base = local_base(tmp_path)
     (tmp_path / "proj" / "tool").write_text("v1", encoding="utf-8")
     prepare_tool(runner, ["tool"], base=base)
-    assert runner.run("@@tool..deps", "i").returncode == 0
+    assert runner.run("@@tool", "deps", "i").returncode == 0
 
     # URL 可以当内容寻址，本地文件不行：改了源就该重装
     time.sleep(1.1)
     (tmp_path / "proj" / "tool").write_text("v2", encoding="utf-8")
-    result = runner.run("@@tool..deps", "i")
+    result = runner.run("@@tool", "deps", "i")
 
     assert result.returncode == 0, result.stderr
     assert f"  update  @@tool/tool <- {base}tool" in result.stderr

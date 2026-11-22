@@ -81,8 +81,8 @@ export const i18nSource = {
     en: 'to bypass merging and go straight to a file; to edit the file itself use',
   },
   homeFeat2Token2: {
-    zh: '@文件..命令',
-    en: '@file..command',
+    zh: '@文件 命令',
+    en: '@file command',
   },
   homeFeat2DescC: {
     zh: '——init、set、clone、link 这些，不必手写 JSON。',
