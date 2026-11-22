@@ -411,6 +411,7 @@ def test_set_options_are_completed_with_descriptions(runner):
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == [
+        "--help\tPrint help",
         "--cmd\tSet the alias command",
         "--cwd\tSet the working directory",
         "--mode\tSet the execution mode",
@@ -430,6 +431,7 @@ def test_set_options_are_completed_after_key(runner):
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == [
+        "--help",
         "--cmd",
         "--cwd",
         "--mode",

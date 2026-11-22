@@ -1288,6 +1288,7 @@ def test_clone_forge_options_are_completed(runner):
 
     assert short.stdout.splitlines() == ["-gh", "-ge"]
     assert long.stdout.splitlines() == [
+        "--help",
         "--github",
         "--gitee",
         "--tap",
@@ -1296,6 +1297,8 @@ def test_clone_forge_options_are_completed(runner):
     assert tap.stdout.splitlines() == ["-t"]
     assert cdn.stdout.splitlines() == ["raw", "jsdelivr", "ghproxy"]
     assert both.stdout.splitlines() == [
+        "--help\tPrint help",
+        "-h\tPrint help",
         "-gh\tClone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)",
         "--github\tClone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)",
         "-ge\tClone from a Gitee repository",

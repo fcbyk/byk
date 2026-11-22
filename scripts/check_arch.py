@@ -2,8 +2,8 @@
 """Check the src module dependency direction.
 
 Rules:
-- deps is a leaf: it may only reference crate::deps.
-- model / utils / cli are leaves: no crate:: imports.
+- deps is a leaf: it may only reference crate::deps and crate::net.
+- model / utils / cli / net are leaves: no crate:: imports.
 - resolve may use model, utils, deps, resolve.
 - alias and filecmd must not depend on each other.
 - options / completion / api / app follow the layering enforced below.
@@ -26,9 +26,10 @@ ALLOWED = {
     "completion": {"completion", "filecmd", "model", "resolve", "utils"},
     "alias": {"alias", "execution", "model", "resolve", "utils"},
     "execution": {"execution", "model", "utils"},
-    "filecmd": {"deps", "filecmd", "model", "resolve", "utils"},
+    "filecmd": {"deps", "filecmd", "model", "net", "resolve", "utils"},
     "resolve": {"deps", "model", "resolve", "utils"},
-    "deps": {"deps"},
+    "deps": {"deps", "net"},
+    "net": set(),
     "model": set(),
     "utils": set(),
 }

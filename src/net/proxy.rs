@@ -416,6 +416,71 @@ mod tests {
     }
 
     #[test]
+    fn env_mode_sets_each_proxy_variable() {
+        // 协议分开的代理只能靠环境变量表达，Windows 的 Mode::Env 走这条路；
+        // 非 Windows 构建里没有调用点，这个测试保证它仍然被覆盖。
+        let env = ProxyEnv {
+            http: Some("http://10.0.0.1:8080".to_string()),
+            https: Some("http://10.0.0.1:8443".to_string()),
+            all: Some("socks5h://127.0.0.1:1080".to_string()),
+            no_proxy: Some("localhost".to_string()),
+        };
+        let mut command = Command::new("curl");
+        env.apply_to(&mut command);
+
+        assert_eq!(
+            envs_of(&command),
+            vec![
+                (
+                    "all_proxy".to_string(),
+                    "socks5h://127.0.0.1:1080".to_string()
+                ),
+                ("http_proxy".to_string(), "http://10.0.0.1:8080".to_string()),
+                (
+                    "https_proxy".to_string(),
+                    "http://10.0.0.1:8443".to_string()
+                ),
+                ("no_proxy".to_string(), "localhost".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn env_mode_skips_missing_protocols() {
+        let env = ProxyEnv {
+            all: Some("socks5h://127.0.0.1:1080".to_string()),
+            ..ProxyEnv::default()
+        };
+        let mut command = Command::new("curl");
+        env.apply_to(&mut command);
+
+        assert_eq!(
+            envs_of(&command),
+            vec![(
+                "all_proxy".to_string(),
+                "socks5h://127.0.0.1:1080".to_string()
+            )]
+        );
+    }
+
+    /// `Command` 上显式设置的变量（不含继承自父进程的）。
+    ///
+    /// 内部按 HashMap 存，顺序不保证，排序后再比。
+    fn envs_of(command: &Command) -> Vec<(String, String)> {
+        let mut envs: Vec<(String, String)> = command
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().into_owned(),
+                    value.unwrap_or_default().to_string_lossy().into_owned(),
+                )
+            })
+            .collect();
+        envs.sort();
+        envs
+    }
+
+    #[test]
     fn proxy_switch_accepts_common_false_spellings() {
         for value in ["false", "FALSE", " 0 ", "no", "off"] {
             assert!(is_disabled_value(value), "{value}");

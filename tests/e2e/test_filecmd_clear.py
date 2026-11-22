@@ -170,7 +170,10 @@ def test_clear_yes_option_is_completed_with_description(runner):
     )
 
     assert result.returncode == 0
-    assert result.stdout.splitlines() == ["--yes\tSkip confirmation"]
+    assert result.stdout.splitlines() == [
+        "--help\tPrint help",
+        "--yes\tSkip confirmation",
+    ]
 
 
 def test_clear_is_completed_with_description(runner):
@@ -178,7 +181,7 @@ def test_clear_is_completed_with_description(runner):
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == [
-        "clear\tReset this file to an empty object",
+        "clear\tReset this alias file to an empty object",
         "clone\tCopy a local or remote alias file into this file",
     ]
 

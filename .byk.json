@@ -23,7 +23,8 @@
     "cov": "cargo llvm-cov",
     "fmt-check": "cargo fmt --check",
     "fmt": "cargo fmt",
-    "e2e": "pytest"
+    "e2e": "pytest",
+    "test-arch":"python3 scripts/check_arch.py"
   },
 
   "git": {

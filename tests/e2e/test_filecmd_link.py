@@ -245,7 +245,8 @@ def test_init_link_option_is_completed_with_description(runner):
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == [
-        "--link\tCreate as a link to another alias file"
+        "--help\tPrint help",
+        "--link\tCreate as a link to another alias file",
     ]
 
 
