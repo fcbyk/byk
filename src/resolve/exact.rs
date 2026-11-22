@@ -7,8 +7,8 @@ use super::scan::load_alias_file;
 use crate::model::PathLayout;
 use crate::model::{AliasFile, Mode, ResolvedAlias};
 use crate::resolve::{
-    Diagnostic, Level, apply_inherited, build_builtin_table, is_alias_value, to_alias_definition,
-    to_alias_value, validate_filename,
+    Diagnostic, Level, apply_inherited, build_builtin_table, is_alias_value, parse_paths,
+    to_alias_definition, to_alias_value, validate_filename,
 };
 
 /// 解析 `@file.key` / `@@file.key`，返回 (file_key, alias_key)。
@@ -195,17 +195,21 @@ pub fn lookup_exact_alias(
         }
         let parts: Vec<&str> = alias_key.split('.').collect();
         let mut current: &serde_json::Value = &serde_json::Value::Object(f.aliases.clone());
-        // 沿路径遍历时累积分组级 $cwd / $mode，子级覆盖父级
+        // 沿路径遍历时累积分组级 $cwd / $mode / $paths，子级覆盖父级
         let mut group_cwd: Option<&str> = None;
         let mut group_mode: Option<Mode> = None;
+        let mut group_paths: Option<Vec<String>> = None;
         for (i, part) in parts.iter().enumerate() {
             let obj = current.as_object()?;
-            // 累积分组级继承属性（文件根级的 $cwd/$mode 已被 parse_alias_file 移除，此处不影响）
+            // 累积分组级继承属性（文件根级的 $cwd/$mode/$paths 已被 parse_alias_file 移除，此处不影响）
             if let Some(c) = obj.get("$cwd").and_then(|v| v.as_str()) {
                 group_cwd = Some(c);
             }
             if let Some(v) = obj.get("$mode") {
                 group_mode = Some(Mode::from_json(v));
+            }
+            if let Some(paths) = obj.get("$paths").and_then(parse_paths) {
+                group_paths = Some(paths);
             }
             current = obj.get(*part)?;
             if i < parts.len() - 1 && !current.is_object() {
@@ -220,12 +224,19 @@ pub fn lookup_exact_alias(
             let definition = to_alias_definition(&value);
             let display_source = format!("{}.{}", file_key, alias_key);
             let source_path = Some(f.path.clone());
+            // 别名对象自己的 $paths 优先于分组继承值；空数组同样覆盖
+            let effective_paths = current
+                .as_object()
+                .and_then(|obj| obj.get("$paths"))
+                .and_then(parse_paths)
+                .or(group_paths)
+                .unwrap_or_else(|| f.inherited_paths.clone());
             return Some((
                 ResolvedAlias {
                     definition,
                     source: file_key.to_string(),
                     source_path,
-                    paths: f.inherited_paths.clone(),
+                    paths: effective_paths,
                     prepend_paths: f.prepend_paths.clone(),
                 },
                 display_source,
@@ -290,6 +301,38 @@ mod tests {
             panic!("exact calls must reach private files");
         };
         assert_eq!(resolved.definition.command, "echo private");
+    }
+
+    #[test]
+    fn resolve_exact_respects_paths_inheritance() {
+        let (_tmp, layout) = temp_layout();
+        fs::write(
+            layout.alias_dir.join("ops.byk.json"),
+            r#"{
+                "$paths": ["./file"],
+                "top": "echo top",
+                "g": {
+                    "$paths": ["./group"],
+                    "a": "echo a",
+                    "own": { "$cmd": "echo own", "$paths": ["./own"] },
+                    "system": { "$cmd": "python", "$paths": [] }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let paths = |key: &str| {
+            let ExactLookup::Found { resolved, .. } = resolve_exact_alias(&layout, "@@ops", key)
+            else {
+                panic!("expected {key} to resolve");
+            };
+            resolved.paths
+        };
+
+        assert_eq!(paths("top"), vec!["./file"]);
+        assert_eq!(paths("g.a"), vec!["./group"]);
+        assert_eq!(paths("g.own"), vec!["./own"]);
+        assert!(paths("g.system").is_empty());
     }
 
     #[test]

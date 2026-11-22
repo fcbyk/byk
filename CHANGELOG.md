@@ -6,6 +6,7 @@
 
 ### Features
 
+- **`$paths`**: now inheritable like `$cwd` / `$mode` — writable on a file, group, or alias object; a child value replaces the inherited list entirely (no merging), and `[]` clears it so a single alias can fall back to the system `PATH`
 - **`..clone -gh`**: takes an optional second value naming the CDN — `raw` (default), `jsdelivr`, or `ghproxy` — so more mirrors can be added without new flags
 - **`$deps`**: when `base` is a ghproxy address, absolute GitHub downloads (release assets included) reuse the same proxy; relative entries are never wrapped twice, and jsdelivr remains repository-files-only
 - **`$deps`**: curl's native progress bar is shown on a terminal; non-TTY output stays quiet with unchanged error text

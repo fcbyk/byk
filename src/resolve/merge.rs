@@ -8,7 +8,7 @@ use crate::model::PathLayout;
 use crate::model::{AliasFile, MergedConfig, Mode, ResolvedAlias};
 use crate::resolve::{
     Diagnostic, DiagnosticReport, Level, apply_inherited, build_builtin_table, is_alias_value,
-    parse_private, to_alias_definition, to_alias_value,
+    parse_paths, parse_private, to_alias_definition, to_alias_value,
 };
 use crate::utils::path::canonical;
 
@@ -47,6 +47,12 @@ fn deep_merge_dict(
         .get("$private")
         .map(parse_private)
         .unwrap_or(ctx.inherited_private);
+    // $paths 是整体覆盖：子级写了（含空数组）就替换父级，不做数组合并。
+    // 类型不对时 parse_paths 返回 None，按「没写」继续继承。
+    let group_paths: Vec<String> = source
+        .get("$paths")
+        .and_then(parse_paths)
+        .unwrap_or_else(|| ctx.inherited_paths.to_vec());
 
     for (key, val) in source {
         if key.starts_with('$') {
@@ -63,6 +69,13 @@ fn deep_merge_dict(
         };
 
         if is_alias_value(val) {
+            // 别名对象里的 $paths 优先于分组继承值；空数组同样覆盖
+            let alias_paths: Vec<String> = val
+                .as_object()
+                .and_then(|inner| inner.get("$paths"))
+                .and_then(parse_paths)
+                .unwrap_or_else(|| group_paths.clone());
+
             let alias_val = to_alias_value(val);
             if let Some(av) = alias_val {
                 if !node_private {
@@ -73,7 +86,7 @@ fn deep_merge_dict(
                         definition,
                         source: ctx.file_key.to_string(),
                         source_path: ctx.source_path.map(|p| p.to_path_buf()),
-                        paths: ctx.inherited_paths.to_vec(),
+                        paths: alias_paths.clone(),
                         prepend_paths: ctx.prepend_paths.to_vec(),
                     });
                 }
@@ -86,6 +99,7 @@ fn deep_merge_dict(
                             inherited_cwd: group_cwd,
                             inherited_mode: group_mode,
                             inherited_private: node_private,
+                            inherited_paths: &alias_paths,
                             ..*ctx
                         },
                     );
@@ -99,6 +113,7 @@ fn deep_merge_dict(
                     inherited_cwd: group_cwd,
                     inherited_mode: group_mode,
                     inherited_private: node_private,
+                    inherited_paths: &group_paths,
                     ..*ctx
                 },
             );
@@ -497,6 +512,147 @@ mod tests {
         let merged = build_merged_aliases(&files);
         let resolved = resolve_merged_alias(&merged, "build").unwrap();
         assert!(resolved.paths.is_empty());
+    }
+
+    #[test]
+    fn group_paths_override_file_level_without_merging() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{
+                "$paths": ["./file"],
+                "top": "echo top",
+                "g": { "$paths": ["./group"], "a": "echo a" }
+            }"#,
+        )
+        .unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        assert_eq!(
+            resolve_merged_alias(&merged, "top").unwrap().paths,
+            vec!["./file"]
+        );
+        assert_eq!(
+            resolve_merged_alias(&merged, "g.a").unwrap().paths,
+            vec!["./group"]
+        );
+    }
+
+    #[test]
+    fn alias_paths_override_group_without_merging() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{
+                "$paths": ["./file"],
+                "g": {
+                    "$paths": ["./group"],
+                    "own": { "$cmd": "echo own", "$paths": ["./own"] },
+                    "inherit": "echo inherit"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        assert_eq!(
+            resolve_merged_alias(&merged, "g.own").unwrap().paths,
+            vec!["./own"]
+        );
+        assert_eq!(
+            resolve_merged_alias(&merged, "g.inherit").unwrap().paths,
+            vec!["./group"]
+        );
+    }
+
+    #[test]
+    fn empty_alias_paths_clears_inherited() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{
+                "$paths": ["./file"],
+                "g": {
+                    "$paths": ["./group"],
+                    "system": { "$cmd": "python", "$paths": [] }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        assert!(
+            resolve_merged_alias(&merged, "g.system")
+                .unwrap()
+                .paths
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn invalid_group_paths_fall_back_to_inherited() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{
+                "$paths": ["./file"],
+                "g": { "$paths": "./typo", "a": "echo a" }
+            }"#,
+        )
+        .unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        assert_eq!(
+            resolve_merged_alias(&merged, "g.a").unwrap().paths,
+            vec!["./file"]
+        );
+    }
+
+    #[test]
+    fn invalid_alias_paths_fall_back_to_group() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{
+                "g": {
+                    "$paths": ["./group"],
+                    "a": { "$cmd": "echo a", "$paths": 42 }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        assert_eq!(
+            resolve_merged_alias(&merged, "g.a").unwrap().paths,
+            vec!["./group"]
+        );
+    }
+
+    #[test]
+    fn group_alias_paths_apply_to_its_children() {
+        let (_tmp, layout, cwd) = project();
+        fs::write(
+            cwd.join("p.byk.json"),
+            r#"{
+                "g": {
+                    "$cmd": "echo g",
+                    "$paths": ["./g"],
+                    "c": "echo c"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let (merged, _) = load_merged_aliases_at(&layout, &cwd);
+        assert_eq!(
+            resolve_merged_alias(&merged, "g").unwrap().paths,
+            vec!["./g"]
+        );
+        assert_eq!(
+            resolve_merged_alias(&merged, "g.c").unwrap().paths,
+            vec!["./g"]
+        );
     }
 
     #[test]

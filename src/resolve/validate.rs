@@ -186,7 +186,53 @@ pub(super) fn validate_aliases(
             );
         }
 
+        if let Some(raw) = inner.get("$paths") {
+            validate_paths_value(raw, &path, is_alias, doc, owner, diagnostics);
+        }
+
         validate_aliases(inner, &path, doc, owner, diagnostics);
+    }
+}
+
+/// 分组 / 别名级 `$paths` 只认字符串数组；写错时告警并按「没写」继续继承。
+fn validate_paths_value(
+    raw: &serde_json::Value,
+    path: &str,
+    is_alias: bool,
+    doc: &Path,
+    owner: &Path,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let label = if is_alias { "alias" } else { "group" };
+    let Some(items) = raw.as_array() else {
+        push_doc_diagnostic(
+            diagnostics,
+            Level::Warning,
+            owner,
+            doc,
+            format!(
+                "{} \"{}\": $paths must be an array of strings; ignored",
+                label, path
+            ),
+        );
+        return;
+    };
+
+    let dropped = items.iter().filter(|item| item.as_str().is_none()).count();
+    if dropped > 0 {
+        push_doc_diagnostic(
+            diagnostics,
+            Level::Warning,
+            owner,
+            doc,
+            format!(
+                "{} \"{}\": $paths contains {} non-string {}; ignored",
+                label,
+                path,
+                dropped,
+                if dropped == 1 { "entry" } else { "entries" }
+            ),
+        );
     }
 }
 

@@ -90,6 +90,99 @@ def test_paths_relative_to_config_file(runner):
     assert "hi-from-bin2" in r.stdout
 
 
+def test_paths_group_level_inherited(runner):
+    """分组级 $paths 整体覆盖文件级，组内别名继承覆盖后的列表"""
+    file_bin = make_dir(runner, "file_bin")
+    group_bin = make_dir(runner, "group_bin")
+    runner.prepare_alias_json(
+        "env",
+        {
+            "$paths": [str(file_bin)],
+            "top": "env",
+            "g": {"$paths": [str(group_bin)], "show": "env"},
+        },
+    )
+
+    top = runner.run("top")
+    assert top.returncode == 0, top.stderr
+    assert str(file_bin) in top.stdout
+
+    group = runner.run("g.show")
+    assert group.returncode == 0, group.stderr
+    assert str(group_bin) in group.stdout
+    assert str(file_bin) not in group.stdout
+
+
+def test_paths_alias_level_overrides_group(runner):
+    """别名对象自己的 $paths 覆盖分组继承值，不与父级合并"""
+    group_bin = make_dir(runner, "group_bin")
+    own_bin = make_dir(runner, "own_bin")
+    runner.prepare_alias_json(
+        "env",
+        {
+            "g": {
+                "$paths": [str(group_bin)],
+                "own": {"$cmd": "env", "$paths": [str(own_bin)]},
+                "inherit": "env",
+            }
+        },
+    )
+
+    own = runner.run("g.own")
+    assert own.returncode == 0, own.stderr
+    assert str(own_bin) in own.stdout
+    assert str(group_bin) not in own.stdout
+
+    inherited = runner.run("g.inherit")
+    assert inherited.returncode == 0, inherited.stderr
+    assert str(group_bin) in inherited.stdout
+
+
+def test_paths_empty_array_clears_inherited(runner):
+    """$paths: [] 清空继承的显式路径，让别名回到系统 PATH"""
+    bin_dir = make_dir(runner, "venv_bin")
+    runner.prepare_alias_json(
+        "env",
+        {
+            "$paths": [str(bin_dir)],
+            "venv": "env",
+            "system": {"$cmd": "env", "$paths": []},
+        },
+    )
+
+    venv = runner.run("venv")
+    assert venv.returncode == 0, venv.stderr
+    assert str(bin_dir) in venv.stdout
+
+    system = runner.run("system")
+    assert system.returncode == 0, system.stderr
+    assert str(bin_dir) not in system.stdout
+
+
+def test_paths_invalid_group_value_warns_in_check(runner):
+    """分组级 $paths 类型写错时告警，并按没写继续继承"""
+    runner.prepare_alias_json("env", {"g": {"$paths": "nope", "hi": "echo hi"}})
+
+    r = runner.run("g.hi")
+    assert r.returncode == 0, r.stderr
+    assert "hi" in r.stdout
+
+    check = runner.run("--check")
+    assert check.returncode == 1
+    assert 'group "g": $paths must be an array of strings' in check.stdout
+
+
+def test_paths_non_string_entry_warns_in_check(runner):
+    """分组级 $paths 里的非字符串条目被过滤并告警"""
+    runner.prepare_alias_json(
+        "env", {"g": {"$paths": ["./bin", 42], "hi": "echo hi"}}
+    )
+
+    check = runner.run("--check")
+    assert check.returncode == 1
+    assert 'group "g": $paths contains 1 non-string entry' in check.stdout
+
+
 def test_preamble_skipped_when_stderr_is_not_a_tty(runner):
     """输出没落到终端时不打提示行：stdout 和 stderr 都是干净的"""
     runner.prepare_alias_json("env", {"hi": "echo hello"})

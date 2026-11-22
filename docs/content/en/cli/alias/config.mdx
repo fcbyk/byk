@@ -38,7 +38,7 @@ type AliasFileJSON =
       $mode?: 'normal' | 'interactive' | 'silent';  // file- or group-level mode, inherited by child aliases
       $private?: boolean;      // file- or group-level visibility, inherited by child aliases; private aliases stay out of the merged space
       $clone?: boolean;        // file- or group-level copy tag, inherited by child aliases; false keeps a subtree out of ..clone copies
-      $paths?: string[];       // file-level PATH directories, inherited by child aliases
+      $paths?: string[];       // file-, group- or alias-level PATH directories; a child value replaces the inherited list entirely
       $deps?: Deps;            // file-level dependencies: assets, pip packages, npm packages
       $var?: Record<string, string | Record<string, string>>;  // file-level variables
       [key: string]: string | AliasObject | Deps | number | boolean | undefined;
@@ -310,20 +310,22 @@ A resolved `$cwd` is appended in parentheses only when no description is set —
 
 `$paths` prepends directories to `PATH` before an alias runs, letting the alias call executables in those directories directly.
 
-**File level only** — all child aliases inherit it; writing it inside a group is ignored.
+**It can be written on a file, a group, or an alias object**, and is inherited level by level like `$cwd` / `$mode`: a child `$paths` **replaces** the inherited list entirely — lists are never merged; `[]` clears the inherited entries.
 
 ```json title="run.byk.json"
 {
   "$paths": ["./scripts", "~/tools/bin"],
   "deploy": "deploy.sh",
-  "check": "lint.sh"
+  "check": "lint.sh",
+  "sys-python": { "$cmd": "python", "$paths": [] }
 }
 ```
 
 - Relative paths are resolved against the directory containing the config file, and `~` expands
 - **Nonexistent directories are silently skipped** — they never reach the child process's `PATH`
-- Separately, byk always prepends the working directory's `node_modules/.bin`; when the file declares `$deps.pip` / `$deps.npm`, the dependency directory's venv bin / `node_modules/.bin` is prepended as well — no need to write either into `$paths` yourself
 - The order of `$paths` is the order in `PATH`, so earlier entries win
+- An empty array only clears inherited `$paths`; directories prepended automatically from `$deps.pip` / `$deps.npm` and the working directory's `node_modules/.bin` are unaffected
+- Separately, byk always prepends the working directory's `node_modules/.bin`; when the file declares `$deps.pip` / `$deps.npm`, the dependency directory's venv bin / `node_modules/.bin` is prepended as well — no need to write either into `$paths` yourself
 
 ### Dependencies
 

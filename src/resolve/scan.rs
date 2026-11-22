@@ -9,7 +9,7 @@ use crate::model::build_file_key;
 use crate::model::{AliasFile, Mode};
 use crate::resolve::{
     DEPS_DIR_VAR, Diagnostic, FILE_DIR_VAR, Level, VarTable, describe_issue, filter_invalid_keys,
-    is_valid_clone, is_valid_private, parse_priority, parse_private, preprocess_vars,
+    is_valid_clone, is_valid_private, parse_paths, parse_priority, parse_private, preprocess_vars,
     validate_filename,
 };
 use crate::utils::path::{canonical, dir_of, expand_home};
@@ -434,38 +434,36 @@ fn parse_alias_file(
 
     let inherited_paths = match obj.remove("$paths") {
         None => Vec::new(),
-        Some(serde_json::Value::Array(items)) => {
-            let total = items.len();
-            let paths: Vec<String> = items
-                .iter()
-                .filter_map(|item| item.as_str().map(String::from))
-                .collect();
-            let dropped = total - paths.len();
-            if dropped > 0 {
+        Some(raw) => match parse_paths(&raw) {
+            Some(paths) => {
+                let total = raw.as_array().map(|items| items.len()).unwrap_or(0);
+                let dropped = total - paths.len();
+                if dropped > 0 {
+                    push_doc_diagnostic(
+                        diagnostics,
+                        Level::Warning,
+                        owner,
+                        doc,
+                        format!(
+                            "$paths contains {} non-string {}; ignored",
+                            dropped,
+                            if dropped == 1 { "entry" } else { "entries" }
+                        ),
+                    );
+                }
+                paths
+            }
+            None => {
                 push_doc_diagnostic(
                     diagnostics,
                     Level::Warning,
                     owner,
                     doc,
-                    format!(
-                        "$paths contains {} non-string {}; ignored",
-                        dropped,
-                        if dropped == 1 { "entry" } else { "entries" }
-                    ),
+                    "$paths must be an array of strings; ignored".to_string(),
                 );
+                Vec::new()
             }
-            paths
-        }
-        Some(_) => {
-            push_doc_diagnostic(
-                diagnostics,
-                Level::Warning,
-                owner,
-                doc,
-                "$paths must be an array of strings; ignored".to_string(),
-            );
-            Vec::new()
-        }
+        },
     };
 
     // $deps 是声明而非别名：移除后校验并报告，不进合并空间；

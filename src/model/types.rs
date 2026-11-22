@@ -166,7 +166,7 @@ pub struct ResolvedAlias {
     pub source: String,
     /// 来源配置文件路径（文件本身，非目录）
     pub source_path: Option<PathBuf>,
-    /// 来源文件的 $paths，需要前置到 PATH 环境变量的目录列表
+    /// 解析后生效的 `$paths`（文件 / 分组 / 别名逐层覆盖的结果），需要前置到 PATH 环境变量
     pub paths: Vec<String>,
     /// 来源文件 $deps 推导出的可执行目录（venv 的 bin / node_modules/.bin），自动前置到 PATH
     pub prepend_paths: Vec<String>,

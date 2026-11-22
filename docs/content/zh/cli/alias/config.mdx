@@ -38,7 +38,7 @@ type AliasFileJSON =
       $mode?: 'normal' | 'interactive' | 'silent';  // 文件级 / 分组级执行方式，子别名自动继承
       $private?: boolean;      // 文件级 / 分组级私有，子别名自动继承；私有别名不进合并空间
       $clone?: boolean;        // 文件级 / 分组级复制标记，子别名自动继承；false 不进 ..clone 的副本
-      $paths?: string[];       // 文件级 PATH 目录列表，子别名自动继承
+      $paths?: string[];       // 文件级 / 分组级 / 别名级 PATH 目录列表，子别名自动继承，子级整体覆盖
       $deps?: Deps;            // 文件级依赖：资产文件、pip 包、npm 包
       $var?: Record<string, string | Record<string, string>>;  // 文件级变量
       [key: string]: string | AliasObject | Deps | number | boolean | undefined;
@@ -305,20 +305,22 @@ Aliases:
 
 `$paths` 在执行别名前把目录前置到 `PATH`，让别名可以直接调用这些目录下的可执行文件。
 
-**仅支持文件级**，所有子别名自动继承；写在分组里会被忽略。
+**可写在文件、分组或别名对象上**，逐层继承，和 `$cwd` / `$mode` 一样：子级写了 `$paths` 就**整体覆盖**父级的列表，**不合并**；写空数组 `[]` 表示清空继承来的路径。
 
 ```json title="run.byk.json"
 {
   "$paths": ["./scripts", "~/tools/bin"],
   "deploy": "deploy.sh",
-  "check": "lint.sh"
+  "check": "lint.sh",
+  "sys-python": { "$cmd": "python", "$paths": [] }
 }
 ```
 
 - 相对路径以配置文件所在目录为基准解析，`~` 会展开
 - **不存在的目录静默跳过**，不会出现在子进程的 `PATH` 里
-- 另外，别名运行时 byk 会自动把工作目录下的 `node_modules/.bin` 追加到 `PATH` 前面；声明了 `$deps.pip` / `$deps.npm` 时，依赖目录里的 venv bin / `node_modules/.bin` 也会一并前置——这些都不需要自己写进 `$paths`
 - `$paths` 的顺序就是 `PATH` 里的优先级顺序，越靠前越优先
+- 空数组只清空显式继承的 `$paths`；`$deps` 自动前置的 venv bin / `node_modules/.bin` 和工作目录下的 `node_modules/.bin` 照常存在，不受影响
+- 另外，别名运行时 byk 会自动把工作目录下的 `node_modules/.bin` 追加到 `PATH` 前面；声明了 `$deps.pip` / `$deps.npm` 时，依赖目录里的 venv bin / `node_modules/.bin` 也会一并前置——这些都不需要自己写进 `$paths`
 
 ### 依赖
 

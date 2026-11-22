@@ -18,7 +18,7 @@ pub use diagnostic::{Diagnostic, DiagnosticReport, Level};
 pub use exact::load_file_by_key;
 pub(crate) use format::{
     filter_invalid_keys, is_alias_value, is_meta_object, is_meta_only, is_valid_clone,
-    is_valid_private, parse_clone, parse_priority, parse_private, to_alias_value,
+    is_valid_private, parse_clone, parse_paths, parse_priority, parse_private, to_alias_value,
     validate_filename,
 };
 pub(crate) use inherit::apply_inherited;

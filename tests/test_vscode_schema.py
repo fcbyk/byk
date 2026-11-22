@@ -62,6 +62,14 @@ def test_src_rejects_paths_that_point_at_the_filesystem():
             assert not regex.search(value), f"{value!r} 不该被 {pattern} 接受"
 
 
+def test_alias_object_accepts_paths():
+    """$paths 现在可写在别名对象 / 分组上，schema 必须允许，否则编辑器会误报。"""
+    paths = load_schema()["$defs"]["AliasObject"]["properties"]["$paths"]
+
+    assert paths["type"] == "array"
+    assert paths["items"] == {"type": "string"}
+
+
 def test_platform_map_completes_every_platform_key():
     schema = load_schema()
     platform_map = schema["$defs"]["PlatformMap"]

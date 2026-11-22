@@ -109,6 +109,21 @@ pub(crate) fn is_valid_clone(raw: &serde_json::Value) -> bool {
     is_valid_bool(raw)
 }
 
+/// 解析 `$paths` 数组，过滤非字符串条目。
+///
+/// 返回 `None` 表示「没有声明或类型不对」——调用方应继续沿用继承值；
+/// 返回 `Some(vec![])` 表示显式声明了空数组，必须覆盖继承值。
+/// 这个区分是 `$paths: []` 能清空父级路径的关键。
+pub(crate) fn parse_paths(raw: &serde_json::Value) -> Option<Vec<String>> {
+    let items = raw.as_array()?;
+    Some(
+        items
+            .iter()
+            .filter_map(|item| item.as_str().map(String::from))
+            .collect(),
+    )
+}
+
 /// 递归过滤：丢掉 key 含 `@`/`.` 的条目与非法的值类型。
 ///
 /// 含 `$` 前缀 key 的 object 是别名元数据，整体保留；其余 object 视为分组继续递归。
@@ -133,6 +148,11 @@ pub(crate) fn filter_invalid_keys(
                 }
             }
             serde_json::Value::String(_) | serde_json::Value::Bool(_) => {
+                result.insert(key.clone(), val.clone());
+            }
+            // 分组对象的 `$paths` 是数组，但必须留到合并阶段做逐层继承；
+            // 别名对象走 is_meta_object 整体保留，不受这里影响。
+            serde_json::Value::Array(_) if key == "$paths" => {
                 result.insert(key.clone(), val.clone());
             }
             _ => {} // 其他类型（Number, Array, Null）静默丢弃
@@ -568,5 +588,57 @@ mod tests {
     fn definition_from_str_is_normal() {
         let av = AliasValue::Str("echo hi".into());
         assert_eq!(to_alias_definition(&av).mode, Mode::Normal);
+    }
+
+    #[test]
+    fn parse_paths_keeps_string_entries() {
+        assert_eq!(
+            parse_paths(&json!(["./bin", "~/tools/bin"])),
+            Some(vec!["./bin".to_string(), "~/tools/bin".to_string()])
+        );
+    }
+
+    #[test]
+    fn parse_paths_empty_array_is_explicit_empty() {
+        // 空数组是有效声明，必须和「没写」区分开
+        assert_eq!(parse_paths(&json!([])), Some(Vec::new()));
+    }
+
+    #[test]
+    fn parse_paths_filters_non_string_entries() {
+        assert_eq!(
+            parse_paths(&json!(["./bin", 42, null])),
+            Some(vec!["./bin".to_string()])
+        );
+    }
+
+    #[test]
+    fn parse_paths_non_array_is_none() {
+        assert_eq!(parse_paths(&json!("nope")), None);
+        assert_eq!(parse_paths(&json!(42)), None);
+        assert_eq!(parse_paths(&json!(null)), None);
+        assert_eq!(parse_paths(&json!({})), None);
+    }
+
+    #[test]
+    fn filter_keeps_group_paths_array() {
+        let data = json!({"group": {"$paths": ["./bin"], "hi": "echo hi"}})
+            .as_object()
+            .unwrap()
+            .clone();
+        let result = filter_invalid_keys(&data);
+        let group = result["group"].as_object().unwrap();
+        assert_eq!(group["$paths"], json!(["./bin"]));
+    }
+
+    #[test]
+    fn filter_drops_other_arrays_in_groups() {
+        let data = json!({"group": {"$custom": [1], "hi": "echo hi"}})
+            .as_object()
+            .unwrap()
+            .clone();
+        let result = filter_invalid_keys(&data);
+        let group = result["group"].as_object().unwrap();
+        assert!(!group.contains_key("$custom"));
     }
 }
