@@ -489,6 +489,22 @@ mod tests {
         assert!(completions.is_empty());
     }
 
+    #[test]
+    fn nested_alias_bare_dot_returns_empty() {
+        // 回归：`byk .<TAB>` 曾把顶层 key 全加上点号前缀吐出 `.git` / `.dev`，
+        // 而 `byk .git` 不是可执行别名 —— 前导点号没有路径前缀，不该有候选。
+        let env = TestEnv::new();
+        env.add_alias_file(
+            "default",
+            &json!({"git": {"tag": "git tag"}, "dev": "cargo run"}),
+        );
+        assert!(complete_nested_alias(".", "", &env.layout).is_empty());
+        assert!(get_completions(".", &env.layout).is_empty());
+        assert!(get_completions(".g", &env.layout).is_empty());
+        assert!(candidates(&words(&["."]), &env.layout).is_empty());
+        assert!(candidates(&words(&[".gi"]), &env.layout).is_empty());
+    }
+
     /// 把命令行词表转成 `complete` 收到的 `args`。
     fn words(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()

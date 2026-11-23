@@ -43,11 +43,13 @@ pub(crate) fn complete_nested_alias(
 
     // 去掉末尾点号，按点拆成路径段
     let path_str = prefix.trim_end_matches('.');
-    let parts: Vec<&str> = if path_str.is_empty() {
-        Vec::new()
-    } else {
-        path_str.split('.').collect()
-    };
+    // 剥完点号什么都不剩，说明这是点号开头的 token（如 `.git`）。
+    // 前导点号没有路径前缀，这种写法不是可执行别名，所以不产出候选；
+    // 否则会把整棵合并树的顶层 key 都加上点号前缀吐出去。
+    if path_str.is_empty() {
+        return Vec::new();
+    }
+    let parts: Vec<&str> = path_str.split('.').collect();
 
     let mut current: &HashMap<String, MergedNode> = &merged;
     for part in &parts {
