@@ -83,15 +83,18 @@ line **ignores this setting**: it is a warning, not decoration.
 
 ## tap (`@@@tap`)
 
-`@@@tap` does one thing: put a tap repository into
-`~/.byk/tap/<user>/<repo>`, so you stop typing `git clone` by hand. It only
-knows git, so `add` needs git on the machine.
+`@@@tap` does two things: put a tap repository into
+`~/.byk/tap/<user>/<repo>`, and bring it up to date with upstream — no hand-written
+`git clone` / `git pull` either way. It only knows git, so `add` and `update`
+need git on the machine.
 
 ```bash
 byk @@@tap                      # what is installed (same as list)
 byk @@@tap add aaa/bb           # GitHub by default, ref defaults to HEAD
 byk @@@tap add aaa/bb@v1        # pin a ref
 byk @@@tap add my/tools https://git.example.com/my/tools.git   # any git URL
+byk @@@tap update               # bring every repository in the ledger up to date
+byk @@@tap update aaa/bb        # update just that one
 byk @@@tap remove aaa/bb        # unrecord and delete
 ```
 
@@ -99,6 +102,7 @@ byk @@@tap remove aaa/bb        # unrecord and delete
 |---------|--------------|
 | `list` | Show the repositories in the ledger (same as no command) |
 | `add <user>/<repo>[@<ref>] [<git-url>]` | Clone, validate, move into place, then record |
+| `update [<user>/<repo>]` | `fetch` upstream, then `reset --hard`; every repository when unnamed |
 | `remove <user>/<repo>` | Unrecord, then delete the directory |
 
 `<user>` and `<repo>` accept letters, digits, `.`, `-`, and `_` only: they are
@@ -127,6 +131,43 @@ byk @@@tap add local/scratch ~/src/tap          # a local repository, origin `lo
   disables interactive prompting, so a failed login errors out instead of
   waiting for a password.
 
+### Updating (`update`)
+
+Underneath it is just "make the checkout you cloned match upstream" — `git fetch`
+plus `git reset --hard`, deliberately not `git pull`:
+
+- a tap is a read-only mirror, there are no local commits to merge, so the
+  merge/rebase semantics buy nothing;
+- branches that were force-pushed and tags that were moved still catch up
+  (`fetch --force`);
+- the shallow clone stays shallow instead of quietly turning into full history.
+
+```bash
+byk @@@tap update               # every repository in the ledger
+byk @@@tap update aaa/bb        # just one
+# Updated aaa/bb (1a2b3c4 → 5d6e7f8)
+# ccc/dd is already up to date
+```
+
+- **`update` follows the ledger's `ref`**: `update aaa/bb` will not jump back to
+  the default branch just because you left `@v1` off the command line. Pinned to
+  a tag, an untouched tag means there is nothing to do.
+- **`update` never writes the ledger**: what is installed and which ref it is
+  pinned to have not changed, only the commits in the checkout. `list` reads the
+  same before and after.
+- **A checkout with local changes is left alone**: `reset --hard` would throw
+  those edits away, so it reports `has local changes` and lets you decide
+  (commit, move them aside, or `remove` + `add`).
+- **A lost index rolls back**: if upstream deleted `byk.tap.json`, the update
+  returns to the previous commit rather than leaving a checkout that `--tap`
+  cannot use.
+- With no argument, **one failure does not stop the rest**: every repository is
+  reported, then a single `Failed to update 1 of 2 tap repositories: …` closes
+  the run with exit code 1.
+- It only touches the ledger: `update` never looks at a directory you
+  `git clone`d in by hand, and a deleted directory reports `Tap repository is
+  missing`.
+
 ### Directory and index
 
 The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
@@ -147,7 +188,8 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
   paths are stored — moving machines or your home directory cannot make the
   ledger lie.
 - `origin` is the source host (`github.com` is written `github`, and sources
-  without a host are `local`); `ref` is the ref used at install time.
+  without a host are `local`); `ref` is the ref used at install time, and the
+  target `update` follows afterwards.
 - `url` only appears when a second value was given: the default source's address
   is derivable, so storing it would just be a second copy.
 - **Losing the ledger does not affect `clone --tap`**: it scans directories and
@@ -168,15 +210,15 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
   you can later pull with `git -C ~/.byk/tap/<user>/<repo> pull`. There is no
   curl + tar fallback: two paths produce different things, need the semantics
   explained twice, and double the failure surface.
-- **`add` requires git** (Homebrew's taps do too; it does not bundle git).
-  `list` and `remove` do not — they only read the ledger and delete directories,
-  so they keep working without git. If you have no git and still need a
-  repository in place, put it at `~/.byk/tap/<user>/<repo>` by hand.
+- **`add` and `update` require git** (Homebrew's taps do too; it does not bundle
+  git). `list` and `remove` do not — they only read the ledger and delete
+  directories, so they keep working without git. If you have no git and still
+  need a repository in place, put it at `~/.byk/tap/<user>/<repo>` by hand.
 - `remove` only knows the keys in the ledger. A repository you `git clone`d in
   by hand is not in it, so `remove` reports `not installed` and will not delete
   it.
-- A shallow clone carries no history, but `pull` works; switching refs always
-  takes `remove` + `add`.
+- A shallow clone carries no history, but `pull` works, and `update` keeps
+  fetching shallow; switching refs always takes `remove` + `add`.
 - Downloads follow the usual proxy settings such as `BYK_PROXY`, translated to
   git's `-c http.proxy`. Writing the ledger does not touch the network.
 - Installing a third-party tap means trusting the alias files it ships. `add`

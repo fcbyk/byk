@@ -17,6 +17,7 @@
 - **`@@@config`**: 设置存在 `~/.byk/config.json`，用动词驱动——`list`、`get`、`set`、`unset`；不带动词时打印每个键的当前值、默认值与说明。值按注册表校验，文件按宽容策略读取：缺失或读不懂都只打一行警告并回退默认值，不中断命令
 - **`@@@tap`**: 新增系统文件，管理 `~/.byk/tap/` 下的 tap 仓库——`add <user>/<repo>[@<ref>]` 用 `git clone --depth 1`（需要 git）、确认仓库根有 `byk.tap.json`、落到 `tap/<user>/<repo>` 并登记到 `tap/index.json`；`remove` 注销并删除，`list` 列出已装仓库。索引只被 `@@@tap` 读写，`clone --tap` 一行未变
 - **`@@@tap add <git-url>`**: 第二个参数原样交给 `git clone`，tap 可以来自任何主机或本地路径——不设协议白名单，`<user>/<repo>` 只是本地名字、与地址无关。`add` 只走 git、不再有 curl 与 tar 的兜底，账本里多记 `url`，`origin` 记来源 host（没有 host 记 `local`）
+- **`@@@tap update`**: 把已装的 tap 仓库拉到上游——`update` 走一遍账本，`update <user>/<repo>` 只更新一份。走的是 `git fetch --depth 1 --force` 加 `reset --hard`，不是 `pull`：目标 ref 取自账本（钉在 tag 上且上游没动就没有变化），force push 过的分支与移动过的 tag 也能跟上，浅克隆保持浅克隆。账本一个字都不写；本地改过的 checkout 只报 `has local changes` 而不重置；上游删掉 `byk.tap.json` 时这次更新回滚到原来的提交。不带参数时一份失败不拦下其余，最后用 `Failed to update 1 of 2 tap repositories: …` 收尾并返回退出码 1
 - **`banner`**: `@@@config set banner auto|always|never`（默认 `auto`）控制帮助页顶部的装饰框；`auto` 在 stdout 不是终端时不显示，`byk -h | head` 与编辑器插件拿到的输出天然干净。扫描问题的提示不受此设置影响
 - **`--paths`**: 新增 `Config:` 一行，指出设置文件的位置
 

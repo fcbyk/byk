@@ -1,6 +1,8 @@
 """`@@@tap` 系统文件：把仓库装进 ~/.byk/tap，并验证 clone --tap 不需要改。
 
 `add` 只走 `git clone`；这里用假 git 覆盖参数与失败路径，另有一条用真 git 的本地克隆。
+`update` 本质是 `fetch` + `reset --hard`，全部用真 git 的本地仓库验证——
+假 git 只会证明「参数拼对了」，证明不了 checkout 真的跟上了上游。
 """
 
 import json
@@ -10,6 +12,8 @@ import subprocess
 import sys
 
 import pytest
+
+requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="需要本机 git")
 
 GIT_SCRIPT = """#!{python}
 import json, os, sys
@@ -339,5 +343,214 @@ def test_help_lists_the_verbs(runner):
 
     assert result.returncode == 0
     assert "Usage: byk @@@tap" in result.stdout
-    for verb in ("list", "add", "remove"):
+    for verb in ("list", "add", "update", "remove"):
         assert verb in result.stdout
+
+
+# ── update：把装好的仓库拉到上游当前位置 ──────────────────────────────
+
+
+def git(*argv, cwd=None):
+    subprocess.run(["git", *argv], check=True, capture_output=True, cwd=cwd)
+
+
+def commit(source, files, message="change"):
+    """改几份文件再提交；值写成 `None` 表示删掉那个文件。"""
+    for name, text in files.items():
+        path = source / name
+        if text is None:
+            path.unlink()
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    git("-c", "user.email=t@example.com", "-c", "user.name=t", "add", "-A", cwd=source)
+    git(
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "user.name=t",
+        "commit",
+        "-qm",
+        message,
+        cwd=source,
+    )
+
+
+def make_upstream(tmp_path, name="upstream", files=None):
+    source = tmp_path / name
+    source.mkdir()
+    git("init", "-q", str(source))
+    commit(source, files or TAP_REPO, "init")
+    return source
+
+
+def install(runner, tmp_path, key="local/scratch", name="upstream", files=None):
+    source = make_upstream(tmp_path, name=name, files=files)
+    result = runner.run("@@@tap", "add", key, str(source))
+    assert result.returncode == 0, result.stderr
+    return source
+
+
+def tap_path(runner, key="local/scratch"):
+    return runner.byk_dir / "tap" / key
+
+
+@requires_git
+def test_update_pulls_new_commits(runner, tmp_path):
+    source = install(runner, tmp_path)
+    commit(source, {"later.byk.json": '{"build": "echo hi"}'})
+
+    result = runner.run("@@@tap", "update", "local/scratch")
+
+    assert result.returncode == 0, result.stderr
+    assert "Updated local/scratch" in result.stderr
+    assert (tap_path(runner) / "later.byk.json").is_file(), "checkout 要跟上上游"
+    assert read_index(runner)["local/scratch"]["ref"] == "HEAD", "更新不改账本"
+
+
+@requires_git
+def test_update_says_so_when_there_is_nothing_new(runner, tmp_path):
+    install(runner, tmp_path)
+
+    result = runner.run("@@@tap", "update", "local/scratch")
+
+    assert result.returncode == 0, result.stderr
+    assert "local/scratch is already up to date" in result.stderr
+
+
+@requires_git
+def test_update_follows_a_file_removed_upstream(runner, tmp_path):
+    source = install(
+        runner,
+        tmp_path,
+        files={"byk.tap.json": '{"build": "b.byk.json"}', "old.byk.json": "{}"},
+    )
+    commit(source, {"old.byk.json": None})
+
+    assert runner.run("@@@tap", "update", "local/scratch").returncode == 0
+
+    assert not (tap_path(runner) / "old.byk.json").exists(), "上游删掉的文件不能留下"
+
+
+@requires_git
+def test_update_follows_the_ref_the_index_recorded(runner, tmp_path):
+    """命令行没写 `@v1` 也不会跑回默认分支：账本才是真相。"""
+    source = make_upstream(tmp_path)
+    git("tag", "v1", cwd=source)
+    assert runner.run("@@@tap", "add", "local/scratch@v1", str(source)).returncode == 0
+    commit(source, {"later.byk.json": '{"build": "echo hi"}'})
+
+    result = runner.run("@@@tap", "update", "local/scratch")
+
+    assert result.returncode == 0, result.stderr
+    assert "already up to date" in result.stderr
+    assert read_index(runner)["local/scratch"]["ref"] == "v1"
+    assert not (tap_path(runner) / "later.byk.json").exists()
+
+
+@requires_git
+def test_update_all_walks_the_whole_index(runner, tmp_path):
+    first = install(runner, tmp_path, key="local/one", name="one")
+    second = install(runner, tmp_path, key="local/two", name="two")
+    commit(first, {"a.byk.json": "{}"})
+    commit(second, {"b.byk.json": "{}"})
+
+    result = runner.run("@@@tap", "update")
+
+    assert result.returncode == 0, result.stderr
+    assert "Updated local/one" in result.stderr
+    assert "Updated local/two" in result.stderr
+
+
+@requires_git
+def test_update_keeps_going_when_one_repository_fails(runner, tmp_path):
+    good = install(runner, tmp_path, key="local/one", name="one")
+    gone = install(runner, tmp_path, key="local/two", name="two")
+    shutil.rmtree(gone)
+    commit(good, {"a.byk.json": "{}"})
+
+    result = runner.run("@@@tap", "update")
+
+    assert result.returncode == 1
+    assert "Updated local/one" in result.stderr, "一份失败不该拦下其余"
+    assert "Failed to update local/two@HEAD" in result.stderr
+    assert "Failed to update 1 of 2 tap repositories: local/two" in result.stderr
+
+
+@requires_git
+def test_update_rolls_back_a_checkout_without_an_index(runner, tmp_path):
+    source = install(runner, tmp_path)
+    commit(source, {"byk.tap.json": None, "other.json": "{}"})
+
+    result = runner.run("@@@tap", "update", "local/scratch")
+
+    assert result.returncode == 1
+    assert "Not a tap repository" in result.stderr
+    assert "the update was rolled back" in result.stderr
+    assert (tap_path(runner) / "byk.tap.json").is_file(), "回滚要把索引放回去"
+
+
+@requires_git
+def test_update_refuses_a_checkout_with_local_changes(runner, tmp_path):
+    source = install(runner, tmp_path)
+    commit(source, {"upstream.byk.json": "{}"})
+    local = tap_path(runner) / "byk.tap.json"
+    local.write_text('{"build": "edited"}', encoding="utf-8")
+
+    result = runner.run("@@@tap", "update", "local/scratch")
+
+    assert result.returncode == 1
+    assert "has local changes" in result.stderr
+    assert local.read_text(encoding="utf-8") == '{"build": "edited"}', "本地改动不能被抹掉"
+
+
+@requires_git
+def test_update_reports_a_missing_checkout(runner, tmp_path):
+    install(runner, tmp_path)
+    shutil.rmtree(tap_path(runner))
+
+    result = runner.run("@@@tap", "update", "local/scratch")
+
+    assert result.returncode == 1
+    assert "Tap repository is missing" in result.stderr
+
+
+def test_update_requires_git(runner, tmp_path):
+    repo = tap_path(runner, "aaa/bb")
+    (repo / ".git").mkdir(parents=True)
+    (repo / "byk.tap.json").write_text(TAP_REPO["byk.tap.json"], encoding="utf-8")
+    (runner.byk_dir / "tap" / "index.json").write_text(
+        json.dumps({"aaa/bb": {"origin": "github", "ref": "HEAD"}}), encoding="utf-8"
+    )
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    result = runner.run("@@@tap", "update", "aaa/bb", env={"PATH": str(empty)})
+
+    assert result.returncode == 1
+    assert "Updating a tap repository requires git" in result.stderr
+
+
+def test_update_refuses_a_repository_outside_the_index(runner):
+    tap_path(runner, "aaa/bb").mkdir(parents=True)
+
+    result = runner.run("@@@tap", "update", "aaa/bb")
+
+    assert result.returncode == 1
+    assert "Tap repository is not installed" in result.stderr
+    assert "Installed: (none)" in result.stderr
+
+
+def test_update_without_any_repository_is_not_an_error(runner):
+    result = runner.run("@@@tap", "update")
+
+    assert result.returncode == 0
+    assert "No repositories installed" in result.stderr
+    assert "byk @@@tap add aaa/bb" in result.stderr
+
+
+def test_update_takes_at_most_one_repository(runner):
+    result = runner.run("@@@tap", "update", "aaa/bb", "ccc/dd")
+
+    assert result.returncode == 1
+    assert "update takes one repository, or none" in result.stderr

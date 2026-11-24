@@ -74,13 +74,15 @@ byk @@@config set net-github ghproxy  # 之后 GitHub 文件都经 gh-proxy 取
 
 ## tap（`@@@tap`）
 
-`@@@tap` 只干一件事：把 tap 仓库装进 `~/.byk/tap/<user>/<repo>`，不用再手敲 `git clone`。它只走 git，所以 `add` 需要系统里有 git。
+`@@@tap` 干两件事：把 tap 仓库装进 `~/.byk/tap/<user>/<repo>`，以及把它们拉到上游最新——都不用再手敲 `git clone` / `git pull`。它只走 git，所以 `add` 与 `update` 需要系统里有 git。
 
 ```bash
 byk @@@tap                      # 看已装的仓库（等于 list）
 byk @@@tap add aaa/bb           # 默认从 GitHub 装，ref 默认 HEAD
 byk @@@tap add aaa/bb@v1        # 固定 ref
 byk @@@tap add my/tools https://git.example.com/my/tools.git   # 任意 git 地址
+byk @@@tap update               # 把账本里的每一份都拉到上游最新
+byk @@@tap update aaa/bb        # 只更新这一份
 byk @@@tap remove aaa/bb        # 注销并删除目录
 ```
 
@@ -88,6 +90,7 @@ byk @@@tap remove aaa/bb        # 注销并删除目录
 |------|------|
 | `list` | 列出账本里的仓库（等于不带命令） |
 | `add <user>/<repo>[@<ref>] [<git-url>]` | 克隆、校验、落盘，再登记 |
+| `update [<user>/<repo>]` | `fetch` 上游再 `reset --hard`，不带参数就是全部 |
 | `remove <user>/<repo>` | 注销并删除目录 |
 
 `<user>` / `<repo>` 只能是字母、数字、`.`、`-`、`_`，因为它们同时是目录名。
@@ -107,6 +110,28 @@ byk @@@tap add local/scratch ~/src/tap          # 本地仓库，装完 origin �
 - 没写地址时默认 `https://github.com/<user>/<repo>.git`。
 - 私有仓库靠你自己的 ssh key / credential helper；byk 关掉了交互式提问，认证不通过会立刻报错而不是挂着等密码。
 
+### 更新（update）
+
+本质就是把你当初 `git clone` 下来的那份跟上游对齐——byk 用的是 `git fetch` + `git reset --hard`，不是 `git pull`：
+
+- tap 是只读镜像，没有本地提交要合并，所以不需要 merge/rebase 语义；
+- 上游 force push 过的分支、被移动过的 tag 也能跟上（`fetch --force`）；
+- 浅克隆保持浅克隆，不会被悄悄补成一整份历史。
+
+```bash
+byk @@@tap update               # 账本里的每一份都更新
+byk @@@tap update aaa/bb        # 只更新一份
+# Updated aaa/bb (1a2b3c4 → 5d6e7f8)
+# ccc/dd is already up to date
+```
+
+- **更新跟着账本里的 `ref` 走**：`update aaa/bb` 不会因为命令行没写 `@v1` 就跑回默认分支。钉在 tag 上时，上游不动 tag 就没有东西可更。
+- **更新不写账本**：装了什么、钉在哪个 ref 都没变，变的只有 checkout 里的提交。`byk @@@tap list` 里那份清单，更新前后一模一样。
+- **本地改过的 checkout 不动**：`reset --hard` 会把这些改动一起抹掉，所以先报 `has local changes` 让你自己决定（提交、挪走，或者 `remove` + `add`）。
+- **索引没了就回滚**：上游要是把 `byk.tap.json` 删了，这次更新退回到原来的提交，不让 checkout 停在 `--tap` 用不了的状态。
+- 不带参数时**一份失败不拦下其余**：逐条报完，最后用一条 `Failed to update 1 of 2 tap repositories: …` 收尾，退出码 1。
+- 只认账本：`update` 不会碰你自己 `git clone` 进来的目录，目录被删了会报 `Tap repository is missing`。
+
 ### 目录与索引
 
 账本是 `~/.byk/tap/index.json`，只有 `@@@tap` 读写它：
@@ -124,7 +149,7 @@ byk @@@tap add local/scratch ~/src/tap          # 本地仓库，装完 origin �
 ```
 
 - 键是 `<user>/<repo>`，目录位置由键推导，所以索引里不存绝对路径——换机器、挪家目录都不会让账本变成谎话。
-- `origin` 是来源的 host（`github.com` 写成 `github`，没有 host 的本地来源写 `local`）；`ref` 是安装时用的 ref。
+- `origin` 是来源的 host（`github.com` 写成 `github`，没有 host 的本地来源写 `local`）；`ref` 是安装时用的 ref，也是之后 `update` 跟随的目标。
 - `url` 只在给了第二个参数时出现：默认源的地址能推导出来，存了是重复。
 - **账本丢了不影响 `clone --tap`**：它扫的是目录，不读这个文件。少一份清单，功能照旧。
 - 读不懂的条目照样会列出来（`origin` / `ref` 显示 `?`），否则用户既看不见也删不掉它。
@@ -135,8 +160,8 @@ byk @@@tap add local/scratch ~/src/tap          # 本地仓库，装完 origin �
 - `add` **不覆盖**已存在的目录，要换版本就先 `remove`。
 - 目标仓库根必须有可解析的 `byk.tap.json`，否则落盘后立刻回滚，不留下半个目录——本地索引一旦存在就是权威，装一个坏索引会让该仓库所有 key 的 `--tap` 一直失败。
 - `add` 只走 `git clone --depth 1`，装进来的是真仓库，之后可以自己 `git -C ~/.byk/tap/<user>/<repo> pull`。没有 curl + tar 的兜底：两条路的产物不一样，语义要解释两遍，故障面也多一倍。
-- **`add` 需要 git**（Homebrew 的 tap 也是这样，它不内置 git）。`list` / `remove` 不需要——它们只读账本、删目录，没装 git 也能用。没有 git 又一定要装，就手工把仓库放到 `~/.byk/tap/<user>/<repo>`。
+- **`add` / `update` 需要 git**（Homebrew 的 tap 也是这样，它不内置 git）。`list` / `remove` 不需要——它们只读账本、删目录，没装 git 也能用。没有 git 又一定要装，就手工把仓库放到 `~/.byk/tap/<user>/<repo>`。
 - `remove` 只认账本里的键。手工 `git clone` 进去的仓库不在账本里，`remove` 会报 `not installed`，因此也删不掉它。
-- 浅克隆没有历史，但 `pull` 可用；换 ref 一律 `remove` + `add`。
+- 浅克隆没有历史，但 `pull` 可用，`update` 也是在它上面继续做浅更新；换 ref 一律 `remove` + `add`。
 - 下载跟随 `BYK_PROXY` 等代理设置，翻译成 git 的 `-c http.proxy`；索引写入不联网。
 - 装第三方 tap 等于信任它给的别名文件：`add` 本身只搬运数据，真正的风险发生在之后 `clone --tap` 取用并执行那些别名时。

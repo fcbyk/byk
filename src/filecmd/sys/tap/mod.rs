@@ -1,11 +1,12 @@
 //! `@@@tap`：把 tap 仓库装进 `~/.byk/tap/`，并记账到 `tap/index.json`。
 //!
-//! 这一版只干一件事：让仓库通过 CLI 落到 `clone --tap` 已经在用的那个目录里，
+//! 目标只有一个：让仓库通过 CLI 落到 `clone --tap` 已经在用的那个目录里，
 //! 不必再手敲 `git clone`。所以 `index.json` 只被这里读写——`clone --tap`
 //! 仍然扫目录，一行都不用改，索引丢了也不影响 `--tap` 本身。
 //!
-//! 三条动词各管一件事：`list` 读账本、`add` 克隆并登记、`remove` 注销并删除。
-//! `remove` 只认账本里的键，所以手工放进 `tap/` 的仓库不会被误删。
+//! 四条动词各管一件事：`list` 读账本、`add` 克隆并登记、`update` 拉到上游最新、
+//! `remove` 注销并删除。`remove` 只认账本里的键，所以手工放进 `tap/` 的仓库不会被误删；
+//! `update` 同样只动账本里的仓库，且只动它自己 clone 出来的那份。
 
 mod fetch;
 mod index;
@@ -27,6 +28,7 @@ use crate::utils::io::write_stdout;
 const VERBS: &[(&str, &str)] = &[
     ("list", "Show every installed repository"),
     ("add", "Install a repository, optionally from any git URL"),
+    ("update", "Pull the latest commits from upstream"),
     ("remove", "Delete an installed repository"),
 ];
 
@@ -55,6 +57,7 @@ pub(crate) fn run(args: &[String], layout: &PathLayout) -> Result<(), String> {
             list(layout)
         }
         "add" => add(rest, layout),
+        "update" => update(rest, layout),
         "remove" => {
             let spec = single_argument(rest, "remove takes one repository, e.g. aaa/bb")?;
             remove(spec, layout)
@@ -125,11 +128,13 @@ fn valid_component(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
-/// ref 只进 URL，允许 `feature/x` 这种带斜杠的分支名，但不许控制字符与空白。
+/// ref 只进 URL 或 `git fetch` 的位置参数，允许 `feature/x` 这种带斜杠的分支名，
+/// 但不许控制字符与空白，也不许以 `-` 开头——那会被 git 当成选项。
 fn valid_reference(value: &str) -> bool {
     !value.is_empty()
         && value != "."
         && value != ".."
+        && !value.starts_with('-')
         && !value
             .chars()
             .any(|c| c.is_whitespace() || c.is_control() || c == '@')
@@ -274,6 +279,102 @@ fn record(repo: &Repo, layout: &PathLayout, mut object: Map<String, Value>) -> R
     Ok(())
 }
 
+/// 拉上游：不给参数就更新账本里的每一份，给一份就只更新它。
+///
+/// 账本里的 `ref` 才是真相——`update aaa/bb` 不会因为命令行没写 `@v1` 就跑回默认分支。
+fn update(args: &[String], layout: &PathLayout) -> Result<(), String> {
+    match args {
+        [] => update_all(layout),
+        [spec] => {
+            let key = parse_repo(spec, None)?.key;
+            let (object, warning) = store::read_object(&layout.tap_index_path());
+            print_warning(warning);
+
+            let value = object
+                .get(&key)
+                .ok_or_else(|| not_installed(&key, &object))?;
+            let repo = installed_repo(&key, value)?;
+            let change = fetch::update(&repo, &repo_dir(&repo.user, &repo.repo, layout))?;
+            print_change(&repo, &change);
+            Ok(())
+        }
+        _ => Err(
+            "update takes one repository, or none to update every repository\nHint: e.g. `byk @@@tap update` or `byk @@@tap update aaa/bb`"
+                .to_string(),
+        ),
+    }
+}
+
+/// 整批更新：一份失败不拦下其余，逐条说完再把失败的键合成一句退出码 1。
+fn update_all(layout: &PathLayout) -> Result<(), String> {
+    let (object, warning) = store::read_object(&layout.tap_index_path());
+    print_warning(warning);
+
+    if object.is_empty() {
+        eprintln!("No repositories installed");
+        eprintln!("Hint: install one with `byk @@@tap add aaa/bb`");
+        return Ok(());
+    }
+
+    let keys = sorted_keys(&object);
+    let mut failed: Vec<&str> = Vec::new();
+
+    for key in &keys {
+        // 条目读不懂也算一份失败：跳过它等于悄悄少更新了一份
+        let outcome = installed_repo(key, &object[*key]).and_then(|repo| {
+            fetch::update(&repo, &repo_dir(&repo.user, &repo.repo, layout))
+                .inspect(|change| print_change(&repo, change))
+        });
+
+        if let Err(message) = outcome {
+            eprintln!("{}", message);
+            failed.push(key);
+        }
+    }
+
+    if failed.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "Failed to update {} of {} tap repositories: {}",
+        failed.len(),
+        keys.len(),
+        failed.join(", ")
+    ))
+}
+
+/// 用一个账本条目还原出更新需要的身份：`ref` 与 `url` 都以账本为准。
+///
+/// 键里不带 `@`，所以 [`parse_repo`] 给出的 ref 一定是默认值，随后按账本覆盖。
+fn installed_repo(key: &str, value: &Value) -> Result<Repo, String> {
+    let field = |name: &str| value.get(name).and_then(Value::as_str);
+
+    let reference = field("ref").unwrap_or(DEFAULT_REF);
+    if !valid_reference(reference) {
+        return Err(format!(
+            "Invalid ref in the tap index: {:?}\nHint: `byk @@@tap remove {}` and add it again",
+            reference, key
+        ));
+    }
+
+    let mut repo = parse_repo(key, field("url"))?;
+    repo.reference = reference.to_string();
+    Ok(repo)
+}
+
+fn print_change(repo: &Repo, change: &fetch::Change) {
+    if change.is_new() {
+        eprintln!(
+            "Updated {} ({} → {})",
+            repo.key,
+            change.from.dimmed(),
+            change.to.dimmed()
+        );
+    } else {
+        eprintln!("{} is already up to date", repo.key);
+    }
+}
+
 /// 先注销再删目录：中途失败时留下的是「目录还在、账本没它」，
 /// 比反过来（账本有它、目录没了）更好收拾。
 fn remove(spec: &str, layout: &PathLayout) -> Result<(), String> {
@@ -283,11 +384,7 @@ fn remove(spec: &str, layout: &PathLayout) -> Result<(), String> {
     print_warning(warning);
 
     if object.remove(&repo.key).is_none() {
-        return Err(format!(
-            "Tap repository is not installed: {:?}\nInstalled: {}",
-            repo.key,
-            installed_keys(&object)
-        ));
+        return Err(not_installed(&repo.key, &object));
     }
     store::write_object(&index_path, &object)?;
 
@@ -449,13 +546,26 @@ fn pad(text: &str, width: usize) -> String {
     )
 }
 
+fn not_installed(key: &str, object: &Map<String, Value>) -> String {
+    format!(
+        "Tap repository is not installed: {:?}\nInstalled: {}",
+        key,
+        installed_keys(object)
+    )
+}
+
 fn installed_keys(object: &Map<String, Value>) -> String {
-    let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
-    if keys.is_empty() {
+    if object.is_empty() {
         return "(none)".to_string();
     }
+    sorted_keys(object).join(", ")
+}
+
+/// 账本的键排序：`list` 与批量更新都要一个稳定的输出顺序。
+fn sorted_keys(object: &Map<String, Value>) -> Vec<&str> {
+    let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
     keys.sort_unstable();
-    keys.join(", ")
+    keys
 }
 
 fn unknown_command(command: &str) -> String {
@@ -576,6 +686,7 @@ mod tests {
             "aaa/..",
             "aaa/bb@",
             "aaa/bb@@v1",
+            "aaa/bb@-oops",
             "a b/bb",
         ] {
             assert!(parse_repo(bad, None).is_err(), "{bad}");
@@ -715,6 +826,68 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_identity_of_an_installed_repository_from_the_index() {
+        let plain = installed_repo("aaa/bb", &json!({ "origin": "github", "ref": "v1" })).unwrap();
+        assert_eq!(plain.key, "aaa/bb");
+        assert_eq!(plain.reference, "v1", "更新跟着账本里的 ref 走");
+        assert!(plain.url.is_none());
+
+        let custom = installed_repo(
+            "my/tools",
+            &json!({
+                "origin": "git.example.com",
+                "ref": "main",
+                "url": "ssh://git@git.example.com/my/tools.git"
+            }),
+        )
+        .unwrap();
+        assert_eq!(custom.reference, "main");
+        assert_eq!(
+            custom.url.as_deref(),
+            Some("ssh://git@git.example.com/my/tools.git")
+        );
+    }
+
+    #[test]
+    fn falls_back_to_the_default_ref_when_the_index_says_nothing() {
+        for entry in [json!({}), json!({ "ref": 1 }), json!({ "ref": null })] {
+            assert_eq!(
+                installed_repo("aaa/bb", &entry).unwrap().reference,
+                DEFAULT_REF
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_an_index_ref_that_git_would_read_as_an_option() {
+        let err = installed_repo("aaa/bb", &json!({ "ref": "-oops" })).unwrap_err();
+
+        assert!(err.starts_with("Invalid ref in the tap index:"), "{err}");
+        assert!(err.contains("byk @@@tap remove aaa/bb"), "{err}");
+    }
+
+    #[test]
+    fn update_refuses_a_repository_the_index_does_not_know() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = layout(&temp);
+        // 手工 git clone 进来的仓库：账本里没有它
+        fs::create_dir_all(repo_dir("aaa", "bb", &layout)).unwrap();
+
+        let err = update(&args(&["aaa/bb"]), &layout).unwrap_err();
+
+        assert!(err.starts_with("Tap repository is not installed"), "{err}");
+        assert!(err.contains("Installed: (none)"), "{err}");
+    }
+
+    #[test]
+    fn update_says_so_when_nothing_is_installed() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = layout(&temp);
+
+        assert!(update(&args(&[]), &layout).is_ok(), "空账本不算失败");
+    }
+
+    #[test]
     fn record_rolls_back_the_checkout_when_the_index_cannot_be_written() {
         let temp = tempfile::tempdir().unwrap();
         let layout = layout(&temp);
@@ -786,6 +959,10 @@ mod tests {
         assert!(text.contains("Usage: byk @@@tap [OPTIONS] [COMMAND] [ARGS]..."));
         assert!(text.contains("  list    Show every installed repository"));
         assert!(text.contains("  add     Install a repository"), "{text}");
+        assert!(
+            text.contains("  update  Pull the latest commits from upstream"),
+            "{text}"
+        );
         assert!(text.contains("  remove  Delete an installed repository"));
     }
 
@@ -803,6 +980,10 @@ mod tests {
             "add takes one repository and an optional git URL\nHint: e.g. `byk @@@tap add aaa/bb` or `byk @@@tap add aaa/bb https://git.example.com/aaa/bb.git`"
         );
         assert_eq!(
+            run(&args(&["update", "aaa/bb", "ccc/dd"]), &layout).unwrap_err(),
+            "update takes one repository, or none to update every repository\nHint: e.g. `byk @@@tap update` or `byk @@@tap update aaa/bb`"
+        );
+        assert_eq!(
             run(&args(&["remove"]), &layout).unwrap_err(),
             "remove takes one repository, e.g. aaa/bb"
         );
@@ -813,7 +994,7 @@ mod tests {
     fn unknown_command_lists_verbs() {
         assert_eq!(
             unknown_command("delete"),
-            "Unknown command: \"delete\"\nAvailable: list, add, remove"
+            "Unknown command: \"delete\"\nAvailable: list, add, update, remove"
         );
     }
 }
