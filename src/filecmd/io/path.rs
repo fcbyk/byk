@@ -101,7 +101,8 @@ pub(crate) fn not_found_message(
 mod tests {
     use super::*;
     use crate::filecmd::spec::{
-        FileCommand, FileCommandError, ParseResult, Verb, claims, describe_verb, parse,
+        FileCommand, FileCommandError, ParseResult, Verb, claims, describe_verb, is_file_head,
+        parse,
     };
 
     fn args(values: &[&str]) -> Vec<String> {
@@ -221,10 +222,63 @@ mod tests {
             parse_err("@@a b", &["init"]),
             FileCommandError::InvalidStem("a b".into())
         );
+    }
+
+    #[test]
+    fn parse_system_file_keeps_args_verbatim() {
         assert_eq!(
-            parse_err("@@@ops", &["init"]),
-            FileCommandError::InvalidStem("@ops".into())
+            parse("@@@config", &args(&["banner", "never"])),
+            ParseResult::System {
+                stem: "config".into(),
+                args: args(&["banner", "never"]),
+            }
         );
+        // 系统文件没有动词表，`-h` 也原样交给目标文件
+        assert_eq!(
+            parse("@@@config", &args(&["-h"])),
+            ParseResult::System {
+                stem: "config".into(),
+                args: args(&["-h"]),
+            }
+        );
+    }
+
+    #[test]
+    fn system_file_skips_the_dot_rule() {
+        // 点号规则只属于别名：`@@@config.set` 必须留在系统文件命名空间里，
+        // 否则会掉进别名查找，报一句 "alias not found"。
+        assert_eq!(
+            parse("@@@config.set", &[]),
+            ParseResult::System {
+                stem: "config.set".into(),
+                args: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn system_file_keeps_an_empty_stem() {
+        // 空名字归 sys 报错，解析层既不 panic 也不吞掉
+        assert_eq!(
+            parse("@@@", &[]),
+            ParseResult::System {
+                stem: String::new(),
+                args: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn double_at_keeps_its_scope() {
+        // 三级前缀不能把 `@@file` 的 Global 语义带歪
+        assert_eq!(parse_ok("@@config", &["init"]).scope, FileScope::Global);
+    }
+
+    #[test]
+    fn system_files_are_claimed_but_not_alias_file_heads() {
+        assert!(claims("@@@config", &args(&["banner"])));
+        assert!(!is_file_head("@@@config"));
+        assert!(is_file_head("@@config"));
     }
 
     #[test]

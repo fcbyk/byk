@@ -426,6 +426,26 @@ mod tests {
     }
 
     #[test]
+    fn at_prefix_completes_system_files() {
+        let env = TestEnv::new();
+        // 候选来自注册表而不是磁盘：没有 @@@config 这个文件也能补出来
+        assert_eq!(
+            complete_at_prefix("@@@", &env.layout),
+            vec!["@@@config".to_string()]
+        );
+        assert_eq!(
+            complete_at_prefix("@@@c", &env.layout),
+            vec!["@@@config".to_string()]
+        );
+        assert!(complete_at_prefix("@@@nope", &env.layout).is_empty());
+        // 三级前缀不能被 `@@` 的文件 key 分支吞掉
+        assert_eq!(
+            get_completions("@@@", &env.layout),
+            vec!["@@@config".to_string()]
+        );
+    }
+
+    #[test]
     fn at_prefix_double_dot_is_not_a_file_command() {
         // 文件命令改成空格分隔后，`..` 不再保留含义，只是普通点号路径。
         let env = TestEnv::new();

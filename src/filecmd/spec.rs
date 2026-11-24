@@ -57,11 +57,18 @@ pub(crate) struct FileCommand {
     pub(crate) args: Vec<String>,
 }
 
-/// 解析结果。`@file` / `@@file` 一旦归文件命令处理，失败时不再回退到别名查找。
+/// 解析结果。`@file` / `@@file` / `@@@file` 一旦归文件命令处理，失败时不再回退到别名查找。
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ParseResult {
     NotFileCommand,
     Command(FileCommand),
+    /// `@@@<name> <args...>`：系统文件命令，动词与语法归各自模块。
+    ///
+    /// 名字原样带过来，合法性与未知名单由 `sys` 判——哪些文件算系统文件是它的知识。
+    System {
+        stem: String,
+        args: Vec<String>,
+    },
     Error(FileCommandError),
 }
 
@@ -372,8 +379,21 @@ pub(crate) fn split_prefix(token: &str) -> Option<(&'static str, &str)> {
     }
 }
 
+/// `@@@` 指向 CLI Home 里的系统文件；它不走别名那一套，单独一条通路。
+///
+/// 必须比 `split_prefix` 先判：`strip_prefix("@@")` 会把 `@@@config` 切成
+/// `("@@", "@config")`，再往后就只剩“非法文件名”这一条错误路径。
+pub(crate) fn split_system(token: &str) -> Option<&str> {
+    token.strip_prefix("@@@")
+}
+
 /// `@file` / `@@file` 的文件命令头；带点号的是精确别名语法，返回 `None`。
+///
+/// `@@@` 不是别名文件，也不参与点号规则：它交给 `sys`，由那边决定名字是否合法。
 pub(crate) fn split_head(token: &str) -> Option<(&'static str, &str)> {
+    if split_system(token).is_some() {
+        return None;
+    }
     let (prefix, rest) = split_prefix(token)?;
     if rest.contains('.') {
         return None;
@@ -382,14 +402,24 @@ pub(crate) fn split_head(token: &str) -> Option<(&'static str, &str)> {
 }
 
 /// token 是否是文件命令头（不看后面的动词）。
+///
+/// `@@@` 不算：它没有动词表，参数含义由目标文件自己定。
 pub(crate) fn is_file_head(token: &str) -> bool {
     split_head(token).is_some()
 }
 
-/// 解析 `@file <verb> [args...]` / `@@file <verb> [args...]`。
+/// 解析 `@file <verb> [args...]` / `@@file <verb> [args...]` / `@@@file [args...]`。
 ///
 /// 首个参数是动词；缺省动词、`-h` / `--help`、以及动词后的帮助开关都走帮助。
+/// `@@@` 只切出文件名，后面的参数原样带走——有没有动词、`-h` 算什么，都由该文件自己定。
 pub(crate) fn parse(command_name: &str, args: &[String]) -> ParseResult {
+    if let Some(stem) = split_system(command_name) {
+        return ParseResult::System {
+            stem: stem.to_string(),
+            args: args.to_vec(),
+        };
+    }
+
     let Some((prefix, stem)) = split_head(command_name) else {
         return ParseResult::NotFileCommand;
     };
@@ -430,7 +460,7 @@ pub(crate) fn parse(command_name: &str, args: &[String]) -> ParseResult {
     build(verb, rest.to_vec())
 }
 
-/// token 是否属于文件命令命名空间（含非法形式）。
+/// token 是否属于文件命令命名空间（含 `@@@` 系统文件与非法形式）。
 ///
 /// 供只读接口判断：命中后不能继续当作别名解析或执行。
 pub(crate) fn claims(command_name: &str, args: &[String]) -> bool {

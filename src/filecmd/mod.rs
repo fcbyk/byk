@@ -1,9 +1,11 @@
-//! 文件命令路由：解析 `@file <verb>` / `@@file <verb>`，在别名查找之前处理。
+//! 文件命令路由：`@file` / `@@file` 归别名文件命令，`@@@<name>` 归系统文件命令，
+//! 两者都在别名查找之前处理。
 
 pub(crate) mod io;
 pub(crate) mod prompt;
 pub(crate) mod source;
 pub(crate) mod spec;
+pub(crate) mod sys;
 mod verbs;
 
 use crate::filecmd::spec::{FileCommand, ParseResult, Verb, parse};
@@ -17,11 +19,21 @@ pub(crate) fn run(command_name: &str, args: &[String], layout: &PathLayout) -> O
     match parse(command_name, args) {
         ParseResult::NotFileCommand => None,
         ParseResult::Command(command) => Some(dispatch(&command, layout)),
-        ParseResult::Error(err) => {
-            eprintln!("{}", err.render(command_name));
-            Some(1)
+        ParseResult::System { stem, args } => {
+            // 系统文件的成功没有回调，`Ok(())` 就是退出码 0
+            Some(match sys::run(&stem, &args, layout) {
+                Ok(()) => 0,
+                Err(message) => fail(message),
+            })
         }
+        ParseResult::Error(err) => Some(fail(err.render(command_name))),
     }
+}
+
+/// 统一的失败出口：文案已经组装好，这里只负责打印和退出码。
+fn fail(message: String) -> i32 {
+    eprintln!("{}", message);
+    1
 }
 
 fn dispatch(command: &FileCommand, layout: &PathLayout) -> i32 {
@@ -112,9 +124,8 @@ fn dispatch(command: &FileCommand, layout: &PathLayout) -> i32 {
             .and_then(|text| write_stdout(text.as_bytes())),
     };
 
-    if let Err(message) = result {
-        eprintln!("{}", message);
-        return 1;
+    match result {
+        Ok(()) => 0,
+        Err(message) => fail(message),
     }
-    0
 }

@@ -5,8 +5,16 @@ use std::collections::HashMap;
 use crate::model::MergedNode;
 use crate::resolve;
 
-/// 补全 `@` / `@@`：先补文件 key，输入点号后补该文件内的别名路径。
+/// 补全 `@` / `@@` / `@@@`：先补文件 key，输入点号后补该文件内的别名路径。
 pub(crate) fn complete_at_prefix(partial: &str, layout: &crate::model::PathLayout) -> Vec<String> {
+    // `@@@` 是系统文件命名空间：候选来自注册表，不来自磁盘，也没有点号子路径
+    if let Some(rest) = partial.strip_prefix("@@@") {
+        return crate::filecmd::sys::names()
+            .filter(|name| name.starts_with(rest))
+            .map(|name| format!("@@@{name}"))
+            .collect();
+    }
+
     // 点号之后只需要目标文件：直接解析它，不扫描其余文件
     if let Some(dot_idx) = partial.find('.') {
         let file_key = &partial[..dot_idx];
