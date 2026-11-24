@@ -27,6 +27,14 @@ impl PathLayout {
             alias_dir,
         }
     }
+
+    /// `@@@config` 的目标文件：CLI Home 根部的 `config.json`。
+    ///
+    /// 由 `root_dir` 推导而不是单独存一个字段，省得两处各写一遍、
+    /// 将来改了目录却只改到一半。
+    pub fn config_path(&self) -> PathBuf {
+        self.root_dir.join("config.json")
+    }
 }
 
 #[cfg(test)]
@@ -51,5 +59,17 @@ mod tests {
 
         assert!(!layout.root_dir.exists());
         assert!(!layout.alias_dir.exists());
+        assert!(!layout.config_path().exists());
+    }
+
+    #[test]
+    fn config_sits_in_the_cli_home() {
+        let layout = PathLayout::with_name("fcbyk_test_paths3");
+        let home = dirs::home_dir().unwrap();
+
+        assert_eq!(
+            layout.config_path(),
+            home.join(".fcbyk_test_paths3").join("config.json")
+        );
     }
 }

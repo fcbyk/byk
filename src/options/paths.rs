@@ -19,6 +19,7 @@ pub fn run(layout: &PathLayout) -> i32 {
     println!();
     println!("{}: {}", "CLI Home".yellow(), layout.root_dir.display());
     println!("{}: {}", "Alias".yellow(), layout.alias_dir.display());
+    println!("{}: {}", "Config".yellow(), layout.config_path().display());
     println!("{}: {}", "Workdir".yellow(), cwd.display());
 
     render_files(&global);
