@@ -35,6 +35,7 @@ $ byk --paths
 
 CLI Home: /Users/coke/.byk
 Alias: /Users/coke/.byk/alias
+Config: /Users/coke/.byk/config.json
 Workdir: /Users/coke/proj
 ---------------------------
 @@ops: /Users/coke/.byk/alias/ops.byk.json
@@ -44,7 +45,7 @@ Workdir: /Users/coke/proj
 
 ```
 
-`CLI Home` is byk's home directory, `Alias` is where global alias files live, and `Workdir` is the current directory scanned for local files. Drop `*.byk.json` files into either directory and they join the lookup space.
+`CLI Home` is byk's home directory, `Alias` is where global alias files live, `Config` is the settings file behind `@@@config`, and `Workdir` is the current directory scanned for local files. Drop `*.byk.json` files into either directory and they join the lookup space.
 
 `--paths` also lists the top-level alias files in the global alias directory and the current working directory, one group per source. The `@@` / `@` key prefix tells global from local. File names are validated, but contents are not parsed: a file with broken JSON still appears here, and so do `$private` files and broken symlinks. Use `--check` to find content problems. Empty groups are omitted, including their separator.
 
@@ -116,6 +117,8 @@ The exact syntax is pure file routing with no fallback:
 All of them exit with code 1. A `$`-prefixed segment is a reserved field or custom metadata and is never executed as an alias.
 
 Every alias file also has a set of reserved **file commands**: `@file command` / `@@file command` create, edit, clone, install dependencies for, and inspect the file itself. See [File Commands](/cli/file-commands).
+
+Tokens starting with `@@@` belong to another domain: they point at files byk itself owns inside the CLI home, today `@@@config` (`~/.byk/config.json`), read and written with `list` / `get` / `set` / `unset`. See [System Files](/cli/system-files).
 
 ## The `__api__` Program Interface
 

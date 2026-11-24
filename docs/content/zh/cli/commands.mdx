@@ -35,6 +35,7 @@ $ byk --paths
 
 CLI Home: /Users/coke/.byk
 Alias: /Users/coke/.byk/alias
+Config: /Users/coke/.byk/config.json
 Workdir: /Users/coke/proj
 ---------------------------
 @@ops: /Users/coke/.byk/alias/ops.byk.json
@@ -44,7 +45,7 @@ Workdir: /Users/coke/proj
 
 ```
 
-`CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录，`Workdir` 是扫描本地文件时使用的当前目录。把 `*.byk.json` 放进这两处目录，它就会进入查找空间。
+`CLI Home` 是 byk 的家目录，`Alias` 是全局别名文件所在目录，`Config` 是系统设置文件 `@@@config`，`Workdir` 是扫描本地文件时使用的当前目录。把 `*.byk.json` 放进这两处目录，它就会进入查找空间。
 
 `--paths` 还会列出全局别名目录和当前工作目录顶层的别名文件，每个来源一组。`@@` / `@` 前缀区分全局与本地。只校验文件名，不解析内容：JSON 损坏的文件、标了 `$private` 的文件、断链的符号链接也会出现在这里。内容问题用 `--check` 查。空分组连同分隔线一起不打印。
 
@@ -116,6 +117,8 @@ byk @@work.deploy        # ~/.byk/alias/work.byk.json 的 deploy
 以上都以退出码 1 结束。`$` 开头的段是保留字段或自定义元数据，永远不会被当作别名执行。
 
 每个别名文件还带一组保留的**文件命令**：用 `@文件 命令` / `@@文件 命令` 创建、编辑、克隆、安装依赖和查看文件本身。完整列表见 [文件命令](/cli/file-commands)。
+
+以 `@@@` 开头的 token 属于另一个域：它们指向 CLI Home 里属于 byk 自己的文件，目前是 `@@@config`（`~/.byk/config.json`），用 `list` / `get` / `set` / `unset` 读写。见 [系统文件](/cli/system-files)。
 
 ## 程序接口 `__api__`
 

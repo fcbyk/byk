@@ -1,0 +1,77 @@
+---
+title: System Files
+description: Address byk's own files with @@@ — today, the global config.json
+---
+
+# System Files
+
+`@@@` is the third file domain. `@` points at the current directory, `@@` at the
+global alias directory, and `@@@` at **system files inside the CLI home
+(`~/.byk/`)** — files that belong to byk itself, not to any project.
+
+```bash
+byk @@@file command [args...]
+```
+
+Only `@@@config` exists today:
+
+| Form | Target file |
+|------|-------------|
+| `@@@config` | `~/.byk/config.json` |
+
+- System files never take part in alias lookup, and have no `clone` / `link`:
+  there is no notion of several of them referencing each other.
+- The name after `@@@` must be a registered system file; a typo reports
+  `Unknown system file` and lists the available names.
+- Commands follow the name after a space, not a dot: `@@@config.set` reports
+  `Invalid system file`.
+
+## Commands
+
+With no command it prints every setting (the common case); `-h` prints usage
+help instead.
+
+| Command | What it does |
+|---------|--------------|
+| `list` | Print every setting (same as no command) |
+| `get <key>` | Print one value, safe for `$(...)` |
+| `set <key> <value>` | Validate, then write |
+| `unset <key>` | Remove the key, falling back to its default |
+
+```bash
+byk @@@config                    # every setting
+byk @@@config get banner         # auto
+byk @@@config set banner never   # drop the box above `-h`
+byk @@@config unset banner       # back to the default
+```
+
+`get` prints a bare value; `set` / `unset` report on stderr, so pipelines stay
+clean.
+
+## Settings
+
+| Key | Values | Default | Purpose |
+|-----|--------|---------|---------|
+| `banner` | `auto` / `always` / `never` | `auto` | The decorative box above `-h` |
+
+`auto` hides it when stdout is not a terminal, so `byk -h | head`, scripts, and
+editor plugins get clean output for free. `always` and `never` are literal.
+
+When scanning alias files turns up problems, the `N alias files have problems`
+line **ignores this setting**: it is a warning, not decoration.
+
+## The file
+
+```json
+{ "banner": "auto" }
+```
+
+- A missing file is normal — every key falls back to its default, no error.
+- Unreadable content (broken JSON, a non-object top level) prints one warning
+  and falls back to defaults with the usual exit code; a broken config must not
+  take `-h` down with it.
+- Writes are atomic and keep every key they read, including keys this version
+  does not know yet.
+- Keys are written back in alphabetical order, so a hand-written order gets
+  normalized.
+- The `Config:` line of `byk --paths` is this file.

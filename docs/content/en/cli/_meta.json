@@ -16,6 +16,11 @@
   },
   {
     "type": "file",
+    "name": "system-files",
+    "label": "System Files"
+  },
+  {
+    "type": "file",
     "name": "api",
     "label": "Program Interface"
   },

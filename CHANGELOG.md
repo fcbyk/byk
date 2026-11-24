@@ -13,6 +13,10 @@
 - **`$deps`**: when `base` is a ghproxy address, absolute GitHub downloads (release assets included) reuse the same proxy; relative entries are never wrapped twice, and jsdelivr remains repository-files-only
 - **`$deps`**: curl's native progress bar is shown on a terminal; non-TTY output stays quiet with unchanged error text
 - **network**: downloads can be forced direct with `BYK_USE_PROXY=false`; otherwise they follow `BYK_PROXY`, then existing proxy environment variables, then the static Windows system proxy. On Windows the bypass list becomes `no_proxy`, while PAC/WPAD only warn. The proxy is injected into curl child processes alone, never the alias environment or pip/npm
+- **`@@@` system files**: a third file domain for byk's own files inside the CLI home. `@@@` tokens are claimed before the alias dot rule, so they never fall through to alias lookup — `@@@config.set` now reports `Invalid system file` (it used to be `Invalid file name`), and an unknown name lists the ones that exist
+- **`@@@config`**: settings live in `~/.byk/config.json` and are driven by verbs — `list`, `get`, `set`, `unset`; with no verb it prints every key with its current value, default, and description. Values are checked against a registry, and the file is read leniently: missing or broken content falls back to defaults with one warning instead of failing
+- **`banner`**: `@@@config set banner auto|always|never` (default `auto`) controls the decorative box above the help output; `auto` hides it when stdout is not a terminal, so `byk -h | head` and editor plugins stay clean. The scan-problem line is printed regardless
+- **`--paths`**: adds a `Config:` line naming the settings file
 
 ## v0.8.2 (2026-11-20)
 

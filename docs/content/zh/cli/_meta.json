@@ -16,6 +16,11 @@
   },
   {
     "type": "file",
+    "name": "system-files",
+    "label": "系统文件"
+  },
+  {
+    "type": "file",
     "name": "api",
     "label": "程序接口"
   },

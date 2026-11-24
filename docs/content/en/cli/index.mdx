@@ -53,15 +53,17 @@ If a subtree should only ever be invoked explicitly and never appear under `byk 
 
 1. `byk` parses the arguments, recognizing options and the hidden `__api__` interface
 2. The first remaining word is the alias name; everything after it is passed as arguments
-3. A `@file.key` exact match reads that file directly
-4. Otherwise the alias is looked up in the merged alias space (global `~/.byk/alias/` + current directory)
-5. Variables (`${byk_dir}` / `${file_dir}` / `${deps_dir}` and `$var`) are substituted, then argument placeholders are resolved
-6. The command executes under `$cwd`; on a miss, candidates are listed and byk exits 1
+3. A `@@@` prefix routes to the matching system file command, without touching alias lookup
+4. A `@file.key` exact match reads that file directly
+5. Otherwise the alias is looked up in the merged alias space (global `~/.byk/alias/` + current directory)
+6. Variables (`${byk_dir}` / `${file_dir}` / `${deps_dir}` and `$var`) are substituted, then argument placeholders are resolved
+7. The command executes under `$cwd`; on a miss, candidates are listed and byk exits 1
 
 ## Where to Read Next
 
 - [Options & Commands](/cli/commands) — `-h` / `-v` / `--paths` / `--check`, execution forms, and the reserved words
 - [File Commands](/cli/file-commands) — the built-in `init` / `set` / `clone` that edit an alias file itself
+- [System Files](/cli/system-files) — the settings behind `@@@config`, such as hiding the box above `-h`
 - [Program Interface](/cli/api) — the hidden `byk __api__`: the page to read when writing a script or a plugin
 - [Quick Start](/cli/alias/start) — write your first alias file in three minutes
 - [Alias Configuration](/cli/alias/config) — fields, inheritance, priority, exact execution
