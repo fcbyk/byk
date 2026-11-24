@@ -5,6 +5,8 @@ import json
 
 def test_help_banner_stays_clean_without_problems(runner, tmp_path):
     runner.prepare_alias_json("ok", {"hi": "echo hi"})
+    # stdout 是管道，默认 auto 会把装饰框藏起来；这里要看框本身
+    runner.set_config(banner="always")
 
     result = runner.run(cwd=str(tmp_path))
 

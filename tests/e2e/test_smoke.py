@@ -18,6 +18,8 @@ def test_version_short(runner):
 
 def test_help(runner):
     """--help 打印用法说明并正常退出"""
+    # stdout 是管道，默认 auto 会把 banner 藏起来；这里要看 banner
+    runner.set_config(banner="always")
     r = runner.run("--help")
     assert r.returncode == 0
     assert r.stdout

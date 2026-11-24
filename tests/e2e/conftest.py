@@ -185,6 +185,17 @@ class BykRunner:
         """以 Python dict 写别名文件，免去手写 JSON 转义"""
         return self.prepare_alias_file(stem, json.dumps(data, ensure_ascii=False))
 
+    def set_config(self, **values: str) -> Path:
+        """写入 ~/.byk/config.json
+
+        子进程的 stdout 是管道，banner 默认 auto 时不会打印；要断言 banner
+        内容就得显式设成 always。
+        """
+        self.byk_dir.mkdir(parents=True, exist_ok=True)
+        path = self.byk_dir / "config.json"
+        path.write_text(json.dumps(values, ensure_ascii=False), encoding="utf-8")
+        return path
+
 
 @pytest.fixture(scope="session")
 def byk_binary() -> Path:

@@ -109,7 +109,8 @@ def test_paths_omits_empty_alias_file_groups(runner, tmp_path):
     assert r.returncode == 0, r.stderr
     lines = assert_blank_padded(r.stdout)
     assert SEPARATOR not in lines
-    assert len(lines) == 5
+    # 首尾空行 + 四行位置信息（CLI Home / Alias / Config / Workdir）
+    assert len(lines) == 6
 
 
 def test_paths_omits_only_missing_group(runner, tmp_path):
