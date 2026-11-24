@@ -1,3 +1,8 @@
+<!--
+给 AI agent：改动本仓库前先读 `AGENTS.md`——README、CHANGELOG、代码注释与提交信息的
+写法约定都在那里。
+-->
+
 # [byk](https://cli.fcbyk.com/zh) &middot; [![PyPI](https://img.shields.io/pypi/v/byk.svg)](https://pypi.org/project/byk/) [![CI](https://github.com/fcbyk/byk/actions/workflows/ci.yml/badge.svg)](https://github.com/fcbyk/byk/actions/workflows/ci.yml) [![Coverage](https://codecov.io/gh/fcbyk/byk/branch/main/graph/badge.svg)](https://codecov.io/gh/fcbyk/byk)
 
 [English](README.md) &middot; **简体中文**

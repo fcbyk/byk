@@ -1,3 +1,8 @@
+<!--
+AI agents: before changing anything in this repository, read `AGENTS.md` — it holds the
+conventions for README, CHANGELOG, code comments and commit messages.
+-->
+
 # [byk](https://cli.fcbyk.com/) &middot; [![PyPI](https://img.shields.io/pypi/v/byk.svg)](https://pypi.org/project/byk/) [![CI](https://github.com/fcbyk/byk/actions/workflows/ci.yml/badge.svg)](https://github.com/fcbyk/byk/actions/workflows/ci.yml) [![Coverage](https://codecov.io/gh/fcbyk/byk/branch/main/graph/badge.svg)](https://codecov.io/gh/fcbyk/byk)
 
 **English** &middot; [简体中文](README.zh.md)
