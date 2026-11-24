@@ -18,8 +18,10 @@ fn separator(width: usize) -> String {
 }
 
 /// 渲染 banner；`problem_files` 为存在诊断的别名文件数。
+///
+/// 只画这块内容本身：前导空行与下方的分隔都由调用方负责，隐藏 banner 时
+/// `Usage` 上方才能留住同样的空行。
 pub fn render(problem_files: usize) {
-    println!();
     for line in lines(problem_files) {
         println!("{}", line);
     }

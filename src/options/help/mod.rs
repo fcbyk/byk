@@ -18,10 +18,14 @@ use crate::resolve;
 pub fn run(layout: &PathLayout, options: &[(String, String)], show_banner: bool) -> i32 {
     let loaded = resolve::load_merged_aliases_report(layout);
     let problems = loaded.report.problem_file_count();
+
+    // 顶部空行归这里管：有没有 banner，`Usage` 上方的留白都一样。
+    println!();
     if show_banner || problems > 0 {
         banner::render(problems);
         println!();
     }
+
     render_usage();
     println!();
     render_options(options);
