@@ -4,10 +4,11 @@
 
 - **文件命令**: 移除 `@文件..命令` 写法，改为 `byk @文件 命令`（全局是 `byk @@文件 命令`）。分隔符改成空格，不再和精确别名语法 `@文件.key` 混淆。只写 `byk @文件`、或加 `-h` / `--help`，会显示该文件的命令帮助
 - **文件帮助**: 移除 `help` 文件命令，改用 `-h` / `--help`（`byk @文件 -h`、`byk @文件 init -h`）。文件命令帮助的结构与 `byk -h` 对齐：列表页说明当前还是全局别名文件并显示 `FilePath`（未创建标 `(not created yet)`，链接文件标 `(link)`），每个命令的帮助在 Usage 上方重复目标路径，描述放在最前
-- **`clone` 的来源**: 移除 `-gh` / `--github`、`-ge` / `--gitee`，以及 `-gh` 后面那个可选 CDN 值；平台与通道改成唯一来源参数上的前缀：`github:user/repo`、`gitee:user/repo`、`jsdelivr:user/repo`、`ghproxy:user/repo`。前缀认不出来会直接报错并列出可选值（`Unknown source prefix: …`）；`clone` 至此没有任何来源选项，只剩 `--tap` 与 `--deps`
+- **`clone` 的来源**: 平台写成唯一来源参数上的前缀 `github:` / `gitee:`（`jsdelivr:`、`ghproxy:` 也已移除）；访问 GitHub 的传输通道改为配置项 `net-github`，取值 `direct` / `ghproxy`。`clone` 至此没有任何来源选项，只剩 `--tap` 与 `--deps`。`$deps.base` 只记录规范上游地址，镜像在请求那一刻套用，不再写进文档
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **`$paths`**: 现在和 `$cwd` / `$mode` 一样可继承——可写在文件、分组或别名对象上；子级写了就整体覆盖继承列表（不合并），`[]` 表示清空，让单条别名回到系统 `PATH`
 - **`$deps`**: `base` 是 ghproxy 地址时，下载绝对 GitHub 地址（含 Release 资产）自动沿用同一个代理，相对条目不会重复套壳；jsdelivr 仍只覆盖仓库文件
 - **`$deps`**: 终端下显示 curl 原生下载进度条；非 TTY 保持静默，错误文本不变
@@ -23,6 +24,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **`$deps`**: 别名文件可以声明依赖——文件、pip 包与 npm 包——装到该文件自己的专属目录；`@文件..deps install|status|uninstall` 负责管理，`..clone -d` 在克隆后顺手装好
 - **`$clone`**: 新增可继承字段，让文件、分组或别名不进入 `..clone` 的副本；本机执行与合并空间不受影响，剔除后为空的 clone 会被拒绝
 - **`__api__ expand`**: 新增 `--no-builtins`，只展开文件自己的 `$var`，不注入 `byk_dir` / `work_dir` / `file_dir` / `deps_dir`
@@ -33,6 +35,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **variables**: 新增 `${work_dir}`，展开为调用目录，不受继承的 `$cwd` 影响；内置变量展开后是绝对路径，可直接写进 `$cwd`
 - **`__api__ paths`**: JSON 新增 `workdir` 与 `aliasFiles`（先全局后本地，各自按 key 排序；同一目录兼作两种作用域时去重）；标量查询新增 `workdir`，与 `root` / `alias` 并列
 - **`__api__ file`**: 只读请求，把文件 key（`@name` / `@@name` / `@` / `@@`）解析为 `{key, scope, path, dir}`，不检查存在性、不读内容、不跟随链接；`--list` 以同形数组返回全部别名文件
@@ -55,6 +58,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **`$private`**: 新增可继承字段，让文件、分组或别名不进入合并空间，精确调用照常可用；取代 `$priority: -1`
 - **文件命令**: 别名文件现在自带保留命令，写作 `@文件..命令` / `@@文件..命令`——`init`、`destroy`、`clear`、`set`、`remove`、`json`、`path`、`rename`、`clone`、`link`、`help`，用来创建、编辑、克隆、链接与查看文件本身
 - **completion**: 文件作用域 key（`@file` / `@@file`）只在敲下 `@` / `@@` 后出现；空 Tab 现在只列合并别名
@@ -88,6 +92,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **`$mode`**: `silent` 抑制 byk 的提示行；`interactive` 保留确认环节；可在文件间继承
 - **variables**: `$var` 声明可以覆盖内置名称；`\${...}` 原样传给 shell
 - **link**: `*.byk.json` 根部为单元素数组时，现在指向另一个别名文件（一层），让配置包能和脚本放在一起
@@ -112,6 +117,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **`__api__`**: 新增隐藏内置命令 `byk __api__`，用于生成 shell 补全脚本与查询候选
 - **`--paths`**: 新增 `--paths` 选项，输出 CLI 主目录与别名目录路径
 - **`$var`**: 别名文件现在支持 `$var` 声明，值可按平台（linux/macos/windows）区分
@@ -120,6 +126,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **completion**: 改进上下文相关的 Tab 补全
 - **plugins**: 只下载到工作目录的插件不再被持久化
 - **install**: 新增流式下载与进度条
@@ -139,6 +146,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **plugins**: `pip` 与 `pip-keep` 接受单个字符串，不再只认数组
 - **plugins**: `$var` 支持按平台取值
 - **plugins**: 插件协议新增 `alias` 字段
@@ -169,6 +177,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **plugins**: 为安装与卸载新增 verbose 过程日志
 - **plugins**: 新增 bin 与 bin-tar，支持按平台下载二进制
 - **cli**: `-v` 输出新增编译期平台检测
@@ -197,6 +206,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - **remove**: 记录已安装的包，新增 `byk remove <key>` 卸载 (#7)
 - **alias**: 新增 `$description` 字段，用于别名帮助展示
 - **alias**: 别名文件新增 `$paths` 字段，用于前置 `PATH`
@@ -216,6 +226,7 @@
 
 ### 新功能
 
+- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
 - 新增 init/remove 子命令与零配置启动 (#4)
 - 移除 `--info` 的版本检查 (#1)
 

@@ -211,8 +211,7 @@ byk @@ops clone https://example.com/tool.byk.json
 byk @@ops clone github:user/repo                     # the repository root .byk.json
 byk @@ops clone github:user/repo@main/tools/release.byk.json
 byk @@ops clone gitee:user/repo                      # read from Gitee
-byk @@ops clone jsdelivr:user/repo                   # read through jsDelivr
-byk @@ops clone ghproxy:user/repo -d                 # read through gh-proxy and install $deps
+byk @@ops clone github:user/repo -d                  # install $deps in the same go
 byk @@ops clone --tap user/repo/build            # resolve `build` from byk.tap.json
 byk @@ops clone -t user/repo@v1/build -d
 byk @@ops clone https://example.com/tool.byk.json -d   # install $deps in the same go
@@ -227,21 +226,18 @@ Sources:
 | `http://` / `https://` | Fetched through external `curl` |
 | `github:<spec>` | GitHub raw; `<spec>` is the repository shorthand below |
 | `gitee:<spec>` | Gitee raw |
-| `jsdelivr:<spec>` | GitHub through jsDelivr |
-| `ghproxy:<spec>` | GitHub through gh-proxy |
 | `-t` / `--tap` | Resolve a key from a local or GitHub `byk.tap.json` |
 | `-d` / `--deps` | Also install the cloned file's `$deps` |
 
-The prefix alone decides where the file is read from — there is no second value:
+The prefix decides the platform only; the URL is always the canonical upstream:
 
 | Prefix | Read from |
 |--------|-----------|
 | `github:` | `raw.githubusercontent.com` |
 | `gitee:` | `gitee.com/<user>/<repo>/raw/…` |
-| `jsdelivr:` | `cdn.jsdelivr.net/gh` |
-| `ghproxy:` | `gh-proxy.com`, with the full raw URL appended |
 
-- Platform and transport share one slot: `jsdelivr:` and `ghproxy:` mirror GitHub only, so there is no "Gitee + jsDelivr" form — switch the prefix to switch the platform.
+- **The transport is not part of the syntax.** To reach GitHub through a mirror, configure it once: `byk @@@config set net-github ghproxy`. It covers `clone`, the `--tap` remote index, and `$deps` downloads; `gitee:` and every other host are left alone. See [system files](/cli/system-files).
+- An address that carries credentials (`?token=…`, or `user:pass@host`) always goes direct: the mirror never sees it. Such a source may not declare `$deps` — otherwise the credentials would either be written into the document or silently 404 the assets.
 - An unknown prefix fails outright and lists the choices: `Unknown source prefix: fastgit:`. A local file whose name contains a colon still works when written with `./` (`./notes:2024`).
 - The prefix is already "one positional value", so there is no `-gh` / `-ge` option any more; only `--tap` and `--deps` remain.
 
@@ -265,8 +261,6 @@ Repository shorthand shape:
 | `github:user/repo@v1/tools/release` | `tools/release.byk.json` |
 | `github:user/repo@v1/tools/` | `tools/.byk.json` |
 | `github:user/repo@v1/` | the repository root `.byk.json` |
-| `jsdelivr:user/repo@v1/x` | `cdn.jsdelivr.net/gh/…/x.byk.json` |
-| `ghproxy:user/repo` | `gh-proxy.com/https://raw.githubusercontent.com/…` |
 
 Local path resolution:
 
@@ -407,7 +401,7 @@ $ byk @@tool deps i
 - The install manifest lives at `<dedicated directory>/.byk-deps.json` and records the last declaration plus where each asset landed. Deleting it just restarts the bookkeeping; the next install adopts whatever is already there.
 - Only paths byk installed are ever removed: anything else in the directory is left alone with a warning.
 - The install step never asks twice and needs no `--yes`; `--force` is the only option, for cases the manifest cannot detect (assets corrupted from outside).
-- When `$deps.base` is a ghproxy address (for example after `clone ghproxy:…`), absolute `github.com` / `raw.githubusercontent.com` downloads go through the same proxy, release assets included; relative `src` entries already carry the prefix through `base` and are never wrapped twice. jsdelivr only mirrors repository files, so release assets stay direct.
+- The transport never touches `$deps.base`: what lands on disk is always the canonical upstream URL, and the mirror applies at request time. For older files whose `base` is already a gh-proxy address, `deps install` still routes absolute GitHub addresses through the same proxy, release assets included; relative entries already carry the prefix through `base` and are never wrapped twice.
 - On a terminal each file shows curl's native progress bar on stderr; non-TTY environments stay quiet so error text remains stable.
 - Downloads check `BYK_USE_PROXY` first (`false` forces a direct connection), then `BYK_PROXY`, then existing proxy environment variables, with a fallback to the static Windows system proxy; see the proxy section in [Options & Commands](/cli/commands) for the full order.
 - Absolute addresses are fetched with the system `curl`, local paths are copied with `fs::copy` (same temp-file-then-rename dance); extraction is delegated to the system `tar` on both paths, and a missing tool errors with an install hint. The summary says `Downloaded` either way and counts the local ones in parentheses (`Downloaded 3 files into … (1 local)`); a run with nothing local has no parentheses. `$deps.files` only fetches files; `$deps.pip` and `$deps.npm` are handed to pip / npm themselves and are not part of the file manifest.

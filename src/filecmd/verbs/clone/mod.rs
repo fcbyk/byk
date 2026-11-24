@@ -99,10 +99,7 @@ mod imp {
         create::ensure_absent(&target)?;
 
         let loaded = match options.source {
-            SourceArg::Raw(spec) => {
-                let retry = retry_hint(scope, stem, &spec);
-                source::load(&spec, layout, retry.as_deref())?
-            }
+            SourceArg::Raw(spec) => source::load(&spec, layout)?,
             SourceArg::Tap(spec) => load_tap(&spec, layout)?,
         };
         let path = create::destination(scope, stem, layout)?;
@@ -129,13 +126,6 @@ mod imp {
             install_deps(scope, stem, layout)?;
         }
         Ok(())
-    }
-
-    /// `github:` 走 raw 直连失败时，给一条改用 ghproxy 前缀的完整重试命令随提示输出。
-    fn retry_hint(scope: FileScope, stem: &str, spec: &str) -> Option<String> {
-        let rest = source::ghproxy_fallback(spec)?;
-        let key = build_file_key(stem, scope.is_global());
-        Some(format!("byk {key} clone ghproxy:{rest}"))
     }
 
     /// `--tap`：完整写法先找本地索引、缺失才回退远程；单 key 只搜本地。
@@ -167,7 +157,7 @@ mod imp {
 
         let url = spec.index_url();
         eprintln!("Tap index: remote {}", url);
-        let data = source::fetch_tap_index(&url)?;
+        let data = source::fetch_tap_index(&url, layout)?;
         let value = tap::select(&data, spec, &url)?;
         let target = tap::Target::Remote(tap::target_url(spec, &value)?);
         load_target(&spec.key, target, layout, None)
@@ -244,7 +234,7 @@ mod imp {
     ) -> Result<source::Loaded, String> {
         let label = match &target {
             tap::Target::Local(path) => path.display().to_string(),
-            tap::Target::Remote(url) => url.clone(),
+            tap::Target::Remote(url) => crate::net::mirror::display_url(url),
         };
         // 先报路由结果：目标不存在时也能看出这个键指向了什么。
         eprintln!("Tap {} -> {}", key, label);
@@ -258,7 +248,7 @@ mod imp {
                 ),
                 None => err,
             }),
-            tap::Target::Remote(url) => source::load(&url, layout, None),
+            tap::Target::Remote(url) => source::load(&url, layout),
         }
     }
 
@@ -313,8 +303,11 @@ mod imp {
     }
 
     pub(crate) fn prepare(data: &[u8], origin: &Origin) -> Result<Prepared, String> {
-        let mut root: Value = serde_json::from_slice(data)
-            .map_err(|e| format!("Failed to parse source {}: {e}", origin.as_str()))?;
+        let mut root: Value = serde_json::from_slice(data).map_err(|e| {
+            let label = crate::net::mirror::display_url(&origin.as_str());
+            format!("Failed to parse source {label}: {e}")
+        })?;
+        guard_credentials(origin, &root)?;
 
         let strip = strip_clone_disabled(&mut root)?;
         let recorded = freeze_base(&mut root, origin)?;
@@ -331,6 +324,23 @@ mod imp {
             base: recorded,
             skipped: strip.skipped,
         })
+    }
+
+    /// 凭证不进文档：带凭证的来源不能声明 `$deps`。
+    ///
+    /// 否则只有两种结局——`base` 带着凭证落盘（会被下一次 clone 带走），
+    /// 或者被脱敏后让资产静默 404。两种都不该悄悄发生。
+    fn guard_credentials(origin: &Origin, root: &Value) -> Result<(), String> {
+        let Origin::Url(url) = origin else {
+            return Ok(());
+        };
+        if !crate::net::mirror::carries_credentials(url) || root.get("$deps").is_none() {
+            return Ok(());
+        }
+        Err(
+            "A source URL that carries credentials cannot declare $deps\nHint: keep credentials out of the source URL, or install the assets yourself"
+                .to_string(),
+        )
     }
 
     fn encode(root: &Value) -> Result<Vec<u8>, String> {

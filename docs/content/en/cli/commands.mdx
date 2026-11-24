@@ -89,7 +89,7 @@ When `BYK_USE_PROXY` is absent or has any other value, proxying stays enabled â€
 
 Windows automatic proxy configuration (PAC, `AutoConfigURL`) and automatic detection (WPAD) require running a script or probing the network, which curl cannot do; when either is set, byk prints a one-line warning and falls back to a direct connection. The static proxy's exception list becomes curl's `no_proxy`, with `<local>` expanded to `localhost`, `127.0.0.1`, and `::1`. Other platforms never read system settings â€” use `BYK_PROXY`, `BYK_USE_PROXY`, or proxy environment variables.
 
-The proxy and ghproxy are independent layers: the proxy decides which network curl leaves through, while ghproxy rewrites which URL is downloaded. They compose, with traffic going through the local proxy first and reaching gh-proxy next.
+The proxy and `net-github` are independent layers: the proxy decides which network curl leaves through, while `net-github` decides which URL is downloaded (direct, or through the gh-proxy mirror). They compose, with traffic going through the local proxy first and reaching gh-proxy next.
 
 ## Running Aliases
 

@@ -17,5 +17,14 @@ pub(crate) fn install(
     let deps_dir = deps_dir_of(scope, stem, layout);
     let key = build_file_key(stem, scope.is_global());
     let retry_hint = deps_command(scope, stem);
-    apply::install_declaration(&deps_dir, &key, scope.is_global(), decl, force, &retry_hint)
+    let channel = crate::filecmd::sys::config::channel(layout);
+    apply::install_declaration(
+        &deps_dir,
+        &key,
+        scope.is_global(),
+        decl,
+        force,
+        channel,
+        &retry_hint,
+    )
 }

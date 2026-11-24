@@ -9,7 +9,7 @@ use crate::model::PathLayout;
 use crate::resolve::validate_filename;
 
 use crate::filecmd::io::path::resolve_target;
-use crate::filecmd::source::Prefix;
+use crate::filecmd::source::Forge;
 use crate::filecmd::spec::FileScope;
 use crate::filecmd::spec::subcommand_names;
 use crate::filecmd::spec::{HELP_FLAGS, OPTION_ALIASES, OPTIONS, VERBS, Verb, split_head};
@@ -169,7 +169,7 @@ fn clone_prefix(verb: Verb, args: &[String], partial: &str) -> Option<Vec<String
         return None;
     }
 
-    let candidates: Vec<String> = Prefix::NAMES
+    let candidates: Vec<String> = Forge::NAMES
         .iter()
         .filter(|name| name.starts_with(partial))
         .map(|name| format!("{name}:"))
@@ -449,9 +449,10 @@ mod tests {
             complete(&words(&["@@ops", "clone"]), "git", &layout),
             Some(vec!["github:".to_string(), "gitee:".to_string()])
         );
+        // 通道已经搬进配置，不再有 jsdelivr / ghproxy 前缀
         assert_eq!(
             complete(&words(&["@@ops", "clone"]), "jsd", &layout),
-            Some(vec!["jsdelivr:".to_string()])
+            Some(Vec::new())
         );
         // 来源已给就不再补前缀
         assert_eq!(
@@ -465,8 +466,8 @@ mod tests {
         );
         // `-d` 不占用来源位置
         assert_eq!(
-            complete(&words(&["@@ops", "clone", "-d"]), "gh", &layout),
-            Some(vec!["ghproxy:".to_string()])
+            complete(&words(&["@@ops", "clone", "-d"]), "gith", &layout),
+            Some(vec!["github:".to_string()])
         );
         // 其他命令没有前缀补全
         assert_eq!(

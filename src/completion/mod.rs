@@ -841,8 +841,8 @@ mod tests {
             vec!["github:".to_string(), "gitee:".to_string()]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "clone", "ghp"]), &env.layout),
-            vec!["ghproxy:".to_string()]
+            candidates(&words(&["@@ops", "clone", "gitee"]), &env.layout),
+            vec!["gitee:".to_string()]
         );
         // 来源已给：不再补前缀
         assert!(candidates(&words(&["@@ops", "clone", "github:a/b", "j"]), &env.layout).is_empty());

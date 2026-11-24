@@ -20,6 +20,27 @@ use crate::utils::io::write_stdout;
 /// 帮助页顶部装饰框对应的键名。
 const BANNER: &str = "banner";
 
+/// 访问 GitHub 文件时走的通道。
+const NET_GITHUB: &str = "net-github";
+
+/// 当前配置的 GitHub 通道。
+///
+/// 下载路径上每一处远程请求都会问一次，所以这里不打印告警——设置文件坏了由
+/// `@@@config` 自己提示，下载不该被一行警告打断。
+pub(crate) fn channel(layout: &PathLayout) -> crate::net::Channel {
+    let path = layout.config_path();
+    let (object, warning) = store::read_object(&path);
+    if warning.is_some() {
+        return crate::net::Channel::default();
+    }
+
+    let Some(info) = keys::find(NET_GITHUB) else {
+        return crate::net::Channel::default();
+    };
+    let (value, _) = effective(info, &object);
+    crate::net::Channel::parse(&value)
+}
+
 /// 已注册的动词；顺序即帮助与错误提示顺序。
 const VERBS: &[(&str, &str)] = &[
     ("list", "Show every setting"),
@@ -377,19 +398,27 @@ mod tests {
         assert!(warnings.is_empty());
 
         let text = strip_ansi(&render_table(&rows, &path()));
-        assert_eq!(
-            text,
-            "\nFilePath: /root/.byk/config.json\n\n  banner  auto (default)  Show the banner in help output\n"
+        assert!(
+            text.contains("  banner      auto (default)    Show the banner in help output"),
+            "{text}"
+        );
+        assert!(
+            text.contains("  net-github  direct (default)  How byk reaches GitHub files"),
+            "{text}"
         );
     }
 
     #[test]
     fn table_shows_configured_values_without_the_marker() {
-        let (rows, warnings) = rows(&object(json!({"banner": "never"})));
+        let (rows, warnings) = rows(&object(json!({"banner": "never", "net-github": "ghproxy"})));
         assert!(warnings.is_empty());
 
         let text = strip_ansi(&render_table(&rows, &path()));
-        assert!(text.contains("  banner  never  Show the banner"), "{text}");
+        assert!(text.contains("banner") && text.contains("never"), "{text}");
+        assert!(
+            text.contains("net-github") && text.contains("ghproxy"),
+            "{text}"
+        );
         assert!(!text.contains("(default)"), "{text}");
     }
 
@@ -403,7 +432,10 @@ mod tests {
 
         // 值是坏的，但表格仍要显示可用的值
         let text = strip_ansi(&render_table(&rows, &path()));
-        assert!(text.contains("  banner  auto (default)"), "{text}");
+        assert!(
+            text.contains("banner") && text.contains("auto (default)"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -437,7 +469,10 @@ mod tests {
     #[test]
     fn unknown_setting_lists_keys() {
         let message = unknown_setting("bannner");
-        assert_eq!(message, "Unknown setting: \"bannner\"\nAvailable: banner");
+        assert_eq!(
+            message,
+            "Unknown setting: \"bannner\"\nAvailable: banner, net-github"
+        );
     }
 
     #[test]
@@ -453,6 +488,24 @@ mod tests {
         );
         // 校验失败不落盘，也不该顺手把目录建出来
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn channel_defaults_to_direct_and_reads_ghproxy() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = PathLayout {
+            root_dir: temp.path().to_path_buf(),
+            alias_dir: temp.path().join("alias"),
+        };
+
+        assert_eq!(channel(&layout), crate::net::Channel::Direct);
+
+        set_value(&layout.config_path(), "net-github", "ghproxy").unwrap();
+        assert_eq!(channel(&layout), crate::net::Channel::Ghproxy);
+
+        // 值是坏的：退回默认值，下载不该被打断
+        std::fs::write(layout.config_path(), r#"{"net-github": 42}"#).unwrap();
+        assert_eq!(channel(&layout), crate::net::Channel::Direct);
     }
 
     #[test]

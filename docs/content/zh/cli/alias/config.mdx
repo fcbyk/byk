@@ -382,14 +382,14 @@ byk @@tool clone <source> -d # 或者在克隆时顺手装好
 
 | clone 来源 | 落盘的 `base` | 资产怎么取 |
 |---|---|---|
-| 远程（URL、`github:` / `gitee:` / `jsdelivr:` / `ghproxy:` 前缀） | 绝对 http(s) 目录 URL | `curl` 下载 |
+| 远程（URL、`github:` / `gitee:` 前缀） | 绝对 http(s) 目录 URL | `curl` 下载 |
 | 本地（`@@name`、`@name`、路径） | 本机绝对目录路径 | 直接复制 |
 
 两条路互不越界：**远程 clone 只会写出 URL 形态，所以从网上拿到的别名文件读不了本机文件**。这不是靠检查挡住的，而是它根本拿不到本地路径这种写法。
 
-**ghproxy 会延伸到下载层。** `base` 是 `https://gh-proxy.com/...` 时，`deps i` 下载绝对 `github.com` / `raw.githubusercontent.com` 地址也会套上同一个代理，Release 资产同样加速；相对 `src` 经 base 拼出来已经带前缀，不会重复套。jsdelivr 只镜像仓库文件，base 是 jsdelivr 时绝对地址保持原样。
+**通道不写进 `base`。** 落盘的永远是规范上游地址（`https://raw.githubusercontent.com/…`），走不走镜像由 `@@@config` 的 `net-github` 在请求那一刻决定，所以同一份文件换台机器不用改写。旧文件里若 `base` 已经是 `https://gh-proxy.com/...`，`deps i` 仍会把绝对 GitHub 地址交给同一个代理（Release 资产同样加速），相对 `src` 经 base 拼出来已带前缀，不会重复套。
 
-ghproxy 改写的是 URL，不是网络出口。下载走的本地代理由 `BYK_USE_PROXY`、`BYK_PROXY`、代理环境变量或 Windows 静态系统代理决定，见[选项与命令](/cli/commands)。
+镜像改写的是 URL，不是网络出口。下载走的本地代理由 `BYK_USE_PROXY`、`BYK_PROXY`、代理环境变量或 Windows 静态系统代理决定，见[选项与命令](/cli/commands)。
 
 补 `base` 的规则两边一致，只是基准和产物不同：没写就按源文件所在目录补上，写了相对形态（`.`、`../`、`sub/dir`）就相对源文件解析，写了绝对地址（URL 或路径）就原样保留，只补结尾的 `/`。基准一律是**源文件**所在目录，不是落盘的目标目录——`files` 里的相对路径是作者照着源文档写的，`~/.byk/alias/` 旁边没有那些文件。
 

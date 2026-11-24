@@ -2,7 +2,6 @@
 //!
 //! 本子模块不 import 项目内其他模块；所有输入都是已展开的数据或路径参数。
 
-mod cdn;
 mod layout;
 mod parse;
 mod path;
@@ -12,7 +11,6 @@ use serde_json::Value;
 
 use super::types::Origin;
 
-pub(crate) use cdn::{CdnRoute, gh_proxy_url};
 pub(crate) use layout::{
     NODE_MODULES, VENV_DIR, deps_dir, deps_dir_var, node_modules_bin, venv_bin,
 };

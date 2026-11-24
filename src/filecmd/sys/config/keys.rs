@@ -18,12 +18,20 @@ impl SettingInfo {
 }
 
 /// 顺序即表格、帮助与错误提示的展示顺序。
-pub(crate) const SETTINGS: &[SettingInfo] = &[SettingInfo {
-    key: "banner",
-    default: "auto",
-    choices: &["auto", "always", "never"],
-    description: "Show the banner in help output",
-}];
+pub(crate) const SETTINGS: &[SettingInfo] = &[
+    SettingInfo {
+        key: "banner",
+        default: "auto",
+        choices: &["auto", "always", "never"],
+        description: "Show the banner in help output",
+    },
+    SettingInfo {
+        key: "net-github",
+        default: "direct",
+        choices: &["direct", "ghproxy"],
+        description: "How byk reaches GitHub files (gh-proxy is a mirror in mainland China)",
+    },
+];
 
 pub(crate) fn find(key: &str) -> Option<&'static SettingInfo> {
     SETTINGS.iter().find(|info| info.key == key)
@@ -65,6 +73,6 @@ mod tests {
 
     #[test]
     fn names_follow_registry_order() {
-        assert_eq!(names(), vec!["banner"]);
+        assert_eq!(names(), vec!["banner", "net-github"]);
     }
 }

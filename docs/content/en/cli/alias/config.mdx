@@ -387,14 +387,14 @@ byk @@tool clone <source> -d # or install them right after cloning
 
 | Clone source | `base` landed on disk | How assets are fetched |
 |---|---|---|
-| Remote (a URL, or a `github:` / `gitee:` / `jsdelivr:` / `ghproxy:` prefix) | Absolute http(s) directory URL | `curl` |
+| Remote (a URL, or a `github:` / `gitee:` prefix) | Absolute http(s) directory URL | `curl` |
 | Local (`@@name`, `@name`, a path) | Local absolute directory path | direct copy |
 
 Neither side crosses into the other: **a remote clone only ever writes the URL form, so an alias file you got from the network cannot read local files.** That is not enforced by a check — the local-path form simply never reaches it.
 
-**ghproxy extends to the download layer.** When `base` is a `https://gh-proxy.com/...` URL, `deps i` also routes absolute `github.com` / `raw.githubusercontent.com` addresses through the same proxy, so release assets are accelerated too. Relative `src` entries already carry the prefix through `base` and are never wrapped twice. jsdelivr only mirrors repository files, so a jsdelivr `base` leaves absolute addresses alone.
+**The transport never lands in `base`.** What is written is always the canonical upstream URL (`https://raw.githubusercontent.com/…`); whether a mirror is used is decided at request time by `net-github` in `@@@config`, so the same file needs no rewriting on another machine. For older files whose `base` is already a `https://gh-proxy.com/...` URL, `deps i` still routes absolute GitHub addresses through the same proxy (release assets included), and relative `src` entries already carry the prefix through `base`, so nothing is wrapped twice.
 
-ghproxy rewrites the URL, not the network egress. The local proxy used for downloads is chosen by `BYK_USE_PROXY`, `BYK_PROXY`, proxy environment variables, or the static Windows system proxy; see [Options & Commands](/cli/commands).
+The mirror rewrites the URL, not the network egress. The local proxy used for downloads is chosen by `BYK_USE_PROXY`, `BYK_PROXY`, proxy environment variables, or the static Windows system proxy; see [Options & Commands](/cli/commands).
 
 The fill-in rules are the same for both, only the base point and the product differ: absent means the source file's directory, a relative form (`.`, `../`, `sub/dir`) is resolved against the source file, and an absolute address (URL or path) is kept as-is with only the trailing `/` added. The base point is always the **source file's** directory, never the destination directory — the relative paths in `files` were written against the source document, and those files are not sitting next to `~/.byk/alias/`.
 

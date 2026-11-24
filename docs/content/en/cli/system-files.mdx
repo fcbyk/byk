@@ -46,6 +46,7 @@ byk @@@config                    # every setting
 byk @@@config get banner         # auto
 byk @@@config set banner never   # drop the box above `-h`
 byk @@@config unset banner       # back to the default
+byk @@@config set net-github ghproxy  # read GitHub files through gh-proxy
 ```
 
 `get` prints a bare value; `set` / `unset` report on stderr, so pipelines stay
@@ -56,6 +57,7 @@ clean.
 | Key | Values | Default | Purpose |
 |-----|--------|---------|---------|
 | `banner` | `auto` / `always` / `never` | `auto` | The decorative box above `-h` |
+| `net-github` | `direct` / `ghproxy` | `direct` | The channel used to reach GitHub files |
 
 `auto` hides it when stdout is not a terminal, so `byk -h | head`, scripts, and
 editor plugins get clean output for free. `always` and `never` are literal.

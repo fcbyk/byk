@@ -40,6 +40,7 @@ byk @@@config                    # 看全部设置
 byk @@@config get banner         # auto
 byk @@@config set banner never   # 关掉帮助页顶部的装饰框
 byk @@@config unset banner       # 回到默认
+byk @@@config set net-github ghproxy  # 之后 GitHub 文件都经 gh-proxy 取
 ```
 
 `get` 打印裸值；`set` / `unset` 的状态提示写 stderr，管道里不会混进输出。
@@ -49,10 +50,15 @@ byk @@@config unset banner       # 回到默认
 | 键 | 取值 | 默认 | 作用 |
 |----|------|------|------|
 | `banner` | `auto` / `always` / `never` | `auto` | `-h` 顶部的装饰框 |
+| `net-github` | `direct` / `ghproxy` | `direct` | 访问 GitHub 文件时走的通道 |
 
 `auto` 在 stdout 不是终端时不显示——`byk -h | head`、脚本与编辑器插件拿到的帮助天然干净。`always` 与 `never` 是字面意思。
 
 扫描别名文件时发现问题，那句 `N alias files have problems` **不受这个设置影响**：它是诊断，不是装饰。
+
+`net-github` 只影响**读写 GitHub 文件的请求**：`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 里指向 GitHub 的资产。它不改写 URL 里写的地址，也不进 `$deps.base`——落盘的永远是规范上游地址，镜像只在请求那一刻套用，所以同一份文件换台机器不用改。
+
+两条边界：带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到它们；`@@@tap add` 走的是 `git clone`，镜像帮不上忙，那条路只有代理管得着（见 `BYK_PROXY`）。
 
 ### 文件
 

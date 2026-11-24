@@ -8,7 +8,7 @@ use colored::Colorize;
 use serde_json::Value;
 
 use crate::filecmd::io::path::resolve_target;
-use crate::filecmd::source::Prefix;
+use crate::filecmd::source::Forge;
 use crate::filecmd::spec::FileScope;
 use crate::filecmd::spec::{OPTIONS, SUBCOMMANDS, VERBS, Verb, VerbInfo, unknown_verb_message};
 use crate::model::PathLayout;
@@ -184,16 +184,12 @@ fn clone_sources() -> Vec<(String, &'static str)> {
             "An http(s) alias file, downloaded with curl",
         ),
     ];
-    rows.extend(Prefix::NAMES.iter().map(|name| {
-        (
-            format!("{name}:<spec>"),
-            match *name {
-                "github" => "GitHub raw — the default channel",
-                "gitee" => "Gitee raw",
-                "jsdelivr" => "GitHub through jsDelivr",
-                _ => "GitHub through gh-proxy",
-            },
-        )
+    rows.extend(Forge::NAMES.iter().map(|name| {
+        let description = match *name {
+            "github" => "A GitHub repository; the transport comes from `net-github`",
+            _ => "A Gitee repository",
+        };
+        (format!("{name}:<spec>"), description)
     }));
     rows
 }
@@ -371,10 +367,11 @@ mod tests {
         assert!(text.contains("\nSources:\n"));
         assert!(text.contains("@name, @@name"));
         assert!(text.contains("github:<spec>"));
-        assert!(text.contains("GitHub raw — the default channel"));
+        assert!(text.contains("the transport comes from `net-github`"));
         assert!(text.contains("gitee:<spec>"));
-        assert!(text.contains("jsdelivr:<spec>"));
-        assert!(text.contains("ghproxy:<spec>"));
+        // 通道不在来源语法里，帮助的 Sources 段不该再出现它们
+        assert!(!text.contains("jsdelivr"));
+        assert!(!text.contains("ghproxy"));
         // 旧选项已随前缀一起消失，不能再出现在帮助里
         assert!(!text.contains("-gh"));
         assert!(!text.contains("--gitee"));

@@ -395,10 +395,10 @@ def test_help_for_clone_shows_usage(runner):
     assert "Usage: byk @@ops clone [OPTIONS] <source>" in result.stdout
     assert "\nSources:\n" in result.stdout
     assert "github:<spec>" in result.stdout
-    assert "GitHub raw — the default channel" in result.stdout
+    assert "the transport comes from `net-github`" in result.stdout
     assert "gitee:<spec>" in result.stdout
-    assert "jsdelivr:<spec>" in result.stdout
-    assert "ghproxy:<spec>" in result.stdout
+    assert "jsdelivr" not in result.stdout
+    assert "ghproxy" not in result.stdout
     assert "-gh" not in result.stdout
     assert "--gitee" not in result.stdout
     assert "-t, --tap <spec>" in result.stdout
@@ -482,8 +482,7 @@ def test_clone_github_direct_failure_suggests_cdn(runner, tmp_path):
     assert "curl failed (exit 35)" in result.stderr
     assert "Recv failure: Connection reset by peer" in result.stderr
     assert "cannot reach GitHub directly" in result.stderr
-    assert "ghproxy" in result.stderr
-    assert "byk @@ops clone ghproxy:aaa/bb/sss" in result.stderr
+    assert "byk @@@config set net-github ghproxy" in result.stderr
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
 
@@ -614,14 +613,6 @@ def test_clone_bare_repo_hits_root_for_each_forge(runner, tmp_path):
     cases = [
         ("github:aaa/bb", "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"),
         ("gitee:aaa/bb", "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"),
-        (
-            "jsdelivr:aaa/bb",
-            "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json",
-        ),
-        (
-            "ghproxy:aaa/bb",
-            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json",
-        ),
     ]
     dest = runner.byk_dir / "alias" / "ops.byk.json"
 
@@ -640,51 +631,99 @@ def test_clone_bare_repo_hits_root_for_each_forge(runner, tmp_path):
         dest.unlink()
 
 
-def test_clone_ghproxy_base_routes_deps_downloads(runner, tmp_path):
-    release = "https://github.com/u/r/releases/latest/download/tool"
-    payload = (
-        b'{"$deps": {"files": ["' + release.encode() + b'"]}, "run": "tool"}'
-    )
-    env, log = install_routed_curl(
-        tmp_path,
-        {
-            "/HEAD/.byk.json": payload,
-            "releases/latest/download/tool": b"tool",
-        },
-    )
+def set_net(runner, value):
+    """把 `net-github` 写进隔离的配置里"""
+    path = runner.byk_dir / "config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"net-github": value}), encoding="utf-8")
 
-    result = runner.run("@@ops", "clone", "ghproxy:u/r", "-d", env=env)
+
+def test_clone_uses_the_configured_mirror(runner, tmp_path):
+    payload = b'{"build": "echo hi"}'
+    env, args_path = install_fake_curl(tmp_path, payload=payload)
+    set_net(runner, "ghproxy")
+
+    result = runner.run("@@ops", "clone", "github:aaa/bb", env=env)
 
     assert result.returncode == 0, result.stderr
-    base = "https://gh-proxy.com/https://raw.githubusercontent.com/u/r/HEAD/"
-    assert f"Recorded $deps.base = {base}" in result.stderr
-    assert (runner.byk_dir / "deps" / "@@ops" / "tool").read_bytes() == b"tool"
-    # 绝对 GitHub 地址在下载层被同一个代理接走，与 base 是不是前缀来源无关
-    assert curl_urls(log) == [
-        base + ".byk.json",
-        f"https://gh-proxy.com/{release}",
+    assert args_path.read_text(encoding="utf-8").splitlines() == [
+        "-fsSL",
+        "--",
+        "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json",
     ]
 
 
-def test_clone_jsdelivr_base_does_not_route_deps(runner, tmp_path):
-    release = "https://github.com/u/r/releases/latest/download/tool"
-    payload = (
-        b'{"$deps": {"files": ["' + release.encode() + b'"]}, "run": "tool"}'
+def test_clone_mirror_leaves_gitee_alone(runner, tmp_path):
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+    set_net(runner, "ghproxy")
+
+    result = runner.run("@@ops", "clone", "gitee:aaa/bb", env=env)
+
+    assert result.returncode == 0, result.stderr
+    assert args_path.read_text(encoding="utf-8").splitlines()[-1] == (
+        "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"
     )
+
+
+def test_clone_mirror_failure_suggests_going_direct(runner, tmp_path):
+    env, _ = install_fake_curl(tmp_path, exit_code=35, stderr="boom")
+    set_net(runner, "ghproxy")
+
+    result = runner.run("@@ops", "clone", "github:aaa/bb", env=env)
+
+    assert result.returncode == 1
+    assert "byk @@@config set net-github direct" in result.stderr
+
+
+def test_clone_credentials_bypass_the_mirror(runner, tmp_path):
+    url = "https://raw.githubusercontent.com/u/r/HEAD/tool.byk.json?token=secret"
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+    set_net(runner, "ghproxy")
+
+    result = runner.run("@@ops", "clone", url, env=env)
+
+    assert result.returncode == 0, result.stderr
+    # 原样直连，不经过镜像；提示里也不能出现凭证
+    assert args_path.read_text(encoding="utf-8").splitlines()[-1] == url
+    assert "carries credentials" in result.stderr
+    assert "secret" not in result.stderr
+    assert "gh-proxy" not in result.stderr
+
+
+def test_clone_credentials_with_deps_are_refused(runner, tmp_path):
+    url = "https://raw.githubusercontent.com/u/r/HEAD/tool.byk.json?token=secret"
+    payload = b'{"$deps": {"files": ["./bin/tool"]}}'
+    env, _ = install_routed_curl(tmp_path, {"token=secret": payload})
+    set_net(runner, "ghproxy")
+
+    result = runner.run("@@ops", "clone", url, "-d", env=env)
+
+    assert result.returncode == 1
+    assert "cannot declare $deps" in result.stderr
+    assert "secret" not in result.stderr
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
+def test_clone_mirror_keeps_the_base_canonical(runner, tmp_path):
     env, log = install_routed_curl(
         tmp_path,
         {
-            "@HEAD/.byk.json": payload,
-            "releases/latest/download/tool": b"tool",
+            "/HEAD/.byk.json": b'{"$deps": {"files": ["./bin/tool"]}, "run": "tool"}',
+            "/HEAD/bin/tool": b"tool",
         },
     )
+    set_net(runner, "ghproxy")
 
-    result = runner.run("@@ops", "clone", "jsdelivr:u/r", "-d", env=env)
+    result = runner.run("@@ops", "clone", "github:u/r", "-d", env=env)
+
     assert result.returncode == 0, result.stderr
-    # jsdelivr 只镜像仓库文件，Release 资产取不到，所以下载层不跟它走
+    base = "https://raw.githubusercontent.com/u/r/HEAD/"
+    assert f"Recorded $deps.base = {base}" in result.stderr
+    assert (runner.byk_dir / "deps" / "@@ops" / "tool").read_bytes() == b"tool"
+    # 文档里是上游地址，请求时才套镜像
     assert curl_urls(log) == [
-        "https://cdn.jsdelivr.net/gh/u/r@HEAD/.byk.json",
-        release,
+        f"https://gh-proxy.com/{base}.byk.json",
+        f"https://gh-proxy.com/{base}bin/tool",
     ]
 
 
@@ -738,34 +777,6 @@ def test_clone_gitee_invalid_spec_skips_curl(runner, tmp_path):
     assert not args_path.exists()
 
 
-def test_clone_github_through_jsdelivr(runner, tmp_path):
-    payload = b'{"build": "echo cdn"}'
-    env, args_path = install_fake_curl(tmp_path, payload=payload)
-
-    result = runner.run("@@ops", "clone", "jsdelivr:aaa/bb/sss", env=env)
-
-    assert result.returncode == 0
-    dest = runner.byk_dir / "alias" / "ops.byk.json"
-    assert dest.read_bytes() == payload
-    assert args_path.read_text(encoding="utf-8").splitlines() == [
-        "-fsSL",
-        "--",
-        "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/sss.byk.json",
-    ]
-
-
-def test_clone_github_through_jsdelivr_with_ref(runner, tmp_path):
-    payload = b'{"build": "echo cdn"}'
-    env, args_path = install_fake_curl(tmp_path, payload=payload)
-
-    result = runner.run("@@ops", "clone", "jsdelivr:aaa/bb@v1/", "-d", env=env)
-
-    assert result.returncode == 0, result.stderr
-    assert args_path.read_text(encoding="utf-8").splitlines()[-1] == (
-        "https://cdn.jsdelivr.net/gh/aaa/bb@v1/.byk.json"
-    )
-
-
 def test_clone_unknown_prefix_skips_curl(runner, tmp_path):
     env, args_path = install_fake_curl(tmp_path, payload=b"{}")
 
@@ -773,7 +784,8 @@ def test_clone_unknown_prefix_skips_curl(runner, tmp_path):
 
     assert result.returncode == 1
     assert "Unknown source prefix: fastgit:" in result.stderr
-    assert "github, gitee, jsdelivr, ghproxy" in result.stderr
+    assert "github, gitee" in result.stderr
+    assert "ghproxy" not in result.stderr
     assert not args_path.exists()
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
@@ -788,16 +800,6 @@ def test_clone_rejects_the_removed_source_options(runner, tmp_path):
         assert f"Unknown option: {flag}" in result.stderr, flag
         assert not (runner.byk_dir / "alias" / "ops.byk.json").exists(), flag
 
-    assert not args_path.exists()
-
-
-def test_clone_jsdelivr_with_invalid_spec_skips_curl(runner, tmp_path):
-    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
-
-    result = runner.run("@@ops", "clone", "jsdelivr:aaa", env=env)
-
-    assert result.returncode == 1
-    assert "GitHub source must be" in result.stderr
     assert not args_path.exists()
 
 

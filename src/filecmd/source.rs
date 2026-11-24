@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::deps::Origin;
-use crate::deps::spec::gh_proxy_url;
 use crate::filecmd::io::path::target_path;
 use crate::filecmd::spec::invalid_stem_message;
 use crate::model::PathLayout;
@@ -29,7 +28,7 @@ pub(crate) struct Loaded {
 /// 解析链接目标：只接受本地文件；URL 与前缀来源明确拒绝并提示用 clone。
 pub(crate) fn resolve(spec: &str, layout: &PathLayout) -> Result<PathBuf, String> {
     match classify(spec)? {
-        SourceKind::Url(_) | SourceKind::Prefix(..) => Err(format!(
+        SourceKind::Url(_) | SourceKind::Forge(..) => Err(format!(
             "Remote source is not supported here: {}\nHint: use `byk <file> clone` for URLs",
             spec
         )),
@@ -37,31 +36,16 @@ pub(crate) fn resolve(spec: &str, layout: &PathLayout) -> Result<PathBuf, String
     }
 }
 
-/// 读取并校验来源；本地路径返回规范化路径，URL 通过外部 curl 获取。
+/// 读取并校验来源；本地路径返回规范化路径，远程地址通过外部 curl 获取。
 ///
-/// `retry` 是直连 GitHub 失败时随提示给出的重试命令（通常是改用 CDN 的完整命令）。
-pub(crate) fn load(spec: &str, layout: &PathLayout, retry: Option<&str>) -> Result<Loaded, String> {
+/// 传输通道（直连 / gh-proxy）从配置读一次，远程请求共用同一个判定：
+/// URL 与 `$deps.base` 里永远只出现规范上游地址。
+pub(crate) fn load(spec: &str, layout: &PathLayout) -> Result<Loaded, String> {
+    let channel = crate::filecmd::sys::config::channel(layout);
+
     match classify(spec)? {
-        SourceKind::Url(url) => {
-            let data = fetch(url, FetchKind::Source, retry)?;
-            validate(&data, url)?;
-            Ok(Loaded {
-                label: url.to_string(),
-                data,
-                origin: Origin::Url(url.to_string()),
-            })
-        }
-        SourceKind::Prefix(prefix, body) => {
-            let (forge, cdn) = prefix.route();
-            let url = forge_url(forge, cdn, body)?;
-            let data = fetch(&url, FetchKind::Source, retry)?;
-            validate(&data, &url)?;
-            Ok(Loaded {
-                label: url.clone(),
-                data,
-                origin: Origin::Url(url),
-            })
-        }
+        SourceKind::Url(url) => remote(url, channel),
+        SourceKind::Forge(forge, body) => remote(&forge_url(forge, body)?, channel),
         SourceKind::Local => {
             let (path, data) = load_local(spec, layout)?;
             Ok(Loaded {
@@ -71,6 +55,23 @@ pub(crate) fn load(spec: &str, layout: &PathLayout, retry: Option<&str>) -> Resu
             })
         }
     }
+}
+
+/// 下载并校验一个远程别名文件。
+///
+/// 标签与 `origin` 都取脱敏后的地址：带凭证的来源仍然能 clone，但凭证不会进
+/// 日志，也不会被冻结进 `$deps.base`。
+fn remote(url: &str, channel: crate::net::Channel) -> Result<Loaded, String> {
+    let data = fetch(url, FetchKind::Source, channel)?;
+    let display = crate::net::mirror::display_url(url);
+    validate(&data, &display)?;
+    Ok(Loaded {
+        label: display,
+        data,
+        // origin 保留原地址：`$deps.base` 的冻结规则需要看见完整形态，
+        // 而"带凭证的来源不许声明 $deps"由 clone 在落盘前挡住。
+        origin: Origin::Url(url.to_string()),
+    })
 }
 
 /// 直接按路径读取别名文件。
@@ -91,7 +92,7 @@ enum SourceKind<'a> {
     Local,
     Url(&'a str),
     /// `github:user/repo/path` —— 前缀之后的剩余部分。
-    Prefix(Prefix, &'a str),
+    Forge(Forge, &'a str),
 }
 
 fn classify(spec: &str) -> Result<SourceKind<'_>, String> {
@@ -108,8 +109,8 @@ fn classify(spec: &str) -> Result<SourceKind<'_>, String> {
         };
     }
     if let Some((head, rest)) = split_prefix(spec) {
-        return match Prefix::parse(head) {
-            Some(prefix) => Ok(SourceKind::Prefix(prefix, rest)),
+        return match Forge::parse(head) {
+            Some(forge) => Ok(SourceKind::Forge(forge, rest)),
             None => Err(unknown_prefix(head)),
         };
     }
@@ -142,10 +143,9 @@ fn unknown_prefix(head: &str) -> String {
     format!(
         "Unknown source prefix: {}:\nHint: supported prefixes are {}",
         head,
-        Prefix::NAMES.join(", ")
+        Forge::NAMES.join(", ")
     )
 }
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Forge {
     Github,
@@ -153,6 +153,17 @@ pub(crate) enum Forge {
 }
 
 impl Forge {
+    /// 来源前缀的名字；顺序即错误提示与补全的展示顺序。
+    pub(crate) const NAMES: [&'static str; 2] = ["github", "gitee"];
+
+    pub(crate) fn parse(head: &str) -> Option<Self> {
+        match head {
+            "github" => Some(Self::Github),
+            "gitee" => Some(Self::Gitee),
+            _ => None,
+        }
+    }
+
     fn name(self) -> &'static str {
         match self {
             Self::Github => "GitHub",
@@ -174,71 +185,11 @@ impl Forge {
     }
 }
 
-/// GitHub 文件的传输通道；`raw` 是平台自身，其余是第三方加速。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Cdn {
-    Raw,
-    Jsdelivr,
-    Ghproxy,
-}
-
-impl Cdn {
-    fn url(self, forge: Forge, user: &str, repo: &str, reference: &str, path: &str) -> String {
-        match self {
-            Self::Raw => forge.raw_url(user, repo, reference, path),
-            Self::Jsdelivr => format!(
-                "https://cdn.jsdelivr.net/gh/{}/{}@{}/{}",
-                user, repo, reference, path
-            ),
-            // gh-proxy 接收完整的上游 URL，直接拼在域名后面
-            Self::Ghproxy => gh_proxy_url(&forge.raw_url(user, repo, reference, path)),
-        }
-    }
-}
-
-/// 来源前缀：平台与传输通道共用同一个命名空间。
-///
-/// 写成 `<prefix>:<user>/<repo>[@<ref>][/<path>]`，与 `@name`、`https://…`
-/// 一样是「一个位置参数」，不再需要额外的选项。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Prefix {
-    Github,
-    Gitee,
-    Jsdelivr,
-    Ghproxy,
-}
-
-impl Prefix {
-    pub(crate) const NAMES: [&'static str; 4] = ["github", "gitee", "jsdelivr", "ghproxy"];
-
-    fn parse(head: &str) -> Option<Self> {
-        match head {
-            "github" => Some(Self::Github),
-            "gitee" => Some(Self::Gitee),
-            "jsdelivr" => Some(Self::Jsdelivr),
-            "ghproxy" => Some(Self::Ghproxy),
-            _ => None,
-        }
-    }
-
-    /// 前缀到 (平台, 通道)：`jsdelivr` / `ghproxy` 只镜像 GitHub。
-    fn route(self) -> (Forge, Cdn) {
-        match self {
-            Self::Github => (Forge::Github, Cdn::Raw),
-            Self::Gitee => (Forge::Gitee, Cdn::Raw),
-            Self::Jsdelivr => (Forge::Github, Cdn::Jsdelivr),
-            Self::Ghproxy => (Forge::Github, Cdn::Ghproxy),
-        }
-    }
-}
-
-/// `github:` 来源在网络直连失败时可改写的等价前缀。
-pub(crate) fn ghproxy_fallback(spec: &str) -> Option<&str> {
-    spec.strip_prefix("github:")
-}
-
 /// 把 `<user>/<repo>[@<ref>][/<path>]` 展开为对应平台的 raw URL。
-pub(crate) fn forge_url(forge: Forge, cdn: Cdn, spec: &str) -> Result<String, String> {
+///
+/// 只产出规范上游地址：走不走镜像由 [`crate::net::Channel`] 在请求那一刻决定，
+/// 这里不知道通道的存在。
+pub(crate) fn forge_url(forge: Forge, spec: &str) -> Result<String, String> {
     let mut parts = spec.splitn(3, '/');
     let user = parts.next().unwrap_or("");
     let repo_ref = parts.next().unwrap_or("");
@@ -277,8 +228,7 @@ pub(crate) fn forge_url(forge: Forge, cdn: Cdn, spec: &str) -> Result<String, St
     segments.extend(dirs.iter().map(|segment| encode_segment(segment)));
     segments.push(encode_segment(&file));
 
-    Ok(cdn.url(
-        forge,
+    Ok(forge.raw_url(
         &segments[0],
         &segments[1],
         &segments[2],
@@ -520,19 +470,48 @@ enum FetchKind {
 }
 
 /// 下载 `byk.tap.json`；404 时提示在仓库根目录补索引，而不是检查路径。
-pub(crate) fn fetch_tap_index(url: &str) -> Result<Vec<u8>, String> {
-    fetch(url, FetchKind::TapIndex, None)
+///
+/// 与普通来源共用同一个通道：远程索引同样受 `net-github` 约束。
+pub(crate) fn fetch_tap_index(url: &str, layout: &PathLayout) -> Result<Vec<u8>, String> {
+    let channel = crate::filecmd::sys::config::channel(layout);
+    fetch(url, FetchKind::TapIndex, channel)
 }
 
-/// GitHub 直连地址；连不上通常是网络问题，值得提示改走 CDN。
-/// jsdelivr、gh-proxy 加工过的地址不在此列。
-fn is_github_direct(url: &str) -> bool {
-    url.starts_with("https://raw.githubusercontent.com/") || url.starts_with("https://github.com/")
+/// 网络失败的下一步：直连失败提醒开镜像，镜像失败提醒回直连。
+///
+/// 只在"真的可能是网络问题"时给（非 404），且只对 GitHub 文件地址给——
+/// 别的 host 没有镜像可换。
+fn failure_hint(route: &crate::net::Route, url: &str) -> Option<&'static str> {
+    if !crate::net::is_github_file(url) {
+        return None;
+    }
+    match route {
+        crate::net::Route::Direct => Some(
+            "\nHint: this network cannot reach GitHub directly; retry through a mirror:\n  byk @@@config set net-github ghproxy",
+        ),
+        crate::net::Route::Mirrored(_) => Some(
+            "\nHint: the mirror may be unreachable; go direct with:\n  byk @@@config set net-github direct",
+        ),
+        // 凭证地址本来就不该换成镜像，别给一个会泄露凭证的建议
+        crate::net::Route::Credentials => None,
+    }
 }
 
-fn fetch(url: &str, kind: FetchKind, retry: Option<&str>) -> Result<Vec<u8>, String> {
+fn fetch(url: &str, kind: FetchKind, channel: crate::net::Channel) -> Result<Vec<u8>, String> {
+    // 通道只决定这一次请求的地址；`url` 本身仍是规范上游地址，用于报错与冻结 base。
+    let routed = channel.route(url);
+    let hint = failure_hint(&routed, url);
+    let target = match routed {
+        crate::net::Route::Mirrored(mirrored) => mirrored,
+        crate::net::Route::Credentials => {
+            crate::net::note_credentials();
+            url.to_string()
+        }
+        crate::net::Route::Direct => url.to_string(),
+    };
+
     let output = crate::net::curl()
-        .args(["-fsSL", "--", url])
+        .args(["-fsSL", "--", &target])
         .output()
         .map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
@@ -548,10 +527,11 @@ fn fetch(url: &str, kind: FetchKind, retry: Option<&str>) -> Result<Vec<u8>, Str
         let reason = stderr.trim();
         // 22 是 `-f` 下的 HTTP 错误，远程来源几乎总是 404：仓库/ref/路径三者
         // 有一个不对。裸 `curl failed (exit 22)` 只会让人去查网络。
+        let shown = crate::net::mirror::display_url(&target);
         if code == 22 {
             let mut message = match kind {
-                FetchKind::Source => format!("Remote source not found: {}", url),
-                FetchKind::TapIndex => format!("Tap index not found: {}", url),
+                FetchKind::Source => format!("Remote source not found: {shown}"),
+                FetchKind::TapIndex => format!("Tap index not found: {shown}"),
             };
             if !reason.is_empty() {
                 message.push_str(&format!("\nServer said: {}", reason));
@@ -567,17 +547,12 @@ fn fetch(url: &str, kind: FetchKind, retry: Option<&str>) -> Result<Vec<u8>, Str
             return Err(message);
         }
         let mut message = if reason.is_empty() {
-            format!("curl failed (exit {}) for {}", code, url)
+            format!("curl failed (exit {}) for {shown}", code)
         } else {
-            format!("curl failed (exit {}) for {}: {}", code, url, reason)
+            format!("curl failed (exit {}) for {shown}: {}", code, reason)
         };
-        if let Some(command) = retry
-            && is_github_direct(url)
-        {
-            message.push_str(&format!(
-                "\nHint: the current network cannot reach GitHub directly; retry through a mirror CDN (ghproxy or jsdelivr):\n  {}",
-                command
-            ));
+        if let Some(hint) = hint {
+            message.push_str(hint);
         }
         return Err(message);
     }
@@ -874,7 +849,7 @@ mod tests {
     fn rejects_unsupported_scheme() {
         let temp = tempfile::tempdir().unwrap();
 
-        let err = load("ftp://example.com/tool.byk.json", &layout(&temp), None).unwrap_err();
+        let err = load("ftp://example.com/tool.byk.json", &layout(&temp)).unwrap_err();
 
         assert!(err.starts_with("Unsupported source scheme:"));
         assert!(err.contains("only http and https"));
@@ -883,39 +858,39 @@ mod tests {
     #[test]
     fn forge_url_maps_shorthand() {
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb").unwrap(),
+            forge_url(Forge::Github, "aaa/bb").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb@v1").unwrap(),
+            forge_url(Forge::Github, "aaa/bb@v1").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/v1/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss").unwrap(),
+            forge_url(Forge::Github, "aaa/bb/sss").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/").unwrap(),
+            forge_url(Forge::Github, "aaa/bb/").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss/xxx").unwrap(),
+            forge_url(Forge::Github, "aaa/bb/sss/xxx").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss/xxx.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb@v1/sss").unwrap(),
+            forge_url(Forge::Github, "aaa/bb@v1/sss").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/v1/sss.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb@abc123/").unwrap(),
+            forge_url(Forge::Github, "aaa/bb@abc123/").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/abc123/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss/xxx.byk.json").unwrap(),
+            forge_url(Forge::Github, "aaa/bb/sss/xxx.byk.json").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss/xxx.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss/").unwrap(),
+            forge_url(Forge::Github, "aaa/bb/sss/").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss/.byk.json"
         );
     }
@@ -923,74 +898,37 @@ mod tests {
     #[test]
     fn forge_url_maps_gitee() {
         assert_eq!(
-            forge_url(Forge::Gitee, Cdn::Raw, "aaa/bb").unwrap(),
+            forge_url(Forge::Gitee, "aaa/bb").unwrap(),
             "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Gitee, Cdn::Raw, "aaa/bb/sss").unwrap(),
+            forge_url(Forge::Gitee, "aaa/bb/sss").unwrap(),
             "https://gitee.com/aaa/bb/raw/HEAD/sss.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Gitee, Cdn::Raw, "aaa/bb@v1/").unwrap(),
+            forge_url(Forge::Gitee, "aaa/bb@v1/").unwrap(),
             "https://gitee.com/aaa/bb/raw/v1/.byk.json"
         );
         assert_eq!(
-            forge_url(Forge::Gitee, Cdn::Raw, "aaa/bb/dir/xxx").unwrap(),
+            forge_url(Forge::Gitee, "aaa/bb/dir/xxx").unwrap(),
             "https://gitee.com/aaa/bb/raw/HEAD/dir/xxx.byk.json"
         );
     }
 
     #[test]
-    fn forge_url_maps_jsdelivr() {
-        assert_eq!(
-            forge_url(Forge::Github, Cdn::Jsdelivr, "aaa/bb").unwrap(),
-            "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json"
-        );
-        assert_eq!(
-            forge_url(Forge::Github, Cdn::Jsdelivr, "aaa/bb/sss").unwrap(),
-            "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/sss.byk.json"
-        );
-        assert_eq!(
-            forge_url(Forge::Github, Cdn::Jsdelivr, "aaa/bb@v1/").unwrap(),
-            "https://cdn.jsdelivr.net/gh/aaa/bb@v1/.byk.json"
-        );
-        assert_eq!(
-            forge_url(Forge::Github, Cdn::Jsdelivr, "aaa/bb@abc123/dir/xxx").unwrap(),
-            "https://cdn.jsdelivr.net/gh/aaa/bb@abc123/dir/xxx.byk.json"
-        );
-    }
-
-    #[test]
-    fn forge_url_maps_ghproxy() {
-        assert_eq!(
-            forge_url(Forge::Github, Cdn::Ghproxy, "aaa/bb").unwrap(),
-            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
-        );
-        assert_eq!(
-            forge_url(Forge::Github, Cdn::Ghproxy, "aaa/bb@v1/sss").unwrap(),
-            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/v1/sss.byk.json"
-        );
-    }
-
-    #[test]
-    fn maps_prefixes_to_platform_and_cdn() {
-        assert_eq!(Prefix::parse("github"), Some(Prefix::Github));
-        assert_eq!(Prefix::parse("gitee"), Some(Prefix::Gitee));
-        assert_eq!(Prefix::parse("jsdelivr"), Some(Prefix::Jsdelivr));
-        assert_eq!(Prefix::parse("ghproxy"), Some(Prefix::Ghproxy));
-        // `raw` 不再是可选值：它是 `github:` 的默认通道
-        assert_eq!(Prefix::parse("raw"), None);
-
-        assert_eq!(Prefix::Github.route(), (Forge::Github, Cdn::Raw));
-        assert_eq!(Prefix::Gitee.route(), (Forge::Gitee, Cdn::Raw));
-        assert_eq!(Prefix::Jsdelivr.route(), (Forge::Github, Cdn::Jsdelivr));
-        assert_eq!(Prefix::Ghproxy.route(), (Forge::Github, Cdn::Ghproxy));
+    fn parses_only_the_two_platform_prefixes() {
+        assert_eq!(Forge::parse("github"), Some(Forge::Github));
+        assert_eq!(Forge::parse("gitee"), Some(Forge::Gitee));
+        // 传输通道已经搬进配置，不再是来源前缀
+        for gone in ["jsdelivr", "ghproxy", "raw"] {
+            assert_eq!(Forge::parse(gone), None, "{gone}");
+        }
     }
 
     #[test]
     fn splits_prefixes_only_for_prefix_shaped_words() {
         assert_eq!(split_prefix("github:a/b/c"), Some(("github", "a/b/c")));
-        assert_eq!(split_prefix("ghproxy:a/b"), Some(("ghproxy", "a/b")));
+        assert_eq!(split_prefix("gitee:a/b@v1"), Some(("gitee", "a/b@v1")));
         // 盘符、URL、以及名字里带冒号的普通路径都不算前缀
         assert_eq!(split_prefix("C:/x"), None);
         assert_eq!(split_prefix("c:relative"), None);
@@ -1005,20 +943,17 @@ mod tests {
     fn rejects_an_unknown_prefix() {
         let err = classify("githb:a/b").unwrap_err();
         assert!(err.starts_with("Unknown source prefix: githb:"), "{err}");
-        assert!(
-            err.contains("github, gitee, jsdelivr, ghproxy"),
-            "四个前缀都要列出来：{err}"
-        );
+        assert!(err.contains("github, gitee"), "两个前缀都要列出来：{err}");
+        assert!(!err.contains("ghproxy"), "通道不再是前缀：{err}");
     }
 
     #[test]
-    fn prefix_sources_build_platform_urls() {
+    fn prefixed_sources_build_canonical_urls() {
         let build = |spec: &str| {
-            let SourceKind::Prefix(prefix, body) = classify(spec).unwrap() else {
-                panic!("expected a prefix source: {spec}");
+            let SourceKind::Forge(forge, body) = classify(spec).unwrap() else {
+                panic!("expected a prefixed source: {spec}");
             };
-            let (forge, cdn) = prefix.route();
-            forge_url(forge, cdn, body).unwrap()
+            forge_url(forge, body).unwrap()
         };
 
         assert_eq!(
@@ -1026,50 +961,15 @@ mod tests {
             "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
         );
         assert_eq!(
-            build("gitee:aaa/bb/x"),
-            "https://gitee.com/aaa/bb/raw/HEAD/x.byk.json"
+            build("gitee:aaa/bb@v1/x"),
+            "https://gitee.com/aaa/bb/raw/v1/x.byk.json"
         );
-        assert_eq!(
-            build("jsdelivr:aaa/bb@v1/x"),
-            "https://cdn.jsdelivr.net/gh/aaa/bb@v1/x.byk.json"
-        );
-        assert_eq!(
-            build("ghproxy:aaa/bb"),
-            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
-        );
-    }
-
-    #[test]
-    fn ghproxy_fallback_rewrites_only_github_specs() {
-        assert_eq!(ghproxy_fallback("github:aaa/bb/x"), Some("aaa/bb/x"));
-        assert_eq!(ghproxy_fallback("gitee:aaa/bb/x"), None);
-        assert_eq!(ghproxy_fallback("https://e.com/x.byk.json"), None);
-    }
-
-    #[test]
-    fn github_direct_detects_raw_and_github_hosts_only() {
-        assert!(is_github_direct(
-            "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
-        ));
-        assert!(is_github_direct(
-            "https://github.com/aaa/bb/releases/download/x"
-        ));
-        assert!(!is_github_direct(
-            "https://cdn.jsdelivr.net/gh/aaa/bb@HEAD/.byk.json"
-        ));
-        assert!(!is_github_direct(
-            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
-        ));
-        assert!(!is_github_direct(
-            "https://gitee.com/aaa/bb/raw/HEAD/.byk.json"
-        ));
-        assert!(!is_github_direct("https://example.com/x.byk.json"));
     }
 
     #[test]
     fn forge_url_encodes_segments() {
         assert_eq!(
-            forge_url(Forge::Github, Cdn::Raw, "aa a/bb@v 1/dir name/xy").unwrap(),
+            forge_url(Forge::Github, "aa a/bb@v 1/dir name/xy").unwrap(),
             "https://raw.githubusercontent.com/aa%20a/bb/v%201/dir%20name/xy.byk.json"
         );
     }
@@ -1078,23 +978,23 @@ mod tests {
     fn forge_url_rejects_bad_shape() {
         // 两段现在是合法的（仓库根），剩下的都是真的形状错误
         for spec in ["", ".byk.json", "aaa", "aaa/bb@/sss", "aaa/bb/../sss"] {
-            assert!(forge_url(Forge::Github, Cdn::Raw, spec).is_err(), "{spec}");
+            assert!(forge_url(Forge::Github, spec).is_err(), "{spec}");
         }
-        assert!(forge_url(Forge::Github, Cdn::Raw, "aaa//sss").is_err());
-        assert!(forge_url(Forge::Github, Cdn::Raw, "aaa/bb/sss//xxx").is_err());
+        assert!(forge_url(Forge::Github, "aaa//sss").is_err());
+        assert!(forge_url(Forge::Github, "aaa/bb/sss//xxx").is_err());
     }
 
     #[test]
     fn forge_url_rejects_a_host_prefix() {
-        let err = forge_url(Forge::Github, Cdn::Raw, "github.com/aaa/bb").unwrap_err();
+        let err = forge_url(Forge::Github, "github.com/aaa/bb").unwrap_err();
         assert!(err.contains("must not include a host"), "{err}");
         assert!(err.contains("Did you mean `aaa/bb`?"), "{err}");
 
-        let err = forge_url(Forge::Github, Cdn::Raw, "www.github.com/aaa/bb/sss").unwrap_err();
+        let err = forge_url(Forge::Github, "www.github.com/aaa/bb/sss").unwrap_err();
         assert!(err.contains("Did you mean `aaa/bb/sss`?"), "{err}");
 
         // 去掉主机后不到两段，就只能报形状错，别建议一个同样非法的写法
-        let err = forge_url(Forge::Github, Cdn::Raw, "github.com/aaa").unwrap_err();
+        let err = forge_url(Forge::Github, "github.com/aaa").unwrap_err();
         assert!(err.contains("must not include a host"), "{err}");
         assert!(!err.contains("Did you mean"), "{err}");
     }

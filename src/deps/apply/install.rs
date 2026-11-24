@@ -6,8 +6,9 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::deps::spec::{CdnRoute, plan_entries};
-use crate::deps::types::{Declaration, Origin, PlannedAsset};
+use crate::deps::spec::plan_entries;
+use crate::deps::types::{Base, Declaration, Origin, PlannedAsset};
+use crate::net::{Channel, Route};
 
 use super::count_files;
 use super::packages::{install_npm, install_pip};
@@ -22,7 +23,7 @@ use super::sync::{self, Change};
 pub(crate) fn install_file(
     asset: &PlannedAsset,
     replace: bool,
-    route: CdnRoute,
+    channel: Channel,
 ) -> Result<(), String> {
     let index = asset.index;
 
@@ -38,7 +39,7 @@ pub(crate) fn install_file(
         .map_err(|e| format!("files[{index}]: cannot create {}: {e}", parent.display()))?;
 
     let scratch = scratch_path(&asset.dest);
-    if let Err(message) = fetch(index, &asset.origin, &scratch, route) {
+    if let Err(message) = fetch(index, &asset.origin, &scratch, channel) {
         let _ = fs::remove_file(&scratch);
         return Err(message);
     }
@@ -63,7 +64,7 @@ pub(crate) fn install_file(
 pub(crate) fn install_archive(
     asset: &PlannedAsset,
     replace: bool,
-    route: CdnRoute,
+    channel: Channel,
 ) -> Result<(), String> {
     let index = asset.index;
     let parent = asset
@@ -78,7 +79,7 @@ pub(crate) fn install_archive(
     }
 
     let scratch = scratch_path(&asset.dest);
-    if let Err(message) = fetch(index, &asset.origin, &scratch, route) {
+    if let Err(message) = fetch(index, &asset.origin, &scratch, channel) {
         let _ = fs::remove_file(&scratch);
         return Err(message);
     }
@@ -272,9 +273,35 @@ fn archive_entry_path(index: usize, entry: &str) -> Result<Option<Vec<String>>, 
 
 /// 把来源取到临时文件。两条路都只写 `out`，不碰 `dest`——rename 之前失败
 /// 都不会留下半个文件。
-fn fetch(index: usize, origin: &Origin, out: &Path, route: CdnRoute) -> Result<(), String> {
+/// 一条资产该往哪请求；带凭证的地址直连，并让 `net` 提示一次。
+fn request_url(channel: Channel, url: &str) -> String {
+    match channel.route(url) {
+        Route::Mirrored(mirrored) => mirrored,
+        Route::Credentials => {
+            crate::net::note_credentials();
+            url.to_string()
+        }
+        Route::Direct => url.to_string(),
+    }
+}
+
+/// 旧文件兼容：`base` 已经是 gh-proxy 地址时，绝对 GitHub 地址也走同一代理。
+///
+/// 新落盘的 `base` 一律是规范上游地址，这条分支只为已经装好的旧文件保留。
+fn with_legacy_base(channel: Channel, base: Option<&Base>) -> Channel {
+    match base {
+        Some(Base::Url(url))
+            if channel == Channel::Direct && url.starts_with(crate::net::mirror::GH_PROXY) =>
+        {
+            Channel::Ghproxy
+        }
+        _ => channel,
+    }
+}
+
+fn fetch(index: usize, origin: &Origin, out: &Path, channel: Channel) -> Result<(), String> {
     match origin {
-        Origin::Url(url) => download(index, &route.url(url), out),
+        Origin::Url(url) => download(index, &request_url(channel, url), out),
         Origin::File(path) => copy_local(index, path, out),
     }
 }
@@ -400,6 +427,7 @@ pub(crate) fn install_declaration(
     is_global: bool,
     decl: &Declaration,
     force: bool,
+    channel: Channel,
     retry_hint: &str,
 ) -> Result<(), String> {
     // 局部依赖落在项目里，先放一个自忽略的 .gitignore，别让二进制进仓库
@@ -419,8 +447,8 @@ pub(crate) fn install_declaration(
     }
 
     if has_files {
-        let route = CdnRoute::from_base(decl.base.as_ref());
-        sync_files(deps_dir, key, decl, &assets, route, force, retry_hint)?;
+        let channel = with_legacy_base(channel, decl.base.as_ref());
+        sync_files(deps_dir, key, decl, &assets, channel, force, retry_hint)?;
     }
 
     if has_pip {
@@ -440,7 +468,7 @@ fn sync_files(
     key: &str,
     decl: &Declaration,
     assets: &[PlannedAsset],
-    route: CdnRoute,
+    channel: Channel,
     force: bool,
     retry_hint: &str,
 ) -> Result<(), String> {
@@ -499,9 +527,9 @@ fn sync_files(
                 // 根上解压的落点就是专属目录，它一直都在，只能走替换路径
                 let replace = !matches!(change, Change::Add) || asset.dest.as_path() == deps_dir;
                 if asset.archive {
-                    install_archive(asset, replace, route)
+                    install_archive(asset, replace, channel)
                 } else {
-                    install_file(asset, replace, route)
+                    install_file(asset, replace, channel)
                 }
             }
         };

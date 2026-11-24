@@ -2,7 +2,10 @@
 //!
 //! 代理只注入到这些子进程，不改 byk 自身的进程环境，也不影响别名、pip、npm。
 
+pub(crate) mod mirror;
 pub(crate) mod proxy;
+
+pub(crate) use mirror::{Channel, Route, is_github_file, note_credentials};
 
 use std::process::Command;
 

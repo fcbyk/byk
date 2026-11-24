@@ -4,10 +4,11 @@
 
 - **file commands**: the `@file..verb` form is gone — write `byk @file <verb>` (and `byk @@file <verb>`) instead. The separator is now a space, so it no longer collides with the precise alias syntax `@file.key`. `byk @file` on its own, `-h`, or `--help` prints that file's command help
 - **file help**: the `help` file command is gone — use `-h` / `--help` (`byk @file -h`, `byk @file init -h`). File-command help now mirrors `byk -h`: the index names the local/global file and shows `FilePath` (with `(not created yet)` / `(link)` markers), and every command's help repeats the target path above Usage with its description first
-- **`clone` sources**: `-gh` / `--github`, `-ge` / `--gitee`, and the optional CDN value that followed `-gh` are gone — the platform and the transport become a prefix on the single source argument: `github:user/repo`, `gitee:user/repo`, `jsdelivr:user/repo`, `ghproxy:user/repo`. An unknown prefix fails with the list of valid ones (`Unknown source prefix: …`), and `clone` now has no source options at all, only `--tap` and `--deps`
+- **`clone` sources**: the platform is a prefix on the single source argument — `github:` / `gitee:` (`jsdelivr:` and `ghproxy:` are gone too), and the GitHub transport moved to the `net-github` setting (`direct` / `ghproxy`). `clone` now has no source options at all, only `--tap` and `--deps`. `$deps.base` records the canonical upstream URL only; the mirror applies at request time instead of being baked into the document
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **`$paths`**: now inheritable like `$cwd` / `$mode` — writable on a file, group, or alias object; a child value replaces the inherited list entirely (no merging), and `[]` clears it so a single alias can fall back to the system `PATH`
 - **`$deps`**: when `base` is a ghproxy address, absolute GitHub downloads (release assets included) reuse the same proxy; relative entries are never wrapped twice, and jsdelivr remains repository-files-only
 - **`$deps`**: curl's native progress bar is shown on a terminal; non-TTY output stays quiet with unchanged error text
@@ -23,6 +24,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **`$deps`**: alias files can declare dependencies — files, pip packages, and npm packages — installed into the file's own dedicated directory; `@file..deps install|status|uninstall` manages them, and `..clone -d` installs right after cloning
 
 - **`$clone`**: new inheritable field that keeps a file, group, or alias out of `..clone` copies while it stays fully usable locally; it does not affect the merged space, and a clone that would leave nothing is refused
@@ -37,6 +39,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **variables**: `${work_dir}` expands to the invocation directory, unaffected by an inherited `$cwd`; built-ins expand to absolute paths, so it can go straight into `$cwd`
 - **`__api__ paths`**: JSON adds `workdir` and `aliasFiles` (global first, then local, each sorted by key, deduplicated when both scopes are the same directory); scalar lookup now also accepts `workdir` alongside `root` / `alias`
 - **`__api__ file`**: read-only request resolving a file key (`@name` / `@@name` / `@` / `@@`) to `{key, scope, path, dir}` without checking existence, reading contents, or following links; `--list` returns every alias file in the same shape
@@ -59,6 +62,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **`$private`**: new inheritable field that keeps a file, group, or alias out of the merged space while exact calls still work; it replaces `$priority: -1`
 - **file commands**: alias files now carry reserved commands addressed as `@file..<verb>` / `@@file..<verb>` — `init`, `destroy`, `clear`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `help` — to create, edit, clone, link, and inspect the file itself
 - **completion**: file-scope keys (`@file` / `@@file`) are offered only after typing `@` / `@@`; an empty Tab now lists merged aliases only
@@ -92,6 +96,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **`$mode`**: `silent` suppresses byk's hint lines; `interactive` keeps confirmation prompts; inheritable across files
 - **variables**: `$var` declarations can override built-in names; `\${...}` passes through to the shell literally
 - **link**: a `*.byk.json` root array with a single entry now points to another alias file (one level deep), so bundles can live beside their scripts
@@ -116,6 +121,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **`__api__`**: add hidden built-in command `byk __api__` for shell completion script generation and candidate queries
 - **`--paths`**: add `--paths` option to display CLI home and alias directory paths
 - **`$var`**: alias files now support `$var` declarations with per-platform value resolution (linux/macos/windows)
@@ -124,6 +130,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **completion**: improve contextual tab completions
 - **plugins**: skip persistence for download-to-workdir-only plugins
 - **install**: add streaming download with progress bar
@@ -143,6 +150,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **plugins**: `pip` and `pip-keep`  accepts a single string, not just an array
 - **plugins**: `$var` supports per-platform values
 - **plugins**: add `alias` fields to plugin protocol
@@ -173,6 +181,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **plugins**: add verbose process logging for install and uninstall
 - **plugins**: add bin and bin-tar support for platform-specific binary downloads
 - **cli**: add compile-time platform detection for `-v` output
@@ -201,6 +210,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - **remove**: track installed packages and add `byk remove <key>` uninstall (#7)
 - **alias**: add $description field for alias help display
 - **alias**: add $paths field to alias files for PATH prepending
@@ -220,6 +230,7 @@
 
 ### Features
 
+- **`@@@config net-github`**: `direct` (default) or `ghproxy` — one setting decides how byk reaches GitHub files: `clone` sources, the `--tap` remote index and target, and `$deps` assets that point at GitHub. `gitee:` and every other host are left alone. An address carrying credentials (`?token=…`, `user:pass@host`) always goes direct so the mirror never sees it, and such a source may not declare `$deps`
 - add init/remove subcommands and zero-config startup (#4)
 - remove --info latest version check (#1)
 
