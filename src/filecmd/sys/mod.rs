@@ -1,13 +1,17 @@
 //! 系统文件命令路由：`@@@<name> <args...>`。
 //!
-//! `@@@` 与 `@` / `@@` 共用同一个认领点（`filecmd::spec::parse`），但语义不同：
-//! 它指向 CLI Home 里属于 byk 自己的东西（`~/.byk/<name>.json`、`~/.byk/tap/`），
+//! `@@@` 与 `@` / `@@` 共用同一个认领点（`filecmd::spec::parse`），但作用域相反：
+//! `@` / `@@` 指向别名文件，`@@@` 指向**不是别名文件**的那些——byk 自己的配置
+//! （`~/.byk/<name>.json`、`~/.byk/tap/`），以及用户的特殊文件（`shell` 指向的
+//! 启动文件）。所以这一域不限于 CLI Home：它管的是「别名之外的任何文件」，
 //! 既不参与别名查找，也没有链接、依赖这些概念。
 //!
 //! 这一层只认名字。名字之后的语法——有没有动词、`-h` 算什么、参数怎么解——
-//! 全归各文件自己定，不强行统一：`config` 是键值表，`tap` 管的是目录。
+//! 全归各文件自己定，不强行统一：`config` 是键值表，`tap` 管的是目录，
+//! `shell` 只在别人的文件里维护一个块。
 
 pub(crate) mod config;
+pub(crate) mod shell;
 pub(crate) mod store;
 pub(crate) mod tap;
 
@@ -17,7 +21,11 @@ use crate::model::PathLayout;
 ///
 /// 表而不是裸 `match`：未知名单、补全、将来的帮助都要同一份名单，
 /// 各写一遍迟早会不一致。
-const FILES: &[(&str, &str)] = &[("config", "byk settings"), ("tap", "tap repositories")];
+const FILES: &[(&str, &str)] = &[
+    ("config", "byk settings"),
+    ("tap", "tap repositories"),
+    ("shell", "shell startup file"),
+];
 
 pub(crate) fn names() -> impl Iterator<Item = &'static str> {
     FILES.iter().map(|(name, _)| *name)
@@ -39,6 +47,7 @@ pub(crate) fn verbs(name: &str) -> &'static [(&'static str, &'static str)] {
     match name {
         "config" => config::VERBS,
         "tap" => tap::VERBS,
+        "shell" => shell::VERBS,
         _ => &[],
     }
 }
@@ -60,6 +69,7 @@ pub(crate) fn describe(name: &str, candidate: &str) -> Option<&'static str> {
     match name {
         "config" => config::describe(candidate),
         "tap" => tap::describe(candidate),
+        "shell" => shell::describe(candidate),
         _ => None,
     }
 }
@@ -69,6 +79,7 @@ pub(crate) fn run(stem: &str, args: &[String], layout: &PathLayout) -> Result<()
     match resolve_name(stem)? {
         "config" => config::run(args, layout),
         "tap" => tap::run(args, layout),
+        "shell" => shell::run(args, layout),
         other => unreachable!("system file {other:?} is registered but not dispatched"),
     }
 }

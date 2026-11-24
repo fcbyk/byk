@@ -324,14 +324,27 @@ The scan is not recursive, exactly like execution: it covers the process working
 
 ## How completion hooks up
 
-`install.sh` writes one line to `~/.zshrc` (or `~/.bashrc`):
+The installer does not write completion (like pip, it only puts the binary in
+place). `@@@shell` installs it into your current shell's startup file:
 
 ```bash
-# byk shell completion
-if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
+byk @@@shell add completion
 ```
 
-This line forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same.
+What it writes is a marked block like this (earlier `install.sh` versions wrote
+an unmarked bare line, which `remove` recognises too):
+
+```bash
+# The following lines have been added by byk to enable byk cli completions.
+if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
+# End of byk cli completions
+```
+
+The two marker lines are full sentences rather than arrows — a startup file is
+read by people, and `# >>> ... >>>` looks like leftover merge-conflict debris in
+someone else's dotfiles.
+
+This line forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same. `byk @@@shell` tells you which file it will touch, and `remove completion` takes the block out without changing anything else. See [System Files](/cli/system-files).
 
 ## Versions and compatibility
 

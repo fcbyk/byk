@@ -14,14 +14,20 @@ else
 fi
 
 # Remove PATH and completion entries from shell configs
+# Completion block markers live in src/filecmd/sys/shell/rc.rs: the two comment
+# lines carry "byk cli completions", the `if ... fi` line carries
+# "byk [__api__ ]completion". That pattern also covers the bare line older
+# installers wrote.
+COMPLETION_RE='byk (cli completions|(__api__ )?completion)'
+
 for RC in "${HOME}/.zshrc" "${HOME}/.bashrc"; do
   if [[ -f "$RC" ]]; then
-    if grep -qE 'byk (__api__ )?completion' "$RC" 2>/dev/null; then
+    if grep -qE "$COMPLETION_RE" "$RC" 2>/dev/null; then
       echo "Removing byk completion from ${RC} ..."
       if [[ "$(uname -s)" == "Darwin" ]]; then
-        sed -i '' -E '/byk (__api__ )?completion/d' "$RC"
+        sed -i '' -E "/${COMPLETION_RE}/d" "$RC"
       else
-        sed -i -E '/byk (__api__ )?completion/d' "$RC"
+        sed -i -E "/${COMPLETION_RE}/d" "$RC"
       fi
     fi
 

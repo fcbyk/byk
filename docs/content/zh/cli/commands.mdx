@@ -118,7 +118,7 @@ byk @@work.deploy        # ~/.byk/alias/work.byk.json 的 deploy
 
 每个别名文件还带一组保留的**文件命令**：用 `@文件 命令` / `@@文件 命令` 创建、编辑、克隆、安装依赖和查看文件本身。完整列表见 [文件命令](/cli/file-commands)。
 
-以 `@@@` 开头的 token 属于另一个域：它们指向 CLI Home 里属于 byk 自己的文件，目前是 `@@@config`（`~/.byk/config.json`，用 `list` / `get` / `set` / `unset` 读写）与 `@@@tap`（`~/.byk/tap/` 下的 tap 仓库，用 `list` / `add` / `update` / `remove` 管理）。见 [系统文件](/cli/system-files)。
+以 `@@@` 开头的 token 属于另一个域：它们指向**不是别名文件**的那些，作用域是其他任何文件。目前是 `@@@config`（`~/.byk/config.json`，用 `list` / `get` / `set` / `unset` 读写）、`@@@tap`（`~/.byk/tap/` 下的 tap 仓库，用 `list` / `add` / `update` / `remove` 管理）与 `@@@shell`（当前 shell 的启动文件，用 `add` / `remove` 管理其中的补全块）。见 [系统文件](/cli/system-files)。
 
 ## 程序接口 `__api__`
 

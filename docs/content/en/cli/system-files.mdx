@@ -1,24 +1,26 @@
 ---
 title: System Files
-description: Address byk's own files with @@@ — today, global config and tap repositories
+description: Address files that are not aliases with @@@ — byk's own config, and shell startup files
 ---
 
 # System Files
 
-`@@@` is the third file domain. `@` points at the current directory, `@@` at the
-global alias directory, and `@@@` at **system files inside the CLI home
-(`~/.byk/`)** — files that belong to byk itself, not to any project.
+`@@@` is the third file domain, and it is the inverse of the first two. `@` and
+`@@` look for alias files; `@@@` looks for **files that are not aliases**. Its
+scope is "any other file": byk's own configuration inside the CLI home
+(`~/.byk/`), and the user's shell startup file.
 
 ```bash
 byk @@@file command [args...]
 ```
 
-Two exist today:
+Three exist today:
 
 | Form | Target |
 |------|--------|
 | `@@@config` | `~/.byk/config.json` |
 | `@@@tap` | `~/.byk/tap/`, with `index.json` as its ledger |
+| `@@@shell` | Your shell's startup file, e.g. `~/.zshrc` |
 
 - System files never take part in alias lookup, and have no `clone` / `link`:
   there is no notion of several of them referencing each other.
@@ -26,6 +28,9 @@ Two exist today:
   `Unknown system file` and lists the available names.
 - Commands follow the name after a space, not a dot: `@@@config.set` reports
   `Invalid system file`.
+- `config` and `tap` point at byk's own files, so the worst case is falling back
+  to defaults; `shell` points at **someone else's file**, so it only inserts or
+  removes one marked block and never rewrites the file.
 
 ## config
 
@@ -225,19 +230,185 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
   only moves data around; the risk shows up later, when `clone --tap` reads
   those aliases and something runs them.
 
+## shell (`@@@shell`)
+
+Manages shell completion: insert one marked block into your shell's startup
+file, or take it out.
+
+```bash
+byk @@@shell                    # same as -h: shell, file, state, and the usage in one screen
+byk @@@shell add completion     # enable completion for the current shell
+byk @@@shell remove completion  # disable it
+```
+
+| Command | What it does |
+|---------|--------------|
+| `add completion` | Write the completion block; reports and stops if it is already there |
+| `remove completion` | Take the block out; every other byte of the file stays put |
+
+No argument and `-h` are the same screen, byte for byte: the file has two verbs,
+so a separate "status" page would only mean typing twice to find out what can be
+done. `@@@config -h` and `@@@tap -h` open with those same few lines.
+
+The item name may be abbreviated to a unique prefix: `byk @@@shell add comp` is
+the same as `byk @@@shell add completion`. Only a unique match is accepted —
+if a future second item also matched, it reports the ambiguity instead of
+picking one.
+
+The target shell is whichever one is running byk; it cannot be named, see
+"No `switch`, no naming a shell" below.
+
+### Which file it targets
+
+Not by operating system — by environment. macOS defaults to zsh but `/bin/bash`
+is always there, and Windows has Git Bash. Guessing by OS guesses wrong;
+identifying the shell does not.
+
+| shell | Startup file |
+|-------|--------------|
+| zsh | `$ZDOTDIR/.zshrc`, else `~/.zshrc` |
+| bash | the first existing of `.bash_profile` → `.bash_login` → `.profile` → `.bashrc`; otherwise `.bash_profile` is created |
+| fish | `$XDG_CONFIG_HOME/fish/config.fish`, else `~/.config/fish/config.fish` |
+
+The bash order is deliberate: a login shell only reads the first three, while
+`.bashrc` is read by non-login interactive shells — so it comes last, and only
+when nothing else exists does it tell you which path you are on. Creating
+`.bash_profile` when none exist is safe, because there is nothing for it to
+shadow; creating it while `.profile` exists would shadow that file entirely.
+
+The shell is identified as **parent process name → `$SHELL`**. `$SHELL` names the
+login shell, so after `exec bash` it still says zsh; the parent process is what
+is actually running. Only when that is unavailable (Windows, restricted
+environments) does the environment variable take over. `@@@shell` prints the
+answer together with where it came from:
+
+```bash
+$ byk @@@shell
+
+Shell: zsh (from parent process)
+FilePath: /Users/coke/.zshrc
+Completion: installed (lines 3-5)
+
+Usage: byk @@@shell [OPTIONS] [COMMAND] [ITEM]
+
+Options:
+  --help, -h  Show this help
+
+Commands:
+  add     Enable shell completion
+  remove  Disable shell completion
+
+Items:
+  completion  Shell completion
+```
+
+The first three are one level: same label colour, one space after the colon and
+then the value — no padding for alignment, since paths differ so much in length
+that the filler would outweigh the information. One blank line later comes the
+usage, so "which file is this" and "what can I do" share a screen instead of
+costing two runs.
+
+When `.zshrc` is a symlink into a dotfiles repository, a `Target:` line in the
+same column names the file that is really written — and that is where the write
+goes, so the link itself never turns into a regular file.
+
+### No `switch`, no naming a shell
+
+The target follows the environment, so there is neither a "change the startup
+file" subcommand nor an argument to name one — asking for it is refused, and the
+refusal says where to run the command instead:
+
+```bash
+$ byk @@@shell add completion bash
+`add` takes no shell argument: it always updates the startup file of the shell running byk
+Hint: run `byk @@@shell add completion` from bash to set up bash
+```
+
+The reason is that this kind of mismatch **fails silently**: install into
+`.bash_profile` from a zsh terminal and the terminal in front of you does
+nothing, with no message saying it went to the wrong place. To set up bash,
+run the command in bash — then there is exactly one answer to "which file am I
+changing", and it matches both the line `@@@shell` prints and the terminal you
+are looking at.
+
+### Other shells: cmd, PowerShell, sh
+
+Completion generators cover `zsh`, `bash`, and `fish` only. Running `@@@shell`
+in any other shell is not an error — it simply answers that the current shell
+points at no file:
+
+```bash
+$ byk @@@shell
+
+Shell: pwsh (from $SHELL)
+FilePath: (none)
+Completion: not available
+Only zsh, bash and fish have a startup file byk can edit
+```
+
+The screen ends there, with no `Usage` / `Commands`: there is no file to edit, so
+`add` and `remove` cannot do anything on this machine, and a list of commands
+that do not apply is just noise. An explicit `-h` prints the same thing — both
+entry points are one output. The reason sits right under the fields, since it
+explains `Completion: not available`, and the screen keeps a blank line above
+and below it, just like the zsh one.
+
+The exit code is 0: that is a normal answer, not a failure. Actually changing
+something (`add` / `remove`) does fail, with exit code 1 and those same two
+sentences, because nothing was changed:
+
+```bash
+$ byk @@@shell add completion
+No startup file for pwsh (from $SHELL)
+Only zsh, bash and fish have a startup file byk can edit
+```
+
+When neither the parent process nor `$SHELL` gives an answer (common in Windows
+cmd / PowerShell), the `Shell:` line reads `unknown` and the note becomes
+`Only zsh, bash and fish are supported; run byk from one of them`. To use
+completion, run byk inside one of those three.
+
+### Write rules
+
+This is the only `@@@` member that edits **someone else's** file, so its rules
+differ from `config.json`:
+
+- only the marked block (`# The following lines have been added by byk to enable
+  byk cli completions.` through `# End of byk cli completions`) is inserted or
+  removed — every other byte stays, including hand-written order and CRLF
+  endings. The markers are full sentences rather than `# >>> ... >>>` because a
+  startup file is read by people;
+- symlinks are written through, and stay symlinks;
+- the unmarked bare line earlier `install.sh` versions wrote is recognised too
+  (`uninstall.sh` matches it as well): `remove` deletes it, while `add` only
+  reports "already enabled" and suggests removing and re-adding;
+- idempotent: a second `add` adds nothing, and `remove` with nothing installed
+  does nothing and exits 0.
+
+The installer no longer writes that line — like pip, it only puts the binary in
+place. Turn completion on once, yourself:
+
+```bash
+byk @@@shell add completion
+```
+
 ## Completion
 
 Each system file owns its grammar, so the candidates come from the file itself
 rather than from the file-command verb list:
 
-- typing `@@@` lists `config` and `tap`, each with a one-line description;
-- after `@@@config` / `@@@tap` a tab offers the verbs, and `-` offers
+- typing `@@@` lists `config`, `tap`, and `shell`, each with a one-line
+  description;
+- after `@@@config` / `@@@tap` / `@@@shell` a tab offers the verbs, and `-` offers
   `--help` / `-h` — those live in the verb slot only, since `@@@config set -h`
   passes `-h` to `set`;
 - `get`, `set`, and `unset` complete setting names, and `set <name>` completes
   that key's values (`banner` → `auto` / `always` / `never`);
 - `remove` and `update` complete the `<user>/<repo>` keys in the ledger;
-  `add` takes its source from the network, so it offers nothing.
+  `add` takes its source from the network, so it offers nothing;
+- `add` and `remove` complete `completion` in the first slot and nothing after
+  it — the target shell comes from the environment, so offering `bash` there
+  would be teaching a command that gets refused.
 
 Verbs that take no arguments (`list`, `get` without a name) offer no
 candidates, so the shell has nothing to insert.

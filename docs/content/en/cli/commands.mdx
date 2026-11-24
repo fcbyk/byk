@@ -118,7 +118,7 @@ All of them exit with code 1. A `$`-prefixed segment is a reserved field or cust
 
 Every alias file also has a set of reserved **file commands**: `@file command` / `@@file command` create, edit, clone, install dependencies for, and inspect the file itself. See [File Commands](/cli/file-commands).
 
-Tokens starting with `@@@` belong to another domain: they point at files byk itself owns inside the CLI home, today `@@@config` (`~/.byk/config.json`, read and written with `list` / `get` / `set` / `unset`) and `@@@tap` (tap repositories under `~/.byk/tap/`, managed with `list` / `add` / `update` / `remove`). See [System Files](/cli/system-files).
+Tokens starting with `@@@` belong to another domain: they point at **files that are not aliases** — any other file. Today `@@@config` (`~/.byk/config.json`, read and written with `list` / `get` / `set` / `unset`), `@@@tap` (tap repositories under `~/.byk/tap/`, managed with `list` / `add` / `update` / `remove`), and `@@@shell` (your shell's startup file, whose completion block is managed with `add` / `remove`). See [System Files](/cli/system-files).
 
 ## The `__api__` Program Interface
 

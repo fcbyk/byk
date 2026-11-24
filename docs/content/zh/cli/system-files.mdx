@@ -1,26 +1,28 @@
 ---
 title: 系统文件
-description: 用 @@@ 寻址 byk 自己的文件，目前是全局配置与 tap 仓库
+description: 用 @@@ 寻址别名之外的文件——byk 自己的配置，以及 shell 启动文件
 ---
 
 # 系统文件
 
-`@@@` 是第三个文件域。`@` 指向当前目录、`@@` 指向全局别名目录，`@@@` 指向 **CLI Home（`~/.byk/`）里的系统文件**——它们属于 byk 自己，不是任何项目的别名。
+`@@@` 是第三个文件域，和前两个的关系是反的：`@` 与 `@@` 找的是别名文件，`@@@` 找的是**不是别名文件**的那些。作用域是一整个「其他文件」——既包括 CLI Home（`~/.byk/`）里属于 byk 自己的配置，也包括用户自己的 shell 启动文件。
 
 ```bash
 byk @@@文件 命令 [参数...]
 ```
 
-目前有两个：
+目前有三个：
 
 | 写法 | 目标 |
 |------|------|
 | `@@@config` | `~/.byk/config.json` |
 | `@@@tap` | `~/.byk/tap/`，账本是其中的 `index.json` |
+| `@@@shell` | 当前 shell 的启动文件，如 `~/.zshrc` |
 
 - 系统文件不参与别名查找，也没有 `clone` / `link`：它们不存在“多份互链”的概念。
 - `@@@` 后面的名字必须是注册过的系统文件，拼错会报 `Unknown system file` 并列出可用项。
 - 动词与名字之间用空格，不是点号：`@@@config.set` 会报 `Invalid system file`。
+- `config` 与 `tap` 的目标是 byk 自己的文件，坏了最多回退默认值；`shell` 的目标是**别人的文件**，所以它只增删一段标记块，绝不整体重写。
 
 ## config
 
@@ -166,13 +168,125 @@ byk @@@tap update aaa/bb        # 只更新一份
 - 下载跟随 `BYK_PROXY` 等代理设置，翻译成 git 的 `-c http.proxy`；索引写入不联网。
 - 装第三方 tap 等于信任它给的别名文件：`add` 本身只搬运数据，真正的风险发生在之后 `clone --tap` 取用并执行那些别名时。
 
+## shell（`@@@shell`）
+
+管理 shell 补全：在你当前 shell 的启动文件里加一段带标记的块，或者把它摘掉。
+
+```bash
+byk @@@shell                    # 等同 -h：当前 shell、会改哪个文件、补全装没装，连同用法一屏
+byk @@@shell add completion     # 给当前 shell 装补全
+byk @@@shell remove completion  # 摘掉
+```
+
+| 命令 | 作用 |
+|------|------|
+| `add completion` | 写入补全块；已经装过就只报一句 |
+| `remove completion` | 摘掉补全块，文件其余内容一个字节都不动 |
+
+不带参数与 `-h` 是同一屏，输出逐字节相同：这一域只有两条动词，单开一屏「状态」等于让人多敲一次才能知道能做什么。`@@@config -h` / `@@@tap -h` 头顶那几行也是这个排法。
+
+对象名可以只写前缀，`byk @@@shell add comp` 与 `byk @@@shell add completion` 等价——只认唯一命中，将来加了第二个对象、两个都能接上时报歧义，不会替你挑一个。
+
+目标 shell 就是运行 byk 的那个，不接受指名，见下面「没有 switch，也不能指名」。
+
+### 目标文件怎么定
+
+不看操作系统，看环境。macOS 默认 zsh，但 `/bin/bash` 一直在；Windows 上的 Git Bash 同理——按 OS 猜会猜错，按 shell 认就不会。
+
+| shell | 启动文件 |
+|-------|----------|
+| zsh | `$ZDOTDIR/.zshrc`，没设就是 `~/.zshrc` |
+| bash | `.bash_profile` → `.bash_login` → `.profile` → `.bashrc` 里第一个存在的；都没有就创建 `.bash_profile` |
+| fish | `$XDG_CONFIG_HOME/fish/config.fish`，没设就是 `~/.config/fish/config.fish` |
+
+bash 那一行不是随手排的：登录 shell 只读前三者，`.bashrc` 只被非登录交互 shell 读，所以它排在最后——前面都不存在、它存在，才说明你走的是那条路。一个都不存在时新建 `.bash_profile` 是安全的，因为没有可被它屏蔽的文件；反过来，`.profile` 存在却去建 `.bash_profile`，会把你原来那份整份屏蔽掉。
+
+当前 shell 的判定顺序是**父进程名 → `$SHELL`**。`$SHELL` 是登录 shell，`exec bash` 之后它仍然写着 zsh，所以父进程优先；取不到（Windows、受限环境）才退回环境变量。`@@@shell` 把判定结果和它的来源一起打出来：
+
+```bash
+$ byk @@@shell
+
+Shell: zsh (from parent process)
+FilePath: /Users/coke/.zshrc
+Completion: installed (lines 3-5)
+
+Usage: byk @@@shell [OPTIONS] [COMMAND] [ITEM]
+
+Options:
+  --help, -h  Show this help
+
+Commands:
+  add     Enable shell completion
+  remove  Disable shell completion
+
+Items:
+  completion  Shell completion
+```
+
+前三行同一级：标签同为绿色，冒号后一个空格就是内容——不为了对齐去补空白，路径长短差得远，补出来的空格比信息还多。空一行之后是用法，所以「现在指向谁」和「能做什么」在同一个屏幕里，不用先敲一次状态再敲一次 `-h`。
+
+`.zshrc` 是 dotfiles 仓库的符号链接时，会多一行 `Target:` 指出真正被写的文件——写的时候也是写到它上面，链接本身不会被换成普通文件。
+
+### 没有 switch，也不能指名
+
+目标由环境决定，所以既没有「切换配置文件」的子命令，也不接受在命令行里指名——写了会被拒绝，并告诉你该去哪儿跑：
+
+```bash
+$ byk @@@shell add completion bash
+`add` takes no shell argument: it always updates the startup file of the shell running byk
+Hint: run `byk @@@shell add completion` from bash to set up bash
+```
+
+理由是这类错配**不会报错**：在 zsh 里把补全写进 `.bash_profile`，眼前这个终端毫无反应，也没有任何提示告诉你装错了地方。要装 bash 的补全就进 bash 再跑一次——「我改的是哪个文件」因此永远只有一个答案，它和 `@@@shell` 打出来的那一行、和你眼前那个终端必然一致。
+
+### 其他 shell：cmd、PowerShell、sh
+
+补全生成器只覆盖 `zsh`、`bash`、`fish`。在别的 shell 里跑 `@@@shell` 不算出错——它照实回答「当前 shell 没有指向任何文件」：
+
+```bash
+$ byk @@@shell
+
+Shell: pwsh (from $SHELL)
+FilePath: (none)
+Completion: not available
+Only zsh, bash and fish have a startup file byk can edit
+```
+
+这一屏到这儿就完了，不接 `Usage` / `Commands`：没有文件可改，`add` 与 `remove` 在这台机器上都做不成，列一份用不上的清单只是噪声。显式敲 `-h` 也一样——两个入口是同一份输出。原因那行紧贴字段、不另起一段，因为它是 `Completion: not available` 的解释；整屏上下各留一个空行，和 zsh 那屏一样。
+
+退出码是 0：这是一句正常的回答，不是失败。真去改（`add` / `remove`）才失败，退出码 1，文案就是上面那两句——因为它们确实什么都没做：
+
+```bash
+$ byk @@@shell add completion
+No startup file for pwsh (from $SHELL)
+Only zsh, bash and fish have a startup file byk can edit
+```
+
+父进程与 `$SHELL` 都给不出答案时（Windows 的 cmd / PowerShell 常见），`Shell:` 一行显示 `unknown`，提示换成 `Only zsh, bash and fish are supported; run byk from one of them`。要用补全，就在这三个里面跑 byk。
+
+### 写入纪律
+
+这是 `@@@` 里唯一改**别人**文件的对象，所以规矩和 `config.json` 不一样：
+
+- 只增删标记块（`# The following lines have been added by byk to enable byk cli completions.` 到 `# End of byk cli completions`），文件其余字节原样保留，包括手写的顺序与 CRLF 行尾；标记写成完整句子而不是 `# >>> ... >>>`，因为这份文件是给人读的；
+- 符号链接写到目标，链接仍在；
+- 认 `install.sh` 早期版本写的无标记裸行：`remove` 删得掉（`uninstall.sh` 也认），`add` 只提示“已装”并建议摘了重装；
+- 幂等：重复 `add` 不会多出一份；没有补全时 `remove` 什么都不做，退出码 0。
+
+安装脚本不再自动写这一行（与 pip 一样，只负责把二进制放好）。装完自己开一次：
+
+```bash
+byk @@@shell add completion
+```
+
 ## 补全
 
 系统文件的语法归各自定，所以候选也向文件本身要，不套文件命令那张动词表：
 
-- 敲 `@@@` 列出 `config` 与 `tap`，各带一句说明；
-- 敲完 `@@@config` / `@@@tap` 补动词；`-` 开头补 `--help` / `-h`——它只在动词位，`@@@config set -h` 里的 `-h` 是 `set` 的参数；
+- 敲 `@@@` 列出 `config`、`tap` 与 `shell`，各带一句说明；
+- 敲完 `@@@config` / `@@@tap` / `@@@shell` 补动词；`-` 开头补 `--help` / `-h`——它只在动词位，`@@@config set -h` 里的 `-h` 是 `set` 的参数；
 - `get` / `set` / `unset` 补设置名，`set <设置名>` 补齐该键的候选值（如 `banner` → `auto` / `always` / `never`）；
-- `remove` / `update` 补账本里的 `<user>/<repo>`；`add` 的来源在远端，不补。
+- `remove` / `update` 补账本里的 `<user>/<repo>`；`add` 的来源在远端，不补；
+- `add` / `remove` 的第一位补 `completion`，之后什么都不补——目标 shell 由运行环境决定，补一个 `bash` 出来就是教用户去做一件会被拒绝的事。
 
 不带参数的动词（`list`、没写名字的 `get`）后面没有候选，shell 不会替你插词。

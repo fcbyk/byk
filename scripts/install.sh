@@ -39,17 +39,9 @@ PATH_LINE='export PATH="$HOME/.byk/bin:$PATH"'
 
 # Determine shell config based on current shell, not file existence
 case "${SHELL-}" in
-  */zsh)
-    SHELL_RC="$HOME/.zshrc"
-    COMPLETION_LINE='if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi'
-    ;;
-  */bash)
-    SHELL_RC="$HOME/.bashrc"
-    COMPLETION_LINE='if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion bash); fi'
-    ;;
-  *)
-    SHELL_RC=""
-    ;;
+  */zsh)  SHELL_RC="$HOME/.zshrc" ;;
+  */bash) SHELL_RC="$HOME/.bashrc" ;;
+  *)      SHELL_RC="" ;;
 esac
 
 if [[ -n "$SHELL_RC" ]]; then
@@ -60,13 +52,17 @@ if [[ -n "$SHELL_RC" ]]; then
     echo "" >> "$SHELL_RC"
     echo "# byk" >> "$SHELL_RC"
     echo "${PATH_LINE}" >> "$SHELL_RC"
-    echo "${COMPLETION_LINE}" >> "$SHELL_RC"
-    echo "Added PATH and completion to ${SHELL_RC}"
+    echo "Added PATH to ${SHELL_RC}"
   fi
   echo "Run 'source ${SHELL_RC}' or restart your shell, then:"
   echo "  byk --version"
 else
   echo "Could not detect your shell config. Add this to your shell profile:"
   echo "  ${PATH_LINE}"
-  echo "  ${COMPLETION_LINE:-# completion not available for your shell}"
 fi
+
+# 补全不自动写：安装脚本只负责把二进制放好（与 pip 一样），
+# 改用户的 rc 由 byk 自己做，能探测、能撤销、能看见落到哪个文件。
+echo ""
+echo "Shell completion is not enabled. Turn it on with:"
+echo "  byk @@@shell add completion"

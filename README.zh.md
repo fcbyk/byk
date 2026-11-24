@@ -49,7 +49,7 @@ byk @@ops json                          # 看一眼现在写了什么
 - `byk <别名> [参数...]` —— 在当前目录与全局目录的别名里查找并执行
 - `byk @文件.key` / `@@文件.key` —— 精确路由到某一个文件
 - `byk @文件 命令` —— 文件命令，`init`、`set`、`remove`、`json`、`path`、`rename`、`clone`、`link`、`deps`、`destroy`、`clear`；`byk @文件 -h` 一次列全
-- `byk @@@文件 命令` —— 系统文件：`@@@config` 管设置（`list`、`get`、`set`、`unset`），`@@@tap` 管 tap 仓库（`list`、`add`、`update`、`remove`）；`byk @@@config -h` 一次列全
+- `byk @@@文件 命令` —— 系统文件，指向不是别名的其他文件：`@@@config`（设置）、`@@@tap`（tap 仓库）、`@@@shell`（你的 shell 启动文件）；`byk @@@config -h` 一次列全
 - `byk __api__` —— 给 shell 补全与编辑器插件的只读接口（隐藏）
 
 选项：`--paths` 列出 byk 扫描到的别名文件，`--check` 检查这些文件写得对不对，`-h` 看帮助与全部别名，`-v` 看版本。下载会跟随 `BYK_USE_PROXY` / `BYK_PROXY`、已有代理变量与 Windows 系统代理。完整说明见 [选项与命令](https://cli.fcbyk.com/zh/cli/commands)、[文件命令](https://cli.fcbyk.com/zh/cli/file-commands) 和 [系统文件](https://cli.fcbyk.com/zh/cli/system-files)。

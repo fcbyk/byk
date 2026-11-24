@@ -2,25 +2,17 @@
 
 ### 破坏性变更
 
-- **文件命令**: 移除 `@文件..命令` 写法，改为 `byk @文件 命令`（全局是 `byk @@文件 命令`）。分隔符改成空格，不再和精确别名语法 `@文件.key` 混淆。只写 `byk @文件`、或加 `-h` / `--help`，会显示该文件的命令帮助
-- **文件帮助**: 移除 `help` 文件命令，改用 `-h` / `--help`（`byk @文件 -h`、`byk @文件 init -h`）。文件命令帮助的结构与 `byk -h` 对齐：列表页说明当前还是全局别名文件并显示 `FilePath`（未创建标 `(not created yet)`，链接文件标 `(link)`），每个命令的帮助在 Usage 上方重复目标路径，描述放在最前
-- **`clone` 的来源**: 平台写成唯一来源参数上的前缀 `github:` / `gitee:`（`jsdelivr:`、`ghproxy:` 也已移除）；访问 GitHub 的传输通道改为配置项 `net-github`，取值 `direct` / `ghproxy`。`clone` 至此没有任何来源选项，只剩 `--tap` 与 `--deps`。`$deps.base` 只记录规范上游地址，镜像在请求那一刻套用，不再写进文档
+- **文件命令**: 移除 `@文件..命令`，改为 `byk @文件 命令`（全局是 `byk @@文件 命令`）；分隔符改成空格，不再和精确别名 `@文件.key` 混淆
+- **文件帮助**: 移除 `help` 命令，改用 `-h` / `--help`；文件命令的帮助现在会在 Usage 上方重复目标 `FilePath`
+- **`clone`**: 平台改成来源参数上的前缀（`github:` / `gitee:`），访问 GitHub 的通道改为配置项 `net-github`（`direct` / `ghproxy`）；`clone` 只剩 `--tap` 与 `--deps`
 
 ### 新功能
 
-- **`@@@config net-github`**: `direct`（默认）或 `ghproxy`，一处决定 byk 读 GitHub 文件时走哪条通道——`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 指向 GitHub 的资产都受它约束；`gitee:` 与其它 host 不受影响。带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到；这类来源也不能声明 `$deps`
-- **`$paths`**: 现在和 `$cwd` / `$mode` 一样可继承——可写在文件、分组或别名对象上；子级写了就整体覆盖继承列表（不合并），`[]` 表示清空，让单条别名回到系统 `PATH`
-- **`$deps`**: `base` 是 ghproxy 地址时，下载绝对 GitHub 地址（含 Release 资产）自动沿用同一个代理，相对条目不会重复套壳；jsdelivr 仍只覆盖仓库文件
-- **`$deps`**: 终端下显示 curl 原生下载进度条；非 TTY 保持静默，错误文本不变
-- **网络**: `BYK_USE_PROXY=false` 可强制直连；否则下载依次跟随 `BYK_PROXY`、已有代理环境变量与 Windows 静态系统代理。例外列表转成 `no_proxy`，遇到 PAC/WPAD 只警告。代理只注入 curl 子进程，不改别名执行环境，也不影响 pip / npm
-- **`@@@` 系统文件**: 第三个文件域，指向 CLI Home 里属于 byk 自己的文件。`@@@` 在点号规则之前认领，不会掉进别名查找——`@@@config.set` 现在报 `Invalid system file`（原先是 `Invalid file name`），未知名字会列出可用项
-- **`@@@config`**: 设置存在 `~/.byk/config.json`，用动词驱动——`list`、`get`、`set`、`unset`；不带动词时打印每个键的当前值、默认值与说明。值按注册表校验，文件按宽容策略读取：缺失或读不懂都只打一行警告并回退默认值，不中断命令
-- **`@@@tap`**: 新增系统文件，管理 `~/.byk/tap/` 下的 tap 仓库——`add <user>/<repo>[@<ref>]` 用 `git clone --depth 1`（需要 git）、确认仓库根有 `byk.tap.json`、落到 `tap/<user>/<repo>` 并登记到 `tap/index.json`；`remove` 注销并删除，`list` 列出已装仓库。索引只被 `@@@tap` 读写，`clone --tap` 一行未变
-- **`@@@tap add <git-url>`**: 第二个参数原样交给 `git clone`，tap 可以来自任何主机或本地路径——不设协议白名单，`<user>/<repo>` 只是本地名字、与地址无关。`add` 只走 git、不再有 curl 与 tar 的兜底，账本里多记 `url`，`origin` 记来源 host（没有 host 记 `local`）
-- **`@@@tap update`**: 把已装的 tap 仓库拉到上游——`update` 走一遍账本，`update <user>/<repo>` 只更新一份。走的是 `git fetch --depth 1 --force` 加 `reset --hard`，不是 `pull`：目标 ref 取自账本（钉在 tag 上且上游没动就没有变化），force push 过的分支与移动过的 tag 也能跟上，浅克隆保持浅克隆。账本一个字都不写；本地改过的 checkout 只报 `has local changes` 而不重置；上游删掉 `byk.tap.json` 时这次更新回滚到原来的提交。不带参数时一份失败不拦下其余，最后用 `Failed to update 1 of 2 tap repositories: …` 收尾并返回退出码 1
-- **`banner`**: `@@@config set banner auto|always|never`（默认 `auto`）控制帮助页顶部的装饰框；`auto` 在 stdout 不是终端时不显示，`byk -h | head` 与编辑器插件拿到的输出天然干净。扫描问题的提示不受此设置影响
+- **`@@@` 系统文件**: 新增第三个文件域，指向别名文件以外的其他任何文件——`@@@config` 管设置（`net-github`、`banner` 等），`@@@tap` 管 tap 仓库，`@@@shell` 管运行 byk 的那个 shell 的启动文件里的补全块。文件名、动词、设置名与候选值、仓库都参与补全。安装脚本不再写补全，只配 `PATH`
+- **`$paths`**: 与 `$cwd` / `$mode` 一样可继承，子级写了就整体覆盖，`[]` 回到系统 `PATH`
+- **`$deps`**: `base` 是 ghproxy 时，绝对 GitHub 地址（含 Release 资产）同样走代理；终端下显示 curl 原生进度条，非 TTY 保持静默
+- **网络**: `BYK_USE_PROXY=false` 强制直连；否则依次跟随 `BYK_PROXY`、已有代理变量与 Windows 系统代理，且只注入 curl 子进程
 - **`--paths`**: 新增 `Config:` 一行，指出设置文件的位置
-- **补全**: `@@@` 系统文件也补全了——敲 `@@@` 列出 `config` / `tap` 并附说明，文件之后补各自的动词，`get` / `set` / `unset` 补设置名、`set <设置名>` 补该键的候选值，`remove` / `update` 补账本里的仓库。名单向各文件要，`list` 这类同名动词按被点的文件给不同描述
 
 ## v0.8.2 (2026-11-20)
 

@@ -1,4 +1,4 @@
-//! 系统文件（`@@@config` / `@@@tap`）的补全候选：动词、帮助开关与参数。
+//! 系统文件（`@@@config` / `@@@tap` / `@@@shell`）的补全候选：动词、帮助开关与参数。
 //!
 //! 与 `filecmd_args` 平行：文件命令的语法由 `filecmd::spec` 定义，系统文件的
 //! 语法归各自的模块，所以候选也向它们要，不在这里另写一份名单。
@@ -6,7 +6,7 @@
 use crate::filecmd::sys;
 use crate::model::PathLayout;
 
-/// 补全 `@@@config <verb> ...` / `@@@tap <verb> ...`。
+/// 补全 `@@@config <verb> ...` / `@@@tap <verb> ...` / `@@@shell <verb> ...`。
 ///
 /// `prev` 是光标前的完整词，`partial` 是当前词。返回 `None` 表示第一个词不是
 /// 已注册的系统文件，调用方继续按文件命令与别名补全。
@@ -27,6 +27,7 @@ pub(crate) fn complete(prev: &[String], partial: &str, layout: &PathLayout) -> O
     match name {
         "config" => Some(config_args(verb, args, partial)),
         "tap" => Some(tap_args(verb, args, partial, layout)),
+        "shell" => Some(shell_args(verb, args, partial)),
         _ => Some(Vec::new()),
     }
 }
@@ -83,6 +84,20 @@ fn tap_args(verb: &str, args: &[String], partial: &str, layout: &PathLayout) -> 
     sys::tap::installed_repo_keys(layout)
         .into_iter()
         .filter(|key| key.starts_with(partial))
+        .collect()
+}
+
+/// `add` / `remove` 的第一位是对象，之后没有候选：目标 shell 由运行环境决定，
+/// 补一个 `bash` 出来等于教用户去做一件会被拒绝的事。
+fn shell_args(verb: &str, args: &[String], partial: &str) -> Vec<String> {
+    if partial.starts_with('-') || !matches!(verb, "add" | "remove") || !args.is_empty() {
+        return Vec::new();
+    }
+
+    sys::shell::items()
+        .into_iter()
+        .filter(|candidate| candidate.starts_with(partial))
+        .map(str::to_string)
         .collect()
 }
 
@@ -260,6 +275,34 @@ mod tests {
         let (_temp, layout) = fixture();
         assert_eq!(
             complete(&words(&["@@@tap", "remove"]), "", &layout),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn completes_shell_items_and_stops_there() {
+        let (_temp, layout) = fixture();
+
+        assert_eq!(
+            complete(&words(&["@@@shell"]), "", &layout),
+            Some(vec!["add".to_string(), "remove".to_string()])
+        );
+        assert_eq!(
+            complete(&words(&["@@@shell", "add"]), "", &layout),
+            Some(vec!["completion".to_string()])
+        );
+        // 对象之后没有候选：目标 shell 由运行环境决定
+        assert_eq!(
+            complete(&words(&["@@@shell", "add", "completion"]), "", &layout),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            complete(&words(&["@@@shell", "add", "completion"]), "b", &layout),
+            Some(Vec::new())
+        );
+        // 对象不对也一样
+        assert_eq!(
+            complete(&words(&["@@@shell", "add", "path"]), "", &layout),
             Some(Vec::new())
         );
     }

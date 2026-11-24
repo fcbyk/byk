@@ -664,6 +664,7 @@ def test_api_complete_system_file_tokens_have_descriptions(runner):
     assert r.stdout.splitlines() == [
         "@@@config\tbyk settings",
         "@@@tap\ttap repositories",
+        "@@@shell\tshell startup file",
     ]
 
 

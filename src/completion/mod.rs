@@ -457,7 +457,11 @@ mod tests {
     #[test]
     fn at_prefix_completes_system_files() {
         let env = TestEnv::new();
-        let files = vec!["@@@config".to_string(), "@@@tap".to_string()];
+        let files = vec![
+            "@@@config".to_string(),
+            "@@@tap".to_string(),
+            "@@@shell".to_string(),
+        ];
         // 候选来自注册表而不是磁盘：没有 @@@config 这个文件也能补出来
         assert_eq!(complete_at_prefix("@@@", &env.layout), files);
         assert_eq!(
@@ -931,6 +935,7 @@ mod tests {
     fn system_file_tokens_carry_descriptions() {
         assert_eq!(describe_in("@@@config", false), Some("byk settings"));
         assert_eq!(describe_in("@@@tap", false), Some("tap repositories"));
+        assert_eq!(describe_in("@@@shell", false), Some("shell startup file"));
         assert_eq!(
             format_candidate("@@@config", true, false, None),
             "@@@config\tbyk settings"
