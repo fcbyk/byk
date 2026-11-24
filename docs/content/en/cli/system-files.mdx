@@ -86,19 +86,43 @@ line **ignores this setting**: it is a warning, not decoration.
 
 ```bash
 byk @@@tap                      # what is installed (same as list)
-byk @@@tap add aaa/bb           # download and record, ref defaults to HEAD
+byk @@@tap add aaa/bb           # GitHub by default, ref defaults to HEAD
 byk @@@tap add aaa/bb@v1        # pin a ref
+byk @@@tap add my/tools https://git.example.com/my/tools.git   # any git URL
 byk @@@tap remove aaa/bb        # unrecord and delete
 ```
 
 | Command | What it does |
 |---------|--------------|
 | `list` | Show the repositories in the ledger (same as no command) |
-| `add <user>/<repo>[@<ref>]` | Download, validate, move into place, then record |
+| `add <user>/<repo>[@<ref>] [<git-url>]` | Install, validate, move into place, then record |
 | `remove <user>/<repo>` | Unrecord, then delete the directory |
 
 `<user>` and `<repo>` accept letters, digits, `.`, `-`, and `_` only: they are
-both directory names and URL segments.
+directory names.
+
+### Custom sources
+
+The second value is handed to `git clone` verbatim: `https://`, `ssh://`,
+`git@host:path`, `file://`, and plain local paths all work. There is no
+protocol allowlist — git itself already refuses `ext::` and friends, where a
+URL turns into a command.
+
+```bash
+byk @@@tap add my/tools                         # https://github.com/my/tools.git
+byk @@@tap add my/tools git@git.example.com:tools/tap.git
+byk @@@tap add local/scratch ~/src/tap          # a local repository, origin `local`
+```
+
+- **`<user>/<repo>` is only the local name**: it decides the directory and the
+  ledger key, says nothing about where the code comes from, and is not checked
+  against the URL — same as `brew tap user/repo URL`.
+- The only requirement is that it does not look like an option: no leading `-`,
+  no whitespace, or git would read it as a flag instead of an address.
+- Without a URL the source is `https://github.com/<user>/<repo>.git`.
+- Private repositories ride on your own ssh keys or credential helper; byk
+  disables interactive prompting, so a failed login errors out instead of
+  waiting for a password.
 
 ### Directory and index
 
@@ -106,14 +130,23 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
 
 ```json
 {
-  "aaa/bb": { "origin": "github", "ref": "HEAD" }
+  "aaa/bb": { "origin": "github", "ref": "HEAD" },
+  "my/tools": {
+    "origin": "git.example.com",
+    "ref": "HEAD",
+    "url": "ssh://git@git.example.com/my/tools.git"
+  },
+  "local/scratch": { "origin": "local", "ref": "HEAD", "url": "/Users/coke/src/tap" }
 }
 ```
 
 - The key is `<user>/<repo>`; the directory follows from it, so no absolute
   paths are stored — moving machines or your home directory cannot make the
   ledger lie.
-- `origin` is `github` today; `ref` is the ref used at install time.
+- `origin` is the source host (`github.com` is written `github`, and sources
+  without a host are `local`); `ref` is the ref used at install time.
+- `url` only appears when a second value was given: the default source's address
+  is derivable, so storing it would just be a second copy.
 - **Losing the ledger does not affect `clone --tap`**: it scans directories and
   never reads this file. You lose a list, not the feature.
 - Entries that cannot be read are still listed (`origin` / `ref` show `?`),
@@ -141,3 +174,9 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
 - Both download paths follow the usual proxy settings such as `BYK_PROXY`: curl
   through `--proxy`, git translated to `-c http.proxy`. Writing the ledger does
   not touch the network.
+- A custom source **requires** git: no tarball address can be derived from an
+  arbitrary URL, so without git it fails outright instead of quietly falling
+  back to curl.
+- Installing a third-party tap means trusting the alias files it ships. `add`
+  only moves data around; the risk shows up later, when `clone --tap` reads
+  those aliases and something runs them.

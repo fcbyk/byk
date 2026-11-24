@@ -49,6 +49,11 @@ pub(super) fn install(repo: &Repo, layout: &PathLayout) -> Result<(), String> {
 fn fetch_into(repo: &Repo, layout: &PathLayout, dest: &Path) -> Result<(), String> {
     match clone_with_git(repo, dest) {
         Ok(()) => Ok(()),
+        // 自定义来源推不出 tarball 地址，没有 git 就只能失败
+        Err(GitFailure::Missing) if repo.url.is_some() => Err(
+            "Installing a tap repository from a custom URL requires git\nHint: install git and retry, or drop the URL to use the default GitHub source"
+                .to_string(),
+        ),
         Err(GitFailure::Missing) => unpack_from_archive(repo, layout, dest),
         Err(GitFailure::Failed(message)) => Err(message),
     }
@@ -62,11 +67,14 @@ enum GitFailure {
 
 fn clone_with_git(repo: &Repo, dest: &Path) -> Result<(), GitFailure> {
     let mut command = crate::net::git();
+    // 私有仓库要求输入密码时立刻失败，别挂着等人
+    command.env("GIT_TERMINAL_PROMPT", "0");
     command.arg("clone").args(["--depth", "1", "--quiet"]);
     if repo.reference != DEFAULT_REF {
         command.args(["--branch", &repo.reference]);
     }
-    command.arg(git_url(repo)).arg(dest);
+    // `--` 之后一律按位置参数解析，URL 不会被当成 git 选项
+    command.arg("--").arg(git_url(repo)).arg(dest);
 
     let output = command.output().map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
@@ -87,7 +95,13 @@ fn clone_with_git(repo: &Repo, dest: &Path) -> Result<(), GitFailure> {
         message.push_str(&format!("\n{}", reason));
     }
     message.push_str(if looks_like_network(reason) {
-        "\nHint: the network cannot reach GitHub; set BYK_PROXY and retry"
+        if repo.url.is_some() {
+            "\nHint: the network cannot reach the source; set BYK_PROXY and retry"
+        } else {
+            "\nHint: the network cannot reach GitHub; set BYK_PROXY and retry"
+        }
+    } else if repo.url.is_some() {
+        "\nHint: check the source URL and ref"
     } else {
         "\nHint: check the user, repository, and ref"
     });
@@ -108,12 +122,15 @@ fn looks_like_network(reason: &str) -> bool {
     .any(|marker| reason.contains(marker))
 }
 
+/// 自定义来源原样使用；没写 URL 时默认 GitHub。
 fn git_url(repo: &Repo) -> String {
-    format!(
-        "https://github.com/{}/{}.git",
-        encode_segment(&repo.user),
-        encode_segment(&repo.repo)
-    )
+    repo.url.clone().unwrap_or_else(|| {
+        format!(
+            "https://github.com/{}/{}.git",
+            encode_segment(&repo.user),
+            encode_segment(&repo.repo)
+        )
+    })
 }
 
 /// 没有 git 时的退路：下载 tarball、解压、把唯一顶层目录 rename 到位。
@@ -301,6 +318,14 @@ mod tests {
             user: "aaa".to_string(),
             repo: "bb".to_string(),
             reference: reference.to_string(),
+            url: None,
+        }
+    }
+
+    fn custom(reference: &str, url: &str) -> Repo {
+        Repo {
+            url: Some(url.to_string()),
+            ..repo(reference)
         }
     }
 
@@ -315,6 +340,18 @@ mod tests {
             tarball_url(&repo("feature/x")),
             "https://codeload.github.com/aaa/bb/tar.gz/feature/x"
         );
+    }
+
+    #[test]
+    fn uses_a_custom_source_verbatim() {
+        for url in [
+            "https://gitlab.com/aaa/bb.git",
+            "git@gitlab.com:aaa/bb.git",
+            "file:///srv/taps/bb",
+            "/Users/coke/src/tap",
+        ] {
+            assert_eq!(git_url(&custom("HEAD", url)), url);
+        }
     }
 
     #[test]

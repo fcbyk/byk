@@ -6,6 +6,7 @@
 import json
 import os
 import shutil
+import subprocess
 import sys
 
 GIT_SCRIPT = """#!{python}
@@ -152,6 +153,88 @@ def test_add_uses_a_shallow_git_clone(runner, tmp_path):
     assert "--depth" in args and args[args.index("--depth") + 1] == "1"
     assert "https://github.com/aaa/bb.git" in args
     assert not logs["curl"].exists(), "有 git 就不该再找 curl"
+
+
+def test_add_accepts_any_git_url(runner, tmp_path):
+    env, logs = fake_bin(tmp_path, git={"files": REPO_FILES}, curl={})
+
+    result = runner.run(
+        "@@@tap", "add", "my/tools", "ssh://git@git.example.com/my/tools.git", env=env
+    )
+
+    assert result.returncode == 0, result.stderr
+    args = logs["git"].read_text(encoding="utf-8").splitlines()
+    assert args[-2] == "ssh://git@git.example.com/my/tools.git", "URL 原样交给 git"
+    assert "--" in args, "URL 必须落在 `--` 之后，不能被当成选项"
+    assert "https://github.com/my/tools.git" not in args, "有自定义地址就不该再拼 GitHub"
+    assert read_index(runner) == {
+        "my/tools": {
+            "origin": "git.example.com",
+            "ref": "HEAD",
+            "url": "ssh://git@git.example.com/my/tools.git",
+        }
+    }
+
+
+def test_add_clones_a_local_git_repository(runner, tmp_path):
+    """本地路径也能装：不设协议白名单，交给 git 就行。"""
+    if shutil.which("git") is None:
+        pytest.skip("需要本机 git")
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "byk.tap.json").write_text('{"build": "aliases/build.byk.json"}')
+    for argv in (
+        ["init", "-q", str(source)],
+        ["-C", str(source), "add", "."],
+        [
+            "-C",
+            str(source),
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "init",
+        ],
+    ):
+        subprocess.run(["git", *argv], check=True, capture_output=True)
+
+    result = runner.run("@@@tap", "add", "local/scratch", str(source))
+
+    assert result.returncode == 0, result.stderr
+    repo = runner.byk_dir / "tap" / "local" / "scratch"
+    assert (repo / "byk.tap.json").is_file()
+    assert (repo / ".git").is_dir()
+    index = read_index(runner)
+    assert index["local/scratch"]["origin"] == "local"
+    assert index["local/scratch"]["url"] == str(source)
+
+
+def test_a_custom_source_needs_git(runner, tmp_path):
+    env, logs = fake_bin(
+        tmp_path,
+        curl={"files": {"bb-HEAD/byk.tap.json": REPO_FILES["byk.tap.json"]}},
+        isolated=True,
+    )
+
+    result = runner.run("@@@tap", "add", "aaa/bb", "https://git.example.com/aaa/bb.git", env=env)
+
+    assert result.returncode == 1
+    assert "from a custom URL requires git" in result.stderr
+    assert not logs["curl"].exists(), "自定义来源退不回 tarball"
+    assert tap_entries(runner) == []
+
+
+def test_add_rejects_a_source_that_looks_like_an_option(runner, tmp_path):
+    env, logs = fake_bin(tmp_path, git={"files": REPO_FILES}, curl={})
+
+    result = runner.run("@@@tap", "add", "aaa/bb", "--upload-pack=sh", env=env)
+
+    assert result.returncode == 1
+    assert "Invalid source" in result.stderr
+    assert not logs["git"].exists()
 
 
 def test_add_passes_the_pinned_ref_to_git(runner, tmp_path):

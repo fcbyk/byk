@@ -15,7 +15,7 @@ use std::io;
 use std::path::PathBuf;
 
 use colored::Colorize;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use super::store;
 
@@ -26,17 +26,20 @@ use crate::utils::io::write_stdout;
 /// 已注册的动词；顺序即帮助与错误提示顺序。
 const VERBS: &[(&str, &str)] = &[
     ("list", "Show every installed repository"),
-    ("add", "Download a repository into the tap directory"),
+    ("add", "Install a repository, optionally from any git URL"),
     ("remove", "Delete an installed repository"),
 ];
 
 const USAGE: &str = "byk @@@tap [OPTIONS] [COMMAND] [ARGS]...";
 
-/// 索引里记录的来源。目前只有 GitHub；字段留着，将来加 Gitee 时不必改格式。
+/// 没写来源地址时的默认源，也是 `github.com` 在账本里的写法。
 const ORIGIN: &str = "github";
 
 /// 默认 ref，与 `clone --tap` 一致。
 const DEFAULT_REF: &str = "HEAD";
+
+/// 没有 host 的来源（`file://`、本地路径）在账本里的记法。
+const LOCAL_ORIGIN: &str = "local";
 
 pub(crate) fn run(args: &[String], layout: &PathLayout) -> Result<(), String> {
     let Some((verb, rest)) = args.split_first() else {
@@ -51,10 +54,7 @@ pub(crate) fn run(args: &[String], layout: &PathLayout) -> Result<(), String> {
             expect_count(rest, 0, "list takes no arguments")?;
             list(layout)
         }
-        "add" => {
-            let spec = single_argument(rest, "add takes one repository, e.g. aaa/bb")?;
-            add(spec, layout)
-        }
+        "add" => add(rest, layout),
         "remove" => {
             let spec = single_argument(rest, "remove takes one repository, e.g. aaa/bb")?;
             remove(spec, layout)
@@ -63,17 +63,21 @@ pub(crate) fn run(args: &[String], layout: &PathLayout) -> Result<(), String> {
     }
 }
 
-/// 一次安装的仓库标识：`<user>/<repo>[@<ref>]`。
+/// 一次安装的仓库标识：`<user>/<repo>[@<ref>] [<git-url>]`。
 ///
 /// `key` 是索引的键，也是 `tap/<user>/<repo>` 的相对位置，永远不带 `@<ref>`。
+/// 给了 `<git-url>` 时它才是真正的来源；`user/repo` 只是本地名字，与那个地址没有
+/// 从属关系——所以不校验两者是否对应，跟 `brew tap user/repo URL` 一样。
+#[derive(Debug)]
 struct Repo {
     key: String,
     user: String,
     repo: String,
     reference: String,
+    url: Option<String>,
 }
 
-fn parse_repo(spec: &str) -> Result<Repo, String> {
+fn parse_repo(spec: &str, url: Option<&str>) -> Result<Repo, String> {
     let (name, reference) = match spec.split_once('@') {
         Some((name, reference)) => {
             if !valid_reference(reference) {
@@ -96,12 +100,18 @@ fn parse_repo(spec: &str) -> Result<Repo, String> {
     if !valid_component(repo) {
         return Err(invalid_component("repo", repo));
     }
+    if let Some(url) = url
+        && !valid_source(url)
+    {
+        return Err(invalid_source(url));
+    }
 
     Ok(Repo {
         key: format!("{user}/{repo}"),
         user: user.to_string(),
         repo: repo.to_string(),
         reference: reference.to_string(),
+        url: url.map(str::to_string),
     })
 }
 
@@ -136,12 +146,79 @@ fn invalid_component(kind: &str, value: &str) -> String {
     )
 }
 
-/// 下载、校验、落到 `tap/<user>/<repo>`，最后才记账。
+/// 自定义来源只要求「不像一个选项」：其余原样交给 git，任何 git 能克隆的地址都收。
+///
+/// 不设协议白名单——`brew tap user/repo URL` 也是这么做的，`ext::` 那类会让 URL
+/// 变成命令的形态 git 自己就拒绝（`transport 'ext' not allowed`）。
+fn valid_source(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('-')
+        && !value.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+fn invalid_source(value: &str) -> String {
+    format!(
+        "Invalid source: {:?}\nHint: pass a git URL or path without spaces, and it cannot start with `-`",
+        value
+    )
+}
+
+/// 索引里记的来源：默认是 GitHub，自定义源取 host，没有 host 的（`file://`、本地路径）记 `local`。
+fn origin_of(url: Option<&str>) -> String {
+    let Some(url) = url else {
+        return ORIGIN.to_string();
+    };
+
+    match host_of(url) {
+        host if host.eq_ignore_ascii_case("github.com") => ORIGIN.to_string(),
+        host => host,
+    }
+}
+
+fn host_of(url: &str) -> String {
+    let rest = if url.starts_with("file://") {
+        return LOCAL_ORIGIN.to_string();
+    } else if let Some((_, rest)) = url.split_once("://") {
+        rest
+    } else if let Some((_, rest)) = url.split_once('@') {
+        // scp 风格：`git@host:path`
+        rest
+    } else {
+        // 本地路径
+        return LOCAL_ORIGIN.to_string();
+    };
+
+    let authority = rest.split(['/', '\\']).next().unwrap_or(rest);
+    let host = authority
+        .rsplit_once('@')
+        .map(|(_, host)| host)
+        .unwrap_or(authority);
+    let host = host.split_once(':').map(|(host, _)| host).unwrap_or(host);
+
+    if host.is_empty() {
+        LOCAL_ORIGIN.to_string()
+    } else {
+        host.to_ascii_lowercase()
+    }
+}
+
+/// 安装一份仓库，然后记账。
 ///
 /// 顺序不能反：先有目录再写索引，写失败就删掉目录。反过来会留下一条指向
 /// 空处的记录，而 `list` 之外没人能发现它。
-fn add(spec: &str, layout: &PathLayout) -> Result<(), String> {
-    let repo = parse_repo(spec)?;
+fn add(args: &[String], layout: &PathLayout) -> Result<(), String> {
+    let (spec, url) = match args {
+        [spec] => (spec.as_str(), None),
+        [spec, url] => (spec.as_str(), Some(url.as_str())),
+        _ => {
+            return Err(
+                "add takes one repository and an optional git URL\nHint: e.g. `byk @@@tap add aaa/bb` or `byk @@@tap add aaa/bb https://git.example.com/aaa/bb.git`"
+                    .to_string(),
+            );
+        }
+    };
+
+    let repo = parse_repo(spec, url)?;
     let dir = repo_dir(&repo.user, &repo.repo, layout);
 
     if dir.exists() {
@@ -156,7 +233,10 @@ fn add(spec: &str, layout: &PathLayout) -> Result<(), String> {
     let (object, warning) = store::read_object(&index_path);
     print_warning(warning);
 
-    eprintln!("Fetching {}@{}", repo.key, repo.reference);
+    match &repo.url {
+        Some(url) => eprintln!("Fetching {}@{} from {}", repo.key, repo.reference, url),
+        None => eprintln!("Fetching {}@{}", repo.key, repo.reference),
+    }
     fetch::install(&repo, layout)?;
 
     record(&repo, layout, object)
@@ -165,10 +245,18 @@ fn add(spec: &str, layout: &PathLayout) -> Result<(), String> {
 /// 记账。写不进去就把刚装好的目录删掉，回到「什么都没发生」。
 fn record(repo: &Repo, layout: &PathLayout, mut object: Map<String, Value>) -> Result<(), String> {
     let dir = repo_dir(&repo.user, &repo.repo, layout);
-    object.insert(
-        repo.key.clone(),
-        json!({ "origin": ORIGIN, "ref": repo.reference }),
+
+    let mut entry = Map::new();
+    entry.insert(
+        "origin".to_string(),
+        Value::String(origin_of(repo.url.as_deref())),
     );
+    entry.insert("ref".to_string(), Value::String(repo.reference.clone()));
+    if let Some(url) = &repo.url {
+        // 默认源能推导出来，只有自定义地址值得落进账本
+        entry.insert("url".to_string(), Value::String(url.clone()));
+    }
+    object.insert(repo.key.clone(), Value::Object(entry));
 
     if let Err(err) = store::write_object(&layout.tap_index_path(), &object) {
         // 目录已经就位，账本却写不进去：删掉刚装的那份，不留没人认领的目录
@@ -189,7 +277,7 @@ fn record(repo: &Repo, layout: &PathLayout, mut object: Map<String, Value>) -> R
 /// 先注销再删目录：中途失败时留下的是「目录还在、账本没它」，
 /// 比反过来（账本有它、目录没了）更好收拾。
 fn remove(spec: &str, layout: &PathLayout) -> Result<(), String> {
-    let repo = parse_repo(spec)?;
+    let repo = parse_repo(spec, None)?;
     let index_path = layout.tap_index_path();
     let (mut object, warning) = store::read_object(&index_path);
     print_warning(warning);
@@ -405,6 +493,8 @@ fn print_warning(warning: Option<String>) {
 mod tests {
     use super::*;
 
+    use serde_json::json;
+
     fn layout(temp: &tempfile::TempDir) -> PathLayout {
         PathLayout {
             root_dir: temp.path().to_path_buf(),
@@ -456,18 +546,18 @@ mod tests {
 
     #[test]
     fn parses_user_and_repo_with_an_optional_ref() {
-        let plain = parse_repo("aaa/bb").unwrap();
+        let plain = parse_repo("aaa/bb", None).unwrap();
         assert_eq!(plain.key, "aaa/bb");
         assert_eq!(plain.user, "aaa");
         assert_eq!(plain.repo, "bb");
         assert_eq!(plain.reference, "HEAD");
 
-        let pinned = parse_repo("aaa/bb@v1").unwrap();
+        let pinned = parse_repo("aaa/bb@v1", None).unwrap();
         assert_eq!(pinned.key, "aaa/bb", "key 永远不带 ref");
         assert_eq!(pinned.reference, "v1");
 
         assert_eq!(
-            parse_repo("aaa/bb@feature/x").unwrap().reference,
+            parse_repo("aaa/bb@feature/x", None).unwrap().reference,
             "feature/x"
         );
     }
@@ -488,7 +578,7 @@ mod tests {
             "aaa/bb@@v1",
             "a b/bb",
         ] {
-            assert!(parse_repo(bad).is_err(), "{bad}");
+            assert!(parse_repo(bad, None).is_err(), "{bad}");
         }
     }
 
@@ -498,7 +588,7 @@ mod tests {
         let layout = layout(&temp);
         fake_install(&layout, "aaa/bb");
 
-        let err = add("aaa/bb", &layout).unwrap_err();
+        let err = add(&args(&["aaa/bb"]), &layout).unwrap_err();
         assert!(err.starts_with("Tap repository already exists:"), "{err}");
         assert!(err.contains("byk @@@tap remove aaa/bb"), "{err}");
     }
@@ -560,12 +650,68 @@ mod tests {
         let dir = repo_dir("aaa", "bb", &layout);
         fs::create_dir_all(&dir).unwrap();
 
-        record(&parse_repo("aaa/bb@v1").unwrap(), &layout, Map::new()).unwrap();
+        record(&parse_repo("aaa/bb@v1", None).unwrap(), &layout, Map::new()).unwrap();
 
         let (object, warning) = store::read_object(&layout.tap_index_path());
         assert!(warning.is_none());
         assert_eq!(object["aaa/bb"]["origin"], "github");
         assert_eq!(object["aaa/bb"]["ref"], "v1");
+        assert!(
+            object["aaa/bb"].get("url").is_none(),
+            "默认源能推导出地址，不写进账本"
+        );
+    }
+
+    #[test]
+    fn record_keeps_a_custom_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = layout(&temp);
+        let dir = repo_dir("aaa", "bb", &layout);
+        fs::create_dir_all(&dir).unwrap();
+
+        let repo = parse_repo("aaa/bb", Some("ssh://git@git.example.com/aaa/bb.git")).unwrap();
+        record(&repo, &layout, Map::new()).unwrap();
+
+        let (object, _) = store::read_object(&layout.tap_index_path());
+        assert_eq!(object["aaa/bb"]["origin"], "git.example.com");
+        assert_eq!(
+            object["aaa/bb"]["url"],
+            "ssh://git@git.example.com/aaa/bb.git"
+        );
+    }
+
+    #[test]
+    fn derives_a_display_origin_from_the_source() {
+        assert_eq!(origin_of(None), "github");
+        assert_eq!(origin_of(Some("https://github.com/aaa/bb.git")), "github");
+        assert_eq!(
+            origin_of(Some("https://gitlab.com/aaa/bb.git")),
+            "gitlab.com"
+        );
+        assert_eq!(origin_of(Some("git@gitlab.com:aaa/bb.git")), "gitlab.com");
+        assert_eq!(origin_of(Some("https://host:8443/x")), "host");
+        assert_eq!(origin_of(Some("file:///srv/taps/bb")), "local");
+        assert_eq!(origin_of(Some("/Users/coke/src/tap")), "local");
+        assert_eq!(origin_of(Some("./relative/tap")), "local");
+    }
+
+    #[test]
+    fn accepts_any_source_git_can_clone() {
+        for url in [
+            "https://gitlab.com/a/b.git",
+            "ssh://git@host/a/b.git",
+            "git@host:a/b.git",
+            "file:///srv/taps/b",
+            "/Users/coke/src/tap",
+            "./relative",
+        ] {
+            assert!(parse_repo("aaa/bb", Some(url)).is_ok(), "{url} 应该可以");
+        }
+
+        for bad in ["", "-oops", "--upload-pack=sh", "a b", "a\tb"] {
+            let err = parse_repo("aaa/bb", Some(bad)).unwrap_err();
+            assert!(err.starts_with("Invalid source:"), "{bad}: {err}");
+        }
     }
 
     #[test]
@@ -577,7 +723,7 @@ mod tests {
         // 索引位置被目录占着，写入必定失败
         fs::create_dir_all(layout.tap_index_path()).unwrap();
 
-        let err = record(&parse_repo("aaa/bb").unwrap(), &layout, Map::new()).unwrap_err();
+        let err = record(&parse_repo("aaa/bb", None).unwrap(), &layout, Map::new()).unwrap_err();
 
         assert!(err.contains("the checkout was removed"), "{err}");
         assert!(!dir.exists(), "记账失败不能留下一个没人认领的目录");
@@ -639,7 +785,7 @@ mod tests {
         let text = strip_ansi(&render_help(&layout));
         assert!(text.contains("Usage: byk @@@tap [OPTIONS] [COMMAND] [ARGS]..."));
         assert!(text.contains("  list    Show every installed repository"));
-        assert!(text.contains("  add     Download a repository"));
+        assert!(text.contains("  add     Install a repository"), "{text}");
         assert!(text.contains("  remove  Delete an installed repository"));
     }
 
@@ -654,7 +800,7 @@ mod tests {
         );
         assert_eq!(
             run(&args(&["add"]), &layout).unwrap_err(),
-            "add takes one repository, e.g. aaa/bb"
+            "add takes one repository and an optional git URL\nHint: e.g. `byk @@@tap add aaa/bb` or `byk @@@tap add aaa/bb https://git.example.com/aaa/bb.git`"
         );
         assert_eq!(
             run(&args(&["remove"]), &layout).unwrap_err(),

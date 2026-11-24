@@ -68,22 +68,38 @@ byk @@@config unset banner       # 回到默认
 
 ## tap（`@@@tap`）
 
-`@@@tap` 只干一件事：把 tap 仓库从 GitHub 装进 `~/.byk/tap/<user>/<repo>`，不用再手敲 `git clone`。
+`@@@tap` 只干一件事：把 tap 仓库装进 `~/.byk/tap/<user>/<repo>`，不用再手敲 `git clone`。
 
 ```bash
 byk @@@tap                      # 看已装的仓库（等于 list）
-byk @@@tap add aaa/bb           # 下载并登记，ref 默认 HEAD
+byk @@@tap add aaa/bb           # 默认从 GitHub 装，ref 默认 HEAD
 byk @@@tap add aaa/bb@v1        # 固定 ref
+byk @@@tap add my/tools https://git.example.com/my/tools.git   # 任意 git 地址
 byk @@@tap remove aaa/bb        # 注销并删除目录
 ```
 
 | 命令 | 作用 |
 |------|------|
 | `list` | 列出账本里的仓库（等于不带命令） |
-| `add <user>/<repo>[@<ref>]` | 下载、校验、落盘，再登记 |
+| `add <user>/<repo>[@<ref>] [<git-url>]` | 安装、校验、落盘，再登记 |
 | `remove <user>/<repo>` | 注销并删除目录 |
 
-`<user>` / `<repo>` 只能是字母、数字、`.`、`-`、`_`，因为它们同时是目录名和 URL 的一段。
+`<user>` / `<repo>` 只能是字母、数字、`.`、`-`、`_`，因为它们同时是目录名。
+
+### 自定义来源
+
+第二个参数会**原样交给 `git clone`**：`https://`、`ssh://`、`git@host:path`、`file://`、本地路径都行——不设协议白名单，反正 git 自己会拒绝 `ext::` 那类会把 URL 变成命令的形态。
+
+```bash
+byk @@@tap add my/tools                         # https://github.com/my/tools.git
+byk @@@tap add my/tools git@git.example.com:tools/tap.git
+byk @@@tap add local/scratch ~/src/tap          # 本地仓库，装完 origin 记 local
+```
+
+- **`<user>/<repo>` 只是本地名字**：目录位置和账本的键都用它，不承诺与地址对应，也不校验（和 `brew tap user/repo URL` 一致）。
+- 唯一的要求是「不像一个选项」：不能以 `-` 开头、不能含空白，否则会被 git 当成参数而不是地址。
+- 没写地址时默认 `https://github.com/<user>/<repo>.git`。
+- 私有仓库靠你自己的 ssh key / credential helper；byk 关掉了交互式提问，认证不通过会立刻报错而不是挂着等密码。
 
 ### 目录与索引
 
@@ -91,12 +107,19 @@ byk @@@tap remove aaa/bb        # 注销并删除目录
 
 ```json
 {
-  "aaa/bb": { "origin": "github", "ref": "HEAD" }
+  "aaa/bb": { "origin": "github", "ref": "HEAD" },
+  "my/tools": {
+    "origin": "git.example.com",
+    "ref": "HEAD",
+    "url": "ssh://git@git.example.com/my/tools.git"
+  },
+  "local/scratch": { "origin": "local", "ref": "HEAD", "url": "/Users/coke/src/tap" }
 }
 ```
 
 - 键是 `<user>/<repo>`，目录位置由键推导，所以索引里不存绝对路径——换机器、挪家目录都不会让账本变成谎话。
-- `origin` 目前只有 `github`；`ref` 是安装时用的 ref。
+- `origin` 是来源的 host（`github.com` 写成 `github`，没有 host 的本地来源写 `local`）；`ref` 是安装时用的 ref。
+- `url` 只在给了第二个参数时出现：默认源的地址能推导出来，存了是重复。
 - **账本丢了不影响 `clone --tap`**：它扫的是目录，不读这个文件。少一份清单，功能照旧。
 - 读不懂的条目照样会列出来（`origin` / `ref` 显示 `?`），否则用户既看不见也删不掉它。
 - 写入是原子的，与 `config.json` 同一套。
@@ -109,3 +132,5 @@ byk @@@tap remove aaa/bb        # 注销并删除目录
 - `remove` 只认账本里的键。手工 `git clone` 进去的仓库不在账本里，`remove` 会报 `not installed`，因此也删不掉它。
 - 走 git 时装进来的是普通仓库；走 curl 时没有 `.git`，不会自己更新。换 ref 一律 `remove` + `add`。
 - 两条路的下载都跟随 `BYK_PROXY` 等代理设置：curl 走 `--proxy`，git 翻译成 `-c http.proxy`；索引写入不联网。
+- 自定义来源**必须**有 git：tarball 地址从任意 URL 推不出来，所以没有 git 时直接失败，不会静默退回 curl。
+- 装第三方 tap 等于信任它给的别名文件：`add` 本身只搬运数据，真正的风险发生在之后 `clone --tap` 取用并执行那些别名时。
