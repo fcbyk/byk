@@ -19,7 +19,7 @@ pub fn run(cli: &Cli, option_specs: &[(String, String)], layout: &PathLayout) ->
 
 fn dispatch(cli: &Cli, option_specs: &[(String, String)], layout: &PathLayout) -> i32 {
     if cli.help {
-        return options::help::run(layout, option_specs);
+        return options::help::run(layout, option_specs, banner_enabled(layout));
     }
     if cli.check {
         if !cli.trailing.is_empty() {
@@ -35,7 +35,7 @@ fn dispatch(cli: &Cli, option_specs: &[(String, String)], layout: &PathLayout) -
         return options::version::run();
     }
     if cli.trailing.is_empty() {
-        return options::help::run(layout, option_specs);
+        return options::help::run(layout, option_specs, banner_enabled(layout));
     }
 
     let command_name = &cli.trailing[0];
@@ -46,4 +46,11 @@ fn dispatch(cli: &Cli, option_specs: &[(String, String)], layout: &PathLayout) -
         return code;
     }
     alias::run(command_name, command_args, layout)
+}
+
+/// 帮助页顶部的装饰框要不要画，由 `@@@config banner` 决定。
+///
+/// 只在帮助路径上读配置：跑别名的时候不该为一个装饰框去碰磁盘。
+fn banner_enabled(layout: &PathLayout) -> bool {
+    filecmd::sys::config::banner_enabled(layout)
 }

@@ -6,6 +6,7 @@
 mod keys;
 mod store;
 
+use std::io::IsTerminal;
 use std::path::Path;
 
 use colored::Colorize;
@@ -14,6 +15,9 @@ use serde_json::{Map, Value};
 use crate::model::PathLayout;
 use crate::utils::display::get_display_width;
 use crate::utils::io::write_stdout;
+
+/// 帮助页顶部装饰框对应的键名。
+const BANNER: &str = "banner";
 
 /// 已注册的动词；顺序即帮助与错误提示顺序。
 const VERBS: &[(&str, &str)] = &[
@@ -60,6 +64,31 @@ pub(crate) fn run(args: &[String], layout: &PathLayout) -> Result<(), String> {
             Ok(())
         }
         other => Err(unknown_command(other)),
+    }
+}
+
+/// 帮助页顶部的装饰框现在要不要画。
+///
+/// `auto` 的判据是 stdout 是否终端：`byk -h | head`、脚本里取帮助、编辑器插件调用，
+/// 都不该被一个框打扰。诊断框（有文件出问题）不归这里管——那是提示不是装饰，
+/// 由调用方保证照常打印。
+pub(crate) fn banner_enabled(layout: &PathLayout) -> bool {
+    let info = keys::find(BANNER).expect("banner is registered in keys.rs");
+    let (object, warning) = store::read_object(&layout.config_path());
+    print_warning(warning);
+
+    let (value, warning) = effective(info, &object);
+    print_warning(warning);
+
+    allowed(&value, std::io::stdout().is_terminal())
+}
+
+/// 三态判定。只有 `auto` 看终端；`effective` 已经保证不会是别的值。
+fn allowed(value: &str, is_terminal: bool) -> bool {
+    match value {
+        "always" => true,
+        "never" => false,
+        _ => is_terminal,
     }
 }
 
@@ -483,6 +512,27 @@ mod tests {
             root_dir: temp.path().to_path_buf(),
             alias_dir: temp.path().join("alias"),
         }
+    }
+
+    #[test]
+    fn banner_auto_follows_the_terminal() {
+        assert!(allowed("auto", true));
+        assert!(!allowed("auto", false));
+        assert!(allowed("always", false));
+        assert!(!allowed("never", true));
+    }
+
+    #[test]
+    fn banner_setting_is_read_from_the_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = temp_layout(&temp);
+        std::fs::create_dir_all(&layout.root_dir).unwrap();
+
+        std::fs::write(layout.config_path(), r#"{"banner":"never"}"#).unwrap();
+        assert!(!banner_enabled(&layout));
+
+        std::fs::write(layout.config_path(), r#"{"banner":"always"}"#).unwrap();
+        assert!(banner_enabled(&layout));
     }
 
     #[test]
