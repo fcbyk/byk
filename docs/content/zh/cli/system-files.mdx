@@ -68,7 +68,7 @@ byk @@@config unset banner       # 回到默认
 
 ## tap（`@@@tap`）
 
-`@@@tap` 只干一件事：把 tap 仓库装进 `~/.byk/tap/<user>/<repo>`，不用再手敲 `git clone`。
+`@@@tap` 只干一件事：把 tap 仓库装进 `~/.byk/tap/<user>/<repo>`，不用再手敲 `git clone`。它只走 git，所以 `add` 需要系统里有 git。
 
 ```bash
 byk @@@tap                      # 看已装的仓库（等于 list）
@@ -81,7 +81,7 @@ byk @@@tap remove aaa/bb        # 注销并删除目录
 | 命令 | 作用 |
 |------|------|
 | `list` | 列出账本里的仓库（等于不带命令） |
-| `add <user>/<repo>[@<ref>] [<git-url>]` | 安装、校验、落盘，再登记 |
+| `add <user>/<repo>[@<ref>] [<git-url>]` | 克隆、校验、落盘，再登记 |
 | `remove <user>/<repo>` | 注销并删除目录 |
 
 `<user>` / `<repo>` 只能是字母、数字、`.`、`-`、`_`，因为它们同时是目录名。
@@ -128,9 +128,9 @@ byk @@@tap add local/scratch ~/src/tap          # 本地仓库，装完 origin �
 
 - `add` **不覆盖**已存在的目录，要换版本就先 `remove`。
 - 目标仓库根必须有可解析的 `byk.tap.json`，否则落盘后立刻回滚，不留下半个目录——本地索引一旦存在就是权威，装一个坏索引会让该仓库所有 key 的 `--tap` 一直失败。
-- 优先 `git clone --depth 1`：装进来的是真仓库，之后可以自己 `git -C ~/.byk/tap/<user>/<repo> pull`。机器上没有 git 时才退回 `curl` + 系统 `tar` 解包，那是快照——临时归档与解压目录用完就删。
+- `add` 只走 `git clone --depth 1`，装进来的是真仓库，之后可以自己 `git -C ~/.byk/tap/<user>/<repo> pull`。没有 curl + tar 的兜底：两条路的产物不一样，语义要解释两遍，故障面也多一倍。
+- **`add` 需要 git**（Homebrew 的 tap 也是这样，它不内置 git）。`list` / `remove` 不需要——它们只读账本、删目录，没装 git 也能用。没有 git 又一定要装，就手工把仓库放到 `~/.byk/tap/<user>/<repo>`。
 - `remove` 只认账本里的键。手工 `git clone` 进去的仓库不在账本里，`remove` 会报 `not installed`，因此也删不掉它。
-- 走 git 时装进来的是普通仓库；走 curl 时没有 `.git`，不会自己更新。换 ref 一律 `remove` + `add`。
-- 两条路的下载都跟随 `BYK_PROXY` 等代理设置：curl 走 `--proxy`，git 翻译成 `-c http.proxy`；索引写入不联网。
-- 自定义来源**必须**有 git：tarball 地址从任意 URL 推不出来，所以没有 git 时直接失败，不会静默退回 curl。
+- 浅克隆没有历史，但 `pull` 可用；换 ref 一律 `remove` + `add`。
+- 下载跟随 `BYK_PROXY` 等代理设置，翻译成 git 的 `-c http.proxy`；索引写入不联网。
 - 装第三方 tap 等于信任它给的别名文件：`add` 本身只搬运数据，真正的风险发生在之后 `clone --tap` 取用并执行那些别名时。

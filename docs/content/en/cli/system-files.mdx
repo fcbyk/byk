@@ -82,7 +82,8 @@ line **ignores this setting**: it is a warning, not decoration.
 ## tap (`@@@tap`)
 
 `@@@tap` does one thing: put a tap repository into
-`~/.byk/tap/<user>/<repo>`, so you stop typing `git clone` by hand.
+`~/.byk/tap/<user>/<repo>`, so you stop typing `git clone` by hand. It only
+knows git, so `add` needs git on the machine.
 
 ```bash
 byk @@@tap                      # what is installed (same as list)
@@ -95,7 +96,7 @@ byk @@@tap remove aaa/bb        # unrecord and delete
 | Command | What it does |
 |---------|--------------|
 | `list` | Show the repositories in the ledger (same as no command) |
-| `add <user>/<repo>[@<ref>] [<git-url>]` | Install, validate, move into place, then record |
+| `add <user>/<repo>[@<ref>] [<git-url>]` | Clone, validate, move into place, then record |
 | `remove <user>/<repo>` | Unrecord, then delete the directory |
 
 `<user>` and `<repo>` accept letters, digits, `.`, `-`, and `_` only: they are
@@ -161,22 +162,21 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
   rolls back right after landing and leaves nothing behind — once a local index exists
   it is authoritative, and a broken one would keep every key of that repository
   failing.
-- `git clone --depth 1` is preferred: what lands is a real repository, so you can
-  later run `git -C ~/.byk/tap/<user>/<repo> pull`. Only when git is missing does
-  byk fall back to `curl` plus the system `tar`, which yields a snapshot — the
-  archive and the unpack directory are deleted afterwards.
+- `add` only ever runs `git clone --depth 1`, so what lands is a real repository
+  you can later pull with `git -C ~/.byk/tap/<user>/<repo> pull`. There is no
+  curl + tar fallback: two paths produce different things, need the semantics
+  explained twice, and double the failure surface.
+- **`add` requires git** (Homebrew's taps do too; it does not bundle git).
+  `list` and `remove` do not — they only read the ledger and delete directories,
+  so they keep working without git. If you have no git and still need a
+  repository in place, put it at `~/.byk/tap/<user>/<repo>` by hand.
 - `remove` only knows the keys in the ledger. A repository you `git clone`d in
   by hand is not in it, so `remove` reports `not installed` and will not delete
   it.
-- Installed through git, the checkout is an ordinary repository; installed
-  through curl it has no `.git` and never updates itself. Switching refs always
+- A shallow clone carries no history, but `pull` works; switching refs always
   takes `remove` + `add`.
-- Both download paths follow the usual proxy settings such as `BYK_PROXY`: curl
-  through `--proxy`, git translated to `-c http.proxy`. Writing the ledger does
-  not touch the network.
-- A custom source **requires** git: no tarball address can be derived from an
-  arbitrary URL, so without git it fails outright instead of quietly falling
-  back to curl.
+- Downloads follow the usual proxy settings such as `BYK_PROXY`, translated to
+  git's `-c http.proxy`. Writing the ledger does not touch the network.
 - Installing a third-party tap means trusting the alias files it ships. `add`
   only moves data around; the risk shows up later, when `clone --tap` reads
   those aliases and something runs them.

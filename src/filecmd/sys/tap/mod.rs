@@ -4,7 +4,7 @@
 //! 不必再手敲 `git clone`。所以 `index.json` 只被这里读写——`clone --tap`
 //! 仍然扫目录，一行都不用改，索引丢了也不影响 `--tap` 本身。
 //!
-//! 三条动词各管一件事：`list` 读账本、`add` 下载并登记、`remove` 注销并删除。
+//! 三条动词各管一件事：`list` 读账本、`add` 克隆并登记、`remove` 注销并删除。
 //! `remove` 只认账本里的键，所以手工放进 `tap/` 的仓库不会被误删。
 
 mod fetch;
@@ -234,8 +234,8 @@ fn add(args: &[String], layout: &PathLayout) -> Result<(), String> {
     print_warning(warning);
 
     match &repo.url {
-        Some(url) => eprintln!("Fetching {}@{} from {}", repo.key, repo.reference, url),
-        None => eprintln!("Fetching {}@{}", repo.key, repo.reference),
+        Some(url) => eprintln!("Cloning {}@{} from {}", repo.key, repo.reference, url),
+        None => eprintln!("Cloning {}@{}", repo.key, repo.reference),
     }
     fetch::install(&repo, layout)?;
 
@@ -506,7 +506,7 @@ mod tests {
         values.iter().map(|v| v.to_string()).collect()
     }
 
-    /// 装好一个「已经下载完」的仓库：目录 + 索引，绕开网络。
+    /// 装好一个「已经克隆完」的仓库：目录 + 索引，绕开网络。
     fn fake_install(layout: &PathLayout, key: &str) {
         let (user, repo) = key.split_once('/').unwrap();
         let dir = repo_dir(user, repo, layout);
