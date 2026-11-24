@@ -2,6 +2,7 @@
 
 mod at_prefix;
 mod filecmd_args;
+mod sys_args;
 
 use at_prefix::{complete_at_prefix, complete_nested_alias};
 
@@ -11,11 +12,13 @@ use at_prefix::collect_object_keys;
 use std::collections::HashMap;
 
 use crate::filecmd::spec as file_spec;
+use crate::filecmd::sys as sys_files;
 use crate::model::PathLayout;
 use crate::resolve;
 use crate::utils::path::display_path;
 
 use self::filecmd_args as file_complete;
+use self::sys_args as system_complete;
 
 pub fn generate(shell: &str) {
     match shell {
@@ -42,8 +45,8 @@ pub fn complete(args: &[String], layout: &PathLayout, with_descriptions: bool) {
         && args.last().is_some_and(|partial| partial.starts_with('-'));
 
     let candidates = candidates(args, layout);
-    let file_descriptions = if with_descriptions {
-        file_key_descriptions(&candidates, layout)
+    let descriptions = if with_descriptions {
+        dynamic_descriptions(args, &candidates, layout)
     } else {
         HashMap::new()
     };
@@ -55,10 +58,32 @@ pub fn complete(args: &[String], layout: &PathLayout, with_descriptions: bool) {
                 candidate,
                 with_descriptions,
                 prefer_file_option,
-                file_descriptions.get(candidate).map(String::as_str),
+                descriptions.get(candidate).map(String::as_str),
             )
         );
     }
+}
+
+/// 动态描述：文件 key 给别名文件路径，系统文件的候选给各自的说明。
+///
+/// 系统文件的说明只能按「问的是哪个文件」来查：`config` 与 `tap` 都有 `list`，
+/// 前者是设置表、后者是仓库清单。
+fn dynamic_descriptions(
+    args: &[String],
+    candidates: &[String],
+    layout: &PathLayout,
+) -> HashMap<String, String> {
+    let mut descriptions = file_key_descriptions(candidates, layout);
+
+    if let Some(name) = args.first().and_then(|token| sys_files::parse_token(token)) {
+        for candidate in candidates {
+            if let Some(description) = sys_files::describe(name, candidate) {
+                descriptions.insert(candidate.clone(), description.to_string());
+            }
+        }
+    }
+
+    descriptions
 }
 
 /// 文件 key → 展示用别名文件路径。
@@ -95,7 +120,8 @@ fn describe_in(candidate: &str, prefer_file_option: bool) -> Option<&'static str
         "--check" => Some("Check alias files for problems"),
         _ => file_spec::describe_option(candidate)
             .or_else(|| file_spec::describe_verb(candidate))
-            .or_else(|| file_spec::describe_subcommand(candidate)),
+            .or_else(|| file_spec::describe_subcommand(candidate))
+            .or_else(|| sys_files::describe_file(candidate)),
     }
 }
 
@@ -126,7 +152,10 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
         return get_completions(partial, layout);
     }
 
-    file_complete::complete(prev, partial, layout).unwrap_or_default()
+    // `@@@file` 的语法由各文件自己定，先交给系统文件的补全；它只认注册表里的名字
+    system_complete::complete(prev, partial, layout)
+        .or_else(|| file_complete::complete(prev, partial, layout))
+        .unwrap_or_default()
 }
 
 const GLOBAL_FLAGS: &[&str] = &["--version", "-v", "--help", "-h", "--paths", "--check"];
@@ -896,6 +925,66 @@ mod tests {
         for flag in ["--expand", "--no-check", "--yes"] {
             assert!(describe_in(flag, false).is_some(), "{flag}");
         }
+    }
+
+    #[test]
+    fn system_file_tokens_carry_descriptions() {
+        assert_eq!(describe_in("@@@config", false), Some("byk settings"));
+        assert_eq!(describe_in("@@@tap", false), Some("tap repositories"));
+        assert_eq!(
+            format_candidate("@@@config", true, false, None),
+            "@@@config\tbyk settings"
+        );
+    }
+
+    #[test]
+    fn candidates_system_file_verbs() {
+        let env = TestEnv::new();
+        assert_eq!(
+            candidates(&words(&["@@@config", ""]), &env.layout),
+            vec![
+                "list".to_string(),
+                "get".to_string(),
+                "set".to_string(),
+                "unset".to_string()
+            ]
+        );
+        assert_eq!(
+            candidates(&words(&["@@@tap", "u"]), &env.layout),
+            vec!["update".to_string()]
+        );
+    }
+
+    #[test]
+    fn system_file_descriptions_follow_the_addressed_file() {
+        let env = TestEnv::new();
+        let config =
+            dynamic_descriptions(&words(&["@@@config", ""]), &words(&["list"]), &env.layout);
+        let tap = dynamic_descriptions(&words(&["@@@tap", ""]), &words(&["list"]), &env.layout);
+
+        // 同名动词在两个文件里含义不同，描述不能串
+        assert_eq!(
+            config.get("list").map(String::as_str),
+            Some("Show every setting")
+        );
+        assert_eq!(
+            tap.get("list").map(String::as_str),
+            Some("Show every installed repository")
+        );
+    }
+
+    #[test]
+    fn system_file_descriptions_cover_setting_names() {
+        let env = TestEnv::new();
+        let map = dynamic_descriptions(
+            &words(&["@@@config", "set", ""]),
+            &words(&["banner"]),
+            &env.layout,
+        );
+        assert_eq!(
+            map.get("banner").map(String::as_str),
+            Some("Show the banner in help output")
+        );
     }
 
     #[test]

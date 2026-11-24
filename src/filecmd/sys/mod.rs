@@ -23,6 +23,47 @@ pub(crate) fn names() -> impl Iterator<Item = &'static str> {
     FILES.iter().map(|(name, _)| *name)
 }
 
+/// 把 `@@@name` 换成注册表里的名字；未注册或只是 `@@@` 时返回 `None`。
+pub(crate) fn parse_token(token: &str) -> Option<&'static str> {
+    let stem = token.strip_prefix("@@@")?;
+    FILES
+        .iter()
+        .find(|(name, _)| *name == stem)
+        .map(|(name, _)| *name)
+}
+
+/// 某个系统文件的动词表。
+///
+/// 补全向这里要名单而不是另抄一份：动词是各文件自己定的，抄一份迟早会漏。
+pub(crate) fn verbs(name: &str) -> &'static [(&'static str, &'static str)] {
+    match name {
+        "config" => config::VERBS,
+        "tap" => tap::VERBS,
+        _ => &[],
+    }
+}
+
+/// 补全说明：系统文件名本身（`@@@config` → `byk settings`）。
+pub(crate) fn describe_file(token: &str) -> Option<&'static str> {
+    let name = parse_token(token)?;
+    FILES
+        .iter()
+        .find(|(file, _)| *file == name)
+        .map(|(_, description)| *description)
+}
+
+/// 补全说明：`name` 文件下的候选（动词、设置名）。
+///
+/// 说明归各文件自己管：`config` 与 `tap` 都有 `list`，含义并不相同，
+/// 一张全局表查不出正确答案。
+pub(crate) fn describe(name: &str, candidate: &str) -> Option<&'static str> {
+    match name {
+        "config" => config::describe(candidate),
+        "tap" => tap::describe(candidate),
+        _ => None,
+    }
+}
+
 /// 分发一次系统文件调用；返回的错误已是可以直接打印的完整文案。
 pub(crate) fn run(stem: &str, args: &[String], layout: &PathLayout) -> Result<(), String> {
     match resolve_name(stem)? {

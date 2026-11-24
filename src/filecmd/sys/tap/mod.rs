@@ -25,7 +25,7 @@ use crate::utils::display::get_display_width;
 use crate::utils::io::write_stdout;
 
 /// 已注册的动词；顺序即帮助与错误提示顺序。
-const VERBS: &[(&str, &str)] = &[
+pub(crate) const VERBS: &[(&str, &str)] = &[
     ("list", "Show every installed repository"),
     ("add", "Install a repository, optionally from any git URL"),
     ("update", "Pull the latest commits from upstream"),
@@ -566,6 +566,27 @@ fn sorted_keys(object: &Map<String, Value>) -> Vec<&str> {
     let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
     keys.sort_unstable();
     keys
+}
+
+/// 补全用：账本里的仓库键（`user/repo`）。
+///
+/// 键不合法就没有目录可言，补出来也只会让 `remove` 报错，所以先过一遍
+/// `repo_dir_for_key`。账本读不出来就当没装：补全不该为一个坏文件报错。
+pub(crate) fn installed_repo_keys(layout: &PathLayout) -> Vec<String> {
+    let (object, _) = store::read_object(&layout.tap_index_path());
+    sorted_keys(&object)
+        .into_iter()
+        .filter(|key| repo_dir_for_key(key, layout).is_some())
+        .map(str::to_string)
+        .collect()
+}
+
+/// 补全说明：本文件的动词。
+pub(crate) fn describe(candidate: &str) -> Option<&'static str> {
+    VERBS
+        .iter()
+        .find(|(name, _)| *name == candidate)
+        .map(|(_, description)| *description)
 }
 
 fn unknown_command(command: &str) -> String {

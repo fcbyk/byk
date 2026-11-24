@@ -224,3 +224,20 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
 - Installing a third-party tap means trusting the alias files it ships. `add`
   only moves data around; the risk shows up later, when `clone --tap` reads
   those aliases and something runs them.
+
+## Completion
+
+Each system file owns its grammar, so the candidates come from the file itself
+rather than from the file-command verb list:
+
+- typing `@@@` lists `config` and `tap`, each with a one-line description;
+- after `@@@config` / `@@@tap` a tab offers the verbs, and `-` offers
+  `--help` / `-h` — those live in the verb slot only, since `@@@config set -h`
+  passes `-h` to `set`;
+- `get`, `set`, and `unset` complete setting names, and `set <name>` completes
+  that key's values (`banner` → `auto` / `always` / `never`);
+- `remove` and `update` complete the `<user>/<repo>` keys in the ledger;
+  `add` takes its source from the network, so it offers nothing.
+
+Verbs that take no arguments (`list`, `get` without a name) offer no
+candidates, so the shell has nothing to insert.

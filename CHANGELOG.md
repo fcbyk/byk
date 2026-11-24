@@ -20,6 +20,7 @@
 - **`@@@tap update`**: brings installed tap repositories up to upstream — `update` walks the ledger, `update <user>/<repo>` does one. It is `git fetch --depth 1 --force` plus `reset --hard`, not `pull`: the ledger's `ref` picks the target (a pinned tag with nothing new stays put), force-pushed branches and moved tags still catch up, and the checkout stays shallow. The ledger is never written; a checkout with local changes is reported instead of reset, and an upstream commit that deletes `byk.tap.json` rolls the update back to the previous commit. With no argument one failure does not stop the rest, and the run closes with `Failed to update 1 of 2 tap repositories: …` plus exit code 1
 - **`banner`**: `@@@config set banner auto|always|never` (default `auto`) controls the decorative box above the help output; `auto` hides it when stdout is not a terminal, so `byk -h | head` and editor plugins stay clean. The scan-problem line is printed regardless
 - **`--paths`**: adds a `Config:` line naming the settings file
+- **completion**: `@@@` system files are completed too — `@@@` lists `config` and `tap` with their descriptions, each file token offers its own verbs, `get` / `set` / `unset` complete setting names, `set <name>` completes that key's values, and `remove` / `update` complete the repositories in the ledger. The names come from the files themselves, so a shared verb such as `list` is described differently depending on which file is addressed
 
 ## v0.8.2 (2026-11-20)
 

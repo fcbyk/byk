@@ -42,12 +42,31 @@ pub(crate) fn channel(layout: &PathLayout) -> crate::net::Channel {
 }
 
 /// 已注册的动词；顺序即帮助与错误提示顺序。
-const VERBS: &[(&str, &str)] = &[
+pub(crate) const VERBS: &[(&str, &str)] = &[
     ("list", "Show every setting"),
     ("get", "Print one value"),
     ("set", "Change one value"),
     ("unset", "Reset one value to its default"),
 ];
+
+/// 补全用：设置名。
+pub(crate) fn setting_names() -> Vec<&'static str> {
+    keys::names()
+}
+
+/// 补全用：某个设置项的候选值；未知键没有候选。
+pub(crate) fn setting_choices(key: &str) -> &'static [&'static str] {
+    keys::find(key).map(|info| info.choices).unwrap_or(&[])
+}
+
+/// 补全说明：本文件的动词或设置名。
+pub(crate) fn describe(candidate: &str) -> Option<&'static str> {
+    VERBS
+        .iter()
+        .find(|(name, _)| *name == candidate)
+        .map(|(_, description)| *description)
+        .or_else(|| keys::find(candidate).map(|info| info.description))
+}
 
 const USAGE: &str = "byk @@@config [OPTIONS] [COMMAND] [ARGS]...";
 

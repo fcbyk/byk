@@ -20,6 +20,7 @@
 - **`@@@tap update`**: 把已装的 tap 仓库拉到上游——`update` 走一遍账本，`update <user>/<repo>` 只更新一份。走的是 `git fetch --depth 1 --force` 加 `reset --hard`，不是 `pull`：目标 ref 取自账本（钉在 tag 上且上游没动就没有变化），force push 过的分支与移动过的 tag 也能跟上，浅克隆保持浅克隆。账本一个字都不写；本地改过的 checkout 只报 `has local changes` 而不重置；上游删掉 `byk.tap.json` 时这次更新回滚到原来的提交。不带参数时一份失败不拦下其余，最后用 `Failed to update 1 of 2 tap repositories: …` 收尾并返回退出码 1
 - **`banner`**: `@@@config set banner auto|always|never`（默认 `auto`）控制帮助页顶部的装饰框；`auto` 在 stdout 不是终端时不显示，`byk -h | head` 与编辑器插件拿到的输出天然干净。扫描问题的提示不受此设置影响
 - **`--paths`**: 新增 `Config:` 一行，指出设置文件的位置
+- **补全**: `@@@` 系统文件也补全了——敲 `@@@` 列出 `config` / `tap` 并附说明，文件之后补各自的动词，`get` / `set` / `unset` 补设置名、`set <设置名>` 补该键的候选值，`remove` / `update` 补账本里的仓库。名单向各文件要，`list` 这类同名动词按被点的文件给不同描述
 
 ## v0.8.2 (2026-11-20)
 

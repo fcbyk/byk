@@ -639,6 +639,83 @@ def test_api_completion_rejects_unknown_shell(runner):
     assert "Unsupported shell" in r.stderr
 
 
+def test_api_complete_system_file_verbs(runner):
+    """@@@config / @@@tap 补动词，说明由各自的文件提供"""
+    r = runner.run("__api__", "complete", "--with-descriptions", "@@@config", "")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == [
+        "list\tShow every setting",
+        "get\tPrint one value",
+        "set\tChange one value",
+        "unset\tReset one value to its default",
+    ]
+
+    r = runner.run("__api__", "complete", "--with-descriptions", "@@@tap", "")
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    # `list` 在两个文件里含义不同，描述跟着被点的文件走
+    assert "list\tShow every installed repository" in lines
+    assert "remove\tDelete an installed repository" in lines
+
+
+def test_api_complete_system_file_tokens_have_descriptions(runner):
+    r = runner.run("__api__", "complete", "--with-descriptions", "@@@")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == [
+        "@@@config\tbyk settings",
+        "@@@tap\ttap repositories",
+    ]
+
+
+def test_api_complete_system_flags_stay_in_the_verb_slot(runner):
+    """帮助开关只在动词位；动词之后的 `-h` 属于该动词的参数"""
+    r = runner.run("__api__", "complete", "@@@config", "-")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == ["--help", "-h"]
+
+    r = runner.run("__api__", "complete", "@@@tap", "list", "-")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""
+
+
+def test_api_complete_system_settings(runner):
+    """get / set / unset 补设置名，set 之后补该键的候选值"""
+    r = runner.run("__api__", "complete", "--with-descriptions", "@@@config", "set", "")
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    assert "banner\tShow the banner in help output" in lines
+    assert any(line.startswith("net-github\t") for line in lines)
+
+    r = runner.run("__api__", "complete", "@@@config", "set", "banner", "")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == ["auto", "always", "never"]
+
+
+def test_api_complete_tap_repositories(runner):
+    """remove / update 补账本里的仓库；键不合法的不补"""
+    tap_dir = runner.byk_dir / "tap"
+    tap_dir.mkdir(parents=True, exist_ok=True)
+    (tap_dir / "index.json").write_text(
+        json.dumps(
+            {"aaa/bb": {"origin": "github", "ref": "HEAD"}, "bad": {"origin": "github"}}
+        ),
+        encoding="utf-8",
+    )
+
+    r = runner.run("__api__", "complete", "@@@tap", "remove", "")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == ["aaa/bb"]
+
+    r = runner.run("__api__", "complete", "@@@tap", "update", "aa")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == ["aaa/bb"]
+
+    # `add` 的来源在远端，没有候选
+    r = runner.run("__api__", "complete", "@@@tap", "add", "")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""
+
+
 def test_api_completion_requires_shell_arg(runner):
     r = runner.run("__api__", "completion")
     assert r.returncode == 1
