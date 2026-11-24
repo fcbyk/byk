@@ -1,10 +1,13 @@
-//! 取一份仓库快照：curl 下载 tarball、tar 解压、落到 `tap/<user>/<repo>`。
+//! 取一份仓库：优先 `git clone --depth 1`，没有 git 才退回 curl + tar。
 //!
-//! 下载与解压分两步、不用 shell 管道，Windows 也能直接跑。临时文件和解压目录
-//! 都以点号开头留在 `tap/` 根部——`clone --tap` 的扫描器只认合法的
-//! `<user>/<repo>` 目录名，这些名字迟早会被跳过，不会污染索引查找。
+//! 顺序不能反着偏好 curl，因为两条路的产物不一样：
+//! - git 给的是真仓库（浅克隆），用户事后可以自己 `git pull`；
+//! - tarball 给的是快照，没有 `.git`，要更新只能重新装。
 //!
-//! 落盘前一定要确认仓库根有 `byk.tap.json`：本地索引一旦存在就是权威，
+//! 解包那条路的临时物都以点号开头留在 `tap/` 根部——扫描器只认合法的
+//! `<user>/<repo>` 目录名，这些名字会被跳过，不会污染 `clone --tap` 的查找。
+//!
+//! 落盘后一定要确认仓库根有 `byk.tap.json`：本地索引一旦存在就是权威，
 //! 装一个坏索引会让该仓库所有 key 的 `--tap` 直接失败，byk 不能自己制造这种状态。
 
 use std::fs;
@@ -12,6 +15,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::DEFAULT_REF;
 use super::Repo;
 
 use crate::filecmd::source::encode_segment;
@@ -20,49 +24,124 @@ use crate::model::PathLayout;
 /// 仓库根的索引文件；与 `clone --tap` 用的是同一个名字。
 const INDEX_FILE: &str = "byk.tap.json";
 
-/// 下载并安装一份仓库；任何一步失败都把临时物清干净，不留下半个目录。
+/// 安装一份仓库；任何一步失败都不留下半个目录。
 pub(super) fn install(repo: &Repo, layout: &PathLayout) -> Result<(), String> {
     let tap_dir = layout.tap_dir();
     fs::create_dir_all(&tap_dir)
         .map_err(|e| format!("Failed to create {}: {}", tap_dir.display(), e))?;
 
+    let dest = tap_dir.join(&repo.user).join(&repo.repo);
+    let Some(parent) = dest.parent() else {
+        return Err(format!("Invalid tap directory: {}", dest.display()));
+    };
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+
+    let result = fetch_into(repo, layout, &dest).and_then(|()| validate(&dest));
+    if result.is_err() {
+        // 失败连空的 user 目录一起清掉：`ls tap/` 不该出现装了一半的用户
+        let _ = fs::remove_dir_all(&dest);
+        let _ = fs::remove_dir(parent);
+    }
+    result
+}
+
+fn fetch_into(repo: &Repo, layout: &PathLayout, dest: &Path) -> Result<(), String> {
+    match clone_with_git(repo, dest) {
+        Ok(()) => Ok(()),
+        Err(GitFailure::Missing) => unpack_from_archive(repo, layout, dest),
+        Err(GitFailure::Failed(message)) => Err(message),
+    }
+}
+
+enum GitFailure {
+    /// 系统里没有 git：调用方该退回 curl。
+    Missing,
+    Failed(String),
+}
+
+fn clone_with_git(repo: &Repo, dest: &Path) -> Result<(), GitFailure> {
+    let mut command = crate::net::git();
+    command.arg("clone").args(["--depth", "1", "--quiet"]);
+    if repo.reference != DEFAULT_REF {
+        command.args(["--branch", &repo.reference]);
+    }
+    command.arg(git_url(repo)).arg(dest);
+
+    let output = command.output().map_err(|e| {
+        if e.kind() == io::ErrorKind::NotFound {
+            GitFailure::Missing
+        } else {
+            GitFailure::Failed(format!("Failed to run git: {}", e))
+        }
+    })?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let reason = stderr.trim();
+    let mut message = format!("Failed to clone {}@{}", repo.key, repo.reference);
+    if !reason.is_empty() {
+        message.push_str(&format!("\n{}", reason));
+    }
+    message.push_str(if looks_like_network(reason) {
+        "\nHint: the network cannot reach GitHub; set BYK_PROXY and retry"
+    } else {
+        "\nHint: check the user, repository, and ref"
+    });
+    Err(GitFailure::Failed(message))
+}
+
+/// git 连不上与仓库不存在都要报错，但该给的建议完全不同。
+fn looks_like_network(reason: &str) -> bool {
+    let reason = reason.to_ascii_lowercase();
+    [
+        "unable to access",
+        "could not resolve",
+        "connection",
+        "connect tunnel",
+        "timed out",
+    ]
+    .iter()
+    .any(|marker| reason.contains(marker))
+}
+
+fn git_url(repo: &Repo) -> String {
+    format!(
+        "https://github.com/{}/{}.git",
+        encode_segment(&repo.user),
+        encode_segment(&repo.repo)
+    )
+}
+
+/// 没有 git 时的退路：下载 tarball、解压、把唯一顶层目录 rename 到位。
+fn unpack_from_archive(repo: &Repo, layout: &PathLayout, dest: &Path) -> Result<(), String> {
+    let tap_dir = layout.tap_dir();
     let archive = tap_dir.join(format!(".{}.{}.tar.gz", repo.user, repo.repo));
     let unpacked = tap_dir.join(format!(".{}.{}.unpack", repo.user, repo.repo));
 
-    let result = download_and_move(repo, layout, &archive, &unpacked);
+    let result = (|| {
+        let url = tarball_url(repo);
+        download(&url, &archive)?;
+        extract(&archive, &unpacked)?;
+
+        let top = only_directory(&unpacked)?;
+        fs::rename(&top, dest).map_err(|e| {
+            format!(
+                "Failed to move {} to {}: {}",
+                top.display(),
+                dest.display(),
+                e
+            )
+        })
+    })();
 
     // 归档用完就删；解压目录成功时已被 rename 走，只剩一个空壳
     let _ = fs::remove_file(&archive);
     let _ = fs::remove_dir_all(&unpacked);
     result
-}
-
-fn download_and_move(
-    repo: &Repo,
-    layout: &PathLayout,
-    archive: &Path,
-    unpacked: &Path,
-) -> Result<(), String> {
-    let url = tarball_url(repo);
-    download(&url, archive)?;
-    extract(archive, unpacked)?;
-
-    let top = only_directory(unpacked)?;
-    validate(&top)?;
-
-    let dest = layout.tap_dir().join(&repo.user).join(&repo.repo);
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
-    }
-    fs::rename(&top, &dest).map_err(|e| {
-        format!(
-            "Failed to move {} to {}: {}",
-            top.display(),
-            dest.display(),
-            e
-        )
-    })
 }
 
 /// `https://codeload.github.com/<user>/<repo>/tar.gz/<ref>`，ref 里的 `/` 按段编码。
@@ -93,7 +172,7 @@ fn download(url: &str, archive: &Path) -> Result<(), String> {
         .output()
         .map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
-                "Downloading a tap repository requires curl\nHint: install curl and retry"
+                "Installing a tap repository requires git or curl\nHint: install git (a shallow clone) or curl (a tarball fallback)"
                     .to_string()
             } else {
                 format!("Failed to run curl: {}", e)
@@ -135,7 +214,8 @@ fn extract(archive: &Path, into: &Path) -> Result<(), String> {
         .output()
         .map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
-                "Extracting a tap repository requires tar\nHint: install tar and retry".to_string()
+                "Extracting a tap repository requires tar\nHint: install tar, or install git and retry"
+                    .to_string()
             } else {
                 format!("Failed to run tar: {}", e)
             }
@@ -225,7 +305,8 @@ mod tests {
     }
 
     #[test]
-    fn builds_the_codeload_url() {
+    fn builds_the_clone_and_tarball_urls() {
+        assert_eq!(git_url(&repo("HEAD")), "https://github.com/aaa/bb.git");
         assert_eq!(
             tarball_url(&repo("HEAD")),
             "https://codeload.github.com/aaa/bb/tar.gz/HEAD"
@@ -234,6 +315,17 @@ mod tests {
             tarball_url(&repo("feature/x")),
             "https://codeload.github.com/aaa/bb/tar.gz/feature/x"
         );
+    }
+
+    #[test]
+    fn suggests_a_proxy_only_for_transport_failures() {
+        assert!(looks_like_network(
+            "fatal: unable to access 'https://github.com/a/b.git/': CONNECT tunnel failed"
+        ));
+        assert!(looks_like_network(
+            "fatal: Could not resolve host: github.com"
+        ));
+        assert!(!looks_like_network("fatal: repository 'a/b' not found"));
     }
 
     #[test]

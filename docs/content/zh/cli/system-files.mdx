@@ -104,8 +104,8 @@ byk @@@tap remove aaa/bb        # 注销并删除目录
 ### 行为约定
 
 - `add` **不覆盖**已存在的目录，要换版本就先 `remove`。
-- 目标仓库根必须有可解析的 `byk.tap.json`，否则下载完立刻回滚，不留下半个目录——本地索引一旦存在就是权威，装一个坏索引会让该仓库所有 key 的 `--tap` 一直失败。
-- 下载用 `curl`，解压用系统 `tar`；临时归档与解压目录装完就删。
+- 目标仓库根必须有可解析的 `byk.tap.json`，否则落盘后立刻回滚，不留下半个目录——本地索引一旦存在就是权威，装一个坏索引会让该仓库所有 key 的 `--tap` 一直失败。
+- 优先 `git clone --depth 1`：装进来的是真仓库，之后可以自己 `git -C ~/.byk/tap/<user>/<repo> pull`。机器上没有 git 时才退回 `curl` + 系统 `tar` 解包，那是快照——临时归档与解压目录用完就删。
 - `remove` 只认账本里的键。手工 `git clone` 进去的仓库不在账本里，`remove` 会报 `not installed`，因此也删不掉它。
-- 装进来的是快照（没有 `.git`），不会自己更新；跟新版或换 ref 就 `remove` + `add`。
-- 下载与索引写入都跟随 `BYK_PROXY` 等代理设置。
+- 走 git 时装进来的是普通仓库；走 curl 时没有 `.git`，不会自己更新。换 ref 一律 `remove` + `add`。
+- 两条路的下载都跟随 `BYK_PROXY` 等代理设置：curl 走 `--proxy`，git 翻译成 `-c http.proxy`；索引写入不联网。

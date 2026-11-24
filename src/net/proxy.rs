@@ -57,6 +57,29 @@ pub(crate) fn apply(command: &mut Command) {
     apply_mode(mode(), command);
 }
 
+/// 给一个即将启动的 git 子进程套用代理。
+///
+/// git 没有 `--proxy`，同一套选择要翻译成 `-c http.proxy=`；`Direct` 用空值覆盖，
+/// 否则用户 gitconfig 里的代理会漏进来。
+pub(crate) fn apply_to_git(command: &mut Command) {
+    match mode() {
+        Mode::Inherit => {}
+        Mode::Direct => {
+            remove_proxy_env(command);
+            command.args(["-c", "http.proxy="]);
+        }
+        Mode::Proxy { url, no_proxy } => {
+            remove_proxy_env(command);
+            command.arg("-c").arg(format!("http.proxy={}", url));
+            if let Some(list) = no_proxy {
+                command.env("no_proxy", list);
+            }
+        }
+        #[cfg(windows)]
+        Mode::Env(env) => env.apply_to(command),
+    }
+}
+
 fn apply_mode(mode: &Mode, command: &mut Command) {
     match mode {
         Mode::Inherit => {}

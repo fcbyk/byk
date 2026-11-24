@@ -156,7 +156,7 @@ fn add(spec: &str, layout: &PathLayout) -> Result<(), String> {
     let (object, warning) = store::read_object(&index_path);
     print_warning(warning);
 
-    eprintln!("Downloading {}@{}", repo.key, repo.reference);
+    eprintln!("Fetching {}@{}", repo.key, repo.reference);
     fetch::install(&repo, layout)?;
 
     record(&repo, layout, object)

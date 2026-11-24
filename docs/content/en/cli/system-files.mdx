@@ -125,15 +125,19 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
 - `add` **never overwrites** an existing directory; `remove` first to change
   versions.
 - The repository root must contain a parsable `byk.tap.json`, or the install
-  rolls back immediately and leaves nothing behind — once a local index exists
+  rolls back right after landing and leaves nothing behind — once a local index exists
   it is authoritative, and a broken one would keep every key of that repository
   failing.
-- Downloads use `curl`, extraction uses the system `tar`; the archive and the
-  unpack directory are deleted afterwards.
+- `git clone --depth 1` is preferred: what lands is a real repository, so you can
+  later run `git -C ~/.byk/tap/<user>/<repo> pull`. Only when git is missing does
+  byk fall back to `curl` plus the system `tar`, which yields a snapshot — the
+  archive and the unpack directory are deleted afterwards.
 - `remove` only knows the keys in the ledger. A repository you `git clone`d in
   by hand is not in it, so `remove` reports `not installed` and will not delete
   it.
-- What you get is a snapshot with no `.git`, so it never updates itself; follow
-  a new version or switch refs with `remove` + `add`.
-- Downloads and the index write both follow the usual proxy settings such as
-  `BYK_PROXY`.
+- Installed through git, the checkout is an ordinary repository; installed
+  through curl it has no `.git` and never updates itself. Switching refs always
+  takes `remove` + `add`.
+- Both download paths follow the usual proxy settings such as `BYK_PROXY`: curl
+  through `--proxy`, git translated to `-c http.proxy`. Writing the ledger does
+  not touch the network.
