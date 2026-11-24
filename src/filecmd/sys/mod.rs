@@ -1,13 +1,15 @@
 //! 系统文件命令路由：`@@@<name> <args...>`。
 //!
 //! `@@@` 与 `@` / `@@` 共用同一个认领点（`filecmd::spec::parse`），但语义不同：
-//! 它指向 CLI Home 里的文件（`~/.byk/<name>.json`），既不参与别名查找，
-//! 也没有链接、依赖这些概念。
+//! 它指向 CLI Home 里属于 byk 自己的东西（`~/.byk/<name>.json`、`~/.byk/tap/`），
+//! 既不参与别名查找，也没有链接、依赖这些概念。
 //!
 //! 这一层只认名字。名字之后的语法——有没有动词、`-h` 算什么、参数怎么解——
-//! 全归各文件自己定，不强行统一：`config` 是键值表，将来别的文件未必是。
+//! 全归各文件自己定，不强行统一：`config` 是键值表，`tap` 管的是目录。
 
 pub(crate) mod config;
+pub(crate) mod store;
+pub(crate) mod tap;
 
 use crate::model::PathLayout;
 
@@ -15,7 +17,7 @@ use crate::model::PathLayout;
 ///
 /// 表而不是裸 `match`：未知名单、补全、将来的帮助都要同一份名单，
 /// 各写一遍迟早会不一致。
-const FILES: &[(&str, &str)] = &[("config", "byk settings")];
+const FILES: &[(&str, &str)] = &[("config", "byk settings"), ("tap", "tap repositories")];
 
 pub(crate) fn names() -> impl Iterator<Item = &'static str> {
     FILES.iter().map(|(name, _)| *name)
@@ -25,6 +27,7 @@ pub(crate) fn names() -> impl Iterator<Item = &'static str> {
 pub(crate) fn run(stem: &str, args: &[String], layout: &PathLayout) -> Result<(), String> {
     match resolve_name(stem)? {
         "config" => config::run(args, layout),
+        "tap" => tap::run(args, layout),
         other => unreachable!("system file {other:?} is registered but not dispatched"),
     }
 }

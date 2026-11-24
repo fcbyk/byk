@@ -428,21 +428,20 @@ mod tests {
     #[test]
     fn at_prefix_completes_system_files() {
         let env = TestEnv::new();
+        let files = vec!["@@@config".to_string(), "@@@tap".to_string()];
         // 候选来自注册表而不是磁盘：没有 @@@config 这个文件也能补出来
-        assert_eq!(
-            complete_at_prefix("@@@", &env.layout),
-            vec!["@@@config".to_string()]
-        );
+        assert_eq!(complete_at_prefix("@@@", &env.layout), files);
         assert_eq!(
             complete_at_prefix("@@@c", &env.layout),
             vec!["@@@config".to_string()]
         );
+        assert_eq!(
+            complete_at_prefix("@@@t", &env.layout),
+            vec!["@@@tap".to_string()]
+        );
         assert!(complete_at_prefix("@@@nope", &env.layout).is_empty());
         // 三级前缀不能被 `@@` 的文件 key 分支吞掉
-        assert_eq!(
-            get_completions("@@@", &env.layout),
-            vec!["@@@config".to_string()]
-        );
+        assert_eq!(get_completions("@@@", &env.layout), files);
     }
 
     #[test]

@@ -289,7 +289,7 @@ byk @@ops clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 一个仓库可以发布多个别名文件，而不必都堆在根目录：`--tap` 读取仓库根目录的 `byk.tap.json` 作为路由表。
 
 ```bash
-git clone https://github.com/user/repo ~/.byk/tap/user/repo   # 可选：byk 只读
+git clone https://github.com/user/repo ~/.byk/tap/user/repo   # 或者：byk @@@tap add user/repo
 byk @@ops clone --tap user/repo/build
 byk @@ops clone --tap build                      # 搜索所有本地 tap 索引
 byk @@ops clone -t user/repo@v1/build -d
@@ -310,7 +310,7 @@ byk @@ops clone -t user/repo@v1/build -d
 - **单 key 简写。** 只写 `--tap <key>`（不含 `/`）时，搜索所有合法的 `~/.byk/tap/<user>/<repo>/byk.tap.json`，只查本地索引、不联网拉取索引。唯一命中就从该索引克隆（value 是 URL 时仍走远程 clone）；多个仓库都有这个 key 时，列出 `user/repo/key` 完整写法让你自己选；一个都没有则直接失败，不回退远程。
 - 简写只读两层：`tap/<user>/<repo>/byk.tap.json`。目录名必须是合法的 GitHub 用户名 / 仓库名，非法目录和没有索引的目录跳过。读不了或解析失败的索引会打印警告并跳过，所以「唯一」只对可读索引成立。
 - 简写不支持 `@ref`；要固定 ref 请用完整写法（走远程索引）。
-- `~/.byk/tap/` 是只读缓存：byk 不会创建、更新或删除它。需要自己准备，例如 `git clone https://github.com/user/repo ~/.byk/tap/user/repo`。
+- `~/.byk/tap/` 只有 `@@@tap` 会写：`clone --tap` 只读它，从不创建、更新或删除。装仓库用 `byk @@@tap add <user>/<repo>`，它只动 `tap/<user>/<repo>` 和账本 `tap/index.json`。
 - value 是精确指针：不会补 `.byk.json`，也不会把目录当成目录里的 `.byk.json`。以 `@` / `@@` 开头的目标同样按字面文件名处理，绝不解释成别名引用。
   - 本地索引：相对值以索引文件所在目录为基准；绝对路径与 `~` 按本地文件处理；`http(s)` URL 仍走远程 clone。
   - 远程索引：相对值以仓库根为基准；只允许 `http(s)` URL 和仓库内相对路径，不能指向本地。

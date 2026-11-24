@@ -49,7 +49,7 @@ Five invocation forms:
 - `byk <alias> [args...]` — look it up across the current and global directories, then run it
 - `byk @file.key` / `@@file.key` — route straight to one exact file
 - `byk @file command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `deps`, `destroy`, `clear`; `byk @file -h` lists them all
-- `byk @@@config command` — byk's own settings: `list`, `get`, `set`, `unset`; `byk @@@config -h` lists them
+- `byk @@@file command` — system files: `@@@config` for byk's own settings (`list`, `get`, `set`, `unset`), `@@@tap` for tap repositories (`list`, `add`, `remove`); `byk @@@config -h` lists them
 - `byk __api__` — read-only interface for shell completion and editor plugins (hidden)
 
 Options: `--paths` lists the alias files byk scans, `--check` validates them, `-h` shows help and every alias, `-v` shows the version. Downloads follow `BYK_USE_PROXY` / `BYK_PROXY`, existing proxy variables, and the Windows system proxy. Full descriptions live in [Options & Commands](https://cli.fcbyk.com/cli/commands), [File Commands](https://cli.fcbyk.com/cli/file-commands) and [System Files](https://cli.fcbyk.com/cli/system-files).

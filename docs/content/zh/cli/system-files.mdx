@@ -1,6 +1,6 @@
 ---
 title: 系统文件
-description: 用 @@@ 寻址 byk 自己的文件，目前是全局配置 config.json
+description: 用 @@@ 寻址 byk 自己的文件，目前是全局配置与 tap 仓库
 ---
 
 # 系统文件
@@ -11,17 +11,20 @@ description: 用 @@@ 寻址 byk 自己的文件，目前是全局配置 config.j
 byk @@@文件 命令 [参数...]
 ```
 
-目前只有 `@@@config` 一个：
+目前有两个：
 
-| 写法 | 目标文件 |
-|------|----------|
+| 写法 | 目标 |
+|------|------|
 | `@@@config` | `~/.byk/config.json` |
+| `@@@tap` | `~/.byk/tap/`，账本是其中的 `index.json` |
 
 - 系统文件不参与别名查找，也没有 `clone` / `link`：它们不存在“多份互链”的概念。
 - `@@@` 后面的名字必须是注册过的系统文件，拼错会报 `Unknown system file` 并列出可用项。
 - 动词与名字之间用空格，不是点号：`@@@config.set` 会报 `Invalid system file`。
 
-## 命令
+## config
+
+### 命令
 
 不带命令时打印全部设置（这也是最常用的一屏），`-h` 才是用法帮助。
 
@@ -41,7 +44,7 @@ byk @@@config unset banner       # 回到默认
 
 `get` 打印裸值；`set` / `unset` 的状态提示写 stderr，管道里不会混进输出。
 
-## 设置项
+### 设置项
 
 | 键 | 取值 | 默认 | 作用 |
 |----|------|------|------|
@@ -51,7 +54,7 @@ byk @@@config unset banner       # 回到默认
 
 扫描别名文件时发现问题，那句 `N alias files have problems` **不受这个设置影响**：它是诊断，不是装饰。
 
-## 文件
+### 文件
 
 ```json
 { "banner": "auto" }
@@ -62,3 +65,47 @@ byk @@@config unset banner       # 回到默认
 - 写入是原子的，并且保留读到的全部键，包括当前版本还不认识的键。
 - 键按字母顺序写回，手写的顺序会被规范化。
 - `byk --paths` 的 `Config:` 一行就是这个文件的位置。
+
+## tap（`@@@tap`）
+
+`@@@tap` 只干一件事：把 tap 仓库从 GitHub 装进 `~/.byk/tap/<user>/<repo>`，不用再手敲 `git clone`。
+
+```bash
+byk @@@tap                      # 看已装的仓库（等于 list）
+byk @@@tap add aaa/bb           # 下载并登记，ref 默认 HEAD
+byk @@@tap add aaa/bb@v1        # 固定 ref
+byk @@@tap remove aaa/bb        # 注销并删除目录
+```
+
+| 命令 | 作用 |
+|------|------|
+| `list` | 列出账本里的仓库（等于不带命令） |
+| `add <user>/<repo>[@<ref>]` | 下载、校验、落盘，再登记 |
+| `remove <user>/<repo>` | 注销并删除目录 |
+
+`<user>` / `<repo>` 只能是字母、数字、`.`、`-`、`_`，因为它们同时是目录名和 URL 的一段。
+
+### 目录与索引
+
+账本是 `~/.byk/tap/index.json`，只有 `@@@tap` 读写它：
+
+```json
+{
+  "aaa/bb": { "origin": "github", "ref": "HEAD" }
+}
+```
+
+- 键是 `<user>/<repo>`，目录位置由键推导，所以索引里不存绝对路径——换机器、挪家目录都不会让账本变成谎话。
+- `origin` 目前只有 `github`；`ref` 是安装时用的 ref。
+- **账本丢了不影响 `clone --tap`**：它扫的是目录，不读这个文件。少一份清单，功能照旧。
+- 读不懂的条目照样会列出来（`origin` / `ref` 显示 `?`），否则用户既看不见也删不掉它。
+- 写入是原子的，与 `config.json` 同一套。
+
+### 行为约定
+
+- `add` **不覆盖**已存在的目录，要换版本就先 `remove`。
+- 目标仓库根必须有可解析的 `byk.tap.json`，否则下载完立刻回滚，不留下半个目录——本地索引一旦存在就是权威，装一个坏索引会让该仓库所有 key 的 `--tap` 一直失败。
+- 下载用 `curl`，解压用系统 `tar`；临时归档与解压目录装完就删。
+- `remove` 只认账本里的键。手工 `git clone` 进去的仓库不在账本里，`remove` 会报 `not installed`，因此也删不掉它。
+- 装进来的是快照（没有 `.git`），不会自己更新；跟新版或换 ref 就 `remove` + `add`。
+- 下载与索引写入都跟随 `BYK_PROXY` 等代理设置。

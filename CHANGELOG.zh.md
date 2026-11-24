@@ -15,6 +15,7 @@
 - **网络**: `BYK_USE_PROXY=false` 可强制直连；否则下载依次跟随 `BYK_PROXY`、已有代理环境变量与 Windows 静态系统代理。例外列表转成 `no_proxy`，遇到 PAC/WPAD 只警告。代理只注入 curl 子进程，不改别名执行环境，也不影响 pip / npm
 - **`@@@` 系统文件**: 第三个文件域，指向 CLI Home 里属于 byk 自己的文件。`@@@` 在点号规则之前认领，不会掉进别名查找——`@@@config.set` 现在报 `Invalid system file`（原先是 `Invalid file name`），未知名字会列出可用项
 - **`@@@config`**: 设置存在 `~/.byk/config.json`，用动词驱动——`list`、`get`、`set`、`unset`；不带动词时打印每个键的当前值、默认值与说明。值按注册表校验，文件按宽容策略读取：缺失或读不懂都只打一行警告并回退默认值，不中断命令
+- **`@@@tap`**: 新增系统文件，管理 `~/.byk/tap/` 下的 tap 仓库——`add <user>/<repo>[@<ref>]` 用 curl 下载 tarball、确认仓库根有 `byk.tap.json`、解压到 `tap/<user>/<repo>` 并登记到 `tap/index.json`；`remove` 注销并删除，`list` 列出已装仓库。索引只被 `@@@tap` 读写，`clone --tap` 一行未变
 - **`banner`**: `@@@config set banner auto|always|never`（默认 `auto`）控制帮助页顶部的装饰框；`auto` 在 stdout 不是终端时不显示，`byk -h | head` 与编辑器插件拿到的输出天然干净。扫描问题的提示不受此设置影响
 - **`--paths`**: 新增 `Config:` 一行，指出设置文件的位置
 

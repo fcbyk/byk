@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 /// CLI 持久化目录布局。
 ///
-/// byk 只读两处：家目录（`~/.byk`）与别名目录（`~/.byk/alias`）。
+/// byk 只碰两处：家目录（`~/.byk`）与别名目录（`~/.byk/alias`）。
 pub struct PathLayout {
     pub root_dir: PathBuf,
     pub alias_dir: PathBuf,
@@ -34,6 +34,22 @@ impl PathLayout {
     /// 将来改了目录却只改到一半。
     pub fn config_path(&self) -> PathBuf {
         self.root_dir.join("config.json")
+    }
+
+    /// `@@@tap` 管理的仓库目录：CLI Home 下的 `tap/`。
+    ///
+    /// 布局是 `<tap>/<user>/<repo>/`，与 `clone --tap` 扫描本地索引的两层结构一致。
+    pub fn tap_dir(&self) -> PathBuf {
+        self.root_dir.join("tap")
+    }
+
+    /// `@@@tap` 的账本：`tap/index.json`。
+    ///
+    /// 只有 `@@@tap` 读写它。放在 `tap/` 根部是安全的：扫描器按
+    /// `<tap>/<user>/<repo>/byk.tap.json` 两层找索引，`index.json` 含点号，
+    /// 不会被当成用户名。
+    pub fn tap_index_path(&self) -> PathBuf {
+        self.tap_dir().join("index.json")
     }
 }
 
@@ -71,5 +87,15 @@ mod tests {
             layout.config_path(),
             home.join(".fcbyk_test_paths3").join("config.json")
         );
+    }
+
+    #[test]
+    fn tap_lives_next_to_the_alias_directory() {
+        let layout = PathLayout::with_name("fcbyk_test_paths4");
+        let home = dirs::home_dir().unwrap();
+        let root = home.join(".fcbyk_test_paths4");
+
+        assert_eq!(layout.tap_dir(), root.join("tap"));
+        assert_eq!(layout.tap_index_path(), root.join("tap").join("index.json"));
     }
 }

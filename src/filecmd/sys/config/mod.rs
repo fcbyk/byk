@@ -4,13 +4,14 @@
 //! 是为了和 `@@ops` 保持同一个节奏，也给将来的 `edit` / `reset` 留位置。
 
 mod keys;
-mod store;
 
 use std::io::IsTerminal;
 use std::path::Path;
 
 use colored::Colorize;
 use serde_json::{Map, Value};
+
+use super::store;
 
 use crate::model::PathLayout;
 use crate::utils::display::get_display_width;
