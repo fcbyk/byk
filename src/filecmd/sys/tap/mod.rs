@@ -1,12 +1,7 @@
 //! `@@@tap`：把 tap 仓库装进 `~/.byk/tap/`，并记账到 `tap/index.json`。
 //!
-//! 目标只有一个：让仓库通过 CLI 落到 `clone --tap` 已经在用的那个目录里，
-//! 不必再手敲 `git clone`。所以 `index.json` 只被这里读写——`clone --tap`
-//! 仍然扫目录，一行都不用改，索引丢了也不影响 `--tap` 本身。
-//!
-//! 四条动词各管一件事：`list` 读账本、`add` 克隆并登记、`update` 拉到上游最新、
-//! `remove` 注销并删除。`remove` 只认账本里的键，所以手工放进 `tap/` 的仓库不会被误删；
-//! `update` 同样只动账本里的仓库，且只动它自己 clone 出来的那份。
+//! `index.json` 只被这里读写，`clone --tap` 仍扫目录，索引丢了也不影响 `--tap`。
+//! `remove` / `update` 只认账本里的键，手工放进 `tap/` 的仓库不会被误删。
 
 mod fetch;
 mod index;

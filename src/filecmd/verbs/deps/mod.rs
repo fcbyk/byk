@@ -1,12 +1,10 @@
 //! `deps`：安装、卸载或查看别名文件声明的依赖。
 //!
-//! 语法为 `<scope><stem> deps <verb>`，verb 取 `install` / `uninstall` /
-//! `status` 之一，也认无歧义前缀（`i` / `u` / `s`）。不带 verb 等于 `status`。
-//! 全局文件的依赖目录是 `~/.byk/deps/@@<stem>/`，局部文件是
-//! `<文件所在目录>/.byk/deps/@<stem>/`：目录本身就是身份，跟着项目走。
+//! 语法为 `<scope><stem> deps <verb>`，verb 取 `install` / `uninstall` / `status`
+//! 之一，也认无歧义前缀；不带 verb 等于 `status`。依赖目录全局是
+//! `~/.byk/deps/@@<stem>/`，局部是 `<文件所在目录>/.byk/deps/@<stem>/`。
 //!
-//! install 读链接文件并跟随指针，`$deps` 来自目标文档，落点却跟着链接
-//! 文件的 key 走：声明跟着文件走，资产跟着身份走。
+//! install 读链接文件并跟随指针：`$deps` 来自目标文档，落点却跟着链接文件的 key 走。
 
 mod install;
 mod parse;

@@ -25,14 +25,11 @@ pub(crate) struct ResolvedCommand {
     pub(crate) description: Option<String>,
 }
 
-/// 解析别名但不执行：产出最终命令、工作目录与 PATH 前缀。
+/// 解析别名但不执行：产出最终命令、工作目录与 PATH 前缀。解析逻辑与
+/// `execute_alias` 共用，保证 `resolve` 的结果与实际执行一致。
 ///
-/// 与 `execute_alias` 共用同一套解析逻辑（变量替换已在扫描期完成，
-/// 此处只处理 `$cwd`/`$paths` 继承与占位符），保证 `resolve` 的结果
-/// 与 `byk <key>` 实际执行的命令完全一致。
-///
-/// 交互别名无法在无终端下确定占位符值，因此原样返回模板并置
-/// `mode = "interactive"`，由调用方（插件）决定回退到 byk 或自行交互。
+/// 交互别名在无终端下确定不了占位符值，原样返回模板并置 `mode = "interactive"`，
+/// 由调用方（插件）决定回退到 byk 还是自行交互。
 pub(crate) fn prepare(resolved: &ResolvedAlias, args: &[String]) -> ResolvedCommand {
     let definition = &resolved.definition;
 

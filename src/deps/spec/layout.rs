@@ -2,15 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-/// 某个别名文件的依赖目录。
+/// 某个别名文件的依赖目录：全局是 `~/.byk/deps/@@<stem>`，局部是
+/// `<文件所在目录>/.byk/deps/@<stem>`。
 ///
-/// 两种作用域同一套形状，只有根不同：
-///
-/// - 全局：`~/.byk/deps/@@<stem>`
-/// - 局部：`<文件所在目录>/.byk/deps/@<stem>`
-///
-/// 局部依赖跟着项目走：删项目即删依赖，不需要哈希目录，也不需要额外的映射表
-/// ——目录本身就是身份。
+/// 局部依赖跟着项目走，删项目即删依赖——目录本身就是身份，不需要哈希目录或映射表。
 pub(crate) fn deps_dir(key: &str, is_global: bool, file_dir: &Path, byk_root: &Path) -> PathBuf {
     if is_global {
         byk_root.join("deps").join(key)

@@ -25,17 +25,11 @@ use environment::{absolutize_paths, resolve_working_dir};
 use interactive::execute_interactive_impl;
 use runner::execute_direct_impl;
 
-/// 执行别名命令。
+/// 执行别名命令。变量已在扫描期替换完，这里只剩参数占位符；`$mode` 决定怎么跑
+/// （`normal` 直接执行、`interactive` 逐项提示、`silent` 全静默）。
 ///
-/// 变量（内置 `${byk_dir}` / `${file_dir}` 与文件 `$var`）已在扫描期替换完毕，
-/// 此处只剩参数占位符。`$mode` 决定怎么跑，三态互斥：
-/// - `normal`：打印提示行后直接执行；
-/// - `interactive`：打印提示行，逐项提示占位符，确认后执行；
-/// - `silent`：连提示行都不打印，stdout 只剩子进程输出。
-///
-/// 入口先做调用链检查：命中重入就报错退出，而不是把「一行配置笔误」
-/// 变成上千个进程的进程链。`silent` 也压不住这条错误——它本来就是
-/// 用来解释「命令为什么卡住」的。
+/// 入口先做调用链检查：命中重入就报错退出，不把一行配置笔误变成上千个进程的
+/// 进程链。`silent` 也压不住这条错误——它本来就是用来解释「命令为什么卡住」的。
 pub fn execute_alias(resolved: &ResolvedAlias, args: &[String], display_source: &str) {
     let definition = resolved.definition.clone();
 

@@ -1,14 +1,7 @@
 //! `@@@shell`：当前 shell 的启动文件（`~/.zshrc` 之类）。
 //!
-//! `@@@` 是「不是别名文件」的那一域。`config` / `tap` 管 byk 自己的东西，
-//! `shell` 管别人的：它指向用户 shell 的启动文件，byk 只在里面维护一个补全块。
-//!
-//! 目标文件不写死，按父进程与 `$SHELL` 探测当前 shell 再推导，并且**只改它**：
-//! 既没有「切换配置文件」的子命令，也没有 `add completion bash` 这种指名参数。
-//! 要给 bash 装补全，就在 bash 里跑 byk——「我改的是哪个文件」因此永远只有
-//! 一个答案，它和 `@@@shell` 打出来的那一行、和用户眼前那个终端必然一致。
-//! 允许指名会带来一类不会报错的错配：在 zsh 里装到 `.bash_profile`，当前终端
-//! 毫无反应，也没有任何提示告诉他装错了地方。
+//! 目标按父进程与 `$SHELL` 探测，并且只改它——没有 `switch`，也不接受
+//! `add completion bash` 这样的指名：给 bash 装补全，就在 bash 里跑 byk。
 
 mod detect;
 mod rc;
@@ -35,14 +28,12 @@ pub(crate) const VERBS: &[(&str, &str)] = &[
 /// `add` / `remove` 的对象。v1 只有一个，但位置留着：`path` 迟早要来。
 const ITEMS: &[(&str, &str)] = &[("completion", "Shell completion")];
 
-// `config` / `tap` 的用法行结尾是 `[ARGS]...`；这里没有可省的参数——shell 由环境决定，
-// 再写一个词就会被拒绝。用法行照实说。
+// shell 由环境决定，多写一个词就会被拒绝，所以用法行照实说。
 const USAGE: &str = "byk @@@shell [OPTIONS] [COMMAND] [ITEM]";
 
 pub(crate) fn run(args: &[String], _layout: &PathLayout) -> Result<(), String> {
     let Some((verb, rest)) = args.split_first() else {
-        // 裸调用 = `-h`：这一域只有两条动词，单开一屏「状态」反而要多敲一次
-        // 才能知道能做什么。`@@@config -h` / `@@@tap -h` 也是这个排法。
+        // 裸调用 = `-h`：这一域只有两条动词，单开一屏状态反而多敲一次
         return help();
     };
 
@@ -54,10 +45,7 @@ pub(crate) fn run(args: &[String], _layout: &PathLayout) -> Result<(), String> {
     }
 }
 
-/// 一屏说清：现在是哪个 shell、会改哪个文件、装没装，以及能做什么。
-///
-/// 没有文件可改时只有那三行：`add` / `remove` 在那种 shell 上必然失败，
-/// 列一份用不上的命令清单只是噪声。
+/// 一屏说清：哪个 shell、改哪个文件、装没装，以及能做什么。没有文件可改时只有状态几行。
 fn help() -> Result<(), String> {
     write_stdout(render_screen().as_bytes())
 }
@@ -73,12 +61,10 @@ fn render_screen() -> String {
     }
 }
 
-/// 补全用：对象名。
 pub(crate) fn items() -> Vec<&'static str> {
     ITEMS.iter().map(|(name, _)| *name).collect()
 }
 
-/// 补全说明：本文件的动词或对象名。
 pub(crate) fn describe(candidate: &str) -> Option<&'static str> {
     VERBS
         .iter()
@@ -116,7 +102,6 @@ enum Screen {
 }
 
 impl Screen {
-    /// 这一屏最终打出来的样子。
     fn render(self) -> String {
         match self {
             Screen::Modifiable(status) => render_help(&status),
@@ -144,8 +129,7 @@ fn modify(args: &[String], action: Action) -> Result<(), String> {
     let Some((item, rest)) = args.split_first() else {
         return Err(format!("Missing item\nAvailable: {}", items().join(", ")));
     };
-    // 对象名可以只写前缀（`comp`）；认下来的结果目前没有分支依赖它，
-    // 但校验必须发生在探测环境之前——拼错了就不该去读文件。
+    // 前缀也要先校验：拼错了就不该去探测环境、读文件
     resolve_item(item)?;
     if let Some(extra) = rest.first() {
         return Err(no_shell_argument(action, extra));
@@ -203,11 +187,7 @@ fn modify(args: &[String], action: Action) -> Result<(), String> {
     }
 }
 
-/// 这次要改的东西：一个启动文件，或者「没有文件」。
-///
-/// 「没有」是正常结果，不是错误：在 cmd、PowerShell、`sh` 里跑 `@@@shell` 本身就是
-/// 合理用法，状态该照常回答「当前 shell 没有指向任何文件」。所以它不是 `Result`
-/// 的错误分支——错误只留给「读不了文件」「找不到家目录」这类意外。
+/// 这次要改的东西：一个启动文件，或者「没有文件」——后者是正常结果，不是错误。
 enum Target {
     File { path: PathBuf, detected: Detected },
     NoFile(NoFile),
@@ -302,14 +282,11 @@ fn render_status(path: &Path, detected: Detected, state: &State) -> String {
     };
     fields.push(("Completion:", state.label(), tone));
 
-    // 不在下面补一句「用 add 装上」——帮助页的 `Commands:` 就在临近几行，
-    // 同一件事说两遍只会让这一块变长。
+    // 不再补一句「用 add 装上」：紧跟着的 `Commands:` 就是答案
     format!("\n{}", render_fields(&fields))
 }
 
-/// cmd / PowerShell / `sh` 之类：能说的话只有「没有文件」和为什么。
-///
-/// 上下各留一个空行，和 zsh 那边的帮助页一样——这一屏虽然短，也是独立的一屏。
+/// cmd / PowerShell / `sh` 之类：只有「没有文件」和为什么，上下各留一个空行。
 fn render_no_file(missing: &NoFile) -> String {
     let fields = [
         ("Shell:", missing.shell_column(), Tone::Plain),
@@ -334,9 +311,7 @@ enum Tone {
     Warn,
 }
 
-/// 同一级的一组「标签: 值」：标签颜色一致，冒号后一个空格就是内容。
-///
-/// 不把取值补齐到同一列——路径长短差得远，补出来的空白比信息还多。
+/// 同一级的一组「标签: 值」。不把取值补齐到同一列——路径长短差得远，补出来的空白比信息还多。
 fn render_fields(fields: &[(&'static str, String, Tone)]) -> String {
     let mut output = String::new();
     for (label, value, tone) in fields {
@@ -362,8 +337,7 @@ fn render_help(status: &str) -> String {
         .map(|(name, description)| ((*name).to_string(), *description))
         .collect();
 
-    // 状态块自己以换行结尾，这里的空行就是它与 `Usage:` 之间的分隔；
-    // 状态读不出来时同样以空行开头，排版不随内容有无而变。
+    // 状态块自己以换行结尾，这个空行就是它与 `Usage:` 的分隔；读不出来时也以空行开头
     let mut output = String::from(status);
     output.push('\n');
     output.push_str(&format!("{} {}\n\n", "Usage:".green().bold(), USAGE));
@@ -410,10 +384,7 @@ fn unknown_command(command: &str) -> String {
     )
 }
 
-/// 对象名允许只写前缀：`comp`、`compl` 都落到 `completion`。
-///
-/// 只认「唯一命中」——两个对象都能接上就报歧义，而不是挑一个。这样加新对象时
-/// 旧命令不会突然改投别处。
+/// 对象名允许只写唯一前缀（`comp`）。两个对象都能接上就报歧义，不替用户挑一个。
 fn resolve_item(candidate: &str) -> Result<&'static str, String> {
     if candidate.is_empty() {
         return Err(unknown_item(candidate));

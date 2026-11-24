@@ -1,21 +1,13 @@
 //! 启动文件里的「byk 补全」块。
 //!
-//! 这是 `@@@` 里唯一一个改**别人**文件的对象，所以纪律和 `config.json` /
-//! `index.json` 相反：
-//!
-//! - 只增删标记块，绝不整体重写：文件其余字节原样保留，手写的顺序、注释、
-//!   行尾风格都不动；
-//! - 符号链接写到目标文件。`temp + rename` 会把链接本身换成普通文件——dotfiles
-//!   仓库就是这样被悄悄脱钩的，而且当场不会报错；
-//! - 认 `install.sh` 写过的无标记裸行。只认标记块的话，用旧装法装过的人根本
-//!   删不掉，`remove` 等于一半失效。
+//! 这是 `@@@` 里唯一改**别人**文件的对象：只增删标记块、其余字节原样保留；符号链接
+//! 写到目标（`temp + rename` 会把链接换成普通文件）；也认 `install.sh` 早期写的裸行。
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// 块的首尾。写成完整句子而不是符号箭头：rc 文件是给人读的，
-/// `# >>> ... >>>` 在别人的 dotfiles 里看起来像合并冲突的残渣。
+/// 块的首尾。用完整句子而不是 `# >>> ... >>>`：rc 文件是给别人读的。
 pub(crate) const BEGIN: &str =
     "# The following lines have been added by byk to enable byk cli completions.";
 pub(crate) const END: &str = "# End of byk cli completions";
@@ -37,10 +29,8 @@ pub(crate) enum State {
 }
 
 impl State {
-    /// 补全在文件里的位置；没有补全时返回 `None`。
-    ///
-    /// 拆出来是因为两个调用方要的粒度不同：状态表要「installed (…)」整句，
-    /// `add` 的「已装」提示只需要括号里那半句，否则会套出两层括号。
+    /// 补全在文件里的位置；没有补全时返回 `None`。拆出来是因为状态表要整句、
+    /// `add` 的提示只要括号里那半句。
     pub(crate) fn location(&self) -> Option<String> {
         match self {
             State::Missing => None,
@@ -213,10 +203,8 @@ pub(crate) fn write(path: &Path, text: &str) -> Result<(), String> {
     })
 }
 
-/// 链接要改的真实文件；不是链接就还是它自己。
-///
-/// 必须 `canonicalize`：直接对链接做 `rename` 会把链接换成普通文件，
-/// dotfiles 仓库从此和家目录里那份脱钩，而且没有任何提示。
+/// 链接要改的真实文件；不是链接就还是它自己。必须 `canonicalize`，否则 `rename`
+/// 会把 dotfiles 里的链接换成普通文件，而且不会有任何提示。
 fn target_of(path: &Path) -> Result<PathBuf, String> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path).map_err(|e| {
@@ -279,10 +267,8 @@ fn is_blank(line: &str) -> bool {
     trim(line).is_empty()
 }
 
-/// `install.sh` 写过的裸行：`... byk [__api__ ]completion ...`。
-///
-/// 与 `uninstall.sh` 的正则同源，所以两边的判定不会分叉。标记行本身要先排除，
-/// 否则「只有开头没有结尾」的块会被当成裸行。
+/// `install.sh` 写过的裸行；判定与 `uninstall.sh` 的正则同源。标记行要先排除，
+/// 否则未闭合的块会被当成裸行。
 fn is_legacy(line: &str) -> bool {
     let text = trim(line);
     if text.is_empty() || [BEGIN, END].contains(&text) {

@@ -356,13 +356,9 @@ fn read_source(path: PathBuf) -> Result<(PathBuf, Vec<u8>), String> {
 
 /// 裸路径的解析规则：字面优先，找不到再补 `.byk.json`，目录则读匿名文件。
 ///
-/// - 目录形态（`.`、`..`、结尾 `/`）直接指向目录里的 `.byk.json`。
-/// - 只有能构成合法别名文件名的裸名字才补后缀：`tool` 会试
-///   `tool.byk.json`，而 `hello.txt`、带空格的路径保持字面——它们的
-///   `.byk.json` 变体本来就不是合法的别名文件名。
-/// - 裸名字先读字面文件，保证 `tool` 在 `tool.byk.json` 也存在时仍然
-///   可达；字面缺失才回退 `tool.byk.json`。字面是目录时，再读该目录的
-///   `.byk.json`。
+/// 目录形态（`.`、`..`、结尾 `/`）直接指向目录里的 `.byk.json`；只有能构成合法
+/// 别名文件名的裸名字才补后缀（`hello.txt`、带空格的路径保持字面）。裸名字先读
+/// 字面文件，字面缺失才回退 `tool.byk.json`。
 fn select_raw_source(spec: &str, raw: PathBuf) -> Result<PathBuf, String> {
     let last = Path::new(spec)
         .file_name()

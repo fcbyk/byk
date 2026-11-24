@@ -1,11 +1,6 @@
-//! 探测「当前是哪个 shell」以及它的启动文件。
+//! 探测当前 shell 与它的启动文件：父进程名优先，`$SHELL` 兜底。
 //!
-//! 不按操作系统猜。macOS 默认 zsh，但 `/bin/bash` 一直在；Windows 上的 Git Bash
-//! 同样是 zsh / bash 的家。所以规则只认两件事——父进程名与 `$SHELL`——同一套代码
-//! 在任何平台都成立，平台差异只体现在「补全生成器支持谁」。
-//!
-//! 不给 `switch`：指向该由环境决定，只在命令行里指名也不行。探测结果就是唯一的
-//! 目标——显示的那个文件、真正被写的那个文件、用户眼前这个终端，三者必然一致。
+//! 不按操作系统猜——macOS 上 bash 一直在，Windows 的 Git Bash 也跑 zsh / bash。
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -28,10 +23,7 @@ impl Shell {
         }
     }
 
-    /// 从进程名或路径里认 shell：`-zsh`、`/bin/zsh`、`bash-3.2` 都算。
-    ///
-    /// `sh` / `dash` 故意不认：它们既没有 `compdef` 也没有 `COMP_WORDS`，
-    /// 认下来只会产出装不上的补全。
+    /// 从进程名或路径里认 shell。`sh` / `dash` 没有补全脚本，故意不认。
     pub(crate) fn parse(text: &str) -> Option<Self> {
         match command_name(text) {
             "zsh" => Some(Shell::Zsh),
@@ -41,14 +33,7 @@ impl Shell {
         }
     }
 
-    /// 启动文件。
-    ///
-    /// - zsh 认 `$ZDOTDIR`：设了它的人，`.zshrc` 就不在家目录；
-    /// - bash 挑第一个「登录 shell 真的会读」的既有文件；只有 `.bashrc` 时说明
-    ///   此人跑的是非登录交互 shell（终端直接开的就是这类），那 `.bashrc` 才对；
-    ///   一个既有文件都没有才落到 `.bash_profile`——此时没有可被屏蔽的文件，
-    ///   建它是安全的；
-    /// - fish 跟着 `$XDG_CONFIG_HOME`。
+    /// 启动文件：zsh 认 `$ZDOTDIR`，fish 跟 `$XDG_CONFIG_HOME`，bash 见 `bash_rc`。
     pub(crate) fn rc_path(
         self,
         home: &Path,
@@ -67,8 +52,7 @@ impl Shell {
     }
 }
 
-/// 进程名或路径里真正的命令名：`-zsh`、`/bin/zsh`、`bash-3.2`、`pwsh.exe`
-/// 都归一成 `zsh` / `zsh` / `bash` / `pwsh`。报错时用它，比整条路径好读。
+/// 进程名或路径里的命令名：`-zsh`、`/bin/zsh`、`bash-3.2` → `zsh` / `zsh` / `bash`。
 pub(crate) fn command_name(text: &str) -> &str {
     let name = text
         .rsplit(['/', '\\'])
@@ -78,10 +62,9 @@ pub(crate) fn command_name(text: &str) -> &str {
     name.split(['-', '.']).next().unwrap_or(name)
 }
 
-/// bash 登录时按 `.bash_profile` → `.bash_login` → `.profile` 的顺序读第一个存在的。
+/// 登录 shell 读第一个存在的 `.bash_profile` → `.bash_login` → `.profile`。
 ///
-/// `.bashrc` 排在最后：它只被非登录交互 shell 读取，所以只有在前面三个都不存在、
-/// 而它存在时才说明用户走的是那条路（Linux 的终端大多如此）。
+/// `.bashrc` 排最后：只有它存在，说明用户走的是非登录交互 shell。
 fn bash_rc(home: &Path) -> PathBuf {
     for name in [".bash_profile", ".bash_login", ".profile", ".bashrc"] {
         let candidate = home.join(name);
@@ -114,12 +97,8 @@ pub(crate) struct Detected {
     pub(crate) source: Source,
 }
 
-/// 探测结果。
-///
-/// 父进程认不出**不算**失败：`python`、`cron`、GUI 启动器都不是 shell，这时才轮到
-/// `$SHELL` 发言。但 `$SHELL` 写着 `/bin/sh` 就是另一回事了——那是真的「这个 shell
-/// 没有生成器」，要和「认不出来」分开报，否则 sh 用户永远只看到 `Cannot detect`，
-/// 而他真正该知道的是「补全生成器只覆盖 zsh / bash / fish」。
+/// 探测结果。父进程认不出不算失败，交给 `$SHELL`；而 `$SHELL` 写着 `sh` 是真的不支持，
+/// 两者要分开报，否则 sh 用户只看到一句「认不出」。
 #[derive(Clone, Debug)]
 pub(crate) enum Detection {
     Found(Detected),
@@ -127,10 +106,7 @@ pub(crate) enum Detection {
     Unknown,
 }
 
-/// 父进程优先，`$SHELL` 兜底。
-///
-/// `$SHELL` 是登录 shell：用户 `exec bash` 之后它仍然写着 zsh。父进程才是此刻
-/// 真正在跑的那个。取不到父进程（Windows、受限沙箱）才退回环境变量。
+/// 父进程优先：`exec bash` 之后 `$SHELL` 仍是登录 shell 的名字，父进程才是此刻在跑的。
 pub(crate) fn detect() -> Detection {
     if let Some(shell) = parent_shell() {
         return Detection::Found(Detected {
@@ -233,7 +209,7 @@ mod tests {
         );
     }
 
-    /// bash 的三级下降：不能凭空造 `.bash_profile` 把 `.profile` 屏蔽掉。
+    /// bash 的逐级下降：不能凭空造 `.bash_profile` 把 `.profile` 屏蔽掉。
     #[test]
     fn bash_prefers_the_file_a_login_shell_reads() {
         let temp = tempfile::tempdir().unwrap();
