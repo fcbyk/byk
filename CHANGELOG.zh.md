@@ -4,12 +4,11 @@
 
 - **文件命令**: 移除 `@文件..命令` 写法，改为 `byk @文件 命令`（全局是 `byk @@文件 命令`）。分隔符改成空格，不再和精确别名语法 `@文件.key` 混淆。只写 `byk @文件`、或加 `-h` / `--help`，会显示该文件的命令帮助
 - **文件帮助**: 移除 `help` 文件命令，改用 `-h` / `--help`（`byk @文件 -h`、`byk @文件 init -h`）。文件命令帮助的结构与 `byk -h` 对齐：列表页说明当前还是全局别名文件并显示 `FilePath`（未创建标 `(not created yet)`，链接文件标 `(link)`），每个命令的帮助在 Usage 上方重复目标路径，描述放在最前
-- **`clone`**: 移除 `-jd` / `--jsdelivr`，改用 `-gh <spec> jsdelivr` 指定 CDN
+- **`clone` 的来源**: 移除 `-gh` / `--github`、`-ge` / `--gitee`，以及 `-gh` 后面那个可选 CDN 值；平台与通道改成唯一来源参数上的前缀：`github:user/repo`、`gitee:user/repo`、`jsdelivr:user/repo`、`ghproxy:user/repo`。前缀认不出来会直接报错并列出可选值（`Unknown source prefix: …`）；`clone` 至此没有任何来源选项，只剩 `--tap` 与 `--deps`
 
 ### 新功能
 
 - **`$paths`**: 现在和 `$cwd` / `$mode` 一样可继承——可写在文件、分组或别名对象上；子级写了就整体覆盖继承列表（不合并），`[]` 表示清空，让单条别名回到系统 `PATH`
-- **`clone -gh`**: 新增可选的第二个参数指定 CDN（`raw` 默认、`jsdelivr`、`ghproxy`），后续增加镜像不必再加开关
 - **`$deps`**: `base` 是 ghproxy 地址时，下载绝对 GitHub 地址（含 Release 资产）自动沿用同一个代理，相对条目不会重复套壳；jsdelivr 仍只覆盖仓库文件
 - **`$deps`**: 终端下显示 curl 原生下载进度条；非 TTY 保持静默，错误文本不变
 - **网络**: `BYK_USE_PROXY=false` 可强制直连；否则下载依次跟随 `BYK_PROXY`、已有代理环境变量与 Windows 静态系统代理。例外列表转成 `no_proxy`，遇到 PAC/WPAD 只警告。代理只注入 curl 子进程，不改别名执行环境，也不影响 pip / npm

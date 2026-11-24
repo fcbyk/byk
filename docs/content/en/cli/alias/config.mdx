@@ -387,7 +387,7 @@ byk @@tool clone <source> -d # or install them right after cloning
 
 | Clone source | `base` landed on disk | How assets are fetched |
 |---|---|---|
-| Remote (URL, `-gh [cdn]` / `-ge`) | Absolute http(s) directory URL | `curl` |
+| Remote (a URL, or a `github:` / `gitee:` / `jsdelivr:` / `ghproxy:` prefix) | Absolute http(s) directory URL | `curl` |
 | Local (`@@name`, `@name`, a path) | Local absolute directory path | direct copy |
 
 Neither side crosses into the other: **a remote clone only ever writes the URL form, so an alias file you got from the network cannot read local files.** That is not enforced by a check — the local-path form simply never reaches it.

@@ -9,7 +9,7 @@ use crate::model::PathLayout;
 use crate::resolve::validate_filename;
 
 use crate::filecmd::io::path::resolve_target;
-use crate::filecmd::source::Cdn;
+use crate::filecmd::source::Prefix;
 use crate::filecmd::spec::FileScope;
 use crate::filecmd::spec::subcommand_names;
 use crate::filecmd::spec::{HELP_FLAGS, OPTION_ALIASES, OPTIONS, VERBS, Verb, split_head};
@@ -65,11 +65,11 @@ pub(crate) fn complete(prev: &[String], partial: &str, layout: &PathLayout) -> O
             options(verb, partial)
         }
         Verb::Clone | Verb::Link | Verb::Init => {
+            if let Some(prefixes) = clone_prefix(verb, args, partial) {
+                return Some(prefixes);
+            }
             if let Some(sources) = source_args(verb, args, partial, layout) {
                 return Some(sources);
-            }
-            if let Some(cdns) = clone_cdn(verb, args, partial) {
-                return Some(cdns);
             }
             options(verb, partial)
         }
@@ -156,25 +156,25 @@ fn source_args(
     Some(source_candidates(partial, layout))
 }
 
-/// 补全 `-gh <spec> ` 之后的 CDN 名。
+/// 补全 `clone` 的来源前缀：`git` → `github:` / `gitee:`。
 ///
-/// 只有一个值的位置：紧跟在 `-gh` / `--github` 的 spec 后面。
-fn clone_cdn(verb: Verb, args: &[String], partial: &str) -> Option<Vec<String>> {
-    if verb != Verb::Clone || partial.starts_with('-') || args.len() < 2 {
+/// 只在还没给出来源时生效。`-` 开头是选项，`@` / `.` / `/` / `~` 开头交给
+/// 别名与路径补全，空词则让 shell 回退到文件路径。
+fn clone_prefix(verb: Verb, args: &[String], partial: &str) -> Option<Vec<String>> {
+    if verb != Verb::Clone || partial.is_empty() || partial.starts_with(['-', '@', '.', '/', '~']) {
         return None;
     }
-    let flag = &args[args.len() - 2];
-    if flag != "-gh" && flag != "--github" {
+    // `-d` 之外还有词，说明来源已经给过（或 `-t` 正在取它的值）
+    if args.iter().any(|arg| arg != "-d" && arg != "--deps") {
         return None;
     }
 
-    Some(
-        Cdn::NAMES
-            .iter()
-            .filter(|name| name.starts_with(partial))
-            .map(|name| (*name).to_string())
-            .collect(),
-    )
+    let candidates: Vec<String> = Prefix::NAMES
+        .iter()
+        .filter(|name| name.starts_with(partial))
+        .map(|name| format!("{name}:"))
+        .collect();
+    (!candidates.is_empty()).then_some(candidates)
 }
 
 fn existing_keys(scope: FileScope, stem: &str, partial: &str, layout: &PathLayout) -> Vec<String> {
@@ -379,10 +379,6 @@ mod tests {
             Some(vec![
                 "--help".to_string(),
                 "-h".to_string(),
-                "-gh".to_string(),
-                "--github".to_string(),
-                "-ge".to_string(),
-                "--gitee".to_string(),
                 "-t".to_string(),
                 "--tap".to_string(),
                 "-d".to_string(),
@@ -393,16 +389,11 @@ mod tests {
             opts("clone", "--"),
             Some(vec![
                 "--help".to_string(),
-                "--github".to_string(),
-                "--gitee".to_string(),
                 "--tap".to_string(),
                 "--deps".to_string()
             ])
         );
-        assert_eq!(
-            opts("clone", "-g"),
-            Some(vec!["-gh".to_string(), "-ge".to_string()])
-        );
+        assert_eq!(opts("clone", "-g"), Some(Vec::new()));
         assert_eq!(opts("clone", "-t"), Some(vec!["-t".to_string()]));
         assert_eq!(opts("json", ""), Some(Vec::new()));
         assert_eq!(opts("json", "x"), Some(Vec::new()));
@@ -452,39 +443,34 @@ mod tests {
     }
 
     #[test]
-    fn complete_clone_cdn_after_github_spec() {
+    fn complete_clone_source_prefixes() {
         let (_temp, layout) = fixture();
         assert_eq!(
-            complete(&words(&["@@ops", "clone", "-gh", "aaa/bb"]), "", &layout),
-            Some(vec![
-                "raw".to_string(),
-                "jsdelivr".to_string(),
-                "ghproxy".to_string()
-            ])
+            complete(&words(&["@@ops", "clone"]), "git", &layout),
+            Some(vec!["github:".to_string(), "gitee:".to_string()])
         );
         assert_eq!(
-            complete(
-                &words(&["@@ops", "clone", "--github", "aaa/bb"]),
-                "js",
-                &layout
-            ),
-            Some(vec!["jsdelivr".to_string()])
+            complete(&words(&["@@ops", "clone"]), "jsd", &layout),
+            Some(vec!["jsdelivr:".to_string()])
         );
-        // 只对 `-gh` 生效；Gitee 或值已给完时交给其他补全
+        // 来源已给就不再补前缀
         assert_eq!(
-            complete(&words(&["@@ops", "clone", "-ge", "aaa/bb"]), "", &layout),
+            complete(&words(&["@@ops", "clone", "github:a/b"]), "j", &layout),
             Some(Vec::new())
         );
+        // `-t` 的取值是路由 spec，不是前缀
         assert_eq!(
-            complete(
-                &words(&["@@ops", "clone", "-gh", "aaa/bb", "raw"]),
-                "",
-                &layout
-            ),
+            complete(&words(&["@@ops", "clone", "-t"]), "a", &layout),
             Some(Vec::new())
         );
+        // `-d` 不占用来源位置
         assert_eq!(
-            complete(&words(&["@@ops", "link", "-gh", "a/b"]), "", &layout),
+            complete(&words(&["@@ops", "clone", "-d"]), "gh", &layout),
+            Some(vec!["ghproxy:".to_string()])
+        );
+        // 其他命令没有前缀补全
+        assert_eq!(
+            complete(&words(&["@@ops", "link"]), "git", &layout),
             Some(Vec::new())
         );
     }

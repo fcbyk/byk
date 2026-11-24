@@ -1,8 +1,11 @@
 //! `clone` 的入口参数解析。
+//!
+//! 来源只占一个位置参数：`@name` / `@@name`、本地路径、`https://…`，以及
+//! `github:` / `gitee:` / `jsdelivr:` / `ghproxy:` 前缀——平台与传输通道都写在
+//! 前缀里，所以没有对应的选项。`-t` / `--tap` 走索引路由，`-d` 顺带装依赖。
 
 mod tap;
 
-use crate::filecmd::source;
 use crate::filecmd::spec::FileScope;
 use crate::model::PathLayout;
 use imp::{Options, SourceArg};
@@ -26,38 +29,17 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             install_deps = true;
             continue;
         }
-        if let Some(forge) = forge_flag(arg) {
-            let spec = rest
-                .next()
-                .ok_or_else(|| format!("Option {} requires a value", arg))?;
-            if source.is_some() {
-                return Err("clone takes exactly one source".to_string());
-            }
-            let cdn = if forge == source::Forge::Github {
-                optional_cdn(&mut rest)?
-            } else {
-                source::Cdn::Raw
-            };
-            source = Some(SourceArg::Forge(forge, cdn, spec.clone()));
-            continue;
-        }
         if arg == "-t" || arg == "--tap" {
             let spec = rest
                 .next()
                 .ok_or_else(|| format!("Option {} requires a value", arg))?;
-            if source.is_some() {
-                return Err("clone takes exactly one source".to_string());
-            }
-            source = Some(SourceArg::Tap(spec.clone()));
+            take_source(&mut source, SourceArg::Tap(spec.clone()))?;
             continue;
         }
         if arg.starts_with('-') && arg != "-" {
             return Err(format!("Unknown option: {}", arg));
         }
-        if source.is_some() {
-            return Err("clone takes exactly one source".to_string());
-        }
-        source = Some(SourceArg::Raw(arg.clone()));
+        take_source(&mut source, SourceArg::Raw(arg.clone()))?;
     }
 
     let source = source.ok_or_else(|| "clone requires a source".to_string())?;
@@ -67,23 +49,13 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     })
 }
 
-fn optional_cdn(rest: &mut std::slice::Iter<'_, String>) -> Result<source::Cdn, String> {
-    let Some(next) = rest.as_slice().first() else {
-        return Ok(source::Cdn::Raw);
-    };
-    if next.starts_with('-') {
-        return Ok(source::Cdn::Raw);
+/// 三种来源写法共用同一条「只接受一个」的规则。
+fn take_source(slot: &mut Option<SourceArg>, next: SourceArg) -> Result<(), String> {
+    if slot.is_some() {
+        return Err("clone takes exactly one source".to_string());
     }
-    let value = rest.next().expect("peeked a value");
-    source::Cdn::parse(value)
-}
-
-fn forge_flag(flag: &str) -> Option<source::Forge> {
-    match flag {
-        "-gh" | "--github" => Some(source::Forge::Github),
-        "-ge" | "--gitee" => Some(source::Forge::Gitee),
-        _ => None,
-    }
+    *slot = Some(next);
+    Ok(())
 }
 
 mod imp {
@@ -127,14 +99,9 @@ mod imp {
         create::ensure_absent(&target)?;
 
         let loaded = match options.source {
-            SourceArg::Raw(spec) => source::load(&spec, layout, None)?,
-            SourceArg::Forge(forge, cdn, spec) => {
-                let url = source::forge_url(forge, cdn, &spec)?;
-                source::load(
-                    &url,
-                    layout,
-                    github_retry(scope, stem, forge, cdn, &spec).as_deref(),
-                )?
+            SourceArg::Raw(spec) => {
+                let retry = retry_hint(scope, stem, &spec);
+                source::load(&spec, layout, retry.as_deref())?
             }
             SourceArg::Tap(spec) => load_tap(&spec, layout)?,
         };
@@ -164,19 +131,11 @@ mod imp {
         Ok(())
     }
 
-    /// `-gh` 走 raw 直连失败时，给一条改用 ghproxy 的完整重试命令随提示输出。
-    fn github_retry(
-        scope: FileScope,
-        stem: &str,
-        forge: source::Forge,
-        cdn: source::Cdn,
-        spec: &str,
-    ) -> Option<String> {
-        if forge != source::Forge::Github || cdn != source::Cdn::Raw {
-            return None;
-        }
+    /// `github:` 走 raw 直连失败时，给一条改用 ghproxy 前缀的完整重试命令随提示输出。
+    fn retry_hint(scope: FileScope, stem: &str, spec: &str) -> Option<String> {
+        let rest = source::ghproxy_fallback(spec)?;
         let key = build_file_key(stem, scope.is_global());
-        Some(format!("byk {key} clone -gh {spec} ghproxy"))
+        Some(format!("byk {key} clone ghproxy:{rest}"))
     }
 
     /// `--tap`：完整写法先找本地索引、缺失才回退远程；单 key 只搜本地。
@@ -471,8 +430,8 @@ mod imp {
 
     #[derive(Debug)]
     pub(crate) enum SourceArg {
+        /// 一个位置参数：本地路径、`@name` / `@@name`、URL，或带前缀的仓库简写。
         Raw(String),
-        Forge(source::Forge, source::Cdn, String),
         Tap(String),
     }
 }
@@ -634,65 +593,29 @@ mod tests {
     }
 
     #[test]
-    fn parses_forge_sources() {
-        let forge = |values: &[&str]| match parse_args(&args(values)).unwrap().source {
-            SourceArg::Forge(forge, cdn, spec) => (forge, cdn, spec),
-            other => panic!("expected a forge source, got {:?}", other),
+    fn keeps_prefixed_sources_verbatim() {
+        let raw = |values: &[&str]| match parse_args(&args(values)).unwrap().source {
+            SourceArg::Raw(spec) => spec,
+            other => panic!("expected a raw source, got {:?}", other),
         };
 
-        assert_eq!(
-            forge(&["-gh", "a/b/c"]),
-            (source::Forge::Github, source::Cdn::Raw, "a/b/c".to_string())
-        );
-        assert_eq!(
-            forge(&["--github", "a/b/"]),
-            (source::Forge::Github, source::Cdn::Raw, "a/b/".to_string())
-        );
-        assert_eq!(
-            forge(&["-gh", "a/b/c", "jsdelivr"]),
-            (
-                source::Forge::Github,
-                source::Cdn::Jsdelivr,
-                "a/b/c".to_string()
-            )
-        );
-        assert_eq!(
-            forge(&["--github", "a/b/", "raw"]),
-            (source::Forge::Github, source::Cdn::Raw, "a/b/".to_string())
-        );
-        assert_eq!(
-            forge(&["-ge", "a/b/c"]),
-            (source::Forge::Gitee, source::Cdn::Raw, "a/b/c".to_string())
-        );
-        assert_eq!(
-            forge(&["--gitee", "a/b/"]),
-            (source::Forge::Gitee, source::Cdn::Raw, "a/b/".to_string())
-        );
-        assert_eq!(
-            parse_args(&args(&["--github"])).unwrap_err(),
-            "Option --github requires a value"
-        );
-        assert_eq!(
-            parse_args(&args(&["-ge"])).unwrap_err(),
-            "Option -ge requires a value"
-        );
-        assert_eq!(
-            parse_args(&args(&["-gh", "a/b", "nope"])).unwrap_err(),
-            "Unknown CDN: nope\nSupported: raw, jsdelivr, ghproxy"
-        );
-        assert_eq!(
-            parse_args(&args(&["-gh", "a/b", "raw", "c/d"])).unwrap_err(),
-            "clone takes exactly one source"
-        );
-        assert_eq!(
-            parse_args(&args(&["-jd", "a/b"])).unwrap_err(),
-            "Unknown option: -jd"
-        );
-        assert!(
-            parse_args(&args(&["--bad"]))
-                .unwrap_err()
-                .starts_with("Unknown option:")
-        );
+        assert_eq!(raw(&["github:a/b/c"]), "github:a/b/c");
+        assert_eq!(raw(&["gitee:a/b/x"]), "gitee:a/b/x");
+        assert_eq!(raw(&["jsdelivr:a/b@v1/x"]), "jsdelivr:a/b@v1/x");
+        assert_eq!(raw(&["ghproxy:a/b"]), "ghproxy:a/b");
+        assert_eq!(raw(&["-"]), "-");
+        assert_eq!(raw(&["a/b/c", "-d"]), "a/b/c");
+    }
+
+    #[test]
+    fn rejects_the_removed_source_options() {
+        // 平台与通道都变成前缀了，旧选项必须响亮地失败，而不是被当成路径
+        for flag in ["-gh", "--github", "-ge", "--gitee"] {
+            assert_eq!(
+                parse_args(&args(&[flag, "a/b"])).unwrap_err(),
+                format!("Unknown option: {}", flag)
+            );
+        }
     }
 
     #[test]
@@ -713,7 +636,7 @@ mod tests {
             "Option -t requires a value"
         );
         assert_eq!(
-            parse_args(&args(&["--tap", "a/b/k", "-gh", "c/d"])).unwrap_err(),
+            parse_args(&args(&["--tap", "a/b/k", "github:c/d"])).unwrap_err(),
             "clone takes exactly one source"
         );
         assert!(
@@ -733,9 +656,9 @@ mod tests {
         );
         assert!(!parse_args(&args(&["a/b/c"])).unwrap().install_deps);
 
-        let mixed = parse_args(&args(&["-gh", "a/b/c", "-d"])).unwrap();
+        let mixed = parse_args(&args(&["github:a/b/c", "-d"])).unwrap();
         assert!(mixed.install_deps);
-        assert!(matches!(mixed.source, SourceArg::Forge(..)));
+        assert!(matches!(mixed.source, SourceArg::Raw(_)));
 
         assert_eq!(
             parse_args(&args(&["-d"])).unwrap_err(),

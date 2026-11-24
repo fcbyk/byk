@@ -4,12 +4,11 @@
 
 - **file commands**: the `@file..verb` form is gone — write `byk @file <verb>` (and `byk @@file <verb>`) instead. The separator is now a space, so it no longer collides with the precise alias syntax `@file.key`. `byk @file` on its own, `-h`, or `--help` prints that file's command help
 - **file help**: the `help` file command is gone — use `-h` / `--help` (`byk @file -h`, `byk @file init -h`). File-command help now mirrors `byk -h`: the index names the local/global file and shows `FilePath` (with `(not created yet)` / `(link)` markers), and every command's help repeats the target path above Usage with its description first
-- **`clone`**: the `-jd` / `--jsdelivr` source is gone; read GitHub through a CDN with `-gh <spec> jsdelivr` instead
+- **`clone` sources**: `-gh` / `--github`, `-ge` / `--gitee`, and the optional CDN value that followed `-gh` are gone — the platform and the transport become a prefix on the single source argument: `github:user/repo`, `gitee:user/repo`, `jsdelivr:user/repo`, `ghproxy:user/repo`. An unknown prefix fails with the list of valid ones (`Unknown source prefix: …`), and `clone` now has no source options at all, only `--tap` and `--deps`
 
 ### Features
 
 - **`$paths`**: now inheritable like `$cwd` / `$mode` — writable on a file, group, or alias object; a child value replaces the inherited list entirely (no merging), and `[]` clears it so a single alias can fall back to the system `PATH`
-- **`clone -gh`**: takes an optional second value naming the CDN — `raw` (default), `jsdelivr`, or `ghproxy` — so more mirrors can be added without new flags
 - **`$deps`**: when `base` is a ghproxy address, absolute GitHub downloads (release assets included) reuse the same proxy; relative entries are never wrapped twice, and jsdelivr remains repository-files-only
 - **`$deps`**: curl's native progress bar is shown on a terminal; non-TTY output stays quiet with unchanged error text
 - **network**: downloads can be forced direct with `BYK_USE_PROXY=false`; otherwise they follow `BYK_PROXY`, then existing proxy environment variables, then the static Windows system proxy. On Windows the bypass list becomes `no_proxy`, while PAC/WPAD only warn. The proxy is injected into curl child processes alone, never the alias environment or pip/npm

@@ -8,6 +8,7 @@ use colored::Colorize;
 use serde_json::Value;
 
 use crate::filecmd::io::path::resolve_target;
+use crate::filecmd::source::Prefix;
 use crate::filecmd::spec::FileScope;
 use crate::filecmd::spec::{OPTIONS, SUBCOMMANDS, VERBS, Verb, VerbInfo, unknown_verb_message};
 use crate::model::PathLayout;
@@ -149,12 +150,52 @@ fn render_verb(base: &str, info: &VerbInfo, target: &str) -> String {
     output.push_str(&usage);
     output.push_str("\n\n");
     output.push_str(&render_section("Options:", &entries));
+    if info.verb == Verb::Clone {
+        output.push('\n');
+        output.push_str(&render_section("Sources:", &clone_sources()));
+        output.push_str(
+            "  <spec> = <user>/<repo>[@<ref>][/<path>]; <ref> defaults to HEAD, and a\n  directory <path> ends with `/`.\n",
+        );
+    }
     if !subcommands.is_empty() {
         output.push('\n');
         output.push_str(&render_section("Commands:", &subcommands));
     }
     output.push('\n');
     output
+}
+
+/// `clone` 的来源形态：位置参数的全部写法。
+///
+/// `--tap` 已经在 Options 里，这里不再重复；四个前缀的名字取自
+/// [`Prefix::NAMES`]，将来加通道只需要改那一处。
+fn clone_sources() -> Vec<(String, &'static str)> {
+    let mut rows = vec![
+        (
+            "@name, @@name".to_string(),
+            "An alias file in the current or global directory",
+        ),
+        (
+            "<path>".to_string(),
+            "A local file; a bare name gets `.byk.json` appended",
+        ),
+        (
+            "<url>".to_string(),
+            "An http(s) alias file, downloaded with curl",
+        ),
+    ];
+    rows.extend(Prefix::NAMES.iter().map(|name| {
+        (
+            format!("{name}:<spec>"),
+            match *name {
+                "github" => "GitHub raw — the default channel",
+                "gitee" => "Gitee raw",
+                "jsdelivr" => "GitHub through jsDelivr",
+                _ => "GitHub through gh-proxy",
+            },
+        )
+    }));
+    rows
 }
 
 fn render_section(title: &str, entries: &[(String, &'static str)]) -> String {
@@ -322,17 +363,21 @@ mod tests {
     }
 
     #[test]
-    fn command_help_for_clone_shows_github_option() {
+    fn command_help_for_clone_lists_sources_instead_of_options() {
         let text =
             strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"]), &layout()).unwrap());
 
         assert!(text.contains("Usage: byk @@ops clone [OPTIONS] <source>"));
-        assert!(text.contains("-gh, --github <spec> [<cdn>]"));
-        assert!(
-            text.contains("Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)")
-        );
-        assert!(text.contains("-ge, --gitee <spec>"));
-        assert!(text.contains("Clone from a Gitee repository"));
+        assert!(text.contains("\nSources:\n"));
+        assert!(text.contains("@name, @@name"));
+        assert!(text.contains("github:<spec>"));
+        assert!(text.contains("GitHub raw — the default channel"));
+        assert!(text.contains("gitee:<spec>"));
+        assert!(text.contains("jsdelivr:<spec>"));
+        assert!(text.contains("ghproxy:<spec>"));
+        // 旧选项已随前缀一起消失，不能再出现在帮助里
+        assert!(!text.contains("-gh"));
+        assert!(!text.contains("--gitee"));
         assert!(text.contains("-t, --tap <spec>"));
         assert!(text.contains("Resolve a key from a local or GitHub byk.tap.json index"));
     }

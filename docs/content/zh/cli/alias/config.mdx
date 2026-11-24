@@ -382,7 +382,7 @@ byk @@tool clone <source> -d # 或者在克隆时顺手装好
 
 | clone 来源 | 落盘的 `base` | 资产怎么取 |
 |---|---|---|
-| 远程（URL、`-gh [cdn]` / `-ge`） | 绝对 http(s) 目录 URL | `curl` 下载 |
+| 远程（URL、`github:` / `gitee:` / `jsdelivr:` / `ghproxy:` 前缀） | 绝对 http(s) 目录 URL | `curl` 下载 |
 | 本地（`@@name`、`@name`、路径） | 本机绝对目录路径 | 直接复制 |
 
 两条路互不越界：**远程 clone 只会写出 URL 形态，所以从网上拿到的别名文件读不了本机文件**。这不是靠检查挡住的，而是它根本拿不到本地路径这种写法。

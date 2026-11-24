@@ -299,18 +299,6 @@ pub(crate) const OPTIONS: &[OptionInfo] = &[
     },
     OptionInfo {
         verb: Verb::Clone,
-        flag: "--github",
-        syntax: "-gh, --github <spec> [<cdn>]",
-        description: "Clone from GitHub, optionally through a CDN (raw, jsdelivr, ghproxy)",
-    },
-    OptionInfo {
-        verb: Verb::Clone,
-        flag: "--gitee",
-        syntax: "-ge, --gitee <spec>",
-        description: "Clone from a Gitee repository",
-    },
-    OptionInfo {
-        verb: Verb::Clone,
         flag: "--tap",
         syntax: "-t, --tap <spec>",
         description: "Resolve a key from a local or GitHub byk.tap.json index",
@@ -336,12 +324,7 @@ pub(crate) const OPTIONS: &[OptionInfo] = &[
 ];
 
 /// 选项别名：短写 → 完整 flag；帮助里的展示由 `syntax` 负责。
-pub(crate) const OPTION_ALIASES: &[(&str, &str)] = &[
-    ("-gh", "--github"),
-    ("-ge", "--gitee"),
-    ("-t", "--tap"),
-    ("-d", "--deps"),
-];
+pub(crate) const OPTION_ALIASES: &[(&str, &str)] = &[("-t", "--tap"), ("-d", "--deps")];
 
 impl Verb {
     pub(crate) fn parse(raw: &str) -> Option<Self> {

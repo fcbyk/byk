@@ -818,10 +818,6 @@ mod tests {
             vec![
                 "--help".to_string(),
                 "-h".to_string(),
-                "-gh".to_string(),
-                "--github".to_string(),
-                "-ge".to_string(),
-                "--gitee".to_string(),
                 "-t".to_string(),
                 "--tap".to_string(),
                 "-d".to_string(),
@@ -837,35 +833,19 @@ mod tests {
     }
 
     #[test]
-    fn candidates_clone_completes_cdns_after_github_spec() {
+    fn candidates_clone_completes_source_prefixes() {
         let env = TestEnv::new();
 
         assert_eq!(
-            candidates(
-                &words(&["@@ops", "clone", "-gh", "aaa/bb", ""]),
-                &env.layout
-            ),
-            vec![
-                "raw".to_string(),
-                "jsdelivr".to_string(),
-                "ghproxy".to_string()
-            ]
+            candidates(&words(&["@@ops", "clone", "git"]), &env.layout),
+            vec!["github:".to_string(), "gitee:".to_string()]
         );
         assert_eq!(
-            candidates(
-                &words(&["@@ops", "clone", "--github", "aaa/bb", "js"]),
-                &env.layout
-            ),
-            vec!["jsdelivr".to_string()]
+            candidates(&words(&["@@ops", "clone", "ghp"]), &env.layout),
+            vec!["ghproxy:".to_string()]
         );
-        // Gitee 没有 CDN 参数
-        assert!(
-            candidates(
-                &words(&["@@ops", "clone", "-ge", "aaa/bb", ""]),
-                &env.layout
-            )
-            .is_empty()
-        );
+        // 来源已给：不再补前缀
+        assert!(candidates(&words(&["@@ops", "clone", "github:a/b", "j"]), &env.layout).is_empty());
     }
 
     #[test]

@@ -26,10 +26,10 @@ pub(crate) struct Loaded {
     pub(crate) origin: Origin,
 }
 
-/// 解析链接目标：只接受本地文件；URL 明确拒绝并提示用 clone。
+/// 解析链接目标：只接受本地文件；URL 与前缀来源明确拒绝并提示用 clone。
 pub(crate) fn resolve(spec: &str, layout: &PathLayout) -> Result<PathBuf, String> {
     match classify(spec)? {
-        SourceKind::Url(_) => Err(format!(
+        SourceKind::Url(_) | SourceKind::Prefix(..) => Err(format!(
             "Remote source is not supported here: {}\nHint: use `byk <file> clone` for URLs",
             spec
         )),
@@ -49,6 +49,17 @@ pub(crate) fn load(spec: &str, layout: &PathLayout, retry: Option<&str>) -> Resu
                 label: url.to_string(),
                 data,
                 origin: Origin::Url(url.to_string()),
+            })
+        }
+        SourceKind::Prefix(prefix, body) => {
+            let (forge, cdn) = prefix.route();
+            let url = forge_url(forge, cdn, body)?;
+            let data = fetch(&url, FetchKind::Source, retry)?;
+            validate(&data, &url)?;
+            Ok(Loaded {
+                label: url.clone(),
+                data,
+                origin: Origin::Url(url),
             })
         }
         SourceKind::Local => {
@@ -75,9 +86,12 @@ pub(crate) fn load_file(path: &Path) -> Result<Loaded, String> {
     })
 }
 
+#[derive(Debug)]
 enum SourceKind<'a> {
     Local,
     Url(&'a str),
+    /// `github:user/repo/path` —— 前缀之后的剩余部分。
+    Prefix(Prefix, &'a str),
 }
 
 fn classify(spec: &str) -> Result<SourceKind<'_>, String> {
@@ -93,7 +107,43 @@ fn classify(spec: &str) -> Result<SourceKind<'_>, String> {
             )),
         };
     }
+    if let Some((head, rest)) = split_prefix(spec) {
+        return match Prefix::parse(head) {
+            Some(prefix) => Ok(SourceKind::Prefix(prefix, rest)),
+            None => Err(unknown_prefix(head)),
+        };
+    }
     Ok(SourceKind::Local)
+}
+
+/// 拆出 `github:user/repo` 的前缀；不是前缀形态时返回 `None`。
+///
+/// 只放行 `[A-Za-z0-9_-]`、长度 ≤16、且 `:` 之后不是 `//` 的词。于是三类
+/// 字符串都仍然落回本地路径：`C:/x` 这类盘符、`a//b` 这种手滑，以及
+/// `./notes:2024` 这种名字里带冒号的文件。
+fn split_prefix(spec: &str) -> Option<(&str, &str)> {
+    let (head, rest) = spec.split_once(':')?;
+    if head.is_empty() || rest.is_empty() || rest.starts_with("//") || is_drive_path(spec) {
+        return None;
+    }
+    let shaped = head.len() <= 16
+        && head
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    shaped.then_some((head, rest))
+}
+
+fn is_drive_path(raw: &str) -> bool {
+    let bytes = raw.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+fn unknown_prefix(head: &str) -> String {
+    format!(
+        "Unknown source prefix: {}:\nHint: supported prefixes are {}",
+        head,
+        Prefix::NAMES.join(", ")
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,21 +183,6 @@ pub(crate) enum Cdn {
 }
 
 impl Cdn {
-    pub(crate) const NAMES: [&'static str; 3] = ["raw", "jsdelivr", "ghproxy"];
-
-    pub(crate) fn parse(raw: &str) -> Result<Self, String> {
-        match raw {
-            "raw" => Ok(Self::Raw),
-            "jsdelivr" => Ok(Self::Jsdelivr),
-            "ghproxy" => Ok(Self::Ghproxy),
-            other => Err(format!(
-                "Unknown CDN: {}\nSupported: {}",
-                other,
-                Self::NAMES.join(", ")
-            )),
-        }
-    }
-
     fn url(self, forge: Forge, user: &str, repo: &str, reference: &str, path: &str) -> String {
         match self {
             Self::Raw => forge.raw_url(user, repo, reference, path),
@@ -159,6 +194,47 @@ impl Cdn {
             Self::Ghproxy => gh_proxy_url(&forge.raw_url(user, repo, reference, path)),
         }
     }
+}
+
+/// 来源前缀：平台与传输通道共用同一个命名空间。
+///
+/// 写成 `<prefix>:<user>/<repo>[@<ref>][/<path>]`，与 `@name`、`https://…`
+/// 一样是「一个位置参数」，不再需要额外的选项。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Prefix {
+    Github,
+    Gitee,
+    Jsdelivr,
+    Ghproxy,
+}
+
+impl Prefix {
+    pub(crate) const NAMES: [&'static str; 4] = ["github", "gitee", "jsdelivr", "ghproxy"];
+
+    fn parse(head: &str) -> Option<Self> {
+        match head {
+            "github" => Some(Self::Github),
+            "gitee" => Some(Self::Gitee),
+            "jsdelivr" => Some(Self::Jsdelivr),
+            "ghproxy" => Some(Self::Ghproxy),
+            _ => None,
+        }
+    }
+
+    /// 前缀到 (平台, 通道)：`jsdelivr` / `ghproxy` 只镜像 GitHub。
+    fn route(self) -> (Forge, Cdn) {
+        match self {
+            Self::Github => (Forge::Github, Cdn::Raw),
+            Self::Gitee => (Forge::Gitee, Cdn::Raw),
+            Self::Jsdelivr => (Forge::Github, Cdn::Jsdelivr),
+            Self::Ghproxy => (Forge::Github, Cdn::Ghproxy),
+        }
+    }
+}
+
+/// `github:` 来源在网络直连失败时可改写的等价前缀。
+pub(crate) fn ghproxy_fallback(spec: &str) -> Option<&str> {
+    spec.strip_prefix("github:")
 }
 
 /// 把 `<user>/<repo>[@<ref>][/<path>]` 展开为对应平台的 raw URL。
@@ -787,6 +863,11 @@ mod tests {
 
         assert!(err.starts_with("Remote source is not supported here:"));
         assert!(err.contains("clone` for URLs"));
+
+        // 前缀来源同样是远程，链接只接本地文件
+        let err = resolve("github:aaa/bb", &layout(&temp)).unwrap_err();
+        assert!(err.starts_with("Remote source is not supported here:"));
+        assert!(err.contains("clone` for URLs"));
     }
 
     #[test]
@@ -892,14 +973,77 @@ mod tests {
     }
 
     #[test]
-    fn cdn_parses_known_names() {
-        assert_eq!(Cdn::parse("raw").unwrap(), Cdn::Raw);
-        assert_eq!(Cdn::parse("jsdelivr").unwrap(), Cdn::Jsdelivr);
-        assert_eq!(Cdn::parse("ghproxy").unwrap(), Cdn::Ghproxy);
+    fn maps_prefixes_to_platform_and_cdn() {
+        assert_eq!(Prefix::parse("github"), Some(Prefix::Github));
+        assert_eq!(Prefix::parse("gitee"), Some(Prefix::Gitee));
+        assert_eq!(Prefix::parse("jsdelivr"), Some(Prefix::Jsdelivr));
+        assert_eq!(Prefix::parse("ghproxy"), Some(Prefix::Ghproxy));
+        // `raw` 不再是可选值：它是 `github:` 的默认通道
+        assert_eq!(Prefix::parse("raw"), None);
 
-        let err = Cdn::parse("fastgit").unwrap_err();
-        assert!(err.starts_with("Unknown CDN: fastgit"), "{err}");
-        assert!(err.contains("raw, jsdelivr, ghproxy"), "{err}");
+        assert_eq!(Prefix::Github.route(), (Forge::Github, Cdn::Raw));
+        assert_eq!(Prefix::Gitee.route(), (Forge::Gitee, Cdn::Raw));
+        assert_eq!(Prefix::Jsdelivr.route(), (Forge::Github, Cdn::Jsdelivr));
+        assert_eq!(Prefix::Ghproxy.route(), (Forge::Github, Cdn::Ghproxy));
+    }
+
+    #[test]
+    fn splits_prefixes_only_for_prefix_shaped_words() {
+        assert_eq!(split_prefix("github:a/b/c"), Some(("github", "a/b/c")));
+        assert_eq!(split_prefix("ghproxy:a/b"), Some(("ghproxy", "a/b")));
+        // 盘符、URL、以及名字里带冒号的普通路径都不算前缀
+        assert_eq!(split_prefix("C:/x"), None);
+        assert_eq!(split_prefix("c:relative"), None);
+        assert_eq!(split_prefix("a//b"), None);
+        assert_eq!(split_prefix("https://e.com/x"), None);
+        assert_eq!(split_prefix("./notes:2024"), None);
+        assert_eq!(split_prefix("github:"), None);
+        assert_eq!(split_prefix(":a/b"), None);
+    }
+
+    #[test]
+    fn rejects_an_unknown_prefix() {
+        let err = classify("githb:a/b").unwrap_err();
+        assert!(err.starts_with("Unknown source prefix: githb:"), "{err}");
+        assert!(
+            err.contains("github, gitee, jsdelivr, ghproxy"),
+            "四个前缀都要列出来：{err}"
+        );
+    }
+
+    #[test]
+    fn prefix_sources_build_platform_urls() {
+        let build = |spec: &str| {
+            let SourceKind::Prefix(prefix, body) = classify(spec).unwrap() else {
+                panic!("expected a prefix source: {spec}");
+            };
+            let (forge, cdn) = prefix.route();
+            forge_url(forge, cdn, body).unwrap()
+        };
+
+        assert_eq!(
+            build("github:aaa/bb"),
+            "https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
+        );
+        assert_eq!(
+            build("gitee:aaa/bb/x"),
+            "https://gitee.com/aaa/bb/raw/HEAD/x.byk.json"
+        );
+        assert_eq!(
+            build("jsdelivr:aaa/bb@v1/x"),
+            "https://cdn.jsdelivr.net/gh/aaa/bb@v1/x.byk.json"
+        );
+        assert_eq!(
+            build("ghproxy:aaa/bb"),
+            "https://gh-proxy.com/https://raw.githubusercontent.com/aaa/bb/HEAD/.byk.json"
+        );
+    }
+
+    #[test]
+    fn ghproxy_fallback_rewrites_only_github_specs() {
+        assert_eq!(ghproxy_fallback("github:aaa/bb/x"), Some("aaa/bb/x"));
+        assert_eq!(ghproxy_fallback("gitee:aaa/bb/x"), None);
+        assert_eq!(ghproxy_fallback("https://e.com/x.byk.json"), None);
     }
 
     #[test]
