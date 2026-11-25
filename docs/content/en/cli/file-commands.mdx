@@ -211,6 +211,7 @@ byk global@ops clone .                        # the current directory's .byk.jso
 byk global@ops clone https://example.com/tool.byk.json
 byk global@ops clone github:user/repo                     # the repository root .byk.json
 byk global@ops clone github:user/repo@main/tools/release.byk.json
+byk global@ops clone github:user/repo@release/1.2#tools/release.byk.json
 byk global@ops clone gitee:user/repo                      # read from Gitee
 byk global@ops clone github:user/repo -d                  # install $deps in the same go
 byk global@ops clone --tap user/repo/build            # resolve `build` from byk.tap.json
@@ -245,11 +246,13 @@ The prefix decides the platform only; the URL is always the canonical upstream:
 Repository shorthand shape:
 
 ```
-<user>/<repo>[@<ref>][/<path>]
+<user>/<repo>[@<ref>][#<path>]
 ```
 
 - `@<ref>` is optional and defaults to `HEAD`.
 - `<path>` is optional: leaving it out reads the repository root `.byk.json`, so `user/repo` equals `user/repo/`.
+- Without `#`, the path follows the ref (`@<ref>/<path>`) and the ref cannot contain `/`; the old form is unchanged.
+- With `#`, everything to its right is the path, so the ref may contain `/`: `github:user/repo@feature/x#tools/`. To the left of `#` only `<user>/<repo>[@<ref>]` is allowed.
 - A `<path>` pointing at a directory must end with `/`, meaning that directory's `.byk.json`.
 - The last segment is the file name; the `.byk.json` suffix is optional.
 - The sugar covers the whole path only: `user/repo/ss` still reads `ss.byk.json` and is never guessed to be a `ss/` directory.
@@ -262,6 +265,8 @@ Repository shorthand shape:
 | `github:user/repo@v1/tools/release` | `tools/release.byk.json` |
 | `github:user/repo@v1/tools/` | `tools/.byk.json` |
 | `github:user/repo@v1/` | the repository root `.byk.json` |
+| `github:user/repo#tools/release` | `tools/release.byk.json` on HEAD |
+| `github:user/repo@release/1.2#tools/release` | `tools/release.byk.json` on `release/1.2` |
 
 Local path resolution:
 
@@ -309,7 +314,7 @@ The index is a flat JSON object. Keys starting with `$` are reserved for metadat
 }
 ```
 
-- Tap source shape: `<user>/<repo>[@<ref>]/<key>`. `<ref>` defaults to `HEAD`; `<key>` is exactly one path segment and cannot contain `/`, be `.` or `..`, or start with `$`.
+- Tap source shape: `<user>/<repo>[@<ref>][#<key>]`. `<ref>` defaults to `HEAD`; `<key>` is exactly one path segment and cannot contain `/`, be `.` or `..`, or start with `$`. When the ref contains `/`, put `#` before the key (`user/repo@feature/x#build`); without `#` the key is still the last segment.
 - `--tap` is GitHub-only and is itself a source form: it cannot be combined with a positional source (`clone takes exactly one source`).
 - **Local index first (full form).** Byk reads `~/.byk/tap/<user>/<repo>/byk.tap.json` when the spec has no `@<ref>`. When that file exists it is authoritative: parse errors, a missing key, a non-string entry, or a missing target all fail; only a missing index file falls back to GitHub. An explicit `@<ref>` always uses the remote index.
 - **Single-key shorthand.** `--tap <key>` with no `/` searches every valid `~/.byk/tap/<user>/<repo>/byk.tap.json` without fetching an index from the network. A unique match is cloned from that local index (a URL value still uses the remote clone path); when several repositories contain the key, the command lists the full forms `user/repo/key` and asks you to pick one; when none contain it, the command fails without any remote fallback.

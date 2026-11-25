@@ -16,7 +16,7 @@ use crate::utils::path::{canonical, expand_home};
 
 const INDEX_FILE: &str = "byk.tap.json";
 
-/// 解析后的 tap 来源：`<user>/<repo>[@<ref>]/<key>`。
+/// 解析后的 tap 来源：`<user>/<repo>[@<ref>][#<key>]`。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Spec {
     user: String,
@@ -33,7 +33,7 @@ impl Spec {
         Forge::Github.raw_url(
             &source::encode_segment(&self.user),
             &source::encode_segment(&self.repo),
-            &source::encode_segment(&self.reference),
+            &source::encode_ref(&self.reference),
             INDEX_FILE,
         )
     }
@@ -53,11 +53,17 @@ impl Spec {
 }
 
 fn parse_spec(spec: &str) -> Result<Spec, String> {
-    let mut parts = spec.splitn(3, '/');
+    // `#` 之后是 key，ref 才能含 `/`；没有 `#` 时保持 `<user>/<repo>[@<ref>]/<key>`。
+    let (head, explicit_key) = match spec.split_once('#') {
+        Some((head, key)) => (head, Some(key)),
+        None => (spec, None),
+    };
+
+    let mut parts = head.splitn(if explicit_key.is_some() { 2 } else { 3 }, '/');
     let user = parts.next().unwrap_or("");
     let repo_ref = parts.next().unwrap_or("");
     // 键只能是最后一段；这里不按 `/` 再切，后面直接拒绝多段键。
-    let key = parts.next().unwrap_or("");
+    let old_key = parts.next().unwrap_or("");
 
     if source::looks_like_host(user) {
         return Err(host_error(user, &source::rest_after_host(spec)));
@@ -71,20 +77,28 @@ fn parse_spec(spec: &str) -> Result<Spec, String> {
             if repo.is_empty() || reference.is_empty() || repo == "." || repo == ".." {
                 return Err(shape_error());
             }
-            if reference == "." || reference == ".." || reference.contains('@') {
+            if reference == "."
+                || reference == ".."
+                || reference.contains('@')
+                || source::bad_ref_path(reference)
+            {
                 return Err("Invalid GitHub ref".to_string());
             }
             (repo, reference, true)
         }
         None => (repo_ref, "HEAD", false),
     };
-
+    // 有 `#` 时 repo 只占一段；含 `/` 说明 key 被写在了 `#` 左边。
+    if repo.contains('/') {
+        return Err(shape_error());
+    }
     if !valid_user(user) {
         return Err(invalid_user(user));
     }
     if !valid_repo(repo) {
         return Err(invalid_repo(repo));
     }
+    let key = explicit_key.unwrap_or(old_key);
     validate_key(key)?;
 
     Ok(Spec {
@@ -162,13 +176,13 @@ fn validate_key(key: &str) -> Result<(), String> {
 }
 
 fn shape_error() -> String {
-    "GitHub tap source must be <user>/<repo>[@<ref>]/<key>\nHint: <key> is one path segment from byk.tap.json"
+    "GitHub tap source must be <user>/<repo>[@<ref>][#<key>]\nHint: <key> is one path segment from byk.tap.json; put `#` before it when the ref contains `/`"
         .to_string()
 }
 
 fn host_error(host: &str, rest: &str) -> String {
     let mut message = format!(
-        "GitHub tap source must not include a host: {}\nHint: write <user>/<repo>[@<ref>]/<key> and leave the host out",
+        "GitHub tap source must not include a host: {}\nHint: write <user>/<repo>[@<ref>][#<key>] and leave the host out",
         host
     );
     // 去掉主机后还得是 user/repo/key 三段，建议出去才有意义。
@@ -589,6 +603,35 @@ mod tests {
             "aaa/bb@/build",
             "aaa/bb@@v1/build",
             ".byk.json",
+        ] {
+            assert!(parse_spec(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn parses_a_slashed_ref_behind_a_hash() {
+        let parsed = parse_spec("aaa/bb@feature/x#build").unwrap();
+        assert_eq!(parsed.reference, "feature/x");
+        assert!(parsed.explicit_ref);
+        assert_eq!(parsed.key, "build");
+        assert_eq!(
+            parsed.index_url(),
+            "https://raw.githubusercontent.com/aaa/bb/feature/x/byk.tap.json"
+        );
+
+        let parsed = parse_spec("aaa/bb#build").unwrap();
+        assert_eq!(parsed.reference, "HEAD");
+        assert!(parsed.local_index_path(Path::new("/root")).is_some());
+        assert_eq!(parsed.key, "build");
+    }
+
+    #[test]
+    fn rejects_a_key_left_of_the_hash() {
+        for bad in [
+            "aaa/bb/build#x",
+            "aaa/bb@v1/#build",
+            "aaa/bb@feature//x#build",
+            "aaa/bb#",
         ] {
             assert!(parse_spec(bad).is_err(), "{bad}");
         }

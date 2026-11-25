@@ -560,6 +560,34 @@ def test_clone_github_prefix_with_ref(runner, tmp_path):
     )
 
 
+def test_clone_github_hash_path_allows_a_slashed_ref(runner, tmp_path):
+    payload = b'{"build": "echo ref"}'
+    env, args_path = install_fake_curl(tmp_path, payload=payload)
+
+    result = runner.run(
+        "global@ops", "clone", "github:aaa/bb@release/1.2#tools/release", env=env
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert args_path.read_text(encoding="utf-8").splitlines() == [
+        "-fsSL",
+        "--",
+        "https://raw.githubusercontent.com/aaa/bb/release/1.2/tools/release.byk.json",
+    ]
+
+
+def test_clone_github_path_before_hash_is_rejected(runner, tmp_path):
+    env, args_path = install_fake_curl(tmp_path, payload=b"{}")
+
+    result = runner.run("global@ops", "clone", "github:aaa/bb/tools#x", env=env)
+
+    assert result.returncode == 1
+    assert "GitHub source must be" in result.stderr
+    assert "#<path>" in result.stderr
+    assert not args_path.exists()
+    assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
+
+
 def test_clone_github_requires_curl(runner, tmp_path):
     empty_bin = tmp_path / "empty"
     empty_bin.mkdir()
@@ -870,6 +898,26 @@ def test_clone_tap_short_flag_keeps_the_ref(runner, tmp_path):
     assert curl_urls(log) == [
         "https://raw.githubusercontent.com/aaa/bb/v1/byk.tap.json",
         "https://raw.githubusercontent.com/aaa/bb/v1/tools/build.byk.json",
+    ]
+
+
+def test_clone_tap_hash_key_allows_a_slashed_ref(runner, tmp_path):
+    env, log = install_routed_curl(
+        tmp_path,
+        {
+            "/byk.tap.json": b'{"build": "tools/build.byk.json"}',
+            "/tools/build.byk.json": b'{"build": "echo ref"}',
+        },
+    )
+
+    result = runner.run(
+        "global@ops", "clone", "-t", "aaa/bb@release/1.2#build", env=env
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert curl_urls(log) == [
+        "https://raw.githubusercontent.com/aaa/bb/release/1.2/byk.tap.json",
+        "https://raw.githubusercontent.com/aaa/bb/release/1.2/tools/build.byk.json",
     ]
 
 

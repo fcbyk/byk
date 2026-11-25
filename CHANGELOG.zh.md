@@ -15,6 +15,7 @@
 - **网络**: `BYK_USE_PROXY=false` 强制直连；否则依次跟随 `BYK_PROXY`、已有代理变量与 Windows 系统代理，且只注入 curl 子进程
 - **`--paths`**: 新增 `Config:` 一行，指出设置文件的位置
 - **completion**: PowerShell 补全注册脚本——`byk __api__ completion powershell`（或 `pwsh`）输出脚本，`sys@shell add completion` 把补全块写进 `$PROFILE`（`pwsh` 与 Windows PowerShell 5.1，按父进程识别）；PowerShell 里补全局选项与 byk 自己解释的参数
+- **`clone`**: 路径前（或 `--tap` 的 key 前）可以写 `#`，`<ref>` 因此能含 `/`（`github:user/repo@feature/x#tools/release`）；`@<ref>/<path>` 写法保持不变
 
 ### 问题修复
 

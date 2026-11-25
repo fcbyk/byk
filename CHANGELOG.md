@@ -15,6 +15,7 @@
 - **network**: `BYK_USE_PROXY=false` forces a direct download; otherwise `BYK_PROXY`, the existing proxy variables, and the Windows system proxy are followed, injected into curl child processes only
 - **`--paths`**: adds a `Config:` line naming the settings file
 - **completion**: PowerShell registration script — `byk __api__ completion powershell` (or `pwsh`) prints it, and `sys@shell add completion` writes the block into `$PROFILE` (pwsh and Windows PowerShell 5.1, recognised from the parent process); PowerShell completes the global options and byk's own arguments
+- **`clone`**: a `#` before the path — or before the `--tap` key — lets `<ref>` contain `/` (`github:user/repo@feature/x#tools/release`); the `@<ref>/<path>` forms stay as they are
 
 ### Bug Fixes
 

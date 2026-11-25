@@ -185,17 +185,23 @@ impl Forge {
     }
 }
 
-/// 把 `<user>/<repo>[@<ref>][/<path>]` 展开为对应平台的 raw URL。
+/// 把 `<user>/<repo>[@<ref>][#<path>]` 展开为对应平台的 raw URL。
 ///
-/// 只产出规范上游地址：走不走镜像由 [`crate::net::Channel`] 在请求那一刻决定，
-/// 这里不知道通道的存在。
+/// `#` 之后整段是路径，ref 因此可以含 `/`；没有 `#` 就退回旧的
+/// `<user>/<repo>[@<ref>][/<path>]` 切法。只产出规范上游地址：走不走镜像由
+/// [`crate::net::Channel`] 在请求那一刻决定，这里不知道通道的存在。
 pub(crate) fn forge_url(forge: Forge, spec: &str) -> Result<String, String> {
-    let mut parts = spec.splitn(3, '/');
+    let (head, explicit_path) = match spec.split_once('#') {
+        Some((head, path)) => (head, Some(path)),
+        None => (spec, None),
+    };
+
+    let mut parts = head.splitn(if explicit_path.is_some() { 2 } else { 3 }, '/');
     let user = parts.next().unwrap_or("");
     let repo_ref = parts.next().unwrap_or("");
     // `<path>` 可省略：省了就是仓库根，与 `user/repo/` 等价。糖只有这一处——
     // `user/repo/ss` 仍然指 `ss.byk.json`，省略路径不会让第三段变成目录。
-    let path = parts.next().unwrap_or("");
+    let old_path = parts.next().unwrap_or("");
 
     // `github.com/user/repo` 是最容易手滑的形态：三段都能解析，会被当成
     // user=github.com / repo=user / path=repo 去 fetch，只能拿到 404。
@@ -211,20 +217,25 @@ pub(crate) fn forge_url(forge: Forge, spec: &str) -> Result<String, String> {
             if repo.is_empty() || reference.is_empty() || repo == "." || repo == ".." {
                 return Err(shape_error(forge));
             }
-            if reference == "." || reference == ".." {
-                return Err(format!("Invalid {} ref", forge.name()));
+            if reference == "." || reference == ".." || bad_ref_path(reference) {
+                return Err(format!("Invalid {} ref: {:?}", forge.name(), reference));
             }
             (repo, reference)
         }
         None => (repo_ref, "HEAD"),
     };
+    // 有 `#` 时 repo 只占一段；含 `/` 说明路径被写在了 `#` 左边。
+    if repo.contains('/') {
+        return Err(shape_error(forge));
+    }
+    let path = explicit_path.unwrap_or(old_path);
 
     let (dirs, file) = split_forge_path(forge, path)?;
 
     let mut segments = Vec::with_capacity(dirs.len() + 4);
     segments.push(encode_segment(user));
     segments.push(encode_segment(repo));
-    segments.push(encode_segment(reference));
+    segments.push(encode_ref(reference));
     segments.extend(dirs.iter().map(|segment| encode_segment(segment)));
     segments.push(encode_segment(&file));
 
@@ -238,9 +249,14 @@ pub(crate) fn forge_url(forge: Forge, spec: &str) -> Result<String, String> {
 
 fn shape_error(forge: Forge) -> String {
     format!(
-        "{} source must be <user>/<repo>[@<ref>][/<path>]\nHint: omit <path> for the repository root, and end a directory path with `/`",
+        "{} source must be <user>/<repo>[@<ref>][#<path>]\nHint: omit <path> for the repository root, end a directory path with `/`, and put `#` before the path when the ref contains `/`",
         forge.name()
     )
+}
+
+/// ref 只有写在 `#` 左边时才可能含 `/`，此时首尾或中间的空段一定是拼错了。
+pub(crate) fn bad_ref_path(reference: &str) -> bool {
+    reference.starts_with('/') || reference.ends_with('/') || reference.contains("//")
 }
 
 /// 首段长得像主机名就意味着用户把整条 URL 路径粘进来了。
@@ -261,7 +277,7 @@ pub(crate) fn rest_after_host(spec: &str) -> String {
 
 fn host_error(forge: Forge, host: &str, rest: &str) -> String {
     let mut message = format!(
-        "{} source must not include a host: {}\nHint: write <user>/<repo>[@<ref>][/<path>] and leave the host out",
+        "{} source must not include a host: {}\nHint: write <user>/<repo>[@<ref>][#<path>] and leave the host out",
         forge.name(),
         host
     );
@@ -307,6 +323,15 @@ fn split_forge_path(forge: Forge, path: &str) -> Result<(Vec<&str>, String), Str
         }
     }
     Ok((dirs, file))
+}
+
+/// ref 可以含 `/`：逐段编码后用 `/` 拼回，分隔符本身不能被编码成 `%2F`。
+pub(crate) fn encode_ref(reference: &str) -> String {
+    reference
+        .split('/')
+        .map(encode_segment)
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 pub(crate) fn encode_segment(segment: &str) -> String {
@@ -894,6 +919,42 @@ mod tests {
             forge_url(Forge::Github, "aaa/bb/sss/").unwrap(),
             "https://raw.githubusercontent.com/aaa/bb/HEAD/sss/.byk.json"
         );
+    }
+
+    #[test]
+    fn forge_url_hash_separates_the_path_from_a_slashed_ref() {
+        assert_eq!(
+            forge_url(Forge::Github, "aaa/bb@feature/x#sss").unwrap(),
+            "https://raw.githubusercontent.com/aaa/bb/feature/x/sss.byk.json"
+        );
+        assert_eq!(
+            forge_url(Forge::Github, "aaa/bb@feature/x#dir/sss/").unwrap(),
+            "https://raw.githubusercontent.com/aaa/bb/feature/x/dir/sss/.byk.json"
+        );
+        assert_eq!(
+            forge_url(Forge::Github, "aaa/bb#sss").unwrap(),
+            "https://raw.githubusercontent.com/aaa/bb/HEAD/sss.byk.json"
+        );
+        assert_eq!(
+            forge_url(Forge::Github, "aaa/bb@v1#").unwrap(),
+            "https://raw.githubusercontent.com/aaa/bb/v1/.byk.json"
+        );
+        assert_eq!(
+            forge_url(Forge::Gitee, "aaa/bb@feature/x#sss").unwrap(),
+            "https://gitee.com/aaa/bb/raw/feature/x/sss.byk.json"
+        );
+    }
+
+    #[test]
+    fn forge_url_rejects_a_path_left_of_the_hash() {
+        for spec in [
+            "aaa/bb/sss#xxx",
+            "aaa/bb@/x#sss",
+            "aaa/bb@v1/#sss",
+            "aaa/bb@a//b#sss",
+        ] {
+            assert!(forge_url(Forge::Github, spec).is_err(), "{spec}");
+        }
     }
 
     #[test]

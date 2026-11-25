@@ -151,7 +151,7 @@ fn render_verb(base: &str, info: &VerbInfo, target: &str) -> String {
         output.push('\n');
         output.push_str(&render_section("Sources:", &clone_sources()));
         output.push_str(
-            "  <spec> = <user>/<repo>[@<ref>][/<path>]; <ref> defaults to HEAD, and a\n  directory <path> ends with `/`.\n",
+            "  <spec> = <user>/<repo>[@<ref>][#<path>]; <ref> defaults to HEAD, a\n  directory <path> ends with `/`, and the `#` form lets the ref contain `/`.\n",
         );
     }
     if !subcommands.is_empty() {

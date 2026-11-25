@@ -211,6 +211,7 @@ byk global@ops clone .                        # 当前目录的 .byk.json
 byk global@ops clone https://example.com/tool.byk.json
 byk global@ops clone github:user/repo                     # 仓库根的 .byk.json
 byk global@ops clone github:user/repo@main/tools/release.byk.json
+byk global@ops clone github:user/repo@release/1.2#tools/release.byk.json
 byk global@ops clone gitee:user/repo                      # 从 Gitee 读取
 byk global@ops clone github:user/repo -d                  # 顺手装好 $deps
 byk global@ops clone --tap user/repo/build            # 按 byk.tap.json 解析 build
@@ -245,11 +246,13 @@ byk global@ops clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 仓库简写的格式：
 
 ```
-<user>/<repo>[@<ref>][/<path>]
+<user>/<repo>[@<ref>][#<path>]
 ```
 
 - `@<ref>` 可省略，默认 `HEAD`。
 - `<path>` 可省略：省略就是仓库根的 `.byk.json`，所以 `user/repo` 与 `user/repo/` 等价。
+- 不写 `#` 时路径跟在 ref 后面（`@<ref>/<path>`），ref 里不能有 `/`；旧写法完全不变。
+- 写了 `#` 时 `#` 右边整段是路径，ref 因此可以含 `/`：`github:user/repo@feature/x#tools/`。这时 `#` 左边只能是 `<user>/<repo>[@<ref>]`。
 - `<path>` 指向目录时以 `/` 结尾，表示读取该目录的 `.byk.json`。
 - 最后一段是文件名；`.byk.json` 后缀可写可不写。
 - 「省略 `<path>`」这一层糖只对整条路径生效：`user/repo/ss` 仍然读 `ss.byk.json`，不会被猜成 `ss/` 目录。
@@ -262,6 +265,8 @@ byk global@ops clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 | `github:user/repo@v1/tools/release` | `tools/release.byk.json` |
 | `github:user/repo@v1/tools/` | `tools/.byk.json` |
 | `github:user/repo@v1/` | 仓库根 `.byk.json` |
+| `github:user/repo#tools/release` | HEAD 上的 `tools/release.byk.json` |
+| `github:user/repo@release/1.2#tools/release` | `release/1.2` 上的 `tools/release.byk.json` |
 
 本地路径的解析顺序：
 
@@ -309,7 +314,7 @@ byk global@ops clone -t user/repo@v1/build -d
 }
 ```
 
-- Tap 来源形态：`<user>/<repo>[@<ref>]/<key>`。`<ref>` 默认 `HEAD`；`<key>` 只能是单个路径段，不能含 `/`、不能是 `.` / `..`、不能以 `$` 开头。
+- Tap 来源形态：`<user>/<repo>[@<ref>][#<key>]`。`<ref>` 默认 `HEAD`；`<key>` 只能是单个路径段，不能含 `/`、不能是 `.` / `..`、不能以 `$` 开头。ref 含 `/` 时用 `#` 分隔 key（`user/repo@feature/x#build`）；不写 `#` 时 key 仍然是最后一段。
 - `--tap` 只支持 GitHub，本身就是一个来源形态：不能与位置参数里的来源同时使用（报 `clone takes exactly one source`）。
 - **完整写法本地索引优先。** spec 不带 `@<ref>` 时，先读 `~/.byk/tap/<user>/<repo>/byk.tap.json`。这个文件存在就是权威：解析失败、缺键、value 非 string、目标不存在都会直接报错；只有索引文件本身不存在才回退 GitHub。写了 `@<ref>` 则始终使用远程索引。
 - **单 key 简写。** 只写 `--tap <key>`（不含 `/`）时，搜索所有合法的 `~/.byk/tap/<user>/<repo>/byk.tap.json`，只查本地索引、不联网拉取索引。唯一命中就从该索引克隆（value 是 URL 时仍走远程 clone）；多个仓库都有这个 key 时，列出 `user/repo/key` 完整写法让你自己选；一个都没有则直接失败，不回退远程。
