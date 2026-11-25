@@ -633,10 +633,50 @@ def test_api_completion_script_zsh(runner):
     assert "byk" in r.stdout
 
 
-def test_api_completion_rejects_unknown_shell(runner):
+def test_api_completion_script_powershell(runner):
+    r = runner.run("__api__", "completion", "powershell")
+    assert r.returncode == 0, r.stderr
+    assert "Register-ArgumentCompleter" in r.stdout
+    assert "--with-descriptions" in r.stdout
+    assert "CompletionResult" in r.stdout
+    # pwsh 与 Windows PowerShell 共用一份脚本
     r = runner.run("__api__", "completion", "pwsh")
+    assert r.returncode == 0, r.stderr
+    assert "Register-ArgumentCompleter" in r.stdout
+
+
+def test_api_completion_rejects_unknown_shell(runner):
+    r = runner.run("__api__", "completion", "nushell")
     assert r.returncode == 1
     assert "Unsupported shell" in r.stderr
+    assert "powershell" in r.stderr
+
+
+def test_api_complete_after_space_flag(runner):
+    """`--after-space` 等价于末尾空词：5.1 传不了空参数，由调用方声明光标位置"""
+    r = runner.run(
+        "__api__", "complete", "--with-descriptions", "--after-space", "sys@config"
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.splitlines() == [
+        "list\tShow every setting",
+        "get\tPrint one value",
+        "set\tChange one value",
+        "unset\tReset one value to its default",
+    ]
+
+    # 两个开关顺序无关，但都得在词前面
+    r = runner.run(
+        "__api__", "complete", "--after-space", "--with-descriptions", "sys@tap"
+    )
+    assert r.returncode == 0, r.stderr
+    assert "list\tShow every installed repository" in r.stdout.splitlines()
+
+    # 别名只补第一个词：空词位置本来就没有候选
+    runner.prepare_alias_json("demo", {"hello": "echo hi"})
+    r = runner.run("__api__", "complete", "--after-space", "hello")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == ""
 
 
 def test_api_complete_system_file_verbs(runner):

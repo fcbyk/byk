@@ -193,17 +193,19 @@ byk sys@shell remove completion  # 摘掉
 
 ### 目标文件怎么定
 
-不看操作系统，看环境。macOS 默认 zsh，但 `/bin/bash` 一直在；Windows 上的 Git Bash 同理——按 OS 猜会猜错，按 shell 认就不会。
+不看操作系统，看环境。macOS 默认 zsh，但 `/bin/bash` 一直在；Windows 上的 Git Bash 同理——按 OS 猜会猜错，按 shell 认就不会。PowerShell 的 `$PROFILE` 落点本身随操作系统不同，那是 PowerShell 自己的规矩，不算按 OS 猜 shell。
 
 | shell | 启动文件 |
 |-------|----------|
 | zsh | `$ZDOTDIR/.zshrc`，没设就是 `~/.zshrc` |
 | bash | `.bash_profile` → `.bash_login` → `.profile` → `.bashrc` 里第一个存在的；都没有就创建 `.bash_profile` |
 | fish | `$XDG_CONFIG_HOME/fish/config.fish`，没设就是 `~/.config/fish/config.fish` |
+| pwsh | `$PROFILE`：mac / Linux 是 `$XDG_CONFIG_HOME/powershell/Microsoft.PowerShell_profile.ps1`（没设就是 `~/.config/powershell/…`），Windows 是「文档」下的 `PowerShell\Microsoft.PowerShell_profile.ps1` |
+| powershell | Windows PowerShell 5.1 的 `$PROFILE`：「文档」下的 `WindowsPowerShell\Microsoft.PowerShell_profile.ps1` |
 
 bash 那一行不是随手排的：登录 shell 只读前三者，`.bashrc` 只被非登录交互 shell 读，所以它排在最后——前面都不存在、它存在，才说明你走的是那条路。一个都不存在时新建 `.bash_profile` 是安全的，因为没有可被它屏蔽的文件；反过来，`.profile` 存在却去建 `.bash_profile`，会把你原来那份整份屏蔽掉。
 
-当前 shell 的判定顺序是**父进程名 → `$SHELL`**。`$SHELL` 是登录 shell，`exec bash` 之后它仍然写着 zsh，所以父进程优先；取不到（Windows、受限环境）才退回环境变量。`sys@shell` 把判定结果和它的来源一起打出来：
+当前 shell 的判定顺序是**父进程名 → `$SHELL`**。`$SHELL` 是登录 shell，`exec bash` 之后它仍然写着 zsh，所以父进程优先；Unix 从 `/proc`（或 `ps`）取父进程名，Windows 走 Toolhelp 快照，`powershell.exe` / `pwsh.exe` / `bash.exe` 一样能认出来。取不到（受限环境、编辑器直接拉起 byk）才退回环境变量。`sys@shell` 把判定结果和它的来源一起打出来：
 
 ```bash
 $ byk sys@shell
@@ -241,17 +243,17 @@ Hint: run `byk sys@shell add completion` from bash to set up bash
 
 理由是这类错配**不会报错**：在 zsh 里把补全写进 `.bash_profile`，眼前这个终端毫无反应，也没有任何提示告诉你装错了地方。要装 bash 的补全就进 bash 再跑一次——「我改的是哪个文件」因此永远只有一个答案，它和 `sys@shell` 打出来的那一行、和你眼前那个终端必然一致。
 
-### 其他 shell：cmd、PowerShell、sh
+### 其他 shell：cmd、sh
 
-补全生成器只覆盖 `zsh`、`bash`、`fish`。在别的 shell 里跑 `sys@shell` 不算出错——它照实回答「当前 shell 没有指向任何文件」：
+补全生成器覆盖 `zsh`、`bash`、`fish` 和 PowerShell（`pwsh` / Windows PowerShell 5.1）。在别的 shell 里跑 `sys@shell` 不算出错——它照实回答「当前 shell 没有指向任何文件」：
 
 ```bash
 $ byk sys@shell
 
-Shell: pwsh (from $SHELL)
+Shell: sh (from $SHELL)
 FilePath: (none)
 Completion: not available
-Only zsh, bash and fish have a startup file byk can edit
+Only zsh, bash, fish and PowerShell have a startup file byk can edit
 ```
 
 这一屏到这儿就完了，不接 `Usage` / `Commands`：没有文件可改，`add` 与 `remove` 在这台机器上都做不成，列一份用不上的清单只是噪声。显式敲 `-h` 也一样——两个入口是同一份输出。原因那行紧贴字段、不另起一段，因为它是 `Completion: not available` 的解释；整屏上下各留一个空行，和 zsh 那屏一样。
@@ -260,11 +262,11 @@ Only zsh, bash and fish have a startup file byk can edit
 
 ```bash
 $ byk sys@shell add completion
-No startup file for pwsh (from $SHELL)
-Only zsh, bash and fish have a startup file byk can edit
+No startup file for sh (from $SHELL)
+Only zsh, bash, fish and PowerShell have a startup file byk can edit
 ```
 
-父进程与 `$SHELL` 都给不出答案时（Windows 的 cmd / PowerShell 常见），`Shell:` 一行显示 `unknown`，提示换成 `Only zsh, bash and fish are supported; run byk from one of them`。要用补全，就在这三个里面跑 byk。
+父进程与 `$SHELL` 都给不出答案时（Windows 的 cmd 常见），`Shell:` 一行显示 `unknown`，提示换成 `Only zsh, bash, fish and PowerShell are supported; run byk from one of them`。要用补全，就在这四个里面跑 byk。
 
 ### 写入纪律
 

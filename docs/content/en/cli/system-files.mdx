@@ -266,13 +266,17 @@ The target shell is whichever one is running byk; it cannot be named, see
 
 Not by operating system — by environment. macOS defaults to zsh but `/bin/bash`
 is always there, and Windows has Git Bash. Guessing by OS guesses wrong;
-identifying the shell does not.
+identifying the shell does not. PowerShell is the one place where the OS does
+come in: its `$PROFILE` location differs per operating system — that is
+PowerShell's own rule, not guessing the shell.
 
 | shell | Startup file |
 |-------|--------------|
 | zsh | `$ZDOTDIR/.zshrc`, else `~/.zshrc` |
 | bash | the first existing of `.bash_profile` → `.bash_login` → `.profile` → `.bashrc`; otherwise `.bash_profile` is created |
 | fish | `$XDG_CONFIG_HOME/fish/config.fish`, else `~/.config/fish/config.fish` |
+| pwsh | `$PROFILE`: `$XDG_CONFIG_HOME/powershell/Microsoft.PowerShell_profile.ps1` on mac / Linux (else `~/.config/powershell/…`), `PowerShell\Microsoft.PowerShell_profile.ps1` under Documents on Windows |
+| powershell | Windows PowerShell 5.1's `$PROFILE`: `WindowsPowerShell\Microsoft.PowerShell_profile.ps1` under Documents |
 
 The bash order is deliberate: a login shell only reads the first three, while
 `.bashrc` is read by non-login interactive shells — so it comes last, and only
@@ -282,9 +286,11 @@ shadow; creating it while `.profile` exists would shadow that file entirely.
 
 The shell is identified as **parent process name → `$SHELL`**. `$SHELL` names the
 login shell, so after `exec bash` it still says zsh; the parent process is what
-is actually running. Only when that is unavailable (Windows, restricted
-environments) does the environment variable take over. `sys@shell` prints the
-answer together with where it came from:
+is actually running. The name comes from `/proc` or `ps` on Unix and a Toolhelp
+snapshot on Windows, so `powershell.exe` / `pwsh.exe` / `bash.exe` are recognised
+the same way. Only when that is unavailable (restricted environments, editors
+that spawn byk directly) does the environment variable take over. `sys@shell`
+prints the answer together with where it came from:
 
 ```bash
 $ byk sys@shell
@@ -335,19 +341,19 @@ run the command in bash — then there is exactly one answer to "which file am I
 changing", and it matches both the line `sys@shell` prints and the terminal you
 are looking at.
 
-### Other shells: cmd, PowerShell, sh
+### Other shells: cmd, sh
 
-Completion generators cover `zsh`, `bash`, and `fish` only. Running `sys@shell`
-in any other shell is not an error — it simply answers that the current shell
-points at no file:
+Completion generators cover `zsh`, `bash`, `fish`, and PowerShell (`pwsh` /
+Windows PowerShell 5.1). Running `sys@shell` in any other shell is not an error —
+it simply answers that the current shell points at no file:
 
 ```bash
 $ byk sys@shell
 
-Shell: pwsh (from $SHELL)
+Shell: sh (from $SHELL)
 FilePath: (none)
 Completion: not available
-Only zsh, bash and fish have a startup file byk can edit
+Only zsh, bash, fish and PowerShell have a startup file byk can edit
 ```
 
 The screen ends there, with no `Usage` / `Commands`: there is no file to edit, so
@@ -363,14 +369,14 @@ sentences, because nothing was changed:
 
 ```bash
 $ byk sys@shell add completion
-No startup file for pwsh (from $SHELL)
-Only zsh, bash and fish have a startup file byk can edit
+No startup file for sh (from $SHELL)
+Only zsh, bash, fish and PowerShell have a startup file byk can edit
 ```
 
 When neither the parent process nor `$SHELL` gives an answer (common in Windows
-cmd / PowerShell), the `Shell:` line reads `unknown` and the note becomes
-`Only zsh, bash and fish are supported; run byk from one of them`. To use
-completion, run byk inside one of those three.
+cmd), the `Shell:` line reads `unknown` and the note becomes
+`Only zsh, bash, fish and PowerShell are supported; run byk from one of them`.
+To use completion, run byk inside one of those four.
 
 ### Write rules
 

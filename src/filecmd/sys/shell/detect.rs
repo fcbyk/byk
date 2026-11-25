@@ -1,11 +1,14 @@
 //! 探测当前 shell 与它的启动文件：父进程名优先，`$SHELL` 兜底。
 //!
 //! 不按操作系统猜——macOS 上 bash 一直在，Windows 的 Git Bash 也跑 zsh / bash。
+//! 父进程名在 Unix 读 `/proc`（或 `ps`），Windows 走 Toolhelp 快照。
 
 use std::env;
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::process::Command;
+#[cfg(windows)]
+use windows_sys::Win32::System::Diagnostics::ToolHelp::PROCESSENTRY32W;
 
 /// 补全生成器支持的 shell；名单与 `completion::generate` 保持一致。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,6 +16,9 @@ pub(crate) enum Shell {
     Zsh,
     Bash,
     Fish,
+    Pwsh,
+    /// Windows PowerShell 5.1（`powershell.exe`），profile 与 pwsh 分家。
+    PowerShell51,
 }
 
 impl Shell {
@@ -21,6 +27,8 @@ impl Shell {
             Shell::Zsh => "zsh",
             Shell::Bash => "bash",
             Shell::Fish => "fish",
+            Shell::Pwsh => "pwsh",
+            Shell::PowerShell51 => "powershell",
         }
     }
 
@@ -30,6 +38,8 @@ impl Shell {
             "zsh" => Some(Shell::Zsh),
             "bash" => Some(Shell::Bash),
             "fish" => Some(Shell::Fish),
+            "pwsh" => Some(Shell::Pwsh),
+            "powershell" => Some(Shell::PowerShell51),
             _ => None,
         }
     }
@@ -49,6 +59,25 @@ impl Shell {
                 .unwrap_or_else(|| home.join(".config"))
                 .join("fish")
                 .join("config.fish"),
+            // pwsh 的 `$PROFILE` 随操作系统落点不同——这是 PowerShell 自己的规矩，
+            // 不属于「按 OS 猜 shell」
+            Shell::Pwsh => {
+                if cfg!(windows) {
+                    home.join("Documents")
+                        .join("PowerShell")
+                        .join("Microsoft.PowerShell_profile.ps1")
+                } else {
+                    xdg_config_home
+                        .map(Path::to_path_buf)
+                        .unwrap_or_else(|| home.join(".config"))
+                        .join("powershell")
+                        .join("Microsoft.PowerShell_profile.ps1")
+                }
+            }
+            Shell::PowerShell51 => home
+                .join("Documents")
+                .join("WindowsPowerShell")
+                .join("Microsoft.PowerShell_profile.ps1"),
         }
     }
 }
@@ -154,7 +183,64 @@ fn parent_shell() -> Option<Shell> {
     Shell::parse(String::from_utf8_lossy(&output.stdout).trim())
 }
 
-#[cfg(not(unix))]
+/// Windows 没有 `/proc`，也没有 `ps`：Toolhelp 快照里按 PID 找父进程名。
+#[cfg(windows)]
+fn parent_shell() -> Option<Shell> {
+    let entries = process_entries();
+    let me = std::process::id();
+    let parent = entries
+        .iter()
+        .find(|entry| entry.th32ProcessID == me)?
+        .th32ParentProcessID;
+    let name = entries
+        .iter()
+        .find(|entry| entry.th32ProcessID == parent)
+        .map(process_name)?;
+    Shell::parse(&name)
+}
+
+/// 一次快照里的全部进程条目；拿不到就是空，交给 `$SHELL`。
+#[cfg(windows)]
+fn process_entries() -> Vec<PROCESSENTRY32W> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+    };
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Vec::new();
+    }
+
+    let mut entries = Vec::new();
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    if unsafe { Process32FirstW(snapshot, &mut entry) } != 0 {
+        loop {
+            entries.push(entry);
+            if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
+                break;
+            }
+        }
+    }
+    unsafe { CloseHandle(snapshot) };
+    entries
+}
+
+/// 进程可执行文件名；`szExeFile` 是定长 UTF-16，读到第一个 NUL 为止。
+#[cfg(windows)]
+fn process_name(entry: &PROCESSENTRY32W) -> String {
+    let end = entry
+        .szExeFile
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(entry.szExeFile.len());
+    String::from_utf16_lossy(&entry.szExeFile[..end])
+}
+
+#[cfg(all(not(unix), not(windows)))]
 fn parent_shell() -> Option<Shell> {
     None
 }
@@ -172,6 +258,12 @@ mod tests {
             ("/usr/local/bin/fish", Shell::Fish),
             ("-bash", Shell::Bash),
             ("bash-3.2", Shell::Bash),
+            ("pwsh", Shell::Pwsh),
+            ("pwsh-preview", Shell::Pwsh),
+            ("pwsh.exe", Shell::Pwsh),
+            ("powershell", Shell::PowerShell51),
+            ("powershell.exe", Shell::PowerShell51),
+            (r"C:\Program Files\PowerShell\7\pwsh.exe", Shell::Pwsh),
         ] {
             assert_eq!(Shell::parse(text), Some(expected), "{text}");
         }
@@ -179,9 +271,36 @@ mod tests {
 
     #[test]
     fn rejects_shells_without_a_completion_script() {
-        for text in ["sh", "-sh", "dash", "", "/bin/sh", "python3", "pwsh"] {
+        for text in [
+            "sh",
+            "-sh",
+            "dash",
+            "",
+            "/bin/sh",
+            "python3",
+            "powershell_ise",
+        ] {
             assert_eq!(Shell::parse(text), None, "{text}");
         }
+    }
+
+    /// Windows 上父进程名来自 Toolhelp 快照：当前进程与它的父进程都得找得到。
+    #[cfg(windows)]
+    #[test]
+    fn windows_reads_the_parent_process_name() {
+        let entries = process_entries();
+        let me = std::process::id();
+        let parent = entries
+            .iter()
+            .find(|entry| entry.th32ProcessID == me)
+            .map(|entry| entry.th32ParentProcessID)
+            .expect("current process missing from the snapshot");
+        let name = entries
+            .iter()
+            .find(|entry| entry.th32ProcessID == parent)
+            .map(process_name)
+            .expect("parent process missing from the snapshot");
+        assert!(!name.is_empty());
     }
 
     #[test]
@@ -207,6 +326,42 @@ mod tests {
         assert_eq!(
             Shell::Fish.rc_path(home, None, Some(Path::new("/etc/xdg"))),
             PathBuf::from("/etc/xdg/fish/config.fish")
+        );
+    }
+
+    #[test]
+    fn windows_powershell_profile_is_under_documents() {
+        let home = Path::new("/home/coke");
+        assert_eq!(
+            Shell::PowerShell51.rc_path(home, None, None),
+            PathBuf::from(
+                "/home/coke/Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1"
+            )
+        );
+    }
+
+    /// pwsh 的 `$PROFILE` 在 Unix 跟 XDG，Windows 在「文档」下。
+    #[cfg(not(windows))]
+    #[test]
+    fn pwsh_profile_follows_xdg_on_unix() {
+        let home = Path::new("/home/coke");
+        assert_eq!(
+            Shell::Pwsh.rc_path(home, None, None),
+            PathBuf::from("/home/coke/.config/powershell/Microsoft.PowerShell_profile.ps1")
+        );
+        assert_eq!(
+            Shell::Pwsh.rc_path(home, None, Some(Path::new("/etc/xdg"))),
+            PathBuf::from("/etc/xdg/powershell/Microsoft.PowerShell_profile.ps1")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn pwsh_profile_is_under_documents_on_windows() {
+        let home = Path::new(r"C:\Users\coke");
+        assert_eq!(
+            Shell::Pwsh.rc_path(home, None, None),
+            PathBuf::from(r"C:\Users\coke\Documents\PowerShell\Microsoft.PowerShell_profile.ps1")
         );
     }
 

@@ -14,6 +14,7 @@
 - **`$deps`**: a ghproxy `base` also covers absolute GitHub downloads, release assets included; curl's own progress bar shows on a terminal and stays quiet elsewhere
 - **network**: `BYK_USE_PROXY=false` forces a direct download; otherwise `BYK_PROXY`, the existing proxy variables, and the Windows system proxy are followed, injected into curl child processes only
 - **`--paths`**: adds a `Config:` line naming the settings file
+- **completion**: PowerShell registration script — `byk __api__ completion powershell` (or `pwsh`) prints it, and `sys@shell add completion` writes the block into `$PROFILE` (pwsh and Windows PowerShell 5.1, recognised from the parent process); PowerShell completes the global options and byk's own arguments
 
 ## v0.8.2 (2026-11-20)
 

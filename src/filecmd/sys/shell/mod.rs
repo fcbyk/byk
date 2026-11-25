@@ -168,10 +168,12 @@ fn modify(args: &[String], action: Action) -> Result<(), String> {
                 eprintln!("Created {}", path.display());
             }
             eprintln!("Enabled {} completion in {}", shell.name(), path.display());
-            eprintln!(
-                "Run `source {}` or restart your shell to pick it up",
-                path.display()
-            );
+            // PowerShell 没有 `source`，点号才是它的求值动词
+            let reload = match shell {
+                Shell::Pwsh | Shell::PowerShell51 => format!("`. {}`", path.display()),
+                _ => format!("`source {}`", path.display()),
+            };
+            eprintln!("Run {} or restart your shell to pick it up", reload);
             Ok(())
         }
         Action::Remove => {
@@ -197,7 +199,7 @@ enum Target {
 enum NoFile {
     /// 认出了 shell，但它不在补全生成器的覆盖范围里。
     Unsupported { name: String, source: Source },
-    /// 连跑的是哪个 shell 都不知道（Windows 的 cmd / PowerShell，受限环境）。
+    /// 连跑的是哪个 shell 都不知道（Windows 的 cmd、受限环境）。
     Unknown,
 }
 
@@ -216,9 +218,11 @@ impl NoFile {
     fn advice(&self) -> &'static str {
         match self {
             NoFile::Unsupported { .. } => {
-                "Only zsh, bash and fish have a startup file byk can edit"
+                "Only zsh, bash, fish and PowerShell have a startup file byk can edit"
             }
-            NoFile::Unknown => "Only zsh, bash and fish are supported; run byk from one of them",
+            NoFile::Unknown => {
+                "Only zsh, bash, fish and PowerShell are supported; run byk from one of them"
+            }
         }
     }
 
@@ -286,7 +290,7 @@ fn render_status(path: &Path, detected: Detected, state: &State) -> String {
     format!("\n{}", render_fields(&fields))
 }
 
-/// cmd / PowerShell / `sh` 之类：只有「没有文件」和为什么，上下各留一个空行。
+/// cmd / `sh` 之类：只有「没有文件」和为什么，上下各留一个空行。
 fn render_no_file(missing: &NoFile) -> String {
     let fields = [
         ("Shell:", missing.shell_column(), Tone::Plain),
@@ -527,17 +531,17 @@ mod tests {
     #[test]
     fn status_without_a_file_names_the_shell_and_why() {
         let text = strip_ansi(&render_no_file(&NoFile::Unsupported {
-            name: "pwsh".to_string(),
+            name: "sh".to_string(),
             source: Source::Environment,
         }));
 
         // 上下各一个空行：这一屏虽短，也是独立的一屏
         assert_eq!(
             text,
-            "\nShell: pwsh (from $SHELL)\n\
+            "\nShell: sh (from $SHELL)\n\
              FilePath: (none)\n\
              Completion: not available\n\
-             Only zsh, bash and fish have a startup file byk can edit\n\n"
+             Only zsh, bash, fish and PowerShell have a startup file byk can edit\n\n"
         );
     }
 
@@ -553,12 +557,12 @@ mod tests {
     #[test]
     fn modifying_without_a_file_fails_with_the_same_sentences() {
         let missing = NoFile::Unsupported {
-            name: "pwsh".to_string(),
+            name: "sh".to_string(),
             source: Source::Parent,
         };
         assert_eq!(
             missing.headline(),
-            "No startup file for pwsh (from parent process)"
+            "No startup file for sh (from parent process)"
         );
         assert_eq!(
             NoFile::Unknown.headline(),
@@ -566,7 +570,7 @@ mod tests {
         );
         assert_eq!(
             NoFile::Unknown.advice(),
-            "Only zsh, bash and fish are supported; run byk from one of them"
+            "Only zsh, bash, fish and PowerShell are supported; run byk from one of them"
         );
     }
 

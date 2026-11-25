@@ -71,9 +71,17 @@ impl State {
 
 /// 补全块的内容。
 pub(crate) fn snippet(shell: &str) -> String {
-    format!(
-        "{BEGIN}\nif command -v byk >/dev/null 2>&1; then source <(byk __api__ completion {shell}); fi\n{END}"
-    )
+    // PowerShell 的块不是 POSIX 语法：检查命令用 Get-Command，求值用 Invoke-Expression；
+    // 外部命令的输出是行数组，得先 Out-String 聚成一份脚本文本
+    let body = match shell {
+        "pwsh" | "powershell" => format!(
+            "if (Get-Command byk -ErrorAction SilentlyContinue) {{ byk __api__ completion {shell} | Out-String | Invoke-Expression }}"
+        ),
+        _ => format!(
+            "if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion {shell}); fi"
+        ),
+    };
+    format!("{BEGIN}\n{body}\n{END}")
 }
 
 /// 看一眼文件里有没有补全。
@@ -348,6 +356,20 @@ mod tests {
             "# The following lines have been added by byk to enable byk cli completions.\n\
              if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi\n\
              # End of byk cli completions"
+        );
+    }
+
+    #[test]
+    fn powershell_snippet_uses_powershell_syntax() {
+        assert_eq!(
+            snippet("pwsh"),
+            "# The following lines have been added by byk to enable byk cli completions.\n\
+             if (Get-Command byk -ErrorAction SilentlyContinue) { byk __api__ completion pwsh | Out-String | Invoke-Expression }\n\
+             # End of byk cli completions"
+        );
+        assert!(
+            snippet("powershell")
+                .contains("completion powershell | Out-String | Invoke-Expression")
         );
     }
 

@@ -17,7 +17,7 @@ Three rules apply to every request:
 
 | Request | Output |
 |---------|--------|
-| `__api__ completion <shell>` | Shell registration script (zsh / bash / fish) |
+| `__api__ completion <shell>` | Shell registration script (zsh / bash / fish / powershell) |
 | `__api__ complete [--with-descriptions] <words...>` | Completion candidates, one per line; the flag appends a tab-separated description for built-in options, file-command verbs, and file keys (their alias file path) |
 | `__api__ resolve <key> [args...]` | Resolved alias, JSON |
 | `__api__ paths` | CLI directories, working directory, and alias file list, JSON |
@@ -40,12 +40,12 @@ byk __api__
     {
       "name": "completion",
       "args": "<shell>",
-      "description": "print the shell registration script (zsh|bash|fish)"
+      "description": "print the shell registration script (zsh|bash|fish|powershell)"
     },
     {
       "name": "complete",
-      "args": "[--with-descriptions] <words...>",
-      "description": "print completion candidates; the flag appends a tab-separated description"
+      "args": "[--with-descriptions] [--after-space] <words...>",
+      "description": "print completion candidates; the flags add descriptions and mark the cursor after a space"
     },
     {
       "name": "resolve",
@@ -78,11 +78,11 @@ byk __api__
 
 ## completion `<shell>`
 
-Prints the completion registration script for a shell, which in turn calls `complete` on Tab. An unsupported shell exits 1 and lists the three that work:
+Prints the completion registration script for a shell, which in turn calls `complete` on Tab. `pwsh` and `powershell` are the same thing here — one script serves both. An unsupported shell exits 1 and lists the four that work:
 
 ```text
-Unsupported shell: pwsh
-  Supported: zsh, bash, fish
+Unsupported shell: nushell
+  Supported: zsh, bash, fish, powershell
 ```
 
 This request exists for the install script; day to day you only need one line (see [How completion hooks up](#how-completion-hooks-up)).
@@ -96,7 +96,7 @@ $ byk __api__ complete grp.
 grp.inner
 ```
 
-**Only aliases stop at the first word.** An alias is a single dotted token (`grp.inner`), so once a word is closed by a space everything after it is passed to the target command as-is and byk cannot know what belongs there — `complete grp ''` (Tab after `byk grp `) returns nothing instead of listing `inner` as a subcommand. When the cursor sits after a space the shell passes one empty word, and that empty word is exactly what separates "still typing the first word" from "first word already finished".
+**Only aliases stop at the first word.** An alias is a single dotted token (`grp.inner`), so once a word is closed by a space everything after it is passed to the target command as-is and byk cannot know what belongs there — `complete grp ''` (Tab after `byk grp `) returns nothing instead of listing `inner` as a subcommand. When the cursor sits after a space the shell passes one empty word, and that empty word is exactly what separates "still typing the first word" from "first word already finished". `--after-space` appends that empty word for you: `complete grp --after-space` is `complete grp ''`, for shells that cannot pass an empty argument (Windows PowerShell 5.1).
 
 File commands are the exception: their arguments are interpreted by byk itself, so `remove` completes existing keys in the file, `clone` / `link` / `init --link` complete source files, and a command completes its own options including `--help` / `-h`. The list lives in [File Commands - Completion](/cli/file-commands#completion).
 
@@ -344,7 +344,26 @@ The two marker lines are full sentences rather than arrows — a startup file is
 read by people, and `# >>> ... >>>` looks like leftover merge-conflict debris in
 someone else's dotfiles.
 
-This line forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same. `byk sys@shell` tells you which file it will touch, and `remove completion` takes the block out without changing anything else. See [System Files](/cli/system-files).
+PowerShell gets its own syntax; the block in `$PROFILE` looks like this:
+
+```powershell
+# The following lines have been added by byk to enable byk cli completions.
+if (Get-Command byk -ErrorAction SilentlyContinue) { byk __api__ completion powershell | Out-String | Invoke-Expression }
+# End of byk cli completions
+```
+
+In PowerShell the completion covers the global options and byk's own arguments
+— merged aliases, file keys, system files, and the verbs, options and keys
+behind them. Arguments meant for the target command are left alone, as in the
+other shells.
+
+:::note Windows PowerShell 5.1 and single-dash words
+5.1 hands a word to the completer only when it starts with `--`: `byk --p<TAB>`
+works, while `byk -` or `byk -h` fall into its own parameter completion and
+produce nothing. Alias completion is unaffected.
+:::
+
+The line inside the block forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same. `byk sys@shell` tells you which file it will touch, and `remove completion` takes the block out without changing anything else. See [System Files](/cli/system-files).
 
 ## Versions and compatibility
 

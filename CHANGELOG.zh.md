@@ -14,6 +14,7 @@
 - **`$deps`**: `base` 是 ghproxy 时，绝对 GitHub 地址（含 Release 资产）同样走代理；终端下显示 curl 原生进度条，非 TTY 保持静默
 - **网络**: `BYK_USE_PROXY=false` 强制直连；否则依次跟随 `BYK_PROXY`、已有代理变量与 Windows 系统代理，且只注入 curl 子进程
 - **`--paths`**: 新增 `Config:` 一行，指出设置文件的位置
+- **completion**: PowerShell 补全注册脚本——`byk __api__ completion powershell`（或 `pwsh`）输出脚本，`sys@shell add completion` 把补全块写进 `$PROFILE`（`pwsh` 与 Windows PowerShell 5.1，按父进程识别）；PowerShell 里补全局选项与 byk 自己解释的参数
 
 ## v0.8.2 (2026-11-20)
 

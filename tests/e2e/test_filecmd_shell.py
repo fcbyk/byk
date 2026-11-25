@@ -23,6 +23,13 @@ LEGACY = (
     "then source <(byk __api__ completion zsh); fi\n"
 )
 
+PWSH_BLOCK = """# The following lines have been added by byk to enable byk cli completions.
+if (Get-Command byk -ErrorAction SilentlyContinue) { byk __api__ completion pwsh | Out-String | Invoke-Expression }
+# End of byk cli completions
+"""
+
+WINDOWS_POWERSHELL_BLOCK = PWSH_BLOCK.replace("completion pwsh", "completion powershell")
+
 
 def shell_cmd(runner, *args, env=None, shell="/bin/zsh"):
     """跑一条 `sys@shell` 命令，环境固定当前 shell 为 zsh。"""
@@ -255,6 +262,43 @@ def test_fish_follows_xdg_config_home(runner):
     assert read(xdg / "fish" / "config.fish") == BLOCK.format(shell="fish")
 
 
+def test_powershell_writes_the_profile(runner):
+    result = shell_cmd(
+        runner,
+        "add",
+        "completion",
+        env={"XDG_CONFIG_HOME": ""},
+        shell="pwsh",
+    )
+
+    assert result.returncode == 0
+    profile = (
+        runner.home / ".config" / "powershell" / "Microsoft.PowerShell_profile.ps1"
+    )
+    assert read(profile) == PWSH_BLOCK
+    # PowerShell 没有 `source`，重载提示给的是点号
+    assert "`." in result.stderr
+
+    removed = shell_cmd(
+        runner, "remove", "completion", env={"XDG_CONFIG_HOME": ""}, shell="pwsh"
+    )
+    assert removed.returncode == 0
+    assert read(profile) == ""
+
+
+def test_windows_powershell_profile_is_under_documents(runner):
+    result = shell_cmd(runner, "add", "completion", shell="powershell")
+
+    assert result.returncode == 0
+    profile = (
+        runner.home
+        / "Documents"
+        / "WindowsPowerShell"
+        / "Microsoft.PowerShell_profile.ps1"
+    )
+    assert read(profile) == WINDOWS_POWERSHELL_BLOCK
+
+
 def test_rejects_unknown_commands_and_items(runner):
     unknown = shell_cmd(runner, "switch")
     assert unknown.returncode == 1
@@ -287,7 +331,7 @@ def test_no_startup_file_is_a_normal_answer(runner):
     assert "FilePath: (none)" in status.stdout
     assert "Shell: sh (from $SHELL)" in status.stdout
     assert "Completion: not available" in status.stdout
-    assert "Only zsh, bash and fish have a startup file byk can edit" in status.stdout
+    assert "Only zsh, bash, fish and PowerShell have a startup file byk can edit" in status.stdout
     # 没有文件可改，`add` / `remove` 都用不上：不接用法清单
     assert "Usage:" not in status.stdout
     # 上下各留一个空行，和 zsh 那屏一样
@@ -312,7 +356,7 @@ def test_modifying_without_a_startup_file_fails(runner):
     assert result.returncode == 1
     assert result.stderr.strip() == (
         "No startup file for sh (from $SHELL)\n"
-        "Only zsh, bash and fish have a startup file byk can edit"
+        "Only zsh, bash, fish and PowerShell have a startup file byk can edit"
     )
     assert not (runner.home / ".zshrc").exists()
 

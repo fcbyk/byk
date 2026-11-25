@@ -47,12 +47,12 @@ const REQUESTS: &[RequestInfo] = &[
     RequestInfo {
         name: "completion",
         args: "<shell>",
-        description: "print the shell registration script (zsh|bash|fish)",
+        description: "print the shell registration script (zsh|bash|fish|powershell)",
     },
     RequestInfo {
         name: "complete",
-        args: "[--with-descriptions] <words...>",
-        description: "print completion candidates; the flag appends a tab-separated description",
+        args: "[--with-descriptions] [--after-space] <words...>",
+        description: "print completion candidates; the flags add descriptions and mark the cursor after a space",
     },
     RequestInfo {
         name: "resolve",
@@ -237,17 +237,31 @@ pub fn dispatch(args: &[String], layout: &PathLayout) {
         Some("completion") => {
             let shell = match args.get(1) {
                 Some(s) => s,
-                None => fail("completion", "missing <shell> (zsh|bash|fish)"),
+                None => fail("completion", "missing <shell> (zsh|bash|fish|powershell)"),
             };
             completion::generate(shell);
         }
         Some("complete") => {
-            let request = &args[1..];
-            let (with_descriptions, words) = match request.first().map(String::as_str) {
-                Some("--with-descriptions") => (true, &request[1..]),
-                _ => (false, request),
-            };
-            completion::complete(words, layout, with_descriptions);
+            let mut with_descriptions = false;
+            let mut after_space = false;
+            let mut words = &args[1..];
+            while let Some((flag, rest)) = words.split_first() {
+                match flag.as_str() {
+                    "--with-descriptions" => with_descriptions = true,
+                    "--after-space" => after_space = true,
+                    _ => break,
+                }
+                words = rest;
+            }
+
+            if after_space {
+                // 末尾补空词 = 光标在空格后；5.1 传不了空参数，只能由调用方声明
+                let mut words = words.to_vec();
+                words.push(String::new());
+                completion::complete(&words, layout, with_descriptions);
+            } else {
+                completion::complete(words, layout, with_descriptions);
+            }
         }
         Some("resolve") => {
             let key = match args.get(1) {

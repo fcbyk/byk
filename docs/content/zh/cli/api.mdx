@@ -17,7 +17,7 @@ description: 隐藏的 byk __api__：给 shell 脚本与编辑器插件的只读
 
 | 请求 | 输出 |
 |------|------|
-| `__api__ completion <shell>` | 补全注册脚本（zsh / bash / fish） |
+| `__api__ completion <shell>` | 补全注册脚本（zsh / bash / fish / powershell） |
 | `__api__ complete [--with-descriptions] <words...>` | 补全候选，一行一个；带 flag 时内置选项、文件命令动词和文件 key（别名文件路径）附带 tab 分隔的描述 |
 | `__api__ resolve <key> [args...]` | 别名的解析结果，JSON |
 | `__api__ paths` | CLI 目录、工作目录与别名文件清单，JSON |
@@ -40,12 +40,12 @@ byk __api__
     {
       "name": "completion",
       "args": "<shell>",
-      "description": "print the shell registration script (zsh|bash|fish)"
+      "description": "print the shell registration script (zsh|bash|fish|powershell)"
     },
     {
       "name": "complete",
-      "args": "[--with-descriptions] <words...>",
-      "description": "print completion candidates; the flag appends a tab-separated description"
+      "args": "[--with-descriptions] [--after-space] <words...>",
+      "description": "print completion candidates; the flags add descriptions and mark the cursor after a space"
     },
     {
       "name": "resolve",
@@ -78,11 +78,11 @@ byk __api__
 
 ## completion `<shell>`
 
-打印某个 shell 的补全注册脚本，由它在 Tab 时反过来调用 `complete`。写错 shell 时退出码 1，并列出支持的三个：
+打印某个 shell 的补全注册脚本，由它在 Tab 时反过来调用 `complete`。`pwsh` 与 `powershell` 等价——脚本只有一份，两边通用。写错 shell 时退出码 1，并列出支持的四个：
 
 ```text
-Unsupported shell: pwsh
-  Supported: zsh, bash, fish
+Unsupported shell: nushell
+  Supported: zsh, bash, fish, powershell
 ```
 
 这个请求是给安装脚本用的，日常只需要这一行（见[补全是怎么接上的](#补全是怎么接上的)）。
@@ -96,7 +96,7 @@ $ byk __api__ complete grp.
 grp.inner
 ```
 
-**别名只补第一个词**。别名只认点号单 token（`grp.inner`），词一旦被空格终结，后面敲的都是原样传给目标命令的参数，byk 无从得知它们该是什么——所以 `complete grp ''`（`byk grp ` 后按 Tab）返回空，不会像子命令那样列出 `inner`。光标在空格后时 shell 传一个空词，正是靠它区分「还在敲第一个词」和「第一个词已经敲完」。
+**别名只补第一个词**。别名只认点号单 token（`grp.inner`），词一旦被空格终结，后面敲的都是原样传给目标命令的参数，byk 无从得知它们该是什么——所以 `complete grp ''`（`byk grp ` 后按 Tab）返回空，不会像子命令那样列出 `inner`。光标在空格后时 shell 传一个空词，正是靠它区分「还在敲第一个词」和「第一个词已经敲完」。`--after-space` 替你补上这个空词：`complete grp --after-space` 等价于 `complete grp ''`，给传不了空参数的 shell（Windows PowerShell 5.1）用。
 
 文件命令是这条规则的例外：它的参数由 byk 自己解释，所以 `remove` 后补文件里已有的 key、`clone` / `link` / `init --link` 后补来源文件、命令后补该命令的选项（含 `--help` / `-h`）。清单见[文件命令 - 补全](/cli/file-commands#补全)。
 
@@ -340,7 +340,21 @@ if command -v byk >/dev/null 2>&1; then source <(byk __api__ completion zsh); fi
 
 首尾两行是完整的一句话，不是符号箭头——rc 文件是给人读的，`# >>> ... >>>` 在别人的 dotfiles 里看着像合并冲突的残渣。
 
-这一行把 Tab 事件转给 `byk __api__ complete`，由 byk 实时扫描别名后返回候选。手工写同样的行也完全等价；`byk sys@shell` 会告诉你它打算改哪个文件，`remove completion` 把块摘掉，文件其余内容不动。详见[系统文件](/cli/system-files)。
+PowerShell 的块语法不同，`$PROFILE` 里长这样：
+
+```powershell
+# The following lines have been added by byk to enable byk cli completions.
+if (Get-Command byk -ErrorAction SilentlyContinue) { byk __api__ completion powershell | Out-String | Invoke-Expression }
+# End of byk cli completions
+```
+
+PowerShell 这边补全覆盖全局选项与 byk 自己解释的参数——合并别名、文件 key、系统文件，以及它们后面的动词、选项与 key；传给目标命令的参数照旧不动。
+
+:::note Windows PowerShell 5.1 与单横线
+5.1 只有在词以 `--` 开头时才把候选交给补全脚本：`byk --p<TAB>` 有结果，而 `byk -`、`byk -h` 会走它自己的参数补全分支，什么都补不出来。别名补全不受影响。
+:::
+
+块里的这一行把 Tab 事件转给 `byk __api__ complete`，由 byk 实时扫描别名后返回候选。手工写同样的行也完全等价；`byk sys@shell` 会告诉你它打算改哪个文件，`remove completion` 把块摘掉，文件其余内容不动。详见[系统文件](/cli/system-files)。
 
 ## 版本与兼容
 

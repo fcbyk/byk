@@ -1,4 +1,4 @@
-//! Shell 补全：生成 zsh / bash / fish 的注册脚本，并回答 `complete` 查询。
+//! Shell 补全：生成 zsh / bash / fish / PowerShell 的注册脚本，并回答 `complete` 查询。
 
 mod at_prefix;
 mod filecmd_args;
@@ -25,9 +25,11 @@ pub fn generate(shell: &str) {
         "zsh" => print_zsh(),
         "bash" => print_bash(),
         "fish" => print_fish(),
+        // pwsh 与 Windows PowerShell 共用一份脚本，注册机制相同
+        "powershell" | "pwsh" => print_powershell(),
         other => {
             eprintln!("Unsupported shell: {}", other);
-            eprintln!("  Supported: zsh, bash, fish");
+            eprintln!("  Supported: zsh, bash, fish, powershell");
             std::process::exit(1);
         }
     }
@@ -276,6 +278,46 @@ end
 complete -c byk -f -a "(_byk_completions)"
 "##
     );
+}
+
+/// PowerShell 的注册脚本。单独放常量：脚本里满是 `{}`，进 `print!` 的格式串
+/// 就得全部转义，漏一个就是运行时 panic。
+///
+/// 只留 ASCII：PowerShell 5.1 用控制台代码页解码外部命令的 stdout，中文注释在
+/// 中文 Windows（936）上会变成乱码，连大括号配对都能被拆散。
+const POWERSHELL: &str = r##"if (Get-Command byk -ErrorAction SilentlyContinue) {
+    Register-ArgumentCompleter -Native -CommandName byk -ScriptBlock {
+        param($wordToComplete, $commandAst, $cursorPosition)
+        $words = @(@($commandAst.CommandElements) | Select-Object -Skip 1 | ForEach-Object {
+            if ($null -ne $_.Value) { [string]$_.Value } else { $_.Extent.Text }
+        })
+        # byk prints UTF-8; 5.1 decodes native stdout with the console code page.
+        # Switch to UTF-8 for this call and put the previous page back right after.
+        $previous = [Console]::OutputEncoding
+        $switched = $previous.CodePage -ne 65001
+        if ($switched) { try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {} }
+        try {
+            $arguments = @('__api__', 'complete', '--with-descriptions')
+            # An empty wordToComplete means the cursor sits after a space. 5.1 drops
+            # empty arguments to native commands, so let the backend append the word.
+            if ($wordToComplete -eq '') { $arguments += '--after-space' }
+            $arguments += $words
+            $lines = @(& byk @arguments 2>$null)
+        } finally {
+            if ($switched) { try { [Console]::OutputEncoding = $previous } catch {} }
+        }
+        foreach ($line in $lines) {
+            if (-not $line) { continue }
+            $pair = $line -split "`t", 2
+            $tooltip = if ($pair.Count -gt 1) { $pair[1] } else { $pair[0] }
+            [System.Management.Automation.CompletionResult]::new($pair[0], $pair[0], 'ParameterValue', $tooltip)
+        }
+    }
+}
+"##;
+
+fn print_powershell() {
+    print!("{}", POWERSHELL);
 }
 
 #[cfg(test)]
@@ -1093,6 +1135,13 @@ mod tests {
         assert!(
             file_key_descriptions(&["local@release.deploy".to_string()], &env.layout).is_empty()
         );
+    }
+
+    #[test]
+    fn powershell_script_stays_ascii() {
+        // PowerShell 5.1 按控制台代码页解码外部命令的 stdout；936 下非 ASCII
+        // 注释会变乱码，连大括号配对都能被拆散，脚本当场语法错误
+        assert!(POWERSHELL.is_ascii());
     }
 
     #[test]
