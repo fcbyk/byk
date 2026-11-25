@@ -34,7 +34,7 @@ function hasBykFileSuffix(filename: string): boolean {
 interface AliasItem {
   label: string;
   description: string;
-  /** The exact `byk @file.key` command to execute. */
+  /** The exact `byk local@file.key` command to execute. */
   exactCommand: string;
 }
 
@@ -47,7 +47,7 @@ interface AliasHit {
 /**
  * Flatten all runnable aliases in a single .byk.json file.
  * Skips all $‑prefixed system reserved fields ($priority, $cwd, etc.).
- * @param fileKey  The CLI-assigned file key, e.g. "@run" or "@"
+ * @param fileKey  The CLI-assigned file key, e.g. "local@run" or "local@"
  */
 function flattenAliases(
   obj: Record<string, unknown>,
@@ -768,13 +768,16 @@ function validateStem(stem: string): boolean {
 }
 
 /**
- * The `@file.key` address prefix for the file behind `uri` — `@stem`, or `@`
- * for the anonymous `.byk.json`.
+ * The `local@file` address prefix for the file behind `uri` — `local@stem`, or
+ * `local@` for the anonymous `.byk.json`.
  *
  * Derived from the filename, never from a byk process. The key is a pure
  * function of the name (`build_file_key` in Rust is the same rule), so asking
  * the CLI for it only made a missing binary fatal — including for run-direct,
  * whose whole point is to work without the CLI.
+ *
+ * Files in the global alias directory would need `global@`; the editor only
+ * addresses files it opens in the workspace, so `local@` is the right scope.
  *
  * Filename rules are mirrored rather than delegated: `validate_filename`
  * decides what the CLI can load, and the Problems panel still reports invalid
@@ -790,7 +793,7 @@ function aliasFileKey(uri: vscode.Uri): string | null {
     vscode.window.showErrorMessage(`Not a valid .byk.json file: ${name}`);
     return null;
   }
-  return stem ? `@${stem}` : '@';
+  return stem ? `local@${stem}` : 'local@';
 }
 
 /** Read `$mode` as a valid mode, ignoring anything unrecognised. */
@@ -860,7 +863,7 @@ function executeDirectCommand(command: string, cwd: string, paths: string[], tas
  * while the alias runs. This avoids the Windows file lock that blocks an
  * alias from rebuilding byk.exe itself.
  *
- * Interactive aliases fall back to `byk @key`; when the byk binary predates
+ * Interactive aliases fall back to `byk local@file.key`; when the byk binary predates
  * the resolve endpoint — or is missing entirely — it falls back to running
  * the raw config value. Nothing about this path waits on a byk process.
  */
@@ -1079,7 +1082,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Commands ---
 
-  // Right-click: precisely run the alias under the cursor (byk @file.key)
+  // Right-click: precisely run the alias under the cursor (byk local@file.key)
   context.subscriptions.push(
     vscode.commands.registerCommand('byk.runAtCursor', () => {
       const editor = vscode.window.activeTextEditor;

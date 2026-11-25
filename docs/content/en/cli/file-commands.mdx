@@ -8,30 +8,31 @@ description: Reserved commands attached to every alias file — create, edit, cl
 Every alias file carries a set of reserved commands for creating, editing, and inspecting the file itself:
 
 ```bash
-byk @file command [args...]     # current directory
-byk @@file command [args...]    # global directory ~/.byk/alias/
+byk local@file command [args...]     # current directory
+byk global@file command [args...]    # global directory ~/.byk/alias/
 ```
 
-Commands are separated from the file token by a space. A bare `@file` / `@@file` (no dot) followed by a verb always runs a file command; a dotted `@file.key` is a precise alias path, so `byk @@ops set` and `byk @@ops.set` never collide. `byk @@ops` on its own prints the file's command help.
+Commands are separated from the file token by a space. A bare `local@file` / `global@file` (no dot) followed by a verb always runs a file command; a dotted `local@file.key` is a precise alias path, so `byk global@ops set` and `byk global@ops.set` never collide. `byk global@ops` on its own prints the file's command help.
 
 ```bash
-byk @@ops init                            # create ~/.byk/alias/ops.byk.json
-byk @@ops set build --cmd "pnpm build"    # add the build alias
-byk @@ops json                            # inspect the file
-byk @@ops -h                              # list all file commands
+byk global@ops init                            # create ~/.byk/alias/ops.byk.json
+byk global@ops set build --cmd "pnpm build"    # add the build alias
+byk global@ops json                            # inspect the file
+byk global@ops -h                              # list all file commands
 ```
 
 ## Addressing
 
 | Form | Target file |
 |------|-------------|
-| `@ops json` | `./ops.byk.json` in the current directory |
-| `@@ops json` | `~/.byk/alias/ops.byk.json` |
-| `@ json` | anonymous file `./.byk.json` |
-| `@@ json` | anonymous global file `~/.byk/alias/.byk.json` |
+| `local@ops json` | `./ops.byk.json` in the current directory |
+| `global@ops json` | `~/.byk/alias/ops.byk.json` |
+| `local@ json` | anonymous file `./.byk.json` |
+| `global@ json` | anonymous global file `~/.byk/alias/.byk.json` |
 
+- `local@` and `global@` are the two alias-file scopes, abbreviated `l@` / `lo@` / `loc@` and `g@`; `sys@` (`s@`) is the third scope, for files that are not aliases, and does not use these file commands — see [System Files](/cli/system-files).
 - A file name cannot contain `.`, `@`, `/`, or spaces; letters, digits, `-`, `_`, and CJK are allowed.
-- A missing verb (just `@file`), `-h`, or `--help` prints this file's command help.
+- A missing verb (just `local@file`), `-h`, or `--help` prints this file's command help.
 - Mutating commands only write the addressed file; sources of `clone`, `link`, and `init --link` are read-only.
 - `set` and `remove` refuse to rewrite a link file (single-element array); edit the link target instead. `clear` empties the link file itself.
 - When a command that requires the file finds it missing but the other side (current or global directory) has a file with the same name, the error suggests switching the prefix; `path` does not require the file to exist.
@@ -58,31 +59,31 @@ byk @@ops -h                              # list all file commands
 ### `init`
 
 ```bash
-byk @@ops init                      # create an empty file {}
-byk @ops init --link @shared        # link to ./shared.byk.json
+byk global@ops init                          # create an empty file {}
+byk local@ops init --link local@shared       # link to ./shared.byk.json
 ```
 
 - Contents are always `{}` plus a trailing newline; an existing file is never overwritten.
 - `--link <source>` creates a **link file** (a single-element array) holding the source's canonical absolute path.
-- The source may be `@name` (current directory), `@@name` (global directory), or a path (`~` expands, relative paths resolve from the current directory). It must be an existing object alias file; a link file is rejected because links support only one level.
+- The source may be `local@name` (current directory), `global@name` (global directory), or a path (`~` expands, relative paths resolve from the current directory). It must be an existing object alias file; a link file is rejected because links support only one level.
 - A bare local name is literal first and falls back to `.byk.json`; `.`, `..`, a trailing `/`, or a directory name reads that directory's `.byk.json` — the same local rules as `clone`.
 - Creating a global file creates `~/.byk/alias/` when it does not exist.
 
 ### `destroy`
 
 ```bash
-byk @@ops destroy        # interactive confirmation
-byk @@ops destroy --yes  # skip confirmation
+byk global@ops destroy        # interactive confirmation
+byk global@ops destroy --yes  # skip confirmation
 ```
 
 - Deletes the addressed file. Interactive confirmation asks you to type the file name; non-TTY environments must pass `--yes`.
 - A symlink removes only the link itself, leaving its target untouched; directories are refused.
-- For a global file, the dependency directory `~/.byk/deps/@@<file-name>` is removed along with it.
+- For a global file, the dependency directory `~/.byk/deps/global@<file-name>` is removed along with it.
 
 ### `clear`
 
 ```bash
-byk @@ops clear --yes
+byk global@ops clear --yes
 ```
 
 - Resets the file to `{}`. An already-empty file only reports `Already empty` and is left alone.
@@ -95,16 +96,16 @@ byk @@ops clear --yes
 ### `set`
 
 ```bash
-byk @@ops set <key> [options...]    # edit one alias
-byk @@ops set [options...]          # edit file-level metadata
+byk global@ops set <key> [options...]    # edit one alias
+byk global@ops set [options...]          # edit file-level metadata
 ```
 
 The first argument that does not start with `-` is the alias key; dots express group paths, and missing intermediate groups are created automatically.
 
 ```bash
-byk @@ops set build --cmd "pnpm build"
-byk @@ops set web.deploy --cmd "deploy.sh" --cwd ./web --mode interactive
-byk @@ops set build --unset mode
+byk global@ops set build --cmd "pnpm build"
+byk global@ops set web.deploy --cmd "deploy.sh" --cwd ./web --mode interactive
+byk global@ops set build --unset mode
 ```
 
 Alias options:
@@ -131,7 +132,7 @@ File-root options (no key):
 | `--unset <fields>` | Remove metadata; combine `priority,paths,cwd,mode` |
 
 ```bash
-byk @@ops set --priority 10 --paths ./bin --paths ~/tools/bin --private
+byk global@ops set --priority 10 --paths ./bin --paths ~/tools/bin --private
 ```
 
 - Adding metadata to a string alias converts it to the `{ "$cmd": ... }` object form; removing the extra metadata folds it back to a string.
@@ -141,8 +142,8 @@ byk @@ops set --priority 10 --paths ./bin --paths ~/tools/bin --private
 ### `remove`
 
 ```bash
-byk @@ops remove build
-byk @@ops remove web.deploy
+byk global@ops remove build
+byk global@ops remove web.deploy
 ```
 
 - Removes an alias or an entire subtree by dotted path.
@@ -155,9 +156,9 @@ byk @@ops remove web.deploy
 ### `json`
 
 ```bash
-byk @@ops json               # validate, then print raw bytes
-byk @@ops json --no-check    # print raw bytes without validation
-byk @@ops json --expand      # expand variables and pretty-print
+byk global@ops json               # validate, then print raw bytes
+byk global@ops json --no-check    # print raw bytes without validation
+byk global@ops json --expand      # expand variables and pretty-print
 ```
 
 - The default validates JSON but prints the **exact original bytes**: no reordering and no added newline.
@@ -169,7 +170,7 @@ byk @@ops json --expand      # expand variables and pretty-print
 ### `path`
 
 ```bash
-byk @@ops path
+byk global@ops path
 # /Users/me/.byk/alias/ops.byk.json
 ```
 
@@ -178,20 +179,20 @@ Prints the absolute path. The file does not need to exist, and the command takes
 ### `rename`
 
 ```bash
-byk @@ops rename tools
+byk global@ops rename tools
 ```
 
-- Renames within the same scope (`@` only affects the current directory, `@@` only the global one).
+- Renames within the same scope (`local@` only affects the current directory, `global@` only the global one).
 - The new name follows the same file-name rules; an existing target is refused.
 - For a link file, only the link file is renamed; its target is untouched.
-- For a global file, the dependency directory `~/.byk/deps/@@<old-name>` is renamed to `@@<new-name>` along with the file, so `${deps_dir}` keeps pointing at the right place.
+- For a global file, the dependency directory `~/.byk/deps/global@<old-name>` is renamed to `global@<new-name>` along with the file, so `${deps_dir}` keeps pointing at the right place.
 
 ### `--help` / `-h`
 
 ```bash
-byk @@ops -h             # command index
-byk @@ops set -h         # usage and options for set
-byk @@ops set build -h   # also shows help for set
+byk global@ops -h             # command index
+byk global@ops set -h         # usage and options for set
+byk global@ops set build -h   # also shows help for set
 ```
 
 The index first says whether this is a local or global alias file and points at `<command> -h` for a single command, then prints `FilePath` (the absolute path, marked `(not created yet)` when missing or `(link)` for a link file), Usage, Options, and Commands. A single command's help shows its description, `FilePath`, Usage, and Options. An unknown command lists every available file command.
@@ -201,27 +202,27 @@ The index first says whether this is a local or global alias file and points at 
 ### `clone <source>`
 
 ```bash
-byk @@ops clone @shared
-byk @@ops clone ~/src/tool.byk.json
-byk @@ops clone ~/src/tool               # resolved as tool.byk.json
-byk @@ops clone ./tools/release          # release.byk.json in a subdirectory
-byk @@ops clone ./tools/                 # tools/.byk.json
-byk @@ops clone .                        # the current directory's .byk.json
-byk @@ops clone https://example.com/tool.byk.json
-byk @@ops clone github:user/repo                     # the repository root .byk.json
-byk @@ops clone github:user/repo@main/tools/release.byk.json
-byk @@ops clone gitee:user/repo                      # read from Gitee
-byk @@ops clone github:user/repo -d                  # install $deps in the same go
-byk @@ops clone --tap user/repo/build            # resolve `build` from byk.tap.json
-byk @@ops clone -t user/repo@v1/build -d
-byk @@ops clone https://example.com/tool.byk.json -d   # install $deps in the same go
+byk global@ops clone local@shared
+byk global@ops clone ~/src/tool.byk.json
+byk global@ops clone ~/src/tool               # resolved as tool.byk.json
+byk global@ops clone ./tools/release          # release.byk.json in a subdirectory
+byk global@ops clone ./tools/                 # tools/.byk.json
+byk global@ops clone .                        # the current directory's .byk.json
+byk global@ops clone https://example.com/tool.byk.json
+byk global@ops clone github:user/repo                     # the repository root .byk.json
+byk global@ops clone github:user/repo@main/tools/release.byk.json
+byk global@ops clone gitee:user/repo                      # read from Gitee
+byk global@ops clone github:user/repo -d                  # install $deps in the same go
+byk global@ops clone --tap user/repo/build            # resolve `build` from byk.tap.json
+byk global@ops clone -t user/repo@v1/build -d
+byk global@ops clone https://example.com/tool.byk.json -d   # install $deps in the same go
 ```
 
 Sources:
 
 | Source | Description |
 |--------|-------------|
-| `@name` / `@@name` | An alias file in the current / global directory |
+| `local@name` / `global@name` | An alias file in the current / global directory |
 | Path | `~` expands; relative paths resolve from the current directory; a bare name gets `.byk.json` |
 | `http://` / `https://` | Fetched through external `curl` |
 | `github:<spec>` | GitHub raw; `<spec>` is the repository shorthand below |
@@ -236,7 +237,7 @@ The prefix decides the platform only; the URL is always the canonical upstream:
 | `github:` | `raw.githubusercontent.com` |
 | `gitee:` | `gitee.com/<user>/<repo>/raw/…` |
 
-- **The transport is not part of the syntax.** To reach GitHub through a mirror, configure it once: `byk @@@config set net-github ghproxy`. It covers `clone`, the `--tap` remote index, and `$deps` downloads; `gitee:` and every other host are left alone. See [system files](/cli/system-files).
+- **The transport is not part of the syntax.** To reach GitHub through a mirror, configure it once: `byk sys@config set net-github ghproxy`. It covers `clone`, the `--tap` remote index, and `$deps` downloads; `gitee:` and every other host are left alone. See [system files](/cli/system-files).
 - An address that carries credentials (`?token=…`, or `user:pass@host`) always goes direct: the mirror never sees it. Such a source may not declare `$deps` — otherwise the credentials would either be written into the document or silently 404 the assets.
 - An unknown prefix fails outright and lists the choices: `Unknown source prefix: fastgit:`. A local file whose name contains a colon still works when written with `./` (`./notes:2024`).
 - The prefix is already "one positional value", so there is no `-gh` / `-ge` option any more; only `--tap` and `--deps` remain.
@@ -293,10 +294,10 @@ Local path resolution:
 A repository can publish many alias files without keeping them all at the root: `--tap` reads a routing table named `byk.tap.json` from the repository root.
 
 ```bash
-git clone https://github.com/user/repo ~/.byk/tap/user/repo   # or: byk @@@tap add user/repo
-byk @@ops clone --tap user/repo/build
-byk @@ops clone --tap build                      # search every local tap index
-byk @@ops clone -t user/repo@v1/build -d
+git clone https://github.com/user/repo ~/.byk/tap/user/repo   # or: byk sys@tap add user/repo
+byk global@ops clone --tap user/repo/build
+byk global@ops clone --tap build                      # search every local tap index
+byk global@ops clone -t user/repo@v1/build -d
 ```
 
 The index is a flat JSON object. Keys starting with `$` are reserved for metadata and never match:
@@ -313,9 +314,9 @@ The index is a flat JSON object. Keys starting with `$` are reserved for metadat
 - **Local index first (full form).** Byk reads `~/.byk/tap/<user>/<repo>/byk.tap.json` when the spec has no `@<ref>`. When that file exists it is authoritative: parse errors, a missing key, a non-string entry, or a missing target all fail; only a missing index file falls back to GitHub. An explicit `@<ref>` always uses the remote index.
 - **Single-key shorthand.** `--tap <key>` with no `/` searches every valid `~/.byk/tap/<user>/<repo>/byk.tap.json` without fetching an index from the network. A unique match is cloned from that local index (a URL value still uses the remote clone path); when several repositories contain the key, the command lists the full forms `user/repo/key` and asks you to pick one; when none contain it, the command fails without any remote fallback.
 - The shorthand reads exactly two levels: `tap/<user>/<repo>/byk.tap.json`. Directory names must be valid GitHub usernames / repository names; invalid names and directories without an index are skipped. Unreadable or invalid indexes are reported as warnings and skipped, so uniqueness only covers readable indexes.
-- The shorthand has no `@ref`; use the full form to pin a ref, which reads the remote index.
-- Only `@@@tap` writes to `~/.byk/tap/`: `clone --tap` reads it and never creates, updates, or deletes anything there. Install repositories with `byk @@@tap add <user>/<repo>`, which touches just `tap/<user>/<repo>` and the ledger `tap/index.json`; `byk @@@tap update` moves those checkouts to upstream and leaves the ledger alone.
-- Values are literal pointers; no `.byk.json` suffix is added and directories are not followed. A target starting with `@` or `@@` is a literal file name, never an alias reference.
+- The shorthand has no `local@ref`; use the full form to pin a ref, which reads the remote index.
+- Only `sys@tap` writes to `~/.byk/tap/`: `clone --tap` reads it and never creates, updates, or deletes anything there. Install repositories with `byk sys@tap add <user>/<repo>`, which touches just `tap/<user>/<repo>` and the ledger `tap/index.json`; `byk sys@tap update` moves those checkouts to upstream and leaves the ledger alone.
+- Values are literal pointers; no `.byk.json` suffix is added and directories are not followed. A target starting with `local@` or `global@` is a literal file name, never an alias reference.
   - Local index: a relative value resolves from the index's directory; absolute paths and `~` are local files; `http(s)` URLs still use the remote clone path.
   - Remote index: a relative value resolves from the repository root; only `http(s)` URLs and repository-relative paths are allowed, never local paths.
 - Only one level is routed. The target must be an alias file, not another tap index: a target whose last segment is `byk.tap.json` is refused, and the resolved file is never followed as a second route.
@@ -326,18 +327,18 @@ The index is a flat JSON object. Keys starting with `$` are reserved for metadat
 #### Clone and install dependencies (`-d`)
 
 ```bash
-byk @@hello clone https://example.com/hello.byk.json -d
+byk global@hello clone https://example.com/hello.byk.json -d
 ```
 
 - After the file lands, byk reads the new file's `$deps`: if present it runs the same sync as `deps i` (a fresh key has no manifest, so it is a first install); if absent it is skipped rather than treated as an error.
 - `-d` is global-only — dependency directories are keyed by the global file key, so a local destination is rejected before anything is downloaded.
 - The install step never asks twice and needs no `--yes`: clone-to-assets-fetched is a single command, which suits scripts and non-interactive shells.
-- A failed install does **not** roll back the clone: the file is already valid, so rerun `@@<file> deps i` as suggested; assets already in place are never downloaded twice.
+- A failed install does **not** roll back the clone: the file is already valid, so rerun `global@<file> deps i` as suggested; assets already in place are never downloaded twice.
 
 ### `link <target>`
 
 ```bash
-byk @@ops link @shared
+byk global@ops link local@shared
 ```
 
 - Rewrites the addressed file into a single-element array pointing at the target's canonical absolute path.
@@ -357,13 +358,13 @@ byk @@ops link @shared
 | `status` | Show what is declared, installed, or stale |
 
 ```bash
-byk @@tool deps                       # current state: declared, present, missing, outdated, stale, unknown
-byk @@tool deps install               # sync files and install declared packages
-byk @@tool deps i                     # same, via an unambiguous prefix
-byk @@tool deps i --force             # ignore the manifest and re-download file entries
-byk @@tool deps uninstall             # delete the whole dependency directory (interactive confirmation)
-byk @@tool deps u                     # same; u / un / uni all work
-byk @@tool deps uninstall --yes       # skip the uninstall confirmation
+byk global@tool deps                       # current state: declared, present, missing, outdated, stale, unknown
+byk global@tool deps install               # sync files and install declared packages
+byk global@tool deps i                     # same, via an unambiguous prefix
+byk global@tool deps i --force             # ignore the manifest and re-download file entries
+byk global@tool deps uninstall             # delete the whole dependency directory (interactive confirmation)
+byk global@tool deps u                     # same; u / un / uni all work
+byk global@tool deps uninstall --yes       # skip the uninstall confirmation
 ```
 
 The subcommand is one of `install` / `uninstall` / `status`, and unambiguous prefixes are accepted; no subcommand means `status`.
@@ -381,23 +382,23 @@ The subcommand is one of `install` / `uninstall` / `status`, and unambiguous pre
 | Identical | `keep`, skipped |
 
 ```bash
-$ byk @@tool deps i
-Syncing 2 declared entries in ~/.byk/deps/@@tool:
-  update  @@tool/bin/tool <- https://example.com/v2/tool
-  keep    @@tool/etc/cfg.json
-Downloaded 1 file into ~/.byk/deps/@@tool
+$ byk global@tool deps i
+Syncing 2 declared entries in ~/.byk/deps/global@tool:
+  update  global@tool/bin/tool <- https://example.com/v2/tool
+  keep    global@tool/etc/cfg.json
+Downloaded 1 file into ~/.byk/deps/global@tool
 ```
 
 When no file entry changed and no packages are declared, it is a no-op and never touches the network:
 
 ```bash
-$ byk @@tool deps i
-@@tool: 2 declared, 2 present — up to date
+$ byk global@tool deps i
+global@tool: 2 declared, 2 present — up to date
 ```
 
 - A relative `src` is joined with `$deps.base`; either one alone is an error, never a guess. `base` must be absolute on disk — the URL form means download, the local-path form means copy, and `clone` picks it by source. Its relative forms only mean something at clone time. The program writes `base`; it is a best-effort anchor, not a portability guarantee, so don't hand-write it.
 - Local entries are compared by source mtime: a newer source is reinstalled, a missing one fails with `cannot read` and its path instead of being skipped.
-- Works for global and local files alike: global assets land in `~/.byk/deps/@@<file-name>/`, local ones in `<file-dir>/.byk/deps/@<file-name>/` with a self-ignoring `.gitignore` (`*`).
+- Works for global and local files alike: global assets land in `~/.byk/deps/global@<file-name>/`, local ones in `<file-dir>/.byk/deps/local@<file-name>/` with a self-ignoring `.gitignore` (`*`).
 - The install manifest lives at `<dedicated directory>/.byk-deps.json` and records the last declaration plus where each asset landed. Deleting it just restarts the bookkeeping; the next install adopts whatever is already there.
 - Only paths byk installed are ever removed: anything else in the directory is left alone with a warning.
 - The install step never asks twice and needs no `--yes`; `--force` is the only option, for cases the manifest cannot detect (assets corrupted from outside).
@@ -408,31 +409,31 @@ $ byk @@tool deps i
 - `$deps.pip` installs Python packages into `.venv` inside the dedicated directory: the venv is created with `python3` (`python` on Windows) when missing, then `pip install` runs. The venv's `bin` / `Scripts` is prepended to `PATH`; a missing Python fails with an install hint.
 - `$deps.npm` installs npm packages into the dedicated directory: a minimal `package.json` (`byk-deps`, `private`) is written when absent, then `npm install` runs. `node_modules/.bin` is prepended to `PATH`; a missing npm fails with an install hint.
 - Packages install on every run and are not tracked by `.byk-deps.json` — pip / npm decide what is current. `--force` only affects file entries, and removing a spec from the declaration does not uninstall it; `deps uninstall` clears the whole directory. `files` is optional, so a declaration may contain only packages.
-- Everything lands inside the dedicated directory (`~/.byk/deps/@@<file-name>/` globally, `<file-dir>/.byk/deps/@<file-name>/` locally). See [Dependencies](/cli/alias/config#dependencies) for the field reference.
+- Everything lands inside the dedicated directory (`~/.byk/deps/global@<file-name>/` globally, `<file-dir>/.byk/deps/local@<file-name>/` locally). See [Dependencies](/cli/alias/config#dependencies) for the field reference.
 - An `extract` entry lands on a directory and is marked `(extract)`; reinstalling replaces the whole directory, so files dropped from a newer archive never linger. Without `to` it unpacks into the dependency root, which only works as the sole entry (it replaces that whole directory):
 
 ```
-Downloading 2 files into ~/.byk/deps/@@tool:
-  add     @@tool/bin/tool <- https://example.com/cli-linux
-  add     @@tool/dist <- https://example.com/tool-1.4.tar.gz (extract)
-Downloaded 2 files into ~/.byk/deps/@@tool
+Downloading 2 files into ~/.byk/deps/global@tool:
+  add     global@tool/bin/tool <- https://example.com/cli-linux
+  add     global@tool/dist <- https://example.com/tool-1.4.tar.gz (extract)
+Downloaded 2 files into ~/.byk/deps/global@tool
 ```
 
 - A mid-run failure does not roll back finished entries; the error lists what already landed this run, and the manifest is written to match, so rerunning continues where it stopped.
 - uninstall deletes the whole dependency directory; a missing directory is an error. status is read-only and writes to stdout, so it pipes well:
 
 ```
-@@tool: 6 declared, 2 present, 1 stale
-  ok        @@tool/bin/tool
-  missing   @@tool/etc/cfg.json
-  outdated  @@tool/dist
-  stale     @@tool/bin/old-tool
+global@tool: 6 declared, 2 present, 1 stale
+  ok        global@tool/bin/tool
+  missing   global@tool/etc/cfg.json
+  outdated  global@tool/dist
+  stale     global@tool/bin/old-tool
   ok        pip:click>=8.0
   unknown   pip:git+https://example.com/tool.git
   missing   npm:chalk
 Base: https://example.com/releases/v1/
-Deps directory: ~/.byk/deps/@@tool
-Hint: run `byk @@tool deps install` to install the missing assets
+Deps directory: ~/.byk/deps/global@tool
+Hint: run `byk global@tool deps install` to install the missing assets
 ```
 
 `unknown` marks a pip direct reference (URL / VCS): its package name cannot be determined locally, so byk reports it instead of guessing. Unknown entries count as neither present nor missing.
@@ -443,8 +444,8 @@ Hint: run `byk @@tool deps install` to install the missing assets
 
 File-command completion covers:
 
-- file names after `@` / `@@`, and verbs after the file token and a space;
+- file names after `local@` / `global@`, and verbs after the file token and a space;
 - options after a command (for example `set --`), including `--help` / `-h`;
 - existing key paths after `remove` (read from the target file; link files are not completed);
-- source arguments for `clone`, `link`, and `init --link` (alias files starting with `@`);
+- source arguments for `clone`, `link`, and `init --link` (alias files starting with `local@`);
 - subcommands after `deps` (`install` / `uninstall` / `status`).

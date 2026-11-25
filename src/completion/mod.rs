@@ -88,22 +88,37 @@ fn dynamic_descriptions(
 
 /// 文件 key → 展示用别名文件路径。
 ///
-/// 文件 key 不含点号；带点号的是精确别名路径。
-/// 候选已经来自解析成功的文件，描述只需要文件名枚举，不必再解析一遍 JSON。
+/// 文件 key 不含点号；带点号的是精确别名路径。候选可能用了缩写前缀（`loc@`），
+/// 这里还原成完整 key 再查文件路径，描述挂回候选本身。
 fn file_key_descriptions(candidates: &[String], layout: &PathLayout) -> HashMap<String, String> {
-    let mentions_file_key = candidates
+    let scoped: Vec<(crate::model::Scope, &str, &String)> = candidates
         .iter()
-        .any(|candidate| candidate.starts_with('@') && !candidate.contains('.'));
+        .filter_map(|candidate| {
+            let (scope, rest) = crate::model::Scope::split(candidate)?;
+            (scope != crate::model::Scope::Sys && !rest.contains('.'))
+                .then_some((scope, rest, candidate))
+        })
+        .collect();
 
-    if !mentions_file_key {
+    if scoped.is_empty() {
         return HashMap::new();
     }
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    resolve::list_alias_files(&cwd, false)
+    let files: HashMap<String, String> = resolve::list_alias_files(&cwd, false)
         .into_iter()
         .chain(resolve::list_alias_files(&layout.alias_dir, true))
         .map(|(key, path)| (key, display_path(&path)))
+        .collect();
+
+    scoped
+        .into_iter()
+        .filter_map(|(scope, rest, candidate)| {
+            let canonical = format!("{}{}", scope.token(), rest);
+            files
+                .get(&canonical)
+                .map(|path| (candidate.clone(), path.clone()))
+        })
         .collect()
 }
 
@@ -141,7 +156,7 @@ fn format_candidate(
     }
 }
 
-/// 第一个词是别名时只在第一词位置补；文件命令按 `@file <verb>` 的位置补。
+/// 第一个词是别名时只在第一词位置补；文件命令按 `local@file <verb>` 的位置补。
 fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     let Some((partial, prev)) = args.split_last() else {
         // 无参数：焦点在第一个词
@@ -152,7 +167,7 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
         return get_completions(partial, layout);
     }
 
-    // `@@@file` 的语法由各文件自己定，先交给系统文件的补全；它只认注册表里的名字
+    // `sys@file` 的语法由各文件自己定，先交给系统文件的补全；它只认注册表里的名字
     system_complete::complete(prev, partial, layout)
         .or_else(|| file_complete::complete(prev, partial, layout))
         .unwrap_or_default()
@@ -173,7 +188,7 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
         return get_top_level_completions("", layout);
     }
 
-    if partial.starts_with('@') {
+    if crate::model::Scope::split(partial).is_some() {
         return complete_at_prefix(partial, layout);
     }
 
@@ -188,8 +203,8 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
 
 /// 补全顶级命令：只列合并树里的顶层 key。
 ///
-/// 文件命名空间（`@file`）属于精确执行语法，只在词以 `@` / `@@` 开头时
-/// 由 `complete_at_prefix` 提供，避免和可执行别名混在同一张菜单里。
+/// 文件命名空间属于精确执行语法，只在词命中作用域前缀（`local@` / `global@` / `sys@`）
+/// 时由 `complete_at_prefix` 提供，避免和可执行别名混在同一张菜单里。
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
@@ -419,9 +434,9 @@ mod tests {
         let env = TestEnv::new();
         env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
         env.add_alias_file("debug", &json!({"build": "echo build"}));
-        // alias_dir 中是全局文件，key 为 @@ 前缀
-        let completions = complete_at_prefix("@@r", &env.layout);
-        assert_eq!(completions, vec!["@@release".to_string()]);
+        // alias_dir 中是全局文件，key 为 global@ 前缀
+        let completions = complete_at_prefix("global@r", &env.layout);
+        assert_eq!(completions, vec!["global@release".to_string()]);
     }
 
     #[test]
@@ -430,8 +445,8 @@ mod tests {
         env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
         env.add_alias_file("debug", &json!({"build": "echo build"}));
         assert_eq!(
-            complete_at_prefix("@@", &env.layout),
-            vec!["@@debug".to_string(), "@@release".to_string()]
+            complete_at_prefix("global@", &env.layout),
+            vec!["global@debug".to_string(), "global@release".to_string()]
         );
     }
 
@@ -442,15 +457,15 @@ mod tests {
             "release",
             &json!({"deploy": "echo deploy", "build": "echo build"}),
         );
-        let mut completions = complete_at_prefix("@@release.d", &env.layout);
+        let mut completions = complete_at_prefix("global@release.d", &env.layout);
         completions.sort();
-        assert_eq!(completions, vec!["@@release.deploy".to_string()]);
+        assert_eq!(completions, vec!["global@release.deploy".to_string()]);
     }
 
     #[test]
     fn at_prefix_unknown_file_returns_empty() {
         let env = TestEnv::new();
-        let completions = complete_at_prefix("@@nope.x", &env.layout);
+        let completions = complete_at_prefix("global@nope.x", &env.layout);
         assert!(completions.is_empty());
     }
 
@@ -458,39 +473,39 @@ mod tests {
     fn at_prefix_completes_system_files() {
         let env = TestEnv::new();
         let files = vec![
-            "@@@config".to_string(),
-            "@@@tap".to_string(),
-            "@@@shell".to_string(),
+            "sys@config".to_string(),
+            "sys@tap".to_string(),
+            "sys@shell".to_string(),
         ];
-        // 候选来自注册表而不是磁盘：没有 @@@config 这个文件也能补出来
-        assert_eq!(complete_at_prefix("@@@", &env.layout), files);
+        // 候选来自注册表而不是磁盘：没有 sys@config 这个文件也能补出来
+        assert_eq!(complete_at_prefix("sys@", &env.layout), files);
         assert_eq!(
-            complete_at_prefix("@@@c", &env.layout),
-            vec!["@@@config".to_string()]
+            complete_at_prefix("sys@c", &env.layout),
+            vec!["sys@config".to_string()]
         );
         assert_eq!(
-            complete_at_prefix("@@@t", &env.layout),
-            vec!["@@@tap".to_string()]
+            complete_at_prefix("sys@t", &env.layout),
+            vec!["sys@tap".to_string()]
         );
-        assert!(complete_at_prefix("@@@nope", &env.layout).is_empty());
-        // 三级前缀不能被 `@@` 的文件 key 分支吞掉
-        assert_eq!(get_completions("@@@", &env.layout), files);
+        assert!(complete_at_prefix("sys@nope", &env.layout).is_empty());
+        // 三级前缀不能被 `global@` 的文件 key 分支吞掉
+        assert_eq!(get_completions("sys@", &env.layout), files);
     }
 
     #[test]
     fn at_prefix_double_dot_is_not_a_file_command() {
         // 文件命令改成空格分隔后，`..` 不再保留含义，只是普通点号路径。
         let env = TestEnv::new();
-        assert!(complete_at_prefix("@@anything..", &env.layout).is_empty());
-        assert!(complete_at_prefix("@..i", &env.layout).is_empty());
+        assert!(complete_at_prefix("global@anything..", &env.layout).is_empty());
+        assert!(complete_at_prefix("local@..i", &env.layout).is_empty());
     }
 
     #[test]
     fn at_prefix_single_dot_does_not_offer_file_commands() {
         let env = TestEnv::new();
         env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
-        let completions = complete_at_prefix("@@release.", &env.layout);
-        assert_eq!(completions, vec!["@@release.deploy".to_string()]);
+        let completions = complete_at_prefix("global@release.", &env.layout);
+        assert_eq!(completions, vec!["global@release.deploy".to_string()]);
     }
 
     #[test]
@@ -660,8 +675,8 @@ mod tests {
     fn get_completions_at_prefix_delegates() {
         let env = TestEnv::new();
         env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
-        let result = get_completions("@@r", &env.layout);
-        assert_eq!(result, vec!["@@release".to_string()]);
+        let result = get_completions("global@r", &env.layout);
+        assert_eq!(result, vec!["global@release".to_string()]);
     }
 
     #[test]
@@ -684,11 +699,11 @@ mod tests {
     fn candidates_file_command_verbs_after_file_token() {
         let env = TestEnv::new();
         assert_eq!(
-            candidates(&words(&["@@ops", "i"]), &env.layout),
+            candidates(&words(&["global@ops", "i"]), &env.layout),
             vec!["init".to_string()]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", ""]), &env.layout),
+            candidates(&words(&["global@ops", ""]), &env.layout),
             vec![
                 "init".to_string(),
                 "destroy".to_string(),
@@ -704,14 +719,14 @@ mod tests {
             ]
         );
         // 精确别名不受影响
-        assert!(candidates(&words(&["@@ops.init", ""]), &env.layout).is_empty());
+        assert!(candidates(&words(&["global@ops.init", ""]), &env.layout).is_empty());
     }
 
     #[test]
     fn candidates_file_command_options() {
         let env = TestEnv::new();
         assert_eq!(
-            candidates(&words(&["@@ops", "json", "--"]), &env.layout),
+            candidates(&words(&["global@ops", "json", "--"]), &env.layout),
             vec![
                 "--help".to_string(),
                 "--expand".to_string(),
@@ -719,15 +734,17 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "json", "--n"]), &env.layout),
+            candidates(&words(&["global@ops", "json", "--n"]), &env.layout),
             vec!["--no-check".to_string()]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "destroy", "--"]), &env.layout),
+            candidates(&words(&["global@ops", "destroy", "--"]), &env.layout),
             vec!["--help".to_string(), "--yes".to_string()]
         );
-        assert!(candidates(&words(&["@@ops", "json", ""]), &env.layout).is_empty());
-        assert!(candidates(&words(&["@@ops", "json", "--expand", ""]), &env.layout).is_empty());
+        assert!(candidates(&words(&["global@ops", "json", ""]), &env.layout).is_empty());
+        assert!(
+            candidates(&words(&["global@ops", "json", "--expand", ""]), &env.layout).is_empty()
+        );
         assert!(candidates(&words(&["hello", "--"]), &env.layout).is_empty());
     }
 
@@ -735,21 +752,21 @@ mod tests {
     fn candidates_file_command_help_flags() {
         let env = TestEnv::new();
         assert_eq!(
-            candidates(&words(&["@@ops", "--"]), &env.layout),
+            candidates(&words(&["global@ops", "--"]), &env.layout),
             vec!["--help".to_string()]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "-"]), &env.layout),
+            candidates(&words(&["global@ops", "-"]), &env.layout),
             vec!["--help".to_string(), "-h".to_string()]
         );
-        assert!(candidates(&words(&["@@ops", "help", ""]), &env.layout).is_empty());
+        assert!(candidates(&words(&["global@ops", "help", ""]), &env.layout).is_empty());
     }
 
     #[test]
     fn candidates_file_command_options_after_positional() {
         let env = TestEnv::new();
         assert_eq!(
-            candidates(&words(&["@@ops", "set", "build", "--"]), &env.layout),
+            candidates(&words(&["global@ops", "set", "build", "--"]), &env.layout),
             vec![
                 "--help".to_string(),
                 "--cmd".to_string(),
@@ -766,7 +783,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "set", "build", "--c"]), &env.layout),
+            candidates(&words(&["global@ops", "set", "build", "--c"]), &env.layout),
             vec!["--cmd".to_string(), "--cwd".to_string()]
         );
     }
@@ -775,7 +792,7 @@ mod tests {
     fn candidates_deps_completes_options_after_subcommand() {
         let env = TestEnv::new();
         assert_eq!(
-            candidates(&words(&["@@ops", "deps", ""]), &env.layout),
+            candidates(&words(&["global@ops", "deps", ""]), &env.layout),
             vec![
                 "install".to_string(),
                 "uninstall".to_string(),
@@ -783,7 +800,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "deps", "install", "--"]), &env.layout),
+            candidates(
+                &words(&["global@ops", "deps", "install", "--"]),
+                &env.layout
+            ),
             vec![
                 "--help".to_string(),
                 "--force".to_string(),
@@ -791,18 +811,26 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "deps", "install", "--f"]), &env.layout),
+            candidates(
+                &words(&["global@ops", "deps", "install", "--f"]),
+                &env.layout
+            ),
             vec!["--force".to_string()]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "deps", "uninstall", "--"]), &env.layout),
+            candidates(
+                &words(&["global@ops", "deps", "uninstall", "--"]),
+                &env.layout
+            ),
             vec![
                 "--help".to_string(),
                 "--force".to_string(),
                 "--yes".to_string()
             ]
         );
-        assert!(candidates(&words(&["@@ops", "deps", "install", "x"]), &env.layout).is_empty());
+        assert!(
+            candidates(&words(&["global@ops", "deps", "install", "x"]), &env.layout).is_empty()
+        );
     }
 
     #[test]
@@ -814,7 +842,7 @@ mod tests {
         );
 
         assert_eq!(
-            candidates(&words(&["@@ops", "remove", ""]), &env.layout),
+            candidates(&words(&["global@ops", "remove", ""]), &env.layout),
             vec![
                 "build".to_string(),
                 "web".to_string(),
@@ -822,10 +850,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "remove", "web."]), &env.layout),
+            candidates(&words(&["global@ops", "remove", "web."]), &env.layout),
             vec!["web.deploy".to_string()]
         );
-        assert!(candidates(&words(&["@@ops", "remove", "build", ""]), &env.layout).is_empty());
+        assert!(candidates(&words(&["global@ops", "remove", "build", ""]), &env.layout).is_empty());
     }
 
     #[test]
@@ -834,10 +862,10 @@ mod tests {
         env.add_alias_file("src", &json!({"build": "echo hi"}));
 
         assert_eq!(
-            candidates(&words(&["@@ops", "clone", "@@"]), &env.layout),
-            vec!["@@src".to_string()]
+            candidates(&words(&["global@ops", "clone", "global@"]), &env.layout),
+            vec!["global@src".to_string()]
         );
-        assert!(candidates(&words(&["@@ops", "clone", "./x"]), &env.layout).is_empty());
+        assert!(candidates(&words(&["global@ops", "clone", "./x"]), &env.layout).is_empty());
     }
 
     #[test]
@@ -847,7 +875,10 @@ mod tests {
 
         // 源已给之后仍能补其余选项
         assert_eq!(
-            candidates(&words(&["@@ops", "clone", "@@src", "-"]), &env.layout),
+            candidates(
+                &words(&["global@ops", "clone", "global@src", "-"]),
+                &env.layout
+            ),
             vec![
                 "--help".to_string(),
                 "-h".to_string(),
@@ -858,11 +889,20 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "clone", "@@src", "--d"]), &env.layout),
+            candidates(
+                &words(&["global@ops", "clone", "global@src", "--d"]),
+                &env.layout
+            ),
             vec!["--deps".to_string()]
         );
         // 第二个源不补
-        assert!(candidates(&words(&["@@ops", "clone", "@@src", "@"]), &env.layout).is_empty());
+        assert!(
+            candidates(
+                &words(&["global@ops", "clone", "global@src", "local@"]),
+                &env.layout
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -870,15 +910,21 @@ mod tests {
         let env = TestEnv::new();
 
         assert_eq!(
-            candidates(&words(&["@@ops", "clone", "git"]), &env.layout),
+            candidates(&words(&["global@ops", "clone", "git"]), &env.layout),
             vec!["github:".to_string(), "gitee:".to_string()]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "clone", "gitee"]), &env.layout),
+            candidates(&words(&["global@ops", "clone", "gitee"]), &env.layout),
             vec!["gitee:".to_string()]
         );
         // 来源已给：不再补前缀
-        assert!(candidates(&words(&["@@ops", "clone", "github:a/b", "j"]), &env.layout).is_empty());
+        assert!(
+            candidates(
+                &words(&["global@ops", "clone", "github:a/b", "j"]),
+                &env.layout
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -890,7 +936,7 @@ mod tests {
         );
 
         assert_eq!(
-            candidates(&words(&["@@ops", "set", ""]), &env.layout),
+            candidates(&words(&["global@ops", "set", ""]), &env.layout),
             vec![
                 "build".to_string(),
                 "web".to_string(),
@@ -898,12 +944,12 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["@@ops", "set", "web."]), &env.layout),
+            candidates(&words(&["global@ops", "set", "web."]), &env.layout),
             vec!["web.deploy".to_string()]
         );
         // key 之后还能补选项
         assert_eq!(
-            candidates(&words(&["@@ops", "set", "build", "--"]), &env.layout),
+            candidates(&words(&["global@ops", "set", "build", "--"]), &env.layout),
             vec![
                 "--help".to_string(),
                 "--cmd".to_string(),
@@ -933,12 +979,12 @@ mod tests {
 
     #[test]
     fn system_file_tokens_carry_descriptions() {
-        assert_eq!(describe_in("@@@config", false), Some("byk settings"));
-        assert_eq!(describe_in("@@@tap", false), Some("tap repositories"));
-        assert_eq!(describe_in("@@@shell", false), Some("shell startup file"));
+        assert_eq!(describe_in("sys@config", false), Some("byk settings"));
+        assert_eq!(describe_in("sys@tap", false), Some("tap repositories"));
+        assert_eq!(describe_in("sys@shell", false), Some("shell startup file"));
         assert_eq!(
-            format_candidate("@@@config", true, false, None),
-            "@@@config\tbyk settings"
+            format_candidate("sys@config", true, false, None),
+            "sys@config\tbyk settings"
         );
     }
 
@@ -946,7 +992,7 @@ mod tests {
     fn candidates_system_file_verbs() {
         let env = TestEnv::new();
         assert_eq!(
-            candidates(&words(&["@@@config", ""]), &env.layout),
+            candidates(&words(&["sys@config", ""]), &env.layout),
             vec![
                 "list".to_string(),
                 "get".to_string(),
@@ -955,7 +1001,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["@@@tap", "u"]), &env.layout),
+            candidates(&words(&["sys@tap", "u"]), &env.layout),
             vec!["update".to_string()]
         );
     }
@@ -964,8 +1010,8 @@ mod tests {
     fn system_file_descriptions_follow_the_addressed_file() {
         let env = TestEnv::new();
         let config =
-            dynamic_descriptions(&words(&["@@@config", ""]), &words(&["list"]), &env.layout);
-        let tap = dynamic_descriptions(&words(&["@@@tap", ""]), &words(&["list"]), &env.layout);
+            dynamic_descriptions(&words(&["sys@config", ""]), &words(&["list"]), &env.layout);
+        let tap = dynamic_descriptions(&words(&["sys@tap", ""]), &words(&["list"]), &env.layout);
 
         // 同名动词在两个文件里含义不同，描述不能串
         assert_eq!(
@@ -982,7 +1028,7 @@ mod tests {
     fn system_file_descriptions_cover_setting_names() {
         let env = TestEnv::new();
         let map = dynamic_descriptions(
-            &words(&["@@@config", "set", ""]),
+            &words(&["sys@config", "set", ""]),
             &words(&["banner"]),
             &env.layout,
         );
@@ -1014,16 +1060,16 @@ mod tests {
         );
         assert_eq!(
             format_candidate(
-                "@@release",
+                "global@release",
                 true,
                 false,
                 Some("~/.byk/alias/release.byk.json")
             ),
-            "@@release\t~/.byk/alias/release.byk.json"
+            "global@release\t~/.byk/alias/release.byk.json"
         );
         assert_eq!(
-            format_candidate("@@release", false, false, Some("ignored")),
-            "@@release"
+            format_candidate("global@release", false, false, Some("ignored")),
+            "global@release"
         );
     }
 
@@ -1031,8 +1077,10 @@ mod tests {
     fn file_key_descriptions_use_display_path() {
         let env = TestEnv::new();
         env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
-        let descriptions = file_key_descriptions(&["@@release".to_string()], &env.layout);
-        let path = descriptions.get("@@release").expect("path for @@release");
+        let descriptions = file_key_descriptions(&["global@release".to_string()], &env.layout);
+        let path = descriptions
+            .get("global@release")
+            .expect("path for global@release");
         assert!(path.ends_with("release.byk.json"));
         assert!(!path.contains('\\'));
     }
@@ -1042,7 +1090,9 @@ mod tests {
         let env = TestEnv::new();
         env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
         assert!(file_key_descriptions(&["build".to_string()], &env.layout).is_empty());
-        assert!(file_key_descriptions(&["@release.deploy".to_string()], &env.layout).is_empty());
+        assert!(
+            file_key_descriptions(&["local@release.deploy".to_string()], &env.layout).is_empty()
+        );
     }
 
     #[test]

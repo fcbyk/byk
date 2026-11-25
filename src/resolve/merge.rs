@@ -249,16 +249,12 @@ fn load_report_at(layout: &PathLayout, cwd: &Path) -> LoadedAliases {
     }
 }
 
-// cwd 恰好是全局目录时，同一批文件会被扫两次（@f 与 @@f）。
+// cwd 恰好是全局目录时，同一批文件会被扫两次（@f 与 global@f）。
 // 两个身份都保留——这个文件确实同时可通过两种前缀访问；
 // 但合并只做一次，按全局身份参与，避免同一份声明被合并两遍。
 fn merge_at(layout: &PathLayout, cwd: &Path, files: &[AliasFile]) -> MergedConfig {
     if same_dir(cwd, &layout.alias_dir) {
-        let global_only: Vec<AliasFile> = files
-            .iter()
-            .filter(|f| f.key.starts_with("@@"))
-            .cloned()
-            .collect();
+        let global_only: Vec<AliasFile> = files.iter().filter(|f| f.is_global()).cloned().collect();
         build_merged_aliases(&global_only)
     } else {
         build_merged_aliases(files)
@@ -329,7 +325,7 @@ mod tests {
     fn make_alias(cmd: &str) -> ResolvedAlias {
         ResolvedAlias {
             definition: to_alias_definition(&AliasValue::Str(cmd.into())),
-            source: "@test".into(),
+            source: "local@test".into(),
             source_path: None,
             paths: Vec::new(),
             prepend_paths: Vec::new(),
@@ -476,7 +472,7 @@ mod tests {
             serde_json::Value::String("make build".into()),
         );
         let files = vec![AliasFile {
-            key: "@test".into(),
+            key: "local@test".into(),
             priority: 0,
             aliases,
             path: PathBuf::from("/fake/test.byk.json"),
@@ -499,7 +495,7 @@ mod tests {
             serde_json::Value::String("make build".into()),
         );
         let files = vec![AliasFile {
-            key: "@test".into(),
+            key: "local@test".into(),
             priority: 0,
             aliases,
             path: PathBuf::from("/fake/test.byk.json"),
@@ -667,7 +663,7 @@ mod tests {
 
         let (merged, _) = load_merged_aliases_at(&layout, &cwd);
         let resolved = resolve_merged_alias(&merged, "dev").unwrap();
-        assert_eq!(resolved.source, "@p", "本地文件应覆盖全局同名别名");
+        assert_eq!(resolved.source, "local@p", "本地文件应覆盖全局同名别名");
     }
 
     #[test]
@@ -686,8 +682,11 @@ mod tests {
 
         let (merged, files) = load_merged_aliases_at(&layout, &cwd);
         let resolved = resolve_merged_alias(&merged, "dev").unwrap();
-        assert_eq!(resolved.source, "@@g", "负数按 0 处理，不应压过优先级 5");
-        let local = files.iter().find(|f| f.key == "@p").unwrap();
+        assert_eq!(
+            resolved.source, "global@g",
+            "负数按 0 处理，不应压过优先级 5"
+        );
+        let local = files.iter().find(|f| f.key == "local@p").unwrap();
         assert_eq!(local.priority, 0);
     }
 
@@ -707,8 +706,8 @@ mod tests {
 
         let (merged, files) = load_merged_aliases_at(&layout, &cwd);
         let resolved = resolve_merged_alias(&merged, "dev").unwrap();
-        assert_eq!(resolved.source, "@@g", "private 文件不应参与合并");
-        assert!(files.iter().any(|f| f.key == "@p"));
+        assert_eq!(resolved.source, "global@g", "private 文件不应参与合并");
+        assert!(files.iter().any(|f| f.key == "local@p"));
     }
 
     #[test]
@@ -759,7 +758,7 @@ mod tests {
 
         let (merged, files) = load_merged_aliases_at(&layout, &cwd);
         assert!(merged.is_empty(), "整份 private 文件的合并树应为空");
-        assert!(files.iter().any(|f| f.key == "@p"));
+        assert!(files.iter().any(|f| f.key == "local@p"));
     }
 
     #[test]
@@ -774,13 +773,13 @@ mod tests {
         };
         let (merged, files) = load_merged_aliases_at(&layout, &alias_dir);
 
-        // 两个身份都保留：@f 与 @@f 都能精确调用同一个文件
+        // 两个身份都保留：@f 与 global@f 都能精确调用同一个文件
         assert_eq!(files.len(), 2);
-        assert!(files.iter().any(|f| f.key == "@f"));
-        assert!(files.iter().any(|f| f.key == "@@f"));
+        assert!(files.iter().any(|f| f.key == "local@f"));
+        assert!(files.iter().any(|f| f.key == "global@f"));
 
         // 合并只发生一次，来源是全局身份
         let resolved = resolve_merged_alias(&merged, "hi").unwrap();
-        assert_eq!(resolved.source, "@@f");
+        assert_eq!(resolved.source, "global@f");
     }
 }

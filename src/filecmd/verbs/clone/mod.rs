@@ -1,6 +1,6 @@
 //! `clone` 的入口参数解析。
 //!
-//! 来源只占一个位置参数：`@name` / `@@name`、本地路径、`https://…`，以及
+//! 来源只占一个位置参数：`@name` / `global@name`、本地路径、`https://…`，以及
 //! `github:` / `gitee:` / `jsdelivr:` / `ghproxy:` 前缀——平台与传输通道都写在
 //! 前缀里，所以没有对应的选项。`-t` / `--tap` 走索引路由，`-d` 顺带装依赖。
 
@@ -432,7 +432,7 @@ mod imp {
 
     #[derive(Debug)]
     pub(crate) enum SourceArg {
-        /// 一个位置参数：本地路径、`@name` / `@@name`、URL，或带前缀的仓库简写。
+        /// 一个位置参数：本地路径、`@name` / `global@name`、URL，或带前缀的仓库简写。
         Raw(String),
         Tap(String),
     }
@@ -492,7 +492,7 @@ mod tests {
         let layout = test_layout(&temp);
         source_file(&layout.alias_dir, "src.byk.json", "{\"a\": \"echo a\"}");
 
-        run(FileScope::Global, "ops", &args(&["@@src"]), &layout).unwrap();
+        run(FileScope::Global, "ops", &args(&["global@src"]), &layout).unwrap();
 
         assert_eq!(
             fs::read_to_string(layout.alias_dir.join("ops.byk.json")).unwrap(),

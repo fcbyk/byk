@@ -475,7 +475,7 @@ mod tests {
     fn planned(origin: Origin, dest: &str) -> PlannedAsset {
         PlannedAsset {
             index: 0,
-            label: format!("@@t/{dest}"),
+            label: format!("global@t/{dest}"),
             origin,
             dest: Path::new("/deps").join(dest),
             archive: false,
@@ -791,7 +791,7 @@ mod tests {
         };
         let asset = PlannedAsset {
             index: 0,
-            label: "@@t/bin/sub/tool".to_string(),
+            label: "global@t/bin/sub/tool".to_string(),
             origin: crate::deps::Origin::Url("https://e.com/a/bin/tool".to_string()),
             dest: std::path::PathBuf::from("/deps/bin/sub/tool"),
             archive: false,

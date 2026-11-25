@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use crate::model::PathLayout;
+use crate::model::{PathLayout, Scope};
 use crate::resolve::validate_filename;
 
 use crate::filecmd::io::path::resolve_target;
@@ -14,20 +14,15 @@ use crate::filecmd::spec::FileScope;
 use crate::filecmd::spec::subcommand_names;
 use crate::filecmd::spec::{HELP_FLAGS, OPTION_ALIASES, OPTIONS, VERBS, Verb, split_head};
 
-/// 补全 `@file <verb> ...`。
+/// 补全 `local@file <verb> ...`。
 ///
 /// `prev` 是光标前的完整词，`partial` 是当前词。返回 `None` 表示第一个词
-/// 不是 `@file` / `@@file`，调用方继续按别名补全。
+/// 不是别名文件头，调用方继续按别名补全。
 pub(crate) fn complete(prev: &[String], partial: &str, layout: &PathLayout) -> Option<Vec<String>> {
-    let (prefix, stem) = split_head(prev.first()?)?;
+    let (scope, stem) = split_head(prev.first()?)?;
     if !validate_filename(stem) {
         return Some(Vec::new());
     }
-    let scope = if prefix == "@@" {
-        FileScope::Global
-    } else {
-        FileScope::Local
-    };
 
     // 刚敲完文件 token：补动词；`-` 开头则补帮助开关
     if prev.len() == 1 {
@@ -124,7 +119,7 @@ fn options(verb: Verb, partial: &str) -> Option<Vec<String>> {
 
 /// 补全 clone/link 的来源参数，以及 `init --link` 的值。
 ///
-/// `@` 开头给别名文件候选；其他形态返回空，让 shell 回退到路径补全。
+/// 作用域形态给别名文件候选；其他形态返回空，让 shell 回退到路径补全。
 fn source_args(
     verb: Verb,
     args: &[String],
@@ -150,7 +145,7 @@ fn source_args(
     if partial.starts_with('-') {
         return None;
     }
-    if !partial.starts_with('@') {
+    if Scope::split(partial).is_none() {
         return Some(Vec::new());
     }
     Some(source_candidates(partial, layout))
@@ -158,10 +153,14 @@ fn source_args(
 
 /// 补全 `clone` 的来源前缀：`git` → `github:` / `gitee:`。
 ///
-/// 只在还没给出来源时生效。`-` 开头是选项，`@` / `.` / `/` / `~` 开头交给
+/// 只在还没给出来源时生效。`-` 开头是选项，作用域形态与 `.` / `/` / `~` 开头交给
 /// 别名与路径补全，空词则让 shell 回退到文件路径。
 fn clone_prefix(verb: Verb, args: &[String], partial: &str) -> Option<Vec<String>> {
-    if verb != Verb::Clone || partial.is_empty() || partial.starts_with(['-', '@', '.', '/', '~']) {
+    if verb != Verb::Clone
+        || partial.is_empty()
+        || partial.starts_with(['-', '.', '/', '~'])
+        || Scope::split(partial).is_some()
+    {
         return None;
     }
     // `-d` 之外还有词，说明来源已经给过（或 `-t` 正在取它的值）
@@ -196,17 +195,25 @@ fn existing_keys(scope: FileScope, stem: &str, partial: &str, layout: &PathLayou
 }
 
 fn source_candidates(partial: &str, layout: &PathLayout) -> Vec<String> {
-    let mut candidates = Vec::new();
-
-    if partial.starts_with("@@") {
-        candidates.extend(alias_file_tokens(&layout.alias_dir, "@@"));
-    } else if partial.starts_with('@') {
-        if let Ok(cwd) = std::env::current_dir() {
-            candidates.extend(alias_file_tokens(&cwd, "@"));
-        }
-        candidates.extend(alias_file_tokens(&layout.alias_dir, "@@"));
+    let Some((scope, rest)) = Scope::split(partial) else {
+        return Vec::new();
+    };
+    // 系统文件不是 clone / link 的来源
+    if scope == Scope::Sys {
+        return Vec::new();
     }
+    let typed = &partial[..partial.len() - rest.len()];
 
+    let dir = if scope.is_global() {
+        layout.alias_dir.clone()
+    } else {
+        match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(_) => return Vec::new(),
+        }
+    };
+
+    let mut candidates = alias_file_tokens(&dir, typed);
     candidates.retain(|candidate| candidate.starts_with(partial));
     candidates.sort();
     candidates.dedup();
@@ -275,7 +282,7 @@ mod tests {
     fn complete_verbs_at_second_word() {
         let (_temp, layout) = fixture();
         assert_eq!(
-            complete(&words(&["@@ops"]), "", &layout),
+            complete(&words(&["global@ops"]), "", &layout),
             Some(vec![
                 "init".to_string(),
                 "destroy".to_string(),
@@ -291,23 +298,23 @@ mod tests {
             ])
         );
         assert_eq!(
-            complete(&words(&["@@ops"]), "i", &layout),
+            complete(&words(&["global@ops"]), "i", &layout),
             Some(vec!["init".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@ops"]), "d", &layout),
+            complete(&words(&["global@ops"]), "d", &layout),
             Some(vec!["destroy".to_string(), "deps".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@"]), "i", &layout),
+            complete(&words(&["local@"]), "i", &layout),
             Some(vec!["init".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@ops"]), "--", &layout),
+            complete(&words(&["global@ops"]), "--", &layout),
             Some(vec!["--help".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@ops"]), "-", &layout),
+            complete(&words(&["global@ops"]), "-", &layout),
             Some(vec!["--help".to_string(), "-h".to_string()])
         );
     }
@@ -315,10 +322,10 @@ mod tests {
     #[test]
     fn complete_ignores_precise_alias_and_flags() {
         let (_temp, layout) = fixture();
-        assert_eq!(complete(&words(&["@@ops.init"]), "", &layout), None);
+        assert_eq!(complete(&words(&["global@ops.init"]), "", &layout), None);
         assert_eq!(complete(&words(&["ops"]), "i", &layout), None);
         assert_eq!(
-            complete(&words(&["@@ops", "explode"]), "", &layout),
+            complete(&words(&["global@ops", "explode"]), "", &layout),
             Some(Vec::new())
         );
     }
@@ -326,7 +333,8 @@ mod tests {
     #[test]
     fn complete_options_per_verb() {
         let (_temp, layout) = fixture();
-        let opts = |verb: &str, partial: &str| complete(&words(&["@@ops", verb]), partial, &layout);
+        let opts =
+            |verb: &str, partial: &str| complete(&words(&["global@ops", verb]), partial, &layout);
 
         assert_eq!(
             opts("init", "--"),
@@ -407,16 +415,20 @@ mod tests {
         fs::write(layout.alias_dir.join("bad.name.byk.json"), "{}").unwrap();
 
         assert_eq!(
-            complete(&words(&["@@ops", "clone"]), "@@", &layout),
-            Some(vec!["@@ops".to_string(), "@@src".to_string()])
+            complete(&words(&["global@ops", "clone"]), "global@", &layout),
+            Some(vec!["global@ops".to_string(), "global@src".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@ops", "link"]), "@@s", &layout),
-            Some(vec!["@@src".to_string()])
+            complete(&words(&["global@ops", "link"]), "global@s", &layout),
+            Some(vec!["global@src".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@ops", "init", "--link"]), "@@", &layout),
-            Some(vec!["@@ops".to_string(), "@@src".to_string()])
+            complete(
+                &words(&["global@ops", "init", "--link"]),
+                "global@",
+                &layout
+            ),
+            Some(vec!["global@ops".to_string(), "global@src".to_string()])
         );
     }
 
@@ -425,19 +437,19 @@ mod tests {
         let (_temp, layout) = fixture();
 
         assert_eq!(
-            complete(&words(&["@@ops", "clone"]), "./x", &layout),
+            complete(&words(&["global@ops", "clone"]), "./x", &layout),
             Some(Vec::new())
         );
         assert_eq!(
-            complete(&words(&["@@ops", "clone", "src"]), "", &layout),
+            complete(&words(&["global@ops", "clone", "src"]), "", &layout),
             Some(Vec::new())
         );
         assert_eq!(
-            complete(&words(&["@@ops", "init"]), "--", &layout),
+            complete(&words(&["global@ops", "init"]), "--", &layout),
             Some(vec!["--help".to_string(), "--link".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@ops", "set"]), "@", &layout),
+            complete(&words(&["global@ops", "set"]), "local@", &layout),
             Some(Vec::new())
         );
     }
@@ -446,32 +458,32 @@ mod tests {
     fn complete_clone_source_prefixes() {
         let (_temp, layout) = fixture();
         assert_eq!(
-            complete(&words(&["@@ops", "clone"]), "git", &layout),
+            complete(&words(&["global@ops", "clone"]), "git", &layout),
             Some(vec!["github:".to_string(), "gitee:".to_string()])
         );
         // 通道已经搬进配置，不再有 jsdelivr / ghproxy 前缀
         assert_eq!(
-            complete(&words(&["@@ops", "clone"]), "jsd", &layout),
+            complete(&words(&["global@ops", "clone"]), "jsd", &layout),
             Some(Vec::new())
         );
         // 来源已给就不再补前缀
         assert_eq!(
-            complete(&words(&["@@ops", "clone", "github:a/b"]), "j", &layout),
+            complete(&words(&["global@ops", "clone", "github:a/b"]), "j", &layout),
             Some(Vec::new())
         );
         // `-t` 的取值是路由 spec，不是前缀
         assert_eq!(
-            complete(&words(&["@@ops", "clone", "-t"]), "a", &layout),
+            complete(&words(&["global@ops", "clone", "-t"]), "a", &layout),
             Some(Vec::new())
         );
         // `-d` 不占用来源位置
         assert_eq!(
-            complete(&words(&["@@ops", "clone", "-d"]), "gith", &layout),
+            complete(&words(&["global@ops", "clone", "-d"]), "gith", &layout),
             Some(vec!["github:".to_string()])
         );
         // 其他命令没有前缀补全
         assert_eq!(
-            complete(&words(&["@@ops", "link"]), "git", &layout),
+            complete(&words(&["global@ops", "link"]), "git", &layout),
             Some(Vec::new())
         );
     }
@@ -486,7 +498,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            complete(&words(&["@@ops", "remove"]), "", &layout),
+            complete(&words(&["global@ops", "remove"]), "", &layout),
             Some(vec![
                 "build".to_string(),
                 "web".to_string(),
@@ -494,11 +506,11 @@ mod tests {
             ])
         );
         assert_eq!(
-            complete(&words(&["@@ops", "remove"]), "web.", &layout),
+            complete(&words(&["global@ops", "remove"]), "web.", &layout),
             Some(vec!["web.deploy".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@ops", "remove", "build"]), "", &layout),
+            complete(&words(&["global@ops", "remove", "build"]), "", &layout),
             Some(Vec::new())
         );
     }
@@ -513,7 +525,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            complete(&words(&["@@ops", "remove"]), "", &layout),
+            complete(&words(&["global@ops", "remove"]), "", &layout),
             Some(Vec::new())
         );
     }
@@ -528,7 +540,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            complete(&words(&["@@ops", "set"]), "", &layout),
+            complete(&words(&["global@ops", "set"]), "", &layout),
             Some(vec![
                 "build".to_string(),
                 "web".to_string(),
@@ -536,11 +548,11 @@ mod tests {
             ])
         );
         assert_eq!(
-            complete(&words(&["@@ops", "set"]), "web.", &layout),
+            complete(&words(&["global@ops", "set"]), "web.", &layout),
             Some(vec!["web.deploy".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@ops", "set"]), "--", &layout),
+            complete(&words(&["global@ops", "set"]), "--", &layout),
             Some(vec![
                 "--help".to_string(),
                 "--cmd".to_string(),
@@ -561,6 +573,9 @@ mod tests {
     #[test]
     fn complete_invalid_stem_is_empty() {
         let (_temp, layout) = fixture();
-        assert_eq!(complete(&words(&["@@a/b"]), "", &layout), Some(Vec::new()));
+        assert_eq!(
+            complete(&words(&["global@a/b"]), "", &layout),
+            Some(Vec::new())
+        );
     }
 }

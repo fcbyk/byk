@@ -65,7 +65,7 @@ mod tests {
         use crate::model::AliasValue;
         ResolvedAlias {
             definition: to_alias_definition(&AliasValue::Str(cmd.into())),
-            source: "@t".into(),
+            source: "local@t".into(),
             source_path: None,
             paths: Vec::new(),
             prepend_paths: Vec::new(),
@@ -103,7 +103,7 @@ mod tests {
                 description: Some("部署".into()),
                 recursive: None,
             }),
-            source: "@t".into(),
+            source: "local@t".into(),
             source_path: None,
             paths: Vec::new(),
             prepend_paths: Vec::new(),
@@ -125,7 +125,7 @@ mod tests {
                 description: None,
                 recursive: None,
             }),
-            source: "@t".into(),
+            source: "local@t".into(),
             source_path: None,
             paths: Vec::new(),
             prepend_paths: Vec::new(),
@@ -149,7 +149,7 @@ mod tests {
                 description: None,
                 recursive: None,
             }),
-            source: "@t".into(),
+            source: "local@t".into(),
             source_path: None,
             paths: vec![dir.path().to_string_lossy().into_owned()],
             prepend_paths: Vec::new(),
@@ -173,7 +173,7 @@ mod tests {
 
         let resolved = ResolvedAlias {
             definition: to_alias_definition(&AliasValue::Str("python -V".into())),
-            source: "@t".into(),
+            source: "local@t".into(),
             source_path: None,
             paths: Vec::new(),
             prepend_paths: vec![venv_bin.to_string_lossy().into_owned()],

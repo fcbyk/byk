@@ -4,6 +4,7 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::Command;
 
 /// 补全生成器支持的 shell；名单与 `completion::generate` 保持一致。

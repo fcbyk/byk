@@ -60,7 +60,7 @@ byk __api__
     {
       "name": "file",
       "args": "<file-key> | --list",
-      "description": "resolve an alias file key (@name / @@name) to its path, or list every alias file with --list"
+      "description": "resolve an alias file key (local@name / global@name) to its path, or list every alias file with --list"
     },
     {
       "name": "expand",
@@ -89,7 +89,7 @@ This request exists for the install script; day to day you only need one line (s
 
 ## complete `[--with-descriptions] <words...>`
 
-Hand it the words already typed on the command line and it returns candidates, one per line. With an `@` / `@@` prefix it returns file keys only; with a group prefix it returns that group's children. An empty word lists merged aliases only — file keys appear once the word starts with `@` / `@@`. With `--with-descriptions`, built-in options, file-command verbs, and file keys all carry a tab-separated description; a file key describes itself with its alias file path, home directory shown as `~`.
+Hand it the words already typed on the command line and it returns candidates, one per line. With a `local@` / `global@` prefix it returns file keys only; with a group prefix it returns that group's children. An empty word lists merged aliases only — file keys appear once the word starts with `local@` / `global@`. With `--with-descriptions`, built-in options, file-command verbs, and file keys all carry a tab-separated description; a file key describes itself with its alias file path, home directory shown as `~`.
 
 ```bash
 $ byk __api__ complete grp.
@@ -104,20 +104,20 @@ Each call is a read-only scan, and scan-time warnings about alias files (an inva
 
 ## resolve `<key> [args...]`
 
-Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`@run.build`, `@@ops.deploy`). File commands are not aliases: `@file command` is rejected with exit code 1, and so is a path segment that starts with `$` (a reserved field or custom metadata).
+Resolves an alias without running it: final command, working directory, PATH prefixes and execution mode. The key accepts either form — a name from the merged space (`dep`), or the exact syntax (`local@run.build`, `global@ops.deploy`). File commands are not aliases: `local@file command` is rejected with exit code 1, and so is a path segment that starts with `$` (a reserved field or custom metadata).
 
 :::warning Not `file.key`
-`run.build` is a **dotted path**, looked up as a group name inside the merged space, and will usually miss. File keys take a prefix: `@run.build`.
+`run.build` is a **dotted path**, looked up as a group name inside the merged space, and will usually miss. File keys take a prefix: `local@run.build`.
 :::
 
 ```bash
-byk __api__ resolve @run.build --env staging
+byk __api__ resolve local@run.build --env staging
 ```
 
 | Field | Meaning |
 |-------|---------|
 | `key` | The key you passed, echoed back |
-| `source` | The file key that matched, e.g. `@run` / `@@ops` |
+| `source` | The file key that matched, e.g. `local@run` / `global@ops` |
 | `sourcePath` | Absolute path of that alias file; `null` only in the rare sourceless case |
 | `command` | Non-interactive: the final command with placeholders resolved (arguments are already quoted for the shell, so it can go straight to `sh -c`); interactive: **the unresolved template** |
 | `cwd` | Working directory the alias would run in (absolute) |
@@ -134,7 +134,7 @@ Two fields deserve their own explanation, because a plugin's correctness rests o
 ```json title="byk __api__ resolve int"
 {
   "key": "int",
-  "source": "@i",
+  "source": "local@i",
   "sourcePath": "/Users/you/proj/i.byk.json",
   "command": "deploy --env {env}",
   "cwd": "/Users/you/proj",
@@ -197,24 +197,24 @@ __api__ paths: unknown name "bin" (expected one of: root, alias, workdir)
 Resolves a file key to an address without reading the file or requiring it to exist:
 
 ```bash
-byk __api__ file @run
+byk __api__ file local@run
 ```
 
-```json title="byk __api__ file @run"
+```json title="byk __api__ file local@run"
 {
-  "key": "@run",
+  "key": "local@run",
   "scope": "local",
   "path": "/Users/you/proj/run.byk.json",
   "dir": "/Users/you/proj"
 }
 ```
 
-It accepts the same key forms as file commands: `@name` (working directory), `@@name` (global alias directory), `@` / `@@` (the anonymous `.byk.json`). `path` matches an entry in `paths.aliasFiles`; `key`, `scope`, and `dir` come on top.
+It accepts the same key forms as file commands: `local@name` (working directory), `global@name` (global alias directory), `local@` / `global@` (the anonymous `.byk.json`). `path` matches an entry in `paths.aliasFiles`; `key`, `scope`, and `dir` come on top.
 
-- **No existence check**: it answers "where would this land under byk's rules", the same path `@run path` prints, plus `scope` and `dir`.
+- **No existence check**: it answers "where would this land under byk's rules", the same path `local@run path` prints, plus `scope` and `dir`.
 - **Address only, not content**: to learn which file an alias came from and what it finally runs, use `resolve`.
 - **Links are not followed**: the result is the location of the link file itself, not its target.
-- **Alias keys are rejected**: the dot in `@run.build` makes it an invalid filename, exiting 1.
+- **Alias keys are rejected**: the dot in `local@run.build` makes it an invalid filename, exiting 1.
 
 ### `--list`
 
@@ -228,13 +228,13 @@ byk __api__ file --list
 {
   "files": [
     {
-      "key": "@@ops",
+      "key": "global@ops",
       "scope": "global",
       "path": "/Users/you/.byk/alias/ops.byk.json",
       "dir": "/Users/you/.byk/alias"
     },
     {
-      "key": "@run",
+      "key": "local@run",
       "scope": "local",
       "path": "/Users/you/proj/run.byk.json",
       "dir": "/Users/you/proj"
@@ -247,7 +247,7 @@ The list is enumerated by filename only and content is never read: a file with b
 
 ## expand `[--no-builtins] <path>`
 
-Expands the variables in a JSON file and prints the result. The argument is an ordinary file path (a relative one is resolved against the process working directory), **not an `@file` key**. The flag comes before the path.
+Expands the variables in a JSON file and prints the result. The argument is an ordinary file path (a relative one is resolved against the process working directory), **not a `local@file` key**. The flag comes before the path.
 
 `--no-builtins` expands only the file's own `$var` declarations: `${byk_dir}`, `${work_dir}`, `${file_dir}` and `${deps_dir}` are not injected and stay as written unless `$var` declares a variable with that name.
 
@@ -325,10 +325,10 @@ The scan is not recursive, exactly like execution: it covers the process working
 ## How completion hooks up
 
 The installer does not write completion (like pip, it only puts the binary in
-place). `@@@shell` installs it into your current shell's startup file:
+place). `sys@shell` installs it into your current shell's startup file:
 
 ```bash
-byk @@@shell add completion
+byk sys@shell add completion
 ```
 
 What it writes is a marked block like this (earlier `install.sh` versions wrote
@@ -344,7 +344,7 @@ The two marker lines are full sentences rather than arrows — a startup file is
 read by people, and `# >>> ... >>>` looks like leftover merge-conflict debris in
 someone else's dotfiles.
 
-This line forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same. `byk @@@shell` tells you which file it will touch, and `remove completion` takes the block out without changing anything else. See [System Files](/cli/system-files).
+This line forwards Tab events to `byk __api__ complete`, which scans your aliases in real time and returns candidates. Writing the same line by hand works exactly the same. `byk sys@shell` tells you which file it will touch, and `remove completion` takes the block out without changing anything else. See [System Files](/cli/system-files).
 
 ## Versions and compatibility
 

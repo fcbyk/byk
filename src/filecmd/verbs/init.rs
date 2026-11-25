@@ -61,8 +61,8 @@ mod tests {
     #[test]
     fn accepts_link_target() {
         assert_eq!(
-            parse_args(&args(&["--link", "@tool"])),
-            Ok(Some("@tool".to_string()))
+            parse_args(&args(&["--link", "local@tool"])),
+            Ok(Some("local@tool".to_string()))
         );
     }
 

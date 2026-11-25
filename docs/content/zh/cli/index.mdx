@@ -31,7 +31,7 @@ curl -fsSL https://cli.fcbyk.com/install.sh | bash
 }
 ```
 
-项目里这份手写最直接。想放进全局目录 `~/.byk/alias/` 时不必开编辑器：`byk @@hello init` 建文件，`byk @@hello set hello --cmd "echo hello world"` 加条目。详见[文件命令](/cli/file-commands)。
+项目里这份手写最直接。想放进全局目录 `~/.byk/alias/` 时不必开编辑器：`byk global@hello init` 建文件，`byk global@hello set hello --cmd "echo hello world"` 加条目。详见[文件命令](/cli/file-commands)。
 
 执行：
 
@@ -41,10 +41,10 @@ byk hello
 
 当前目录里的 `*.byk.json` 默认参与合并，而且优先级高于全局目录——`cd` 进项目就能直接调用，不用写任何声明。
 
-需要精确指定「哪个文件里的哪个别名」时，用 `@文件.key`（本地）或 `@@文件.key`（全局）：
+需要精确指定「哪个文件里的哪个别名」时，用 `local@文件.key`（当前目录）或 `global@文件.key`（CLI 别名目录）；`sys@` 是第三个作用域，指向 byk 内置的系统文件。只有作用域能缩写成唯一前缀（`l@` / `g@` / `s@`），只写 `local@` 则指向当前目录的匿名 `.byk.json`：
 
 ```bash
-byk @hello.hello
+byk local@hello.hello
 ```
 
 如果某段别名只想被精确调用、不要出现在 `byk <key>` 里，在对应位置写 `"$private": true`。详见 [别名配置 - 可见性](/cli/alias/config#可见性)。
@@ -53,8 +53,8 @@ byk @hello.hello
 
 1. `byk` 解析参数，识别选项与隐藏接口 `__api__`
 2. 剩下第一个词作为别名名，其余作为参数
-3. 以 `@@@` 开头 → 交给对应的系统文件命令，不参与别名查找
-4. 命中 `@文件.key` 精确语法 → 直接读该文件
+3. 以 `sys@` 开头 → 交给对应的系统文件命令，不参与别名查找
+4. 命中 `local@文件.key` 精确语法 → 直接读该文件
 5. 否则在合并后的别名空间里查找（全局 `~/.byk/alias/` + 当前目录）
 6. 替换变量（`${byk_dir}` / `${file_dir}` / `${deps_dir}` 与 `$var`），解析参数占位符
 7. 在 `$cwd` 下执行命令；未命中则列出候选并退出 1
@@ -63,7 +63,7 @@ byk @hello.hello
 
 - [选项与命令](/cli/commands) — `-h` / `-v` / `--paths` / `--check`、执行形式与保留字
 - [文件命令](/cli/file-commands) — 每个别名文件自带的 `init` / `set` / `clone`，改文件本身用它
-- [系统文件](/cli/system-files) — `@@@config` 里的设置、`@@@tap` 管的 tap 仓库，与 `@@@shell` 维护的 shell 补全
+- [系统文件](/cli/system-files) — `sys@config` 里的设置、`sys@tap` 管的 tap 仓库，与 `sys@shell` 维护的 shell 补全
 - [程序接口](/cli/api) — 隐藏的 `byk __api__`：写脚本、写插件时读这页
 - [快速开始](/cli/alias/start) — 三分钟写出第一个别名文件
 - [别名配置](/cli/alias/config) — 字段、继承、优先级、精确执行

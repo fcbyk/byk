@@ -18,7 +18,7 @@ def test_self_reference_is_rejected(runner, byk_binary):
     r = runner.run("add")
     assert r.returncode == 1
     assert "alias recursion detected" in r.stderr
-    assert "@@rec.add -> @@rec.add" in r.stderr
+    assert "global@rec.add -> global@rec.add" in r.stderr
 
 
 def test_mutual_recursion_is_rejected(runner, byk_binary):
@@ -34,7 +34,7 @@ def test_mutual_recursion_is_rejected(runner, byk_binary):
     r = runner.run("a")
     assert r.returncode == 1
     assert "alias recursion detected" in r.stderr
-    assert "@@rec.a -> @@rec.b -> @@rec.a" in r.stderr
+    assert "global@rec.a -> global@rec.b -> global@rec.a" in r.stderr
 
 
 def test_error_is_not_suppressed_by_silent_mode(runner, byk_binary):

@@ -291,10 +291,7 @@ mod imp {
         parsed: SetArgs,
         layout: &PathLayout,
     ) -> Result<(PathBuf, Option<String>), String> {
-        let prefix = match scope {
-            FileScope::Local => "@",
-            FileScope::Global => "@@",
-        };
+        let prefix = scope.token();
         let hint = format!("Hint: create it with {}{} init", prefix, stem);
 
         edit::object(
@@ -941,7 +938,7 @@ mod tests {
         .unwrap_err();
 
         assert!(err.starts_with("File not found:"));
-        assert!(err.contains("@@ops init"));
+        assert!(err.contains("global@ops init"));
     }
 
     #[test]

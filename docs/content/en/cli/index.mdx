@@ -31,7 +31,7 @@ Write an alias file:
 }
 ```
 
-The copy in your project is quickest to hand-write. For the global directory `~/.byk/alias/` there is no editor to open: `byk @@hello init` creates the file, then `byk @@hello set hello --cmd "echo hello world"` adds the entry. See [File Commands](/cli/file-commands).
+The copy in your project is quickest to hand-write. For the global directory `~/.byk/alias/` there is no editor to open: `byk global@hello init` creates the file, then `byk global@hello set hello --cmd "echo hello world"` adds the entry. See [File Commands](/cli/file-commands).
 
 Run it:
 
@@ -41,10 +41,10 @@ byk hello
 
 `*.byk.json` files in the current directory are merged in by default, with higher priority than the global directory — `cd` into a project and its aliases just work, no declaration required.
 
-When you need to target "which alias in which file" precisely, use `@file.key` (local) or `@@file.key` (global):
+When you need to target "which alias in which file" precisely, use `local@file.key` (current directory) or `global@file.key` (the CLI alias directory); `sys@` is the third scope, for byk's built-in system files. Only the scope can be shortened to a unique prefix (`l@` / `g@` / `s@`), and a bare `local@` addresses the anonymous `.byk.json` in the current directory:
 
 ```bash
-byk @hello.hello
+byk local@hello.hello
 ```
 
 If a subtree should only ever be invoked explicitly and never appear under `byk <key>`, add `"$private": true` there. See [Alias Configuration - Visibility](/cli/alias/config#visibility).
@@ -53,8 +53,8 @@ If a subtree should only ever be invoked explicitly and never appear under `byk 
 
 1. `byk` parses the arguments, recognizing options and the hidden `__api__` interface
 2. The first remaining word is the alias name; everything after it is passed as arguments
-3. A `@@@` prefix routes to the matching system file command, without touching alias lookup
-4. A `@file.key` exact match reads that file directly
+3. A `sys@` prefix routes to the matching system file command, without touching alias lookup
+4. A `local@file.key` exact match reads that file directly
 5. Otherwise the alias is looked up in the merged alias space (global `~/.byk/alias/` + current directory)
 6. Variables (`${byk_dir}` / `${file_dir}` / `${deps_dir}` and `$var`) are substituted, then argument placeholders are resolved
 7. The command executes under `$cwd`; on a miss, candidates are listed and byk exits 1
@@ -63,7 +63,7 @@ If a subtree should only ever be invoked explicitly and never appear under `byk 
 
 - [Options & Commands](/cli/commands) — `-h` / `-v` / `--paths` / `--check`, execution forms, and the reserved words
 - [File Commands](/cli/file-commands) — the built-in `init` / `set` / `clone` that edit an alias file itself
-- [System Files](/cli/system-files) — the settings behind `@@@config`, the tap repositories behind `@@@tap`, and the shell completion `@@@shell` maintains
+- [System Files](/cli/system-files) — the settings behind `sys@config`, the tap repositories behind `sys@tap`, and the shell completion `sys@shell` maintains
 - [Program Interface](/cli/api) — the hidden `byk __api__`: the page to read when writing a script or a plugin
 - [Quick Start](/cli/alias/start) — write your first alias file in three minutes
 - [Alias Configuration](/cli/alias/config) — fields, inheritance, priority, exact execution

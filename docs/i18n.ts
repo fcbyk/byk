@@ -73,16 +73,16 @@ export const i18nSource = {
     en: 'Use',
   },
   homeFeat2Token: {
-    zh: '@文件.key',
-    en: '@file.key',
+    zh: 'local@文件.key',
+    en: 'local@file.key',
   },
   homeFeat2DescB: {
     zh: '绕过合并直接路由过去；要改文件本身用',
     en: 'to bypass merging and go straight to a file; to edit the file itself use',
   },
   homeFeat2Token2: {
-    zh: '@文件 命令',
-    en: '@file command',
+    zh: 'local@文件 命令',
+    en: 'local@file command',
   },
   homeFeat2DescC: {
     zh: '——init、set、clone、link 这些，不必手写 JSON。',

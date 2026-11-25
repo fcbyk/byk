@@ -51,11 +51,11 @@ def calls(log):
     ]
 
 
-def deps_dir(runner, stem="@@tool"):
+def deps_dir(runner, stem="global@tool"):
     return runner.byk_dir / "deps" / stem
 
 
-def manifest_of(runner, stem="@@tool"):
+def manifest_of(runner, stem="global@tool"):
     path = deps_dir(runner, stem) / ".byk-deps.json"
     if not path.exists():
         return None
@@ -73,7 +73,7 @@ def prepare_tool(runner, files, extra=None, base=None):
 
 
 def install(runner, env, *args):
-    return runner.run("@@tool", "deps", "i", *args, env=env)
+    return runner.run("global@tool", "deps", "i", *args, env=env)
 
 
 def local_base(tmp_path):
@@ -102,8 +102,8 @@ def test_fresh_install_downloads_and_records_manifest(runner, tmp_path):
     assert result.stdout == ""
     assert result.stderr.splitlines() == [
         f"Downloading 2 files into {deps_dir(runner)}:",
-        "  add     @@tool/bin/tool <- https://example.com/bin/tool",
-        "  add     @@tool/cfg.json <- https://example.com/cfg.json",
+        "  add     global@tool/bin/tool <- https://example.com/bin/tool",
+        "  add     global@tool/cfg.json <- https://example.com/cfg.json",
         f"Downloaded 2 files into {deps_dir(runner)}",
     ]
 
@@ -171,7 +171,7 @@ def test_changed_url_updates_the_file(runner, tmp_path):
     assert result.returncode == 0
     assert result.stderr.splitlines() == [
         f"Syncing 1 declared entry in {deps_dir(runner)}:",
-        "  update  @@tool/tool <- https://example.com/v2/tool",
+        "  update  global@tool/tool <- https://example.com/v2/tool",
         f"Downloaded 1 file into {deps_dir(runner)}",
     ]
     assert (deps_dir(runner) / "tool").read_bytes() == b"v2"
@@ -189,8 +189,8 @@ def test_renamed_entry_adds_and_removes(runner, tmp_path):
     assert result.returncode == 0
     assert result.stderr.splitlines() == [
         f"Syncing 1 declared entry in {deps_dir(runner)}:",
-        "  add     @@tool/new-tool <- https://example.com/new-tool",
-        "  remove  @@tool/old-tool",
+        "  add     global@tool/new-tool <- https://example.com/new-tool",
+        "  remove  global@tool/old-tool",
         f"Downloaded 1 file into {deps_dir(runner)}",
         f"Removed 1 file from {deps_dir(runner)}",
     ]
@@ -222,7 +222,7 @@ def test_exec_flag_only_rechmods(runner, tmp_path):
     result = install(runner, env)
 
     assert result.returncode == 0
-    assert "chmod   @@tool/tool" in result.stderr
+    assert "chmod   global@tool/tool" in result.stderr
     # 只改 exec 不重取：汇总行不该出现
     assert "Downloaded" not in result.stderr
     assert len(calls(log)) == before
@@ -244,8 +244,8 @@ def test_missing_file_is_repaired(runner, tmp_path):
     assert result.returncode == 0
     assert result.stderr.splitlines() == [
         f"Syncing 2 declared entries in {deps_dir(runner)}:",
-        "  keep    @@tool/tool",
-        "  repair  @@tool/cfg.json <- https://example.com/cfg.json",
+        "  keep    global@tool/tool",
+        "  repair  global@tool/cfg.json <- https://example.com/cfg.json",
         f"Downloaded 1 file into {deps_dir(runner)}",
     ]
     assert (deps_dir(runner) / "cfg.json").read_bytes() == b"cfg"
@@ -283,7 +283,7 @@ def test_legacy_directory_is_adopted_without_downloading(runner, tmp_path):
     assert result.returncode == 0
     assert result.stderr.splitlines() == [
         f"Syncing 1 declared entry in {deps_dir(runner)}:",
-        "  adopt   @@tool/bin/tool",
+        "  adopt   global@tool/bin/tool",
     ]
     assert calls(log) == []
     assert legacy.read_bytes() == b"preinstalled"
@@ -301,7 +301,7 @@ def test_broken_manifest_falls_back_to_adopting(runner, tmp_path):
 
     assert result.returncode == 0
     assert "ignoring .byk-deps.json" in result.stderr
-    assert "adopt   @@tool/tool" in result.stderr
+    assert "adopt   global@tool/tool" in result.stderr
     assert manifest_of(runner)["entries"][0]["dest"] == "tool"
 
 
@@ -321,7 +321,7 @@ def test_manifest_with_escaping_dest_is_rejected(runner):
         encoding="utf-8",
     )
 
-    result = runner.run("@@tool", "deps", "i")
+    result = runner.run("global@tool", "deps", "i")
 
     assert result.returncode == 1
     assert 'a ".." segment' in result.stderr
@@ -338,7 +338,7 @@ def test_force_rebuilds_everything(runner, tmp_path):
 
     assert result.returncode == 0
     assert "--force" in result.stderr
-    assert "update  @@tool/tool" in result.stderr
+    assert "update  global@tool/tool" in result.stderr
     assert len(calls(log)) == before + 1
 
 
@@ -353,7 +353,7 @@ def test_partial_failure_keeps_what_landed(runner, tmp_path):
 
     assert result.returncode == 1
     assert "already written in this run" in result.stderr
-    assert "byk @@tool deps install" in result.stderr
+    assert "byk global@tool deps install" in result.stderr
     # 清单只记真正落盘的那条，下一次安装接着做
     assert [entry["dest"] for entry in manifest_of(runner)["entries"]] == ["tool"]
 
@@ -392,7 +392,7 @@ def test_extract_replaces_the_whole_directory(runner, tmp_path):
 
     assert result.returncode == 0
     assert (
-        "update  @@tool/dist <- https://example.com/v2.tar.gz (extract)"
+        "update  global@tool/dist <- https://example.com/v2.tar.gz (extract)"
         in result.stderr
     )
     # 整目录替换：旧归档里的 ghost 不能留
@@ -408,16 +408,16 @@ def test_root_extract_actually_downloads(runner, tmp_path):
         runner, [{"src": "https://example.com/v1.tar.gz", "extract": True}]
     )
 
-    status = runner.run("@@tool", "deps")
+    status = runner.run("global@tool", "deps")
     assert "0 present" in status.stdout
-    assert "missing  @@tool" in status.stdout
+    assert "missing  global@tool" in status.stdout
 
     result = install(runner, env)
 
     assert result.returncode == 0
     assert result.stderr.splitlines() == [
         f"Downloading 1 file into {deps_dir(runner)}:",
-        "  add     @@tool <- https://example.com/v1.tar.gz (extract)",
+        "  add     global@tool <- https://example.com/v1.tar.gz (extract)",
         f"Downloaded 1 file into {deps_dir(runner)}",
     ]
     assert (deps_dir(runner) / "lansend").is_file()
@@ -426,9 +426,9 @@ def test_root_extract_actually_downloads(runner, tmp_path):
     again = install(runner, env)
     assert "up to date" in again.stderr
 
-    ok = runner.run("@@tool", "deps")
+    ok = runner.run("global@tool", "deps")
     assert "1 present" in ok.stdout
-    assert "ok       @@tool" in ok.stdout
+    assert "ok       global@tool" in ok.stdout
 
 
 def test_root_extract_recorded_over_an_empty_directory_is_repaired(runner, tmp_path):
@@ -459,7 +459,7 @@ def test_root_extract_recorded_over_an_empty_directory_is_repaired(runner, tmp_p
     result = install(runner, env)
 
     assert result.returncode == 0
-    assert "repair  @@tool <- https://example.com/v1.tar.gz (extract)" in result.stderr
+    assert "repair  global@tool <- https://example.com/v1.tar.gz (extract)" in result.stderr
     assert (root / "lansend").is_file()
 
 
@@ -472,7 +472,7 @@ def test_root_extract_rejects_other_entries(runner):
         ],
     )
 
-    result = runner.run("@@tool", "deps", "i")
+    result = runner.run("global@tool", "deps", "i")
 
     assert result.returncode == 1
     assert "must be the only entry" in result.stderr
@@ -501,7 +501,7 @@ def test_extract_install_is_idempotent(runner, tmp_path):
 def test_empty_declaration_is_an_error(runner):
     prepare_tool(runner, [])
 
-    result = runner.run("@@tool", "deps", "i")
+    result = runner.run("global@tool", "deps", "i")
 
     assert result.returncode == 1
     assert "nothing to install" in result.stderr
@@ -510,7 +510,7 @@ def test_empty_declaration_is_an_error(runner):
 def test_install_rejects_yes_flag(runner):
     prepare_tool(runner, ["https://example.com/tool"])
 
-    result = runner.run("@@tool", "deps", "install", "--yes")
+    result = runner.run("global@tool", "deps", "install", "--yes")
 
     assert result.returncode == 1
     assert "Unknown option: --yes" in result.stderr
@@ -520,7 +520,7 @@ def test_install_rejects_yes_flag(runner):
 def test_deps_rejects_unknown_subcommand(runner):
     prepare_tool(runner, ["https://example.com/tool"])
 
-    result = runner.run("@@tool", "deps", "upgrade")
+    result = runner.run("global@tool", "deps", "upgrade")
 
     assert result.returncode == 1
     assert "Unknown deps subcommand" in result.stderr
@@ -541,16 +541,16 @@ def test_local_deps_install_into_the_project(runner, tmp_path):
     env, _ = write_fake_curl(tmp_path, {"/tool": b"local"})
     prepare_local(tmp_path, ["https://example.com/tool"])
 
-    result = runner.run("@tool", "deps", "i", cwd=str(tmp_path), env=env)
+    result = runner.run("local@tool", "deps", "i", cwd=str(tmp_path), env=env)
 
     assert result.returncode == 0
-    local_deps = tmp_path / ".byk" / "deps" / "@tool"
+    local_deps = tmp_path / ".byk" / "deps" / "local@tool"
     assert (local_deps / "tool").read_bytes() == b"local"
     assert (local_deps / ".byk-deps.json").is_file()
     # 自忽略的 .gitignore，免得仓库里冒出二进制
     assert (tmp_path / ".byk" / "deps" / ".gitignore").read_text() == "*\n"
     # 全局那份不受影响
-    assert not (runner.byk_dir / "deps" / "@@tool").exists()
+    assert not (runner.byk_dir / "deps" / "global@tool").exists()
 
 
 def test_local_deps_do_not_mix_between_projects(runner, tmp_path):
@@ -561,11 +561,11 @@ def test_local_deps_do_not_mix_between_projects(runner, tmp_path):
         env, _ = write_fake_curl(project, {"/tool": payload})
         prepare_local(project, ["https://example.com/tool"])
 
-        result = runner.run("@tool", "deps", "i", cwd=str(project), env=env)
+        result = runner.run("local@tool", "deps", "i", cwd=str(project), env=env)
         assert result.returncode == 0, result.stderr
 
-    assert (project_a / ".byk" / "deps" / "@tool" / "tool").read_bytes() == b"A"
-    assert (project_b / ".byk" / "deps" / "@tool" / "tool").read_bytes() == b"B"
+    assert (project_a / ".byk" / "deps" / "local@tool" / "tool").read_bytes() == b"A"
+    assert (project_b / ".byk" / "deps" / "local@tool" / "tool").read_bytes() == b"B"
 
 
 def test_local_deps_dir_expands_in_the_file(runner, tmp_path):
@@ -575,19 +575,19 @@ def test_local_deps_dir_expands_in_the_file(runner, tmp_path):
         extra={"$paths": ["${deps_dir}"], "run": "tool"},
     )
 
-    result = runner.run("@tool", "json", "--expand", cwd=str(tmp_path))
+    result = runner.run("local@tool", "json", "--expand", cwd=str(tmp_path))
 
     assert result.returncode == 0
-    assert f"{tmp_path}/.byk/deps/@tool" in result.stdout
+    assert f"{tmp_path}/.byk/deps/local@tool" in result.stdout
 
 
 def test_destroy_removes_local_deps(runner, tmp_path):
     env, _ = write_fake_curl(tmp_path, {"/tool": b"x"})
     prepare_local(tmp_path, ["https://example.com/tool"])
-    runner.run("@tool", "deps", "i", cwd=str(tmp_path), env=env)
-    assert (tmp_path / ".byk" / "deps" / "@tool").is_dir()
+    runner.run("local@tool", "deps", "i", cwd=str(tmp_path), env=env)
+    assert (tmp_path / ".byk" / "deps" / "local@tool").is_dir()
 
-    result = runner.run("@tool", "destroy", "--yes", cwd=str(tmp_path))
+    result = runner.run("local@tool", "destroy", "--yes", cwd=str(tmp_path))
 
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / ".byk").exists(), "空壳目录也要收掉"
@@ -606,7 +606,7 @@ def test_check_ignores_install_state_of_local_deps(runner, tmp_path):
 def test_status_without_declaration_errors(runner):
     runner.prepare_alias_json("tool", {"run": "tool --version"})
 
-    result = runner.run("@@tool", "deps")
+    result = runner.run("global@tool", "deps")
 
     assert result.returncode == 1
     assert 'declares no "$deps"' in result.stderr
@@ -653,18 +653,18 @@ def seed_status_fixture(runner):
 def test_status_reports_four_states(runner):
     seed_status_fixture(runner)
 
-    result = runner.run("@@tool", "deps")
+    result = runner.run("global@tool", "deps")
 
     assert result.returncode == 0
     assert result.stderr == ""
     assert result.stdout.splitlines() == [
-        "@@tool: 3 declared, 1 present, 1 stale",
-        "  ok       @@tool/bin/a",
-        "  missing  @@tool/bin/b",
-        "  outdated @@tool/cfg/c.json",
-        "  stale    @@tool/old.bin",
+        "global@tool: 3 declared, 1 present, 1 stale",
+        "  ok       global@tool/bin/a",
+        "  missing  global@tool/bin/b",
+        "  outdated global@tool/cfg/c.json",
+        "  stale    global@tool/old.bin",
         f"Deps directory: {deps_dir(runner)}",
-        "Hint: run `byk @@tool deps install` to install the missing assets",
+        "Hint: run `byk global@tool deps install` to install the missing assets",
     ]
 
 
@@ -687,7 +687,7 @@ def test_status_explains_stale_only(runner):
         encoding="utf-8",
     )
 
-    result = runner.run("@@tool", "deps")
+    result = runner.run("global@tool", "deps")
 
     assert result.returncode == 0
     assert "1 stale" in result.stdout
@@ -717,9 +717,9 @@ def test_check_is_clean_after_install(runner, tmp_path):
 
 
 def test_deps_completion_accepts_short_prefixes(runner):
-    short = runner.run("__api__", "complete", "@@tool", "deps", "u")
-    status = runner.run("__api__", "complete", "@@tool", "deps", "s")
-    empty = runner.run("__api__", "complete", "@@tool", "deps", "")
+    short = runner.run("__api__", "complete", "global@tool", "deps", "u")
+    status = runner.run("__api__", "complete", "global@tool", "deps", "s")
+    empty = runner.run("__api__", "complete", "global@tool", "deps", "")
 
     assert short.stdout.splitlines() == ["uninstall"]
     assert status.stdout.splitlines() == ["status"]
@@ -742,8 +742,8 @@ def test_relative_src_joins_the_base(runner, tmp_path):
     assert result.returncode == 0, result.stderr
     assert result.stderr.splitlines() == [
         f"Downloading 2 files into {deps_dir(runner)}:",
-        "  add     @@tool/tool <- https://example.com/dist/tool",
-        "  add     @@tool/x <- https://example.com/shared/x",
+        "  add     global@tool/tool <- https://example.com/dist/tool",
+        "  add     global@tool/x <- https://example.com/shared/x",
         f"Downloaded 2 files into {deps_dir(runner)}",
     ]
     # 清单记的是解析后的地址，相对写法只留在声明里
@@ -763,7 +763,7 @@ def test_base_is_the_identity_of_the_source(runner, tmp_path):
     result = install(runner, env)
 
     assert result.returncode == 0, result.stderr
-    assert f"  update  @@tool/tool <- https://example.com/v2/tool" in result.stderr
+    assert f"  update  global@tool/tool <- https://example.com/v2/tool" in result.stderr
     assert (deps_dir(runner) / "tool").read_bytes() == b"v2"
 
 
@@ -772,7 +772,7 @@ def test_status_shows_the_base(runner, tmp_path):
     prepare_tool(runner, ["tool"], base="https://example.com/dist/")
     assert install(runner, env).returncode == 0
 
-    result = runner.run("@@tool", "deps")
+    result = runner.run("global@tool", "deps")
 
     assert result.returncode == 0
     assert "Base: https://example.com/dist/\n" in result.stdout
@@ -781,7 +781,7 @@ def test_status_shows_the_base(runner, tmp_path):
 def test_status_flags_a_missing_base(runner):
     prepare_tool(runner, ["./tool"])
 
-    result = runner.run("@@tool", "deps")
+    result = runner.run("global@tool", "deps")
 
     assert result.returncode == 1
     assert 'relative path but "$deps.base" is not set' in result.stderr
@@ -796,13 +796,13 @@ def test_a_local_source_says_how_many_came_from_disk(runner, tmp_path):
     (tmp_path / "proj" / "tool").write_text("v1", encoding="utf-8")
     prepare_tool(runner, ["tool"], base=base)
 
-    result = runner.run("@@tool", "deps", "i")
+    result = runner.run("global@tool", "deps", "i")
 
     deps_root = deps_dir(runner)
     assert result.returncode == 0, result.stderr
     assert result.stderr.splitlines() == [
         f"Downloading 1 file into {deps_root}:",
-        f"  add     @@tool/tool <- {base}tool",
+        f"  add     global@tool/tool <- {base}tool",
         f"Downloaded 1 file into {deps_root} (1 local)",
     ]
 
@@ -811,15 +811,15 @@ def test_a_newer_local_source_is_reinstalled(runner, tmp_path):
     base = local_base(tmp_path)
     (tmp_path / "proj" / "tool").write_text("v1", encoding="utf-8")
     prepare_tool(runner, ["tool"], base=base)
-    assert runner.run("@@tool", "deps", "i").returncode == 0
+    assert runner.run("global@tool", "deps", "i").returncode == 0
 
     # URL 可以当内容寻址，本地文件不行：改了源就该重装
     time.sleep(1.1)
     (tmp_path / "proj" / "tool").write_text("v2", encoding="utf-8")
-    result = runner.run("@@tool", "deps", "i")
+    result = runner.run("global@tool", "deps", "i")
 
     assert result.returncode == 0, result.stderr
-    assert f"  update  @@tool/tool <- {base}tool" in result.stderr
+    assert f"  update  global@tool/tool <- {base}tool" in result.stderr
     assert "(1 local)" in result.stderr
     assert (deps_dir(runner) / "tool").read_text(encoding="utf-8") == "v2"
 
@@ -837,8 +837,8 @@ def test_a_local_base_can_mix_with_absolute_urls(runner, tmp_path):
     assert result.returncode == 0, result.stderr
     assert result.stderr.splitlines() == [
         f"Downloading 2 files into {deps_root}:",
-        f"  add     @@tool/tool <- {base}tool",
-        "  add     @@tool/remote.js <- https://example.com/remote.js",
+        f"  add     global@tool/tool <- {base}tool",
+        "  add     global@tool/remote.js <- https://example.com/remote.js",
         f"Downloaded 2 files into {deps_root} (1 local)",
     ]
     assert len(calls(log)) == 1

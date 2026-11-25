@@ -1,4 +1,4 @@
-//! `@@@tap`：把 tap 仓库装进 `~/.byk/tap/`，并记账到 `tap/index.json`。
+//! `sys@tap`：把 tap 仓库装进 `~/.byk/tap/`，并记账到 `tap/index.json`。
 //!
 //! `index.json` 只被这里读写，`clone --tap` 仍扫目录，索引丢了也不影响 `--tap`。
 //! `remove` / `update` 只认账本里的键，手工放进 `tap/` 的仓库不会被误删。
@@ -27,7 +27,7 @@ pub(crate) const VERBS: &[(&str, &str)] = &[
     ("remove", "Delete an installed repository"),
 ];
 
-const USAGE: &str = "byk @@@tap [OPTIONS] [COMMAND] [ARGS]...";
+const USAGE: &str = "byk sys@tap [OPTIONS] [COMMAND] [ARGS]...";
 
 /// 没写来源地址时的默认源，也是 `github.com` 在账本里的写法。
 const ORIGIN: &str = "github";
@@ -136,7 +136,7 @@ fn valid_reference(value: &str) -> bool {
 }
 
 fn shape_error() -> String {
-    "Tap repository must be <user>/<repo>[@<ref>]\nHint: e.g. `byk @@@tap add aaa/bb`".to_string()
+    "Tap repository must be <user>/<repo>[@<ref>]\nHint: e.g. `byk sys@tap add aaa/bb`".to_string()
 }
 
 fn invalid_component(kind: &str, value: &str) -> String {
@@ -212,7 +212,7 @@ fn add(args: &[String], layout: &PathLayout) -> Result<(), String> {
         [spec, url] => (spec.as_str(), Some(url.as_str())),
         _ => {
             return Err(
-                "add takes one repository and an optional git URL\nHint: e.g. `byk @@@tap add aaa/bb` or `byk @@@tap add aaa/bb https://git.example.com/aaa/bb.git`"
+                "add takes one repository and an optional git URL\nHint: e.g. `byk sys@tap add aaa/bb` or `byk sys@tap add aaa/bb https://git.example.com/aaa/bb.git`"
                     .to_string(),
             );
         }
@@ -223,7 +223,7 @@ fn add(args: &[String], layout: &PathLayout) -> Result<(), String> {
 
     if dir.exists() {
         return Err(format!(
-            "Tap repository already exists: {}\nHint: remove it first with `byk @@@tap remove {}`",
+            "Tap repository already exists: {}\nHint: remove it first with `byk sys@tap remove {}`",
             dir.display(),
             repo.key
         ));
@@ -294,7 +294,7 @@ fn update(args: &[String], layout: &PathLayout) -> Result<(), String> {
             Ok(())
         }
         _ => Err(
-            "update takes one repository, or none to update every repository\nHint: e.g. `byk @@@tap update` or `byk @@@tap update aaa/bb`"
+            "update takes one repository, or none to update every repository\nHint: e.g. `byk sys@tap update` or `byk sys@tap update aaa/bb`"
                 .to_string(),
         ),
     }
@@ -307,7 +307,7 @@ fn update_all(layout: &PathLayout) -> Result<(), String> {
 
     if object.is_empty() {
         eprintln!("No repositories installed");
-        eprintln!("Hint: install one with `byk @@@tap add aaa/bb`");
+        eprintln!("Hint: install one with `byk sys@tap add aaa/bb`");
         return Ok(());
     }
 
@@ -347,7 +347,7 @@ fn installed_repo(key: &str, value: &Value) -> Result<Repo, String> {
     let reference = field("ref").unwrap_or(DEFAULT_REF);
     if !valid_reference(reference) {
         return Err(format!(
-            "Invalid ref in the tap index: {:?}\nHint: `byk @@@tap remove {}` and add it again",
+            "Invalid ref in the tap index: {:?}\nHint: `byk sys@tap remove {}` and add it again",
             reference, key
         ));
     }
@@ -427,7 +427,7 @@ fn render_list(entries: &[index::Entry], layout: &PathLayout) -> String {
     if entries.is_empty() {
         output.push_str(&format!(
             "  No repositories installed\n  {}\n",
-            "Hint: install one with `byk @@@tap add aaa/bb`".dimmed()
+            "Hint: install one with `byk sys@tap add aaa/bb`".dimmed()
         ));
         return output;
     }
@@ -717,7 +717,7 @@ mod tests {
 
         let err = add(&args(&["aaa/bb"]), &layout).unwrap_err();
         assert!(err.starts_with("Tap repository already exists:"), "{err}");
-        assert!(err.contains("byk @@@tap remove aaa/bb"), "{err}");
+        assert!(err.contains("byk sys@tap remove aaa/bb"), "{err}");
     }
 
     #[test]
@@ -879,7 +879,7 @@ mod tests {
         let err = installed_repo("aaa/bb", &json!({ "ref": "-oops" })).unwrap_err();
 
         assert!(err.starts_with("Invalid ref in the tap index:"), "{err}");
-        assert!(err.contains("byk @@@tap remove aaa/bb"), "{err}");
+        assert!(err.contains("byk sys@tap remove aaa/bb"), "{err}");
     }
 
     #[test]
@@ -940,7 +940,7 @@ mod tests {
         let text = strip_ansi(&render_list(&[], &layout));
 
         assert!(text.contains("No repositories installed"), "{text}");
-        assert!(text.contains("byk @@@tap add aaa/bb"), "{text}");
+        assert!(text.contains("byk sys@tap add aaa/bb"), "{text}");
     }
 
     #[test]
@@ -972,7 +972,7 @@ mod tests {
         let layout = layout(&temp);
 
         let text = strip_ansi(&render_help(&layout));
-        assert!(text.contains("Usage: byk @@@tap [OPTIONS] [COMMAND] [ARGS]..."));
+        assert!(text.contains("Usage: byk sys@tap [OPTIONS] [COMMAND] [ARGS]..."));
         assert!(text.contains("  list    Show every installed repository"));
         assert!(text.contains("  add     Install a repository"), "{text}");
         assert!(
@@ -993,11 +993,11 @@ mod tests {
         );
         assert_eq!(
             run(&args(&["add"]), &layout).unwrap_err(),
-            "add takes one repository and an optional git URL\nHint: e.g. `byk @@@tap add aaa/bb` or `byk @@@tap add aaa/bb https://git.example.com/aaa/bb.git`"
+            "add takes one repository and an optional git URL\nHint: e.g. `byk sys@tap add aaa/bb` or `byk sys@tap add aaa/bb https://git.example.com/aaa/bb.git`"
         );
         assert_eq!(
             run(&args(&["update", "aaa/bb", "ccc/dd"]), &layout).unwrap_err(),
-            "update takes one repository, or none to update every repository\nHint: e.g. `byk @@@tap update` or `byk @@@tap update aaa/bb`"
+            "update takes one repository, or none to update every repository\nHint: e.g. `byk sys@tap update` or `byk sys@tap update aaa/bb`"
         );
         assert_eq!(
             run(&args(&["remove"]), &layout).unwrap_err(),

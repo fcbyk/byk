@@ -33,13 +33,13 @@ Scan problems land in the **Problems** panel and refresh when a `*.byk.json` is 
 
 ### Supported filenames
 
-| File               | Runs as                |
-| ------------------ | ---------------------- |
-| `run.byk.json`     | `byk @run.dev`         |
-| `release.byk.json` | `byk @release.publish` |
-| `.byk.json`        | `byk @.build`          |
+| File               | Runs as                    |
+| ------------------ | -------------------------- |
+| `run.byk.json`     | `byk local@run.dev`        |
+| `release.byk.json` | `byk local@release.publish`|
+| `.byk.json`        | `byk local@.build`         |
 
-The `@file.key` form calls the alias in that exact file, so a project file works even though it does not take part in global alias merging.
+The `local@file.key` form calls the alias in that exact file, so a project file works even though it does not take part in global alias merging.
 
 The file key is derived from the filename, exactly as the CLI does it, so no byk process is spawned to address a file — Run Direct works with no byk installed at all. An invalid name is reported by `byk __api__ check` in the Problems panel.
 
@@ -145,11 +145,11 @@ VS Code 的 [byk](https://github.com/fcbyk/byk) 集成——不用离开编辑�
 
 | 文件               | 实际执行               |
 | ------------------ | ---------------------- |
-| `run.byk.json`     | `byk @run.dev`         |
-| `release.byk.json` | `byk @release.publish` |
-| `.byk.json`        | `byk @.build`          |
+| `run.byk.json`     | `byk local@run.dev`         |
+| `release.byk.json` | `byk local@release.publish` |
+| `.byk.json`        | `byk local@.build`          |
 
-`@文件.key` 形式只调用该文件里的别名，所以项目内的文件即使不参与全局别名合并也能用。
+`local@文件.key` 形式只调用该文件里的别名，所以项目内的文件即使不参与全局别名合并也能用。
 
 文件 key 由文件名推导（规则与 CLI 一致），无需启动 byk 进程，所以「独立运行别名」在不安装 byk 时也能用。文件名非法时由 `byk __api__ check` 在问题面板中报告。
 

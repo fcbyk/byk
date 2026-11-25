@@ -18,10 +18,10 @@ CI 管不了的，是下面五节：改不改代码、README 怎么写、CHANGEL
 README 是给第一次来的人看的：这是什么、怎么装、怎么跑一次。**不是** docs 的目录。
 
 - 每个命令域只留一行：形式 + 一句它管什么。动词清单、参数、行为细节都指向 docs，
-  `-h` 已经能列出来的东西不在 README 里再抄一份；`@file` 那行的动词清单例外——它就是
+  `-h` 已经能列出来的东西不在 README 里再抄一份；`local@file` 那行的动词清单例外——它就是
   别名文件能做什么；
-- `@@@` 只说它指向「别名文件以外的其他文件」，最多点出 `@@@config` / `@@@tap` /
-  `@@@shell` 三个名字，不展开各自的动词；
+- `sys@` 只说它指向「别名文件以外的其他文件」，最多点出 `sys@config` / `sys@tap` /
+  `sys@shell` 三个名字，不展开各自的动词；
 - 示例只留能直接复制运行的最小串，不写预期输出、不写注意事项；
 - 顶部有一条给 AI agent 看的 HTML 注释，指向本文件；渲染时不可见，别删；
 - `README.md` 与 `README.zh.md` 必须同步改，结构、条目数、链接一一对应。
@@ -31,9 +31,9 @@ README 是给第一次来的人看的：这是什么、怎么装、怎么跑一�
 CHANGELOG 只回答「改了什么」，一段话说清就够；**为什么这么改、怎么实现**是 docs 的事。
 
 - 一条一个功能，一行到两行。不写实现细节、不写取舍论证、不列测试数字；
-- 同一功能不拆成多条。例如 `@@@config` / `@@@tap` / `@@@shell` / `banner` / `@@@` 补全
-  是同一件事，合成一条 **`@@@` 系统文件**；`$deps` 的代理与进度条也合成一条；
-- 细节去 `docs/content/{en,zh}/cli/` 展开，CHANGELOG 里不重复。`@@@shell` 的探测顺序、
+- 同一功能不拆成多条。例如 `sys@config` / `sys@tap` / `sys@shell` / `banner` / `sys@` 补全
+  是同一件事，合成一条 **`sys@` 系统文件**；`$deps` 的代理与进度条也合成一条；
+- 细节去 `docs/content/{en,zh}/cli/` 展开，CHANGELOG 里不重复。`sys@shell` 的探测顺序、
   写入纪律这类内容只出现在 `system-files.mdx`；
 - 破坏性变更写清「旧写法 → 新写法」，并带上必要的取值：合并条目后，读者可能没有别处
   可查（如 `net-github` 的 `direct` / `ghproxy` 就写在 `clone` 那条里）；
@@ -58,11 +58,11 @@ CHANGELOG 只回答「改了什么」，一段话说清就够；**为什么这�
 默认**只有一行**，没有 body：
 
 ```
-feat(filecmd): add @@@shell for shell completion
+feat(filecmd): add sys@shell for shell completion
 ```
 
 - 英文、`type(scope): subject`，subject 小写开头、不加句号、不加 emoji；代码里的东西用
-  反引号包住（`@@@tap update`、`--paths`）；
+  反引号包住（`sys@tap update`、`--paths`）；
 - 类型照 `pyproject.toml` 里 commitizen 配的那几个：`feat` / `fix` / `refactor` / `docs` /
   `perf` / `test` / `style` / `chore`；scope 用模块名（`filecmd` / `completion` / `aliases` /
   `api` / `docs`）；
@@ -72,7 +72,7 @@ feat(filecmd): add @@@shell for shell completion
   ```
   feat(filecmd)!: move file verbs to space separated form
 
-  BREAKING CHANGE: `@file.set` -> `@file set`, `@@file.set` -> `@@file set`
+  BREAKING CHANGE: `local@file.set` -> `local@file set`, `global@file.set` -> `global@file set`
   ```
 
   标题只说改了哪儿，迁移办法放这行——`!` 是标记，`BREAKING CHANGE:` 才是给读者的内容。
@@ -81,7 +81,7 @@ feat(filecmd): add @@@shell for shell completion
   破坏性变更属于前一种——没有 `BREAKING CHANGE:` 那一行，光看标题别人不知道怎么改。
 
 body 同样简短：每条一行，说清改了哪里、为什么，不铺开说明。**docs 里已经写过的细节不要再
-抄进 body**——`@@@shell` 的探测顺序、`CHANGELOG` 的取舍理由都在文档里，body 只补 commit
+抄进 body**——`sys@shell` 的探测顺序、`CHANGELOG` 的取舍理由都在文档里，body 只补 commit
 本身需要交代的东西。
 
 ## 自检

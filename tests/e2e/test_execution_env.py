@@ -198,7 +198,7 @@ def test_preamble_goes_to_stderr_not_stdout(runner):
     r = runner.run("hi", tty_stderr=True)
     assert r.returncode == 0
     assert r.stdout == "hello\n"
-    assert "> @@env.hi" in r.stderr
+    assert "> global@env.hi" in r.stderr
     assert "> echo hello" in r.stderr
 
 
@@ -227,9 +227,9 @@ def test_mode_silent_group_level_inherited(runner):
 
 
 def test_mode_silent_applies_to_exact_syntax(runner):
-    """@@file.key 精确调用同样受 $mode 影响"""
+    """global@file.key 精确调用同样受 $mode 影响"""
     runner.prepare_alias_json("env", {"$mode": "silent", "hi": "echo hello"})
-    r = runner.run("@@env.hi")
+    r = runner.run("global@env.hi")
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "hello"
 

@@ -386,7 +386,11 @@ mod tests {
     }
 
     fn tmp_dir() -> PathBuf {
-        tempfile::tempdir().unwrap().path().join("deps").join("@@t")
+        tempfile::tempdir()
+            .unwrap()
+            .path()
+            .join("deps")
+            .join("global@t")
     }
 
     #[test]

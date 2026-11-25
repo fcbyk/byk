@@ -10,7 +10,7 @@ def test_private_file_is_not_in_merged_lookup(runner):
     assert merged.returncode == 1
     assert "deploy" in merged.stderr
 
-    exact = runner.run("@@ops.deploy")
+    exact = runner.run("global@ops.deploy")
     assert exact.returncode == 0
     assert "private" in exact.stdout
 
@@ -29,7 +29,7 @@ def test_private_alias_mixes_with_public_siblings(runner):
     assert opened.returncode == 0
     assert "open" in opened.stdout
 
-    exact = runner.run("@@ops.secret")
+    exact = runner.run("global@ops.secret")
     assert exact.returncode == 0
     assert "secret" in exact.stdout
 
@@ -51,7 +51,7 @@ def test_private_group_hides_subtree_and_child_can_reexpose(runner):
     assert shown.returncode == 0
     assert "deep" in shown.stdout
 
-    exact = runner.run("@@ops.group.hidden")
+    exact = runner.run("global@ops.group.hidden")
     assert exact.returncode == 0
     assert "hidden" in exact.stdout
 
@@ -67,7 +67,7 @@ def test_private_local_file_does_not_shadow_global(runner, tmp_path):
     assert merged.returncode == 0
     assert "global" in merged.stdout
 
-    exact = runner.run("@p.deploy", cwd=str(tmp_path))
+    exact = runner.run("local@p.deploy", cwd=str(tmp_path))
     assert exact.returncode == 0
     assert "local" in exact.stdout
 

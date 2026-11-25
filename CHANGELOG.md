@@ -2,13 +2,14 @@
 
 ### Breaking Changes
 
-- **file commands**: `@file..verb` is gone — write `byk @file <verb>` (`byk @@file <verb>` for the global one); the separator is now a space, so it no longer collides with the exact `@file.key` syntax
+- **scope**: `@` / `@@` / `@@@` → `local@` / `global@` / `sys@` (unique prefixes such as `l@`, `g@`, `s@`); dependency directories are now `deps/local@<stem>` and `~/.byk/deps/global@<stem>`, so reinstall dependencies
+- **file commands**: the `..` separator is gone — write `byk local@file <verb>` (`byk global@file <verb>` for the global one); the separator is now a space, so it no longer collides with the exact `local@file.key` syntax
 - **file help**: the `help` command is gone — use `-h` / `--help`, which now repeats the target `FilePath` above the usage
 - **`clone`**: the platform moved into the source argument (`github:` / `gitee:`), and the GitHub transport became the `net-github` setting (`direct` / `ghproxy`); only `--tap` and `--deps` are left
 
 ### Features
 
-- **`@@@` system files**: a third file domain for files that are not aliases — `@@@config` drives the settings (`net-github`, `banner`, …), `@@@tap` manages the tap repositories, and `@@@shell` the completion block in the startup file of the shell running byk. Names, verbs, setting names, values and repositories are completed. The installer now only sets `PATH`, so completion is enabled by hand
+- **`sys@` system files**: a third file domain for files that are not aliases — `sys@config` drives the settings (`net-github`, `banner`, …), `sys@tap` manages the tap repositories, and `sys@shell` the completion block in the startup file of the shell running byk. Names, verbs, setting names, values and repositories are completed. The installer now only sets `PATH`, so completion is enabled by hand
 - **`$paths`**: inheritable like `$cwd` / `$mode`; a child value replaces the list, `[]` falls back to the system `PATH`
 - **`$deps`**: a ghproxy `base` also covers absolute GitHub downloads, release assets included; curl's own progress bar shows on a terminal and stays quiet elsewhere
 - **network**: `BYK_USE_PROXY=false` forces a direct download; otherwise `BYK_PROXY`, the existing proxy variables, and the Windows system proxy are followed, injected into curl child processes only

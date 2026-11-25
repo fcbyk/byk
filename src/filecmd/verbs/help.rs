@@ -28,10 +28,7 @@ pub(crate) fn run(
 }
 
 fn base(scope: FileScope, stem: &str) -> String {
-    match scope {
-        FileScope::Local => format!("@{}", stem),
-        FileScope::Global => format!("@@{}", stem),
-    }
+    format!("{}{}", scope.token(), stem)
 }
 
 fn help_options() -> Vec<(String, &'static str)> {
@@ -172,7 +169,7 @@ fn render_verb(base: &str, info: &VerbInfo, target: &str) -> String {
 fn clone_sources() -> Vec<(String, &'static str)> {
     let mut rows = vec![
         (
-            "@name, @@name".to_string(),
+            "local@name, global@name".to_string(),
             "An alias file in the current or global directory",
         ),
         (
@@ -263,10 +260,10 @@ mod tests {
         let text = strip_ansi(&run(FileScope::Global, "ops", &[], &layout()).unwrap());
 
         assert!(text.starts_with(
-            "\nCommands for this global alias file. Run `byk @@ops <command> -h` for details.\n\nFilePath: "
+            "\nCommands for this global alias file. Run `byk global@ops <command> -h` for details.\n\nFilePath: "
         ));
         assert!(text.contains(
-            "ops.byk.json (not created yet)\nUsage: byk @@ops [OPTIONS] [COMMAND] [ARGS]...\n\n"
+            "ops.byk.json (not created yet)\nUsage: byk global@ops [OPTIONS] [COMMAND] [ARGS]...\n\n"
         ));
         assert!(text.contains("Options:\n  --help, -h  Show this help\n"));
         assert!(text.contains("Commands:\n"));
@@ -317,7 +314,7 @@ mod tests {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["set"]), &layout()).unwrap());
 
         assert!(text.starts_with("\nCreate or update an alias\n\nFilePath: "));
-        assert!(text.contains("\nUsage: byk @@ops set [OPTIONS] [key]\n\nOptions:\n"));
+        assert!(text.contains("\nUsage: byk global@ops set [OPTIONS] [key]\n\nOptions:\n"));
         assert!(text.contains("  --help, -h"));
         assert!(text.contains("Show this help"));
         assert!(text.contains("  --cmd <command>"));
@@ -333,7 +330,7 @@ mod tests {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["path"]), &layout()).unwrap());
 
         assert!(text.starts_with("\nPrint this alias file's absolute path\n\nFilePath: "));
-        assert!(text.contains("\nUsage: byk @@ops path [OPTIONS]\n\nOptions:\n"));
+        assert!(text.contains("\nUsage: byk global@ops path [OPTIONS]\n\nOptions:\n"));
         assert!(text.contains("  --help, -h  Show this help"));
     }
 
@@ -341,21 +338,21 @@ mod tests {
     fn command_help_includes_positional_placeholders() {
         let rename =
             strip_ansi(&run(FileScope::Global, "ops", &args(&["rename"]), &layout()).unwrap());
-        assert!(rename.contains("Usage: byk @@ops rename [OPTIONS] <new-name>"));
+        assert!(rename.contains("Usage: byk global@ops rename [OPTIONS] <new-name>"));
 
         let link = strip_ansi(&run(FileScope::Global, "ops", &args(&["link"]), &layout()).unwrap());
-        assert!(link.contains("Usage: byk @@ops link [OPTIONS] <target>"));
+        assert!(link.contains("Usage: byk global@ops link [OPTIONS] <target>"));
 
         let clone =
             strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"]), &layout()).unwrap());
-        assert!(clone.contains("Usage: byk @@ops clone [OPTIONS] <source>"));
+        assert!(clone.contains("Usage: byk global@ops clone [OPTIONS] <source>"));
 
         let init = strip_ansi(&run(FileScope::Global, "ops", &args(&["init"]), &layout()).unwrap());
-        assert!(init.contains("Usage: byk @@ops init [OPTIONS]"));
+        assert!(init.contains("Usage: byk global@ops init [OPTIONS]"));
 
         let remove =
             strip_ansi(&run(FileScope::Global, "ops", &args(&["remove"]), &layout()).unwrap());
-        assert!(remove.contains("Usage: byk @@ops remove [OPTIONS] <key>"));
+        assert!(remove.contains("Usage: byk global@ops remove [OPTIONS] <key>"));
     }
 
     #[test]
@@ -363,9 +360,9 @@ mod tests {
         let text =
             strip_ansi(&run(FileScope::Global, "ops", &args(&["clone"]), &layout()).unwrap());
 
-        assert!(text.contains("Usage: byk @@ops clone [OPTIONS] <source>"));
+        assert!(text.contains("Usage: byk global@ops clone [OPTIONS] <source>"));
         assert!(text.contains("\nSources:\n"));
-        assert!(text.contains("@name, @@name"));
+        assert!(text.contains("local@name, global@name"));
         assert!(text.contains("github:<spec>"));
         assert!(text.contains("the transport comes from `net-github`"));
         assert!(text.contains("gitee:<spec>"));
@@ -383,7 +380,7 @@ mod tests {
     fn command_help_for_deps_lists_options_and_subcommands() {
         let text = strip_ansi(&run(FileScope::Global, "ops", &args(&["deps"]), &layout()).unwrap());
 
-        assert!(text.contains("Usage: byk @@ops deps [OPTIONS] [COMMAND]"));
+        assert!(text.contains("Usage: byk global@ops deps [OPTIONS] [COMMAND]"));
         assert!(text.contains("  --force"));
         assert!(text.contains("Reinstall dependencies from source (install)"));
         assert!(text.contains("  --yes"));
@@ -398,21 +395,21 @@ mod tests {
     fn local_and_anonymous_prefix() {
         let local = strip_ansi(&run(FileScope::Local, "ops", &[], &layout()).unwrap());
         assert!(local.starts_with(
-            "\nCommands for this local alias file. Run `byk @ops <command> -h` for details.\n\nFilePath: "
+            "\nCommands for this local alias file. Run `byk local@ops <command> -h` for details.\n\nFilePath: "
         ));
-        assert!(local.contains("Usage: byk @ops [OPTIONS]"));
+        assert!(local.contains("Usage: byk local@ops [OPTIONS]"));
         assert!(local.contains("  init     Create this alias file"));
 
         let anonymous = strip_ansi(&run(FileScope::Global, "", &[], &layout()).unwrap());
-        assert!(anonymous.contains("Usage: byk @@ [OPTIONS]"));
+        assert!(anonymous.contains("Usage: byk global@ [OPTIONS]"));
 
         let local_set =
             strip_ansi(&run(FileScope::Local, "ops", &args(&["set"]), &layout()).unwrap());
-        assert!(local_set.contains("Usage: byk @ops set [OPTIONS] [key]"));
+        assert!(local_set.contains("Usage: byk local@ops set [OPTIONS] [key]"));
 
         let anonymous_set =
             strip_ansi(&run(FileScope::Global, "", &args(&["set"]), &layout()).unwrap());
-        assert!(anonymous_set.contains("Usage: byk @@ set [OPTIONS] [key]"));
+        assert!(anonymous_set.contains("Usage: byk global@ set [OPTIONS] [key]"));
     }
 
     #[test]

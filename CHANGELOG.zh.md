@@ -2,13 +2,14 @@
 
 ### 破坏性变更
 
-- **文件命令**: 移除 `@文件..命令`，改为 `byk @文件 命令`（全局是 `byk @@文件 命令`）；分隔符改成空格，不再和精确别名 `@文件.key` 混淆
+- **作用域**: `@` / `@@` / `@@@` 改为 `local@` / `global@` / `sys@`（可写唯一前缀 `l@`、`g@`、`s@`）；依赖目录改为 `deps/local@<stem>` 与 `~/.byk/deps/global@<stem>`，需要重装一次依赖
+- **文件命令**: 移除 `..` 分隔写法，改为 `byk local@文件 命令`（全局是 `byk global@文件 命令`）；分隔符改成空格，不再和精确别名 `local@文件.key` 混淆
 - **文件帮助**: 移除 `help` 命令，改用 `-h` / `--help`；文件命令的帮助现在会在 Usage 上方重复目标 `FilePath`
 - **`clone`**: 平台改成来源参数上的前缀（`github:` / `gitee:`），访问 GitHub 的通道改为配置项 `net-github`（`direct` / `ghproxy`）；`clone` 只剩 `--tap` 与 `--deps`
 
 ### 新功能
 
-- **`@@@` 系统文件**: 新增第三个文件域，指向别名文件以外的其他任何文件——`@@@config` 管设置（`net-github`、`banner` 等），`@@@tap` 管 tap 仓库，`@@@shell` 管运行 byk 的那个 shell 的启动文件里的补全块。文件名、动词、设置名与候选值、仓库都参与补全。安装脚本不再写补全，只配 `PATH`
+- **`sys@` 系统文件**: 新增第三个文件域，指向别名文件以外的其他任何文件——`sys@config` 管设置（`net-github`、`banner` 等），`sys@tap` 管 tap 仓库，`sys@shell` 管运行 byk 的那个 shell 的启动文件里的补全块。文件名、动词、设置名与候选值、仓库都参与补全。安装脚本不再写补全，只配 `PATH`
 - **`$paths`**: 与 `$cwd` / `$mode` 一样可继承，子级写了就整体覆盖，`[]` 回到系统 `PATH`
 - **`$deps`**: `base` 是 ghproxy 时，绝对 GitHub 地址（含 Release 资产）同样走代理；终端下显示 curl 原生进度条，非 TTY 保持静默
 - **网络**: `BYK_USE_PROXY=false` 强制直连；否则依次跟随 `BYK_PROXY`、已有代理变量与 Windows 系统代理，且只注入 curl 子进程

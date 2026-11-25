@@ -1,7 +1,7 @@
-//! `@@@config`：byk 的设置文件，落在 `~/.byk/config.json`。
+//! `sys@config`：byk 的设置文件，落在 `~/.byk/config.json`。
 //!
-//! 语法和别名文件一致——`文件 动词 参数`。不用 `@@@config banner never` 那种位置式，
-//! 是为了和 `@@ops` 保持同一个节奏，也给将来的 `edit` / `reset` 留位置。
+//! 语法和别名文件一致——`文件 动词 参数`。不用 `sys@config banner never` 那种位置式，
+//! 是为了和 `global@ops` 保持同一个节奏，也给将来的 `edit` / `reset` 留位置。
 
 mod keys;
 
@@ -26,7 +26,7 @@ const NET_GITHUB: &str = "net-github";
 /// 当前配置的 GitHub 通道。
 ///
 /// 下载路径上每一处远程请求都会问一次，所以这里不打印告警——设置文件坏了由
-/// `@@@config` 自己提示，下载不该被一行警告打断。
+/// `sys@config` 自己提示，下载不该被一行警告打断。
 pub(crate) fn channel(layout: &PathLayout) -> crate::net::Channel {
     let path = layout.config_path();
     let (object, warning) = store::read_object(&path);
@@ -68,7 +68,7 @@ pub(crate) fn describe(candidate: &str) -> Option<&'static str> {
         .or_else(|| keys::find(candidate).map(|info| info.description))
 }
 
-const USAGE: &str = "byk @@@config [OPTIONS] [COMMAND] [ARGS]...";
+const USAGE: &str = "byk sys@config [OPTIONS] [COMMAND] [ARGS]...";
 
 pub(crate) fn run(args: &[String], layout: &PathLayout) -> Result<(), String> {
     let path = layout.config_path();
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn help_lists_every_command() {
         let text = strip_ansi(&render_help(&path()));
-        assert!(text.contains("Usage: byk @@@config [OPTIONS] [COMMAND] [ARGS]..."));
+        assert!(text.contains("Usage: byk sys@config [OPTIONS] [COMMAND] [ARGS]..."));
         assert!(text.contains("  list   Show every setting"));
         assert!(text.contains("  get    Print one value"));
         assert!(text.contains("  set    Change one value"));

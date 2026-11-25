@@ -82,13 +82,13 @@ def test_paths_lists_global_and_local_alias_files(runner, tmp_path):
 
     assert f"Workdir: {tmp_path}" in lines
     assert lines.count(SEPARATOR) == 2
-    global_idx = lines.index(f"@@g: {global_file}")
-    local_idx = lines.index(f"@l: {local_file}")
+    global_idx = lines.index(f"global@g: {global_file}")
+    local_idx = lines.index(f"local@l: {local_file}")
     assert lines.index(SEPARATOR) < global_idx
     assert lines.index(SEPARATOR, global_idx) < local_idx
     # 内容损坏的文件仍然列出；文件名非法的文件不列出
     assert any(
-        line.startswith("@broken: ") and "broken.byk.json" in line for line in lines
+        line.startswith("local@broken: ") and "broken.byk.json" in line for line in lines
     )
     assert "bad.name" not in r.stdout
 
@@ -100,7 +100,7 @@ def test_paths_lists_broken_symlink(runner, tmp_path):
 
     r = runner.run("--paths", cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr
-    assert f"@ops: {link}" in r.stdout
+    assert f"local@ops: {link}" in r.stdout
 
 
 def test_paths_omits_empty_alias_file_groups(runner, tmp_path):
@@ -119,8 +119,8 @@ def test_paths_omits_only_missing_group(runner, tmp_path):
     r = runner.run("--paths", cwd=str(tmp_path))
     lines = assert_blank_padded(r.stdout)
     assert lines.count(SEPARATOR) == 1
-    assert any(line.startswith("@l: ") for line in lines)
-    assert not any(line.startswith("@@") for line in lines)
+    assert any(line.startswith("local@l: ") for line in lines)
+    assert not any(line.startswith("global@") for line in lines)
 
     runner.prepare_alias_json("g", {"build": "echo g"})
     empty = tmp_path / "empty"
@@ -128,8 +128,8 @@ def test_paths_omits_only_missing_group(runner, tmp_path):
     r = runner.run("--paths", cwd=str(empty))
     lines = assert_blank_padded(r.stdout)
     assert lines.count(SEPARATOR) == 1
-    assert any(line.startswith("@@g: ") for line in lines)
-    assert not any(line.startswith("@") and not line.startswith("@@") for line in lines)
+    assert any(line.startswith("global@g: ") for line in lines)
+    assert not any(line.startswith("local@") for line in lines)
 
 
 def test_api_lists_requests(runner):
@@ -194,7 +194,7 @@ def test_api_paths_alias_files_dedupes_shared_directory(runner):
     r = runner.run("__api__", "file", "--list", cwd=str(alias_dir))
     assert r.returncode == 0, r.stderr
     files = json.loads(r.stdout)["files"]
-    assert [item["key"] for item in files] == ["@@ops", "@ops"]
+    assert [item["key"] for item in files] == ["global@ops", "local@ops"]
     assert {os.path.realpath(item["path"]) for item in files} == {
         os.path.realpath(global_file)
     }
@@ -202,11 +202,11 @@ def test_api_paths_alias_files_dedupes_shared_directory(runner):
 
 def test_api_file_local(runner, tmp_path):
     """file 解析本地文件 key，不要求文件存在"""
-    r = runner.run("__api__", "file", "@p", cwd=str(tmp_path))
+    r = runner.run("__api__", "file", "local@p", cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr
     workdir = tmp_path.resolve()
     assert json.loads(r.stdout) == {
-        "key": "@p",
+        "key": "local@p",
         "scope": "local",
         "path": str(workdir / "p.byk.json"),
         "dir": str(workdir),
@@ -216,11 +216,11 @@ def test_api_file_local(runner, tmp_path):
 
 def test_api_file_global(runner, tmp_path):
     """file 解析全局文件 key"""
-    r = runner.run("__api__", "file", "@@ops", cwd=str(tmp_path))
+    r = runner.run("__api__", "file", "global@ops", cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr
     alias_dir = runner.byk_dir / "alias"
     assert json.loads(r.stdout) == {
-        "key": "@@ops",
+        "key": "global@ops",
         "scope": "global",
         "path": str(alias_dir / "ops.byk.json"),
         "dir": str(alias_dir),
@@ -230,11 +230,11 @@ def test_api_file_global(runner, tmp_path):
 
 def test_api_file_anonymous(runner, tmp_path):
     """file 支持匿名文件 key"""
-    r = runner.run("__api__", "file", "@", cwd=str(tmp_path))
+    r = runner.run("__api__", "file", "local@", cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout)["path"] == str(tmp_path.resolve() / ".byk.json")
 
-    r = runner.run("__api__", "file", "@@", cwd=str(tmp_path))
+    r = runner.run("__api__", "file", "global@", cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout)["path"] == str(
         runner.byk_dir / "alias" / ".byk.json"
@@ -255,19 +255,19 @@ def test_api_file_list(runner, tmp_path):
     assert json.loads(r.stdout) == {
         "files": [
             {
-                "key": "@@g",
+                "key": "global@g",
                 "scope": "global",
                 "path": str(global_file),
                 "dir": str(runner.byk_dir / "alias"),
             },
             {
-                "key": "@broken",
+                "key": "local@broken",
                 "scope": "local",
                 "path": str(workdir / "broken.byk.json"),
                 "dir": str(workdir),
             },
             {
-                "key": "@l",
+                "key": "local@l",
                 "scope": "local",
                 "path": str(workdir / "l.byk.json"),
                 "dir": str(workdir),
@@ -284,7 +284,7 @@ def test_api_file_list_empty_does_not_create_dirs(runner, tmp_path):
 
 
 def test_api_file_list_rejects_key(runner):
-    r = runner.run("__api__", "file", "--list", "@ops")
+    r = runner.run("__api__", "file", "--list", "local@ops")
     assert r.returncode == 1
     assert "too many arguments" in r.stderr
 
@@ -297,17 +297,17 @@ def test_api_file_rejects_unknown_option(runner):
 
 
 def test_api_file_matches_filecmd_path(runner, tmp_path):
-    """file 的 path 与 @ path 输出的绝对路径一致"""
-    r = runner.run("__api__", "file", "@ops", cwd=str(tmp_path))
+    """file 的 path 与 local@ path 输出的绝对路径一致"""
+    r = runner.run("__api__", "file", "local@ops", cwd=str(tmp_path))
     api_path = json.loads(r.stdout)["path"]
-    r = runner.run("@ops", "path", cwd=str(tmp_path))
+    r = runner.run("local@ops", "path", cwd=str(tmp_path))
     assert r.returncode == 0, r.stderr
     assert r.stdout == f"{api_path}\n"
 
 
 def test_api_file_rejects_alias_key(runner, tmp_path):
     """file 只接受文件 key；带点的别名 key 不属于文件 namespace"""
-    r = runner.run("__api__", "file", "@p.build", cwd=str(tmp_path))
+    r = runner.run("__api__", "file", "local@p.build", cwd=str(tmp_path))
     assert r.returncode == 1
     assert "Invalid file name" in r.stderr
     assert r.stdout == ""
@@ -326,7 +326,7 @@ def test_api_file_requires_key(runner):
 
 
 def test_api_file_rejects_extra_args(runner):
-    r = runner.run("__api__", "file", "@ops", "extra")
+    r = runner.run("__api__", "file", "local@ops", "extra")
     assert r.returncode == 1
     assert "too many arguments" in r.stderr
 
@@ -475,8 +475,8 @@ def test_api_expand_reports_missing_file(runner, tmp_path):
 
 
 def test_api_expand_treats_at_prefix_as_path(runner, tmp_path):
-    """@ 前缀不会被当作文件 key"""
-    r = runner.run("__api__", "expand", "@ops", cwd=str(tmp_path))
+    """local@ 前缀不会被当作文件 key"""
+    r = runner.run("__api__", "expand", "local@ops", cwd=str(tmp_path))
     assert r.returncode == 1
     assert "file not found" in r.stderr
 
@@ -545,7 +545,7 @@ def test_api_complete_lists_aliases(runner):
     lines = r.stdout.split("\n")
     assert "alpha" in lines
     assert "beta" in lines
-    assert not any(line.startswith("@") for line in lines)
+    assert not any(line.startswith(("local@", "global@", "sys@")) for line in lines)
 
 
 def test_api_complete_default_has_no_descriptions(runner):
@@ -566,7 +566,7 @@ def test_api_complete_with_descriptions_flags(runner):
 
 
 def test_api_complete_with_descriptions_file_command_verbs(runner):
-    r = runner.run("__api__", "complete", "--with-descriptions", "@@ops", "")
+    r = runner.run("__api__", "complete", "--with-descriptions", "global@ops", "")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == [
         "init\tCreate this alias file",
@@ -598,21 +598,21 @@ def test_api_completion_script_zsh_uses_descriptions(runner):
 
 
 def test_api_complete_at_prefix(runner):
-    """@ 前缀只返回精确语法候选"""
+    """global@ 前缀只返回精确语法候选"""
     runner.prepare_alias_json("r", {"alpha": "echo a"})
-    r = runner.run("__api__", "complete", "@")
+    r = runner.run("__api__", "complete", "global@")
     assert r.returncode == 0, r.stderr
     lines = [line for line in r.stdout.split("\n") if line]
-    assert lines, "expected at least one @ candidate"
-    assert all(line.startswith("@") for line in lines)
+    assert lines, "expected at least one global@ candidate"
+    assert all(line.startswith("global@") for line in lines)
 
 
 def test_api_complete_file_keys_include_source_path(runner):
     """文件作用域候选附带别名文件路径，家目录显示为 ~"""
     runner.prepare_alias_json("ops", {"build": "echo hi"})
-    r = runner.run("__api__", "complete", "--with-descriptions", "@")
+    r = runner.run("__api__", "complete", "--with-descriptions", "global@")
     assert r.returncode == 0, r.stderr
-    assert "@@ops\t~/.byk/alias/ops.byk.json" in r.stdout.splitlines()
+    assert "global@ops\t~/.byk/alias/ops.byk.json" in r.stdout.splitlines()
 
 
 def test_api_complete_local_file_key_includes_absolute_path(runner, tmp_path):
@@ -621,10 +621,10 @@ def test_api_complete_local_file_key_includes_absolute_path(runner, tmp_path):
         json.dumps({"build": "echo hi"}), encoding="utf-8"
     )
     r = runner.run(
-        "__api__", "complete", "--with-descriptions", "@p", cwd=str(tmp_path)
+        "__api__", "complete", "--with-descriptions", "local@p", cwd=str(tmp_path)
     )
     assert r.returncode == 0, r.stderr
-    assert f"@p\t{tmp_path}/p.byk.json" in r.stdout.splitlines()
+    assert f"local@p\t{tmp_path}/p.byk.json" in r.stdout.splitlines()
 
 
 def test_api_completion_script_zsh(runner):
@@ -640,8 +640,8 @@ def test_api_completion_rejects_unknown_shell(runner):
 
 
 def test_api_complete_system_file_verbs(runner):
-    """@@@config / @@@tap 补动词，说明由各自的文件提供"""
-    r = runner.run("__api__", "complete", "--with-descriptions", "@@@config", "")
+    """sys@config / sys@tap 补动词，说明由各自的文件提供"""
+    r = runner.run("__api__", "complete", "--with-descriptions", "sys@config", "")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == [
         "list\tShow every setting",
@@ -650,7 +650,7 @@ def test_api_complete_system_file_verbs(runner):
         "unset\tReset one value to its default",
     ]
 
-    r = runner.run("__api__", "complete", "--with-descriptions", "@@@tap", "")
+    r = runner.run("__api__", "complete", "--with-descriptions", "sys@tap", "")
     assert r.returncode == 0, r.stderr
     lines = r.stdout.splitlines()
     # `list` 在两个文件里含义不同，描述跟着被点的文件走
@@ -659,35 +659,35 @@ def test_api_complete_system_file_verbs(runner):
 
 
 def test_api_complete_system_file_tokens_have_descriptions(runner):
-    r = runner.run("__api__", "complete", "--with-descriptions", "@@@")
+    r = runner.run("__api__", "complete", "--with-descriptions", "sys@")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == [
-        "@@@config\tbyk settings",
-        "@@@tap\ttap repositories",
-        "@@@shell\tshell startup file",
+        "sys@config\tbyk settings",
+        "sys@tap\ttap repositories",
+        "sys@shell\tshell startup file",
     ]
 
 
 def test_api_complete_system_flags_stay_in_the_verb_slot(runner):
     """帮助开关只在动词位；动词之后的 `-h` 属于该动词的参数"""
-    r = runner.run("__api__", "complete", "@@@config", "-")
+    r = runner.run("__api__", "complete", "sys@config", "-")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == ["--help", "-h"]
 
-    r = runner.run("__api__", "complete", "@@@tap", "list", "-")
+    r = runner.run("__api__", "complete", "sys@tap", "list", "-")
     assert r.returncode == 0, r.stderr
     assert r.stdout == ""
 
 
 def test_api_complete_system_settings(runner):
     """get / set / unset 补设置名，set 之后补该键的候选值"""
-    r = runner.run("__api__", "complete", "--with-descriptions", "@@@config", "set", "")
+    r = runner.run("__api__", "complete", "--with-descriptions", "sys@config", "set", "")
     assert r.returncode == 0, r.stderr
     lines = r.stdout.splitlines()
     assert "banner\tShow the banner in help output" in lines
     assert any(line.startswith("net-github\t") for line in lines)
 
-    r = runner.run("__api__", "complete", "@@@config", "set", "banner", "")
+    r = runner.run("__api__", "complete", "sys@config", "set", "banner", "")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == ["auto", "always", "never"]
 
@@ -703,16 +703,16 @@ def test_api_complete_tap_repositories(runner):
         encoding="utf-8",
     )
 
-    r = runner.run("__api__", "complete", "@@@tap", "remove", "")
+    r = runner.run("__api__", "complete", "sys@tap", "remove", "")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == ["aaa/bb"]
 
-    r = runner.run("__api__", "complete", "@@@tap", "update", "aa")
+    r = runner.run("__api__", "complete", "sys@tap", "update", "aa")
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines() == ["aaa/bb"]
 
     # `add` 的来源在远端，没有候选
-    r = runner.run("__api__", "complete", "@@@tap", "add", "")
+    r = runner.run("__api__", "complete", "sys@tap", "add", "")
     assert r.returncode == 0, r.stderr
     assert r.stdout == ""
 

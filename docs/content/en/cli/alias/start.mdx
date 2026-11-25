@@ -45,14 +45,14 @@ Some files belong to a single script and shouldn't show up under `byk <key>`. Ad
 ```
 
 ```bash
-byk dev            # not found
-byk @run.dev       # exact invocation — the only way to call it
+byk dev                  # not found
+byk local@run.dev        # exact invocation — the only way to call it
 ```
 
 ### Make It Available in Your Home Directory
 
 ```bash
-byk @@run clone @run     # copy ./run.byk.json into ~/.byk/alias/
+byk global@run clone local@run     # copy ./run.byk.json into ~/.byk/alias/
 byk dev
 ```
 

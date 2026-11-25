@@ -1,43 +1,63 @@
-//! @ / @@ 前缀补全与 key 收集。
+//! 作用域前缀（`local@` / `global@` / `sys@`）的补全与 key 收集。
 
 use std::collections::HashMap;
 
-use crate::model::MergedNode;
+use crate::model::{MergedNode, PathLayout, Scope, build_file_key};
 use crate::resolve;
 
-/// 补全 `@` / `@@` / `@@@`：先补文件 key，输入点号后补该文件内的别名路径。
-pub(crate) fn complete_at_prefix(partial: &str, layout: &crate::model::PathLayout) -> Vec<String> {
-    // `@@@` 是系统文件命名空间：候选来自注册表，不来自磁盘，也没有点号子路径
-    if let Some(rest) = partial.strip_prefix("@@@") {
+/// 补全 `local@` / `global@` / `sys@`：先补文件 key，输入点号后补该文件内的别名路径。
+///
+/// 候选回显用户已经敲的前缀（`loc@` 给 `loc@build`），否则光标处的词会被换成完整写法。
+pub(crate) fn complete_at_prefix(partial: &str, layout: &PathLayout) -> Vec<String> {
+    let Some((scope, rest)) = Scope::split(partial) else {
+        return Vec::new();
+    };
+    let typed = &partial[..partial.len() - rest.len()];
+
+    // `sys@` 是系统文件命名空间：候选来自注册表，不来自磁盘，也没有点号子路径
+    if scope == Scope::Sys {
         return crate::filecmd::sys::names()
             .filter(|name| name.starts_with(rest))
-            .map(|name| format!("@@@{name}"))
+            .map(|name| format!("{}{}", typed, name))
             .collect();
     }
 
     // 点号之后只需要目标文件：直接解析它，不扫描其余文件
-    if let Some(dot_idx) = partial.find('.') {
-        let file_key = &partial[..dot_idx];
-        let key_partial = &partial[dot_idx + 1..];
+    if let Some(dot_idx) = rest.find('.') {
+        let stem = &rest[..dot_idx];
+        let key_partial = &rest[dot_idx + 1..];
+        let file_key = build_file_key(stem, scope.is_global());
 
-        let Ok(file) = resolve::load_file_by_key(layout, file_key) else {
+        let Ok(file) = resolve::load_file_by_key(layout, &file_key) else {
             return Vec::new();
         };
         return collect_object_keys(&file.aliases, "")
             .into_iter()
             .filter(|k| k.starts_with(key_partial))
-            .map(|k| format!("{}.{}", file_key, k))
+            .map(|k| format!("{}{}.{}", typed, stem, k))
             .collect();
     }
 
-    // 补全文件 key（@xxx 或 @@xxx 格式）：需要知道哪些文件能解析，只能全量扫描
-    let files = resolve::load_scanned_aliases(layout).files;
-    let mut candidates: Vec<String> = files
-        .iter()
-        .map(|f| f.key.clone())
-        .filter(|k| k.starts_with(partial))
+    // 补全文件 key：只列该作用域下的文件
+    let dir = if scope.is_global() {
+        layout.alias_dir.clone()
+    } else {
+        match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(_) => return Vec::new(),
+        }
+    };
+
+    let mut candidates: Vec<String> = resolve::list_alias_files(&dir, scope.is_global())
+        .into_iter()
+        .filter_map(|(key, _)| {
+            key.strip_prefix(scope.token())
+                .map(|stem| format!("{}{}", typed, stem))
+        })
+        .filter(|candidate| candidate.starts_with(partial))
         .collect();
     candidates.sort();
+    candidates.dedup();
     candidates
 }
 

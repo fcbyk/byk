@@ -51,10 +51,7 @@ mod imp {
         let metadata = match fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                let prefix = match scope {
-                    FileScope::Local => "@",
-                    FileScope::Global => "@@",
-                };
+                let prefix = scope.token();
                 return Err(format!(
                     "File not found: {}\nHint: create it with {}{} init --link {}",
                     path.display(),
@@ -188,7 +185,7 @@ mod imp {
             let err = apply(FileScope::Global, "tools", &spec(&target), &layout).unwrap_err();
 
             assert!(err.starts_with("File not found:"));
-            assert!(err.contains("@@tools init --link"));
+            assert!(err.contains("global@tools init --link"));
         }
 
         #[test]
@@ -232,7 +229,10 @@ mod tests {
 
     #[test]
     fn accepts_one_target() {
-        assert_eq!(parse_args(&["@tool".to_string()]).unwrap(), "@tool");
+        assert_eq!(
+            parse_args(&["local@tool".to_string()]).unwrap(),
+            "local@tool"
+        );
     }
 
     #[test]

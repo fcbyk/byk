@@ -37,24 +37,24 @@ byk deploy          # asks for {env}, confirms, then runs
 
 `{env}` is a placeholder — `byk deploy` asks what to put there, then splices it in; `$mode: "interactive"` means it confirms before running; commands run in the directory you invoke byk from. For the other fields see [Alias Configuration](https://cli.fcbyk.com/cli/alias/config).
 
-To use it from any directory, put the file in `~/.byk/alias/`. Opening an editor there is awkward, so let byk edit it (`@@` targets the global directory):
+To use it from any directory, put the file in `~/.byk/alias/`. Opening an editor there is awkward, so let byk edit it (`global@` targets the global directory):
 
 ```bash
-byk @@ops init                          # create ~/.byk/alias/ops.byk.json
-byk @@ops set clean --cmd "cargo clean" # add one entry
-byk @@ops json                          # look at what is there now
+byk global@ops init                          # create ~/.byk/alias/ops.byk.json
+byk global@ops set clean --cmd "cargo clean" # add one entry
+byk global@ops json                          # look at what is there now
 ```
 
-Already have one in a project? `byk @@run clone @run` copies it over.
+Already have one in a project? `byk global@run clone local@run` copies it over.
 
 ## CLI
 
 Five invocation forms:
 
 - `byk <alias> [args...]` — look it up across the current and global directories, then run it
-- `byk @file.key` / `@@file.key` — route straight to one exact file
-- `byk @file command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `deps`, `destroy`, `clear`; `byk @file -h` lists them all
-- `byk @@@file command` — system files, for files that are not aliases: `@@@config` (settings), `@@@tap` (tap repositories), `@@@shell` (your shell's startup file); `byk @@@config -h` lists them
+- `byk local@file.key` / `global@file.key` — route straight to one exact file
+- `byk local@file command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `deps`, `destroy`, `clear`; `byk local@file -h` lists them all
+- `byk sys@file command` — system files, for files that are not aliases: `sys@config` (settings), `sys@tap` (tap repositories), `sys@shell` (your shell's startup file); `byk sys@config -h` lists them
 - `byk __api__` — read-only interface for shell completion and editor plugins (hidden)
 
 Options: `--paths` lists the alias files byk scans, `--check` validates them, `-h` shows help and every alias, `-v` shows the version. Downloads follow `BYK_USE_PROXY` / `BYK_PROXY`, existing proxy variables, and the Windows system proxy. Full descriptions live in [Options & Commands](https://cli.fcbyk.com/cli/commands), [File Commands](https://cli.fcbyk.com/cli/file-commands) and [System Files](https://cli.fcbyk.com/cli/system-files).

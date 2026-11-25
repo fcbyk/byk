@@ -24,7 +24,7 @@ use crate::utils::json;
 use crate::utils::path::{canonical, dir_of};
 
 /// expand 请求的 `deps_dir` 注入：目标得是别名文件（`*.byk.json`），
-/// 是全局的注入 `~/.byk/deps/@@<stem>`，局部的注入它自己项目里的 `.byk/deps/@<stem>`。
+/// 是全局的注入 `~/.byk/deps/global@<stem>`，局部的注入它自己项目里的 `.byk/deps/local@<stem>`。
 fn deps_dir_for_expand(target: &Path, layout: &PathLayout) -> Option<String> {
     let stem = target
         .file_name()?
@@ -67,7 +67,7 @@ const REQUESTS: &[RequestInfo] = &[
     RequestInfo {
         name: "file",
         args: "<file-key> | --list",
-        description: "resolve an alias file key (@name / @@name) to its path, or list every alias file with --list",
+        description: "resolve an alias file key (local@name / global@name) to its path, or list every alias file with --list",
     },
     RequestInfo {
         name: "expand",
@@ -198,7 +198,7 @@ fn alias_file_info(key: String, scope: &'static str, path: PathBuf) -> AliasFile
 
 /// `aliasFiles` 只要文件清单：同一目录兼作两种作用域时只保留先出现的全局路径。
 ///
-/// `file --list` 不去重 —— `@` / `@@` 是两个不同的地址身份。
+/// `file --list` 不去重 —— `local@` / `global@` 是两个不同的地址身份。
 fn alias_file_paths(layout: &PathLayout, workdir: &Path) -> Vec<PathBuf> {
     let mut seen: HashSet<(PathBuf, OsString)> = HashSet::new();
     alias_files(layout, workdir)

@@ -3,7 +3,7 @@
 //! 这里曾经有一条 curl + tar 的兜底，后来砍掉了：两条路的产物不一样（有没有 `.git`），
 //! 语义要解释两遍，故障面也多一倍（HTTP 状态、tar 是否存在、归档顶层目录名不可预测）。
 //! Homebrew 的 tap 同样要求系统里有 git；byk 的其它下载（`clone` 远程、`$deps`）
-//! 仍然只用 curl——`@@@tap` 需要 git 并不是给整个 CLI 加依赖。
+//! 仍然只用 curl——`sys@tap` 需要 git 并不是给整个 CLI 加依赖。
 //!
 //! 落盘后一定要确认仓库根有 `byk.tap.json`：本地索引一旦存在就是权威，
 //! 装一个坏索引会让该仓库所有 key 的 `--tap` 直接失败，byk 不能自己制造这种状态。
@@ -88,7 +88,7 @@ impl Change {
 pub(super) fn update(repo: &Repo, dir: &Path) -> Result<Change, String> {
     if !dir.is_dir() {
         return Err(format!(
-            "Tap repository is missing: {}\nHint: install it again with `byk @@@tap add {}`",
+            "Tap repository is missing: {}\nHint: install it again with `byk sys@tap add {}`",
             dir.display(),
             repo.key
         ));
@@ -96,7 +96,7 @@ pub(super) fn update(repo: &Repo, dir: &Path) -> Result<Change, String> {
     // 手工拷进来的目录没有 `.git`，没有可更新的历史
     if !dir.join(".git").exists() {
         return Err(format!(
-            "Not a git repository: {}\nHint: update only works on repositories that `add` cloned; move it aside and run `byk @@@tap add {}`",
+            "Not a git repository: {}\nHint: update only works on repositories that `add` cloned; move it aside and run `byk sys@tap add {}`",
             dir.display(),
             repo.key
         ));
@@ -104,7 +104,7 @@ pub(super) fn update(repo: &Repo, dir: &Path) -> Result<Change, String> {
     // 本地动过就不碰：`reset --hard` 会把这些改动一起抹掉
     if has_local_changes(dir)? {
         return Err(format!(
-            "Tap repository has local changes: {}\nHint: commit or move them aside, or `byk @@@tap remove {}` and add it again",
+            "Tap repository has local changes: {}\nHint: commit or move them aside, or `byk sys@tap remove {}` and add it again",
             repo.key, repo.key
         ));
     }
@@ -181,7 +181,7 @@ fn fetch_ref(dir: &Path, repo: &Repo) -> Result<(), String> {
     }
 
     let hint = format!(
-        "\nHint: if the ref is gone upstream, `byk @@@tap remove {}` + `add` reinstalls it",
+        "\nHint: if the ref is gone upstream, `byk sys@tap remove {}` + `add` reinstalls it",
         repo.key
     );
     Err(git_failure("update", repo, &stderr_of(&output), &hint))
@@ -209,7 +209,7 @@ fn run_git(verb: &str, command: &mut Command) -> Result<Output, String> {
     command.output().map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
             format!(
-                "{verb} a tap repository requires git\nHint: install git and retry; `@@@tap list` and `remove` work without git"
+                "{verb} a tap repository requires git\nHint: install git and retry; `sys@tap list` and `remove` work without git"
             )
         } else {
             format!("Failed to run git: {}", e)

@@ -13,7 +13,7 @@ use crate::resolve;
 /// 渲染完整帮助信息（Banner + Usage + Options + Aliases）。
 ///
 /// `byk`、`byk -h`、`byk --help` 三条入口输出完全一致，banner 在最上方。
-/// `show_banner` 来自 `@@@config banner`：它只管那个装饰框，扫描出问题时
+/// `show_banner` 来自 `sys@config banner`：它只管那个装饰框，扫描出问题时
 /// 仍然照常提示——那是诊断，不是装饰。
 pub fn run(layout: &PathLayout, options: &[(String, String)], show_banner: bool) -> i32 {
     let loaded = resolve::load_merged_aliases_report(layout);

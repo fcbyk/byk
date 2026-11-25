@@ -1,24 +1,24 @@
 def test_file_home_matches_main_help_layout(runner):
-    bare = runner.run("@@ops")
-    long_flag = runner.run("@@ops", "--help")
-    short_flag = runner.run("@@ops", "-h")
+    bare = runner.run("global@ops")
+    long_flag = runner.run("global@ops", "--help")
+    short_flag = runner.run("global@ops", "-h")
 
     assert bare.returncode == 0
     assert bare.stderr == ""
     assert bare.stdout == long_flag.stdout == short_flag.stdout
-    assert bare.stdout.startswith("\nCommands for this global alias file. Run `byk @@ops <command> -h` for details.\n\nFilePath: ")
+    assert bare.stdout.startswith("\nCommands for this global alias file. Run `byk global@ops <command> -h` for details.\n\nFilePath: ")
     assert bare.stdout.endswith("\n\n")
 
     lines = bare.stdout.splitlines()
     assert lines[0] == ""
     assert lines[1] == (
         "Commands for this global alias file. "
-        "Run `byk @@ops <command> -h` for details."
+        "Run `byk global@ops <command> -h` for details."
     )
     assert lines[2] == ""
     assert lines[3].startswith("FilePath: ")
     assert lines[3].endswith("ops.byk.json (not created yet)")
-    assert lines[4] == "Usage: byk @@ops [OPTIONS] [COMMAND] [ARGS]..."
+    assert lines[4] == "Usage: byk global@ops [OPTIONS] [COMMAND] [ARGS]..."
     assert lines[5] == ""
     assert lines[6] == "Options:"
     assert lines[7] == "  --help, -h  Show this help"
@@ -39,8 +39,8 @@ def test_file_home_matches_main_help_layout(runner):
 
 
 def test_help_for_command_shows_usage_and_options(runner):
-    short_flag = runner.run("@@ops", "set", "-h")
-    long_flag = runner.run("@@ops", "set", "--help")
+    short_flag = runner.run("global@ops", "set", "-h")
+    long_flag = runner.run("global@ops", "set", "--help")
 
     assert short_flag.returncode == 0
     assert short_flag.stderr == ""
@@ -55,7 +55,7 @@ def test_help_for_command_shows_usage_and_options(runner):
     assert lines[3].startswith("FilePath: ")
     assert lines[3].endswith("ops.byk.json (not created yet)")
     assert (
-        "Usage: byk @@ops set [OPTIONS] [key]" in short_flag.stdout
+        "Usage: byk global@ops set [OPTIONS] [key]" in short_flag.stdout
     )
     assert "Options:" in lines
     assert any(line.startswith("  --help, -h") and "Show this help" in line for line in lines)
@@ -74,57 +74,57 @@ def test_help_for_command_shows_usage_and_options(runner):
     assert (
         "  --paths <dir>         Prepend directories to PATH (omit key)" in lines
     )
-    assert not any("@@ops init" in line for line in lines)
+    assert not any("global@ops init" in line for line in lines)
 
 
 def test_help_flag_after_arguments_targets_the_verb(runner):
-    expected = runner.run("@@ops", "set", "-h")
-    result = runner.run("@@ops", "set", "build", "-h")
+    expected = runner.run("global@ops", "set", "-h")
+    result = runner.run("global@ops", "set", "build", "-h")
 
     assert result.returncode == 0
     assert result.stdout == expected.stdout
 
 
 def test_help_for_command_without_options(runner):
-    result = runner.run("@@ops", "path", "-h")
+    result = runner.run("global@ops", "path", "-h")
 
     assert result.returncode == 0
     assert result.stdout.startswith(
         "\nPrint this alias file's absolute path\n\nFilePath: "
     )
-    assert "Usage: byk @@ops path [OPTIONS]" in result.stdout
+    assert "Usage: byk global@ops path [OPTIONS]" in result.stdout
     assert "  --help, -h  Show this help" in result.stdout
 
 
 def test_help_local_and_anonymous_prefixes(runner):
-    local = runner.run("@ops", "-h")
-    anonymous = runner.run("@@", "-h")
+    local = runner.run("local@ops", "-h")
+    anonymous = runner.run("global@", "-h")
 
     assert local.returncode == 0
     assert local.stdout.startswith(
         "\nCommands for this local alias file. "
-        "Run `byk @ops <command> -h` for details.\n\nFilePath: "
+        "Run `byk local@ops <command> -h` for details.\n\nFilePath: "
     )
-    assert "Usage: byk @ops [OPTIONS] [COMMAND] [ARGS]..." in local.stdout
+    assert "Usage: byk local@ops [OPTIONS] [COMMAND] [ARGS]..." in local.stdout
     assert any(line.startswith("  init ") for line in local.stdout.splitlines())
     assert anonymous.returncode == 0
     assert anonymous.stdout.startswith(
         "\nCommands for this global alias file. "
-        "Run `byk @@ <command> -h` for details.\n\nFilePath: "
+        "Run `byk global@ <command> -h` for details.\n\nFilePath: "
     )
-    assert "Usage: byk @@ [OPTIONS] [COMMAND] [ARGS]..." in anonymous.stdout
+    assert "Usage: byk global@ [OPTIONS] [COMMAND] [ARGS]..." in anonymous.stdout
     assert any(line.startswith("  init ") for line in anonymous.stdout.splitlines())
 
-    local_set = runner.run("@ops", "set", "-h")
-    anonymous_set = runner.run("@@", "set", "-h")
+    local_set = runner.run("local@ops", "set", "-h")
+    anonymous_set = runner.run("global@", "set", "-h")
     assert local_set.returncode == 0
-    assert "Usage: byk @ops set [OPTIONS] [key]" in local_set.stdout
+    assert "Usage: byk local@ops set [OPTIONS] [key]" in local_set.stdout
     assert anonymous_set.returncode == 0
-    assert "Usage: byk @@ set [OPTIONS] [key]" in anonymous_set.stdout
+    assert "Usage: byk global@ set [OPTIONS] [key]" in anonymous_set.stdout
 
 
 def test_help_is_not_a_command(runner):
-    result = runner.run("@@ops", "help")
+    result = runner.run("global@ops", "help")
 
     assert result.returncode == 1
     assert 'Unknown file command: "help"' in result.stderr
@@ -136,7 +136,7 @@ def test_help_is_not_a_command(runner):
 
 
 def test_unknown_command_lists_available_commands(runner):
-    result = runner.run("@@ops", "bogus")
+    result = runner.run("global@ops", "bogus")
 
     assert result.returncode == 1
     assert 'Unknown file command: "bogus"' in result.stderr
@@ -147,9 +147,9 @@ def test_unknown_command_lists_available_commands(runner):
 
 
 def test_help_flags_are_completed(runner):
-    verbs = runner.run("__api__", "complete", "@@ops", "")
-    short = runner.run("__api__", "complete", "@@ops", "-")
-    options = runner.run("__api__", "complete", "@@ops", "set", "--")
+    verbs = runner.run("__api__", "complete", "global@ops", "")
+    short = runner.run("__api__", "complete", "global@ops", "-")
+    options = runner.run("__api__", "complete", "global@ops", "set", "--")
 
     assert verbs.returncode == 0
     assert "help" not in verbs.stdout.splitlines()
@@ -161,7 +161,7 @@ def test_help_flags_are_completed(runner):
 
 
 def test_resolve_rejects_help_flag(runner):
-    result = runner.run("__api__", "resolve", "@@ops", "-h")
+    result = runner.run("__api__", "resolve", "global@ops", "-h")
 
     assert result.returncode == 1
     assert "file command" in result.stderr

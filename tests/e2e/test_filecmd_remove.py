@@ -10,7 +10,7 @@ def test_remove_leaf_keeps_others(runner):
         "ops", {"build": "echo hi", "test": "echo test"}
     )
 
-    result = runner.run("@@ops", "remove", "build")
+    result = runner.run("global@ops", "remove", "build")
 
     assert result.returncode == 0
     assert result.stdout == ""
@@ -21,7 +21,7 @@ def test_remove_leaf_keeps_others(runner):
 def test_remove_nested_prunes_empty_group(runner):
     path = runner.prepare_alias_json("ops", {"web": {"deploy": "echo hi"}})
 
-    result = runner.run("@@ops", "remove", "web.deploy")
+    result = runner.run("global@ops", "remove", "web.deploy")
 
     assert result.returncode == 0
     assert read(path) == {}
@@ -32,7 +32,7 @@ def test_remove_nested_prunes_group_metadata(runner):
         "ops", {"web": {"$cwd": ".", "deploy": "echo hi"}}
     )
 
-    result = runner.run("@@ops", "remove", "web.deploy")
+    result = runner.run("global@ops", "remove", "web.deploy")
 
     assert result.returncode == 0
     assert read(path) == {}
@@ -43,7 +43,7 @@ def test_remove_keeps_parent_with_command(runner):
         "ops", {"web": {"$cmd": "echo web", "deploy": "echo hi"}}
     )
 
-    result = runner.run("@@ops", "remove", "web.deploy")
+    result = runner.run("global@ops", "remove", "web.deploy")
 
     assert result.returncode == 0
     assert read(path) == {"web": {"$cmd": "echo web"}}
@@ -58,7 +58,7 @@ def test_remove_whole_group(runner):
         },
     )
 
-    result = runner.run("@@ops", "remove", "web")
+    result = runner.run("global@ops", "remove", "web")
 
     assert result.returncode == 0
     assert read(path) == {"build": "echo build"}
@@ -73,7 +73,7 @@ def test_remove_alias_object_with_metadata(runner):
         },
     )
 
-    result = runner.run("@@ops", "remove", "build")
+    result = runner.run("global@ops", "remove", "build")
 
     assert result.returncode == 0
     assert read(path) == {"test": "echo test"}
@@ -82,7 +82,7 @@ def test_remove_alias_object_with_metadata(runner):
 def test_remove_missing_alias(runner):
     path = runner.prepare_alias_json("ops", {"build": "echo hi"})
 
-    result = runner.run("@@ops", "remove", "deploy")
+    result = runner.run("global@ops", "remove", "deploy")
 
     assert result.returncode == 1
     assert "Alias not found: deploy" in result.stderr
@@ -92,7 +92,7 @@ def test_remove_missing_alias(runner):
 def test_remove_missing_intermediate(runner):
     runner.prepare_alias_json("ops", {"build": "echo hi"})
 
-    result = runner.run("@@ops", "remove", "web.deploy")
+    result = runner.run("global@ops", "remove", "web.deploy")
 
     assert result.returncode == 1
     assert "Alias not found: web.deploy" in result.stderr
@@ -101,7 +101,7 @@ def test_remove_missing_intermediate(runner):
 def test_remove_refuses_non_object_intermediate(runner):
     path = runner.prepare_alias_json("ops", {"web": "echo hi"})
 
-    result = runner.run("@@ops", "remove", "web.deploy")
+    result = runner.run("global@ops", "remove", "web.deploy")
 
     assert result.returncode == 1
     assert "Cannot remove below non-object alias: web" in result.stderr
@@ -112,7 +112,7 @@ def test_remove_refuses_link_file(runner):
     target = runner.prepare_alias_json("shared", {"build": "echo hi"})
     link_file = runner.prepare_alias_file("ops", '["shared.byk.json"]')
 
-    result = runner.run("@@ops", "remove", "build")
+    result = runner.run("global@ops", "remove", "build")
 
     assert result.returncode == 1
     assert "link file" in result.stderr
@@ -121,7 +121,7 @@ def test_remove_refuses_link_file(runner):
 
 
 def test_remove_missing_file_has_no_init_hint(runner):
-    result = runner.run("@@ops", "remove", "build")
+    result = runner.run("global@ops", "remove", "build")
 
     assert result.returncode == 1
     assert "File not found" in result.stderr
@@ -131,7 +131,7 @@ def test_remove_missing_file_has_no_init_hint(runner):
 def test_remove_invalid_json(runner):
     path = runner.prepare_alias_file("ops", "{not json")
 
-    result = runner.run("@@ops", "remove", "build")
+    result = runner.run("global@ops", "remove", "build")
 
     assert result.returncode == 1
     assert "Failed to parse" in result.stderr
@@ -141,7 +141,7 @@ def test_remove_invalid_json(runner):
 def test_remove_rejects_metadata_key_with_unset_hint(runner):
     path = runner.prepare_alias_json("ops", {"build": "echo hi"})
 
-    result = runner.run("@@ops", "remove", "build.$cwd")
+    result = runner.run("global@ops", "remove", "build.$cwd")
 
     assert result.returncode == 1
     assert "metadata field" in result.stderr
@@ -152,7 +152,7 @@ def test_remove_rejects_metadata_key_with_unset_hint(runner):
 def test_remove_rejects_extra_keys(runner):
     path = runner.prepare_alias_json("ops", {"build": "echo hi"})
 
-    result = runner.run("@@ops", "remove", "build", "test")
+    result = runner.run("global@ops", "remove", "build", "test")
 
     assert result.returncode == 1
     assert "remove takes exactly one key" in result.stderr
@@ -165,9 +165,9 @@ def test_remove_local_and_anonymous(runner, tmp_path):
     anonymous = runner.prepare_alias_json("", {"build": "echo anon"})
 
     local_result = runner.run(
-        "@ops", "remove", "build", cwd=str(tmp_path)
+        "local@ops", "remove", "build", cwd=str(tmp_path)
     )
-    anonymous_result = runner.run("@@", "remove", "build")
+    anonymous_result = runner.run("global@", "remove", "build")
 
     assert local_result.returncode == 0
     assert read(local) == {}
@@ -180,7 +180,7 @@ def test_remove_key_completion_lists_keys_and_groups(runner):
         "ops", {"build": "echo hi", "web": {"deploy": "echo d"}}
     )
 
-    result = runner.run("__api__", "complete", "@@ops", "remove", "")
+    result = runner.run("__api__", "complete", "global@ops", "remove", "")
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == ["build", "web", "web.deploy"]
@@ -191,7 +191,7 @@ def test_remove_key_completion_filters_nested_paths(runner):
         "ops", {"build": "echo hi", "web": {"deploy": "echo d"}}
     )
 
-    result = runner.run("__api__", "complete", "@@ops", "remove", "web.")
+    result = runner.run("__api__", "complete", "global@ops", "remove", "web.")
 
     assert result.returncode == 0
     assert result.stdout.splitlines() == ["web.deploy"]
@@ -202,7 +202,7 @@ def test_remove_key_completion_excludes_metadata(runner):
         "ops", {"build": {"$cmd": "echo hi", "$cwd": "."}}
     )
 
-    result = runner.run("__api__", "complete", "@@ops", "remove", "$")
+    result = runner.run("__api__", "complete", "global@ops", "remove", "$")
 
     assert result.returncode == 0
     assert result.stdout == ""
@@ -211,25 +211,25 @@ def test_remove_key_completion_excludes_metadata(runner):
 def test_remove_key_completion_stops_after_key(runner):
     runner.prepare_alias_json("ops", {"build": "echo hi"})
 
-    result = runner.run("__api__", "complete", "@@ops", "remove", "build", "")
+    result = runner.run("__api__", "complete", "global@ops", "remove", "build", "")
 
     assert result.returncode == 0
     assert result.stdout == ""
 
 
 def test_help_for_remove_shows_usage(runner):
-    result = runner.run("@@ops", "remove", "-h")
+    result = runner.run("global@ops", "remove", "-h")
 
     assert result.returncode == 0
     assert result.stdout.startswith(
         "\nRemove an alias or group\n\nFilePath: "
     )
-    assert "Usage: byk @@ops remove [OPTIONS] <key>" in result.stdout
+    assert "Usage: byk global@ops remove [OPTIONS] <key>" in result.stdout
     assert "  --help, -h  Show this help" in result.stdout
 
 
 def test_resolve_rejects_remove(runner):
-    result = runner.run("__api__", "resolve", "@@ops", "remove")
+    result = runner.run("__api__", "resolve", "global@ops", "remove")
 
     assert result.returncode == 1
     assert "file command" in result.stderr

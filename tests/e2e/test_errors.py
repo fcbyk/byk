@@ -44,21 +44,21 @@ def test_unknown_alias_reports_and_exits_1(runner):
 
 
 def test_exact_syntax_missing_file(runner):
-    r = runner.run("@nofile.build")
+    r = runner.run("local@nofile.build")
     assert r.returncode == 1
     assert "Alias file not found" in r.stderr
 
 
 def test_exact_syntax_missing_key(runner):
     runner.prepare_alias_json("known", {"other": "echo x"})
-    r = runner.run("@@known.build")
+    r = runner.run("global@known.build")
     assert r.returncode == 1
     assert "Alias key not found" in r.stderr
 
 
 def test_exact_syntax_reports_unloadable_file(runner):
     runner.prepare_alias_file("broken", "{not json")
-    r = runner.run("@@broken.build")
+    r = runner.run("global@broken.build")
     assert r.returncode == 1
     assert "Alias file cannot be loaded" in r.stderr
     assert "invalid JSON" in r.stderr
@@ -74,12 +74,12 @@ def test_exact_syntax_rejects_reserved_fields(runner):
         },
     )
 
-    for key in ("@@ops.$custom", "@@ops.build.$cmd", "@@ops.build.$description"):
+    for key in ("global@ops.$custom", "global@ops.build.$cmd", "global@ops.build.$description"):
         r = runner.run(key)
         assert r.returncode == 1, key
         assert "Not an alias (reserved $ field)" in r.stderr, key
 
-    ok = runner.run("@@ops.build")
+    ok = runner.run("global@ops.build")
     assert ok.returncode == 0, ok.stderr
     assert "hi" in ok.stdout
 

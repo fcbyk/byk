@@ -1,4 +1,4 @@
-//! 系统文件（`@@@config` / `@@@tap` / `@@@shell`）的补全候选：动词、帮助开关与参数。
+//! 系统文件（`sys@config` / `sys@tap` / `sys@shell`）的补全候选：动词、帮助开关与参数。
 //!
 //! 与 `filecmd_args` 平行：文件命令的语法由 `filecmd::spec` 定义，系统文件的
 //! 语法归各自的模块，所以候选也向它们要，不在这里另写一份名单。
@@ -6,7 +6,7 @@
 use crate::filecmd::sys;
 use crate::model::PathLayout;
 
-/// 补全 `@@@config <verb> ...` / `@@@tap <verb> ...` / `@@@shell <verb> ...`。
+/// 补全 `sys@config <verb> ...` / `sys@tap <verb> ...` / `sys@shell <verb> ...`。
 ///
 /// `prev` 是光标前的完整词，`partial` 是当前词。返回 `None` 表示第一个词不是
 /// 已注册的系统文件，调用方继续按文件命令与别名补全。
@@ -32,7 +32,7 @@ pub(crate) fn complete(prev: &[String], partial: &str, layout: &PathLayout) -> O
     }
 }
 
-/// `-h` / `--help` 只在动词位认（`@@@config -h`）；`@@@config set -h` 里的
+/// `-h` / `--help` 只在动词位认（`sys@config -h`）；`sys@config set -h` 里的
 /// `-h` 是 `set` 的参数，各文件的 `run` 就是这么解的第一个词。
 fn help_flags(partial: &str) -> Vec<String> {
     ["--help", "-h"]
@@ -144,7 +144,7 @@ mod tests {
         let (_temp, layout) = fixture();
 
         assert_eq!(
-            complete(&words(&["@@@config"]), "", &layout),
+            complete(&words(&["sys@config"]), "", &layout),
             Some(vec![
                 "list".to_string(),
                 "get".to_string(),
@@ -153,7 +153,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            complete(&words(&["@@@tap"]), "", &layout),
+            complete(&words(&["sys@tap"]), "", &layout),
             Some(vec![
                 "list".to_string(),
                 "add".to_string(),
@@ -162,7 +162,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            complete(&words(&["@@@tap"]), "u", &layout),
+            complete(&words(&["sys@tap"]), "u", &layout),
             Some(vec!["update".to_string()])
         );
     }
@@ -172,16 +172,16 @@ mod tests {
         let (_temp, layout) = fixture();
 
         assert_eq!(
-            complete(&words(&["@@@config"]), "-", &layout),
+            complete(&words(&["sys@config"]), "-", &layout),
             Some(vec!["--help".to_string(), "-h".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@@tap"]), "--", &layout),
+            complete(&words(&["sys@tap"]), "--", &layout),
             Some(vec!["--help".to_string()])
         );
         // 动词之后 `-h` 是参数，不是开关
         assert_eq!(
-            complete(&words(&["@@@tap", "list"]), "-", &layout),
+            complete(&words(&["sys@tap", "list"]), "-", &layout),
             Some(Vec::new())
         );
     }
@@ -191,15 +191,15 @@ mod tests {
         let (_temp, layout) = fixture();
 
         assert_eq!(
-            complete(&words(&["@@@config", "get"]), "", &layout),
+            complete(&words(&["sys@config", "get"]), "", &layout),
             Some(vec!["banner".to_string(), "net-github".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@@config", "unset"]), "net", &layout),
+            complete(&words(&["sys@config", "unset"]), "net", &layout),
             Some(vec!["net-github".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@@config", "set"]), "b", &layout),
+            complete(&words(&["sys@config", "set"]), "b", &layout),
             Some(vec!["banner".to_string()])
         );
     }
@@ -209,7 +209,7 @@ mod tests {
         let (_temp, layout) = fixture();
 
         assert_eq!(
-            complete(&words(&["@@@config", "set", "banner"]), "", &layout),
+            complete(&words(&["sys@config", "set", "banner"]), "", &layout),
             Some(vec![
                 "auto".to_string(),
                 "always".to_string(),
@@ -217,21 +217,25 @@ mod tests {
             ])
         );
         assert_eq!(
-            complete(&words(&["@@@config", "set", "banner"]), "al", &layout),
+            complete(&words(&["sys@config", "set", "banner"]), "al", &layout),
             Some(vec!["always".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@@config", "set", "net-github"]), "g", &layout),
+            complete(&words(&["sys@config", "set", "net-github"]), "g", &layout),
             Some(vec!["ghproxy".to_string()])
         );
         // 未知设置项没有候选
         assert_eq!(
-            complete(&words(&["@@@config", "set", "baner"]), "", &layout),
+            complete(&words(&["sys@config", "set", "baner"]), "", &layout),
             Some(Vec::new())
         );
         // 值已给：不再补
         assert_eq!(
-            complete(&words(&["@@@config", "set", "banner", "auto"]), "", &layout),
+            complete(
+                &words(&["sys@config", "set", "banner", "auto"]),
+                "",
+                &layout
+            ),
             Some(Vec::new())
         );
     }
@@ -240,7 +244,7 @@ mod tests {
     fn list_takes_no_candidates() {
         let (_temp, layout) = fixture();
         assert_eq!(
-            complete(&words(&["@@@config", "list"]), "", &layout),
+            complete(&words(&["sys@config", "list"]), "", &layout),
             Some(Vec::new())
         );
     }
@@ -251,21 +255,21 @@ mod tests {
         install(&layout, &["aaa/bb", "ccc/dd", "bad"]);
 
         assert_eq!(
-            complete(&words(&["@@@tap", "remove"]), "", &layout),
+            complete(&words(&["sys@tap", "remove"]), "", &layout),
             Some(vec!["aaa/bb".to_string(), "ccc/dd".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@@tap", "update"]), "aa", &layout),
+            complete(&words(&["sys@tap", "update"]), "aa", &layout),
             Some(vec!["aaa/bb".to_string()])
         );
         // 键已给：不再补
         assert_eq!(
-            complete(&words(&["@@@tap", "remove", "aaa/bb"]), "", &layout),
+            complete(&words(&["sys@tap", "remove", "aaa/bb"]), "", &layout),
             Some(Vec::new())
         );
         // `add` 的来源在远端
         assert_eq!(
-            complete(&words(&["@@@tap", "add"]), "", &layout),
+            complete(&words(&["sys@tap", "add"]), "", &layout),
             Some(Vec::new())
         );
     }
@@ -274,7 +278,7 @@ mod tests {
     fn missing_index_offers_nothing() {
         let (_temp, layout) = fixture();
         assert_eq!(
-            complete(&words(&["@@@tap", "remove"]), "", &layout),
+            complete(&words(&["sys@tap", "remove"]), "", &layout),
             Some(Vec::new())
         );
     }
@@ -284,25 +288,25 @@ mod tests {
         let (_temp, layout) = fixture();
 
         assert_eq!(
-            complete(&words(&["@@@shell"]), "", &layout),
+            complete(&words(&["sys@shell"]), "", &layout),
             Some(vec!["add".to_string(), "remove".to_string()])
         );
         assert_eq!(
-            complete(&words(&["@@@shell", "add"]), "", &layout),
+            complete(&words(&["sys@shell", "add"]), "", &layout),
             Some(vec!["completion".to_string()])
         );
         // 对象之后没有候选：目标 shell 由运行环境决定
         assert_eq!(
-            complete(&words(&["@@@shell", "add", "completion"]), "", &layout),
+            complete(&words(&["sys@shell", "add", "completion"]), "", &layout),
             Some(Vec::new())
         );
         assert_eq!(
-            complete(&words(&["@@@shell", "add", "completion"]), "b", &layout),
+            complete(&words(&["sys@shell", "add", "completion"]), "b", &layout),
             Some(Vec::new())
         );
         // 对象不对也一样
         assert_eq!(
-            complete(&words(&["@@@shell", "add", "path"]), "", &layout),
+            complete(&words(&["sys@shell", "add", "path"]), "", &layout),
             Some(Vec::new())
         );
     }
@@ -310,9 +314,9 @@ mod tests {
     #[test]
     fn ignores_tokens_it_does_not_own() {
         let (_temp, layout) = fixture();
-        assert_eq!(complete(&words(&["@@@nope"]), "", &layout), None);
-        assert_eq!(complete(&words(&["@@"]), "", &layout), None);
+        assert_eq!(complete(&words(&["sys@nope"]), "", &layout), None);
+        assert_eq!(complete(&words(&["global@"]), "", &layout), None);
         assert_eq!(complete(&words(&["ops"]), "", &layout), None);
-        assert_eq!(complete(&words(&["@@@"]), "", &layout), None);
+        assert_eq!(complete(&words(&["sys@"]), "", &layout), None);
     }
 }

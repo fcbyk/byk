@@ -147,13 +147,17 @@ mod tests {
     }
 
     fn tmp_dir() -> PathBuf {
-        tempfile::tempdir().unwrap().path().join("deps").join("@@t")
+        tempfile::tempdir()
+            .unwrap()
+            .path()
+            .join("deps")
+            .join("global@t")
     }
 
     #[test]
     fn relative_src_needs_a_base_only_at_plan_time() {
         let decl = parse(json!(["../hhh.js"])).unwrap();
-        let err = plan_entries(&decl, &tmp_dir(), "@@t").unwrap_err();
+        let err = plan_entries(&decl, &tmp_dir(), "global@t").unwrap_err();
         assert!(
             err.contains("relative path but \"$deps.base\" is not set"),
             "{err}"
@@ -169,7 +173,7 @@ mod tests {
         )
         .unwrap();
 
-        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+        let assets = plan_entries(&decl, &dir, "global@t").unwrap();
 
         assert_eq!(
             assets[0].origin.as_str(),
@@ -190,9 +194,9 @@ mod tests {
     #[test]
     fn relative_src_keeps_its_query_when_joined() {
         let decl = parse_with(json!("https://e.com/a/"), json!(["tool?token=x"])).unwrap();
-        let assets = plan_entries(&decl, &tmp_dir(), "@@t").unwrap();
+        let assets = plan_entries(&decl, &tmp_dir(), "global@t").unwrap();
         assert_eq!(assets[0].origin.as_str(), "https://e.com/a/tool?token=x");
-        assert_eq!(assets[0].label, "@@t/tool");
+        assert_eq!(assets[0].label, "global@t/tool");
     }
 
     #[test]
@@ -201,13 +205,13 @@ mod tests {
         let base = path_to_slash(&dir);
         let decl = parse_with(json!(base), json!(["../hhh.js", "bin/tool"])).unwrap();
 
-        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+        let assets = plan_entries(&decl, &dir, "global@t").unwrap();
 
         assert_eq!(
             assets[0].origin,
             Origin::File(dir.parent().unwrap().join("hhh.js"))
         );
-        assert_eq!(assets[0].label, "@@t/hhh.js");
+        assert_eq!(assets[0].label, "global@t/hhh.js");
         assert_eq!(assets[1].origin, Origin::File(dir.join("bin").join("tool")));
     }
 
@@ -215,7 +219,7 @@ mod tests {
     fn absolute_src_ignores_a_local_base() {
         let dir = tmp_dir();
         let decl = parse_with(json!(path_to_slash(&dir)), json!(["https://e.com/x.js"])).unwrap();
-        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+        let assets = plan_entries(&decl, &dir, "global@t").unwrap();
 
         assert_eq!(
             assets[0].origin,
@@ -227,9 +231,9 @@ mod tests {
     fn plan_derives_name_from_url() {
         let dir = tmp_dir();
         let decl = parse(json!(["https://e.com/dist/my-tool-1.4.tar.gz?token=x"])).unwrap();
-        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+        let assets = plan_entries(&decl, &dir, "global@t").unwrap();
         assert_eq!(assets[0].dest, dir.join("my-tool-1.4.tar.gz"));
-        assert_eq!(assets[0].label, "@@t/my-tool-1.4.tar.gz");
+        assert_eq!(assets[0].label, "global@t/my-tool-1.4.tar.gz");
         assert_eq!(
             assets[0].origin.as_str(),
             "https://e.com/dist/my-tool-1.4.tar.gz?token=x"
@@ -240,14 +244,14 @@ mod tests {
     fn plan_normalizes_dot_segments_in_url() {
         let dir = tmp_dir();
         let decl = parse(json!(["https://e.com/dist/../rel/tool"])).unwrap();
-        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+        let assets = plan_entries(&decl, &dir, "global@t").unwrap();
         assert_eq!(assets[0].origin.as_str(), "https://e.com/rel/tool");
     }
 
     #[test]
     fn plan_derive_failure_mentions_name() {
         let decl = parse(json!(["https://e.com/"])).unwrap();
-        let err = plan_entries(&decl, &tmp_dir(), "@@t").unwrap_err();
+        let err = plan_entries(&decl, &tmp_dir(), "global@t").unwrap_err();
         assert!(err.contains("set \"name\""), "{err}");
     }
 
@@ -256,18 +260,18 @@ mod tests {
         let dir = tmp_dir();
         let decl = parse(json!([{"src": "https://e.com/b.tar.gz", "to": "dist", "extract": true}]))
             .unwrap();
-        let assets = plan_entries(&decl, &dir, "@@t").unwrap();
+        let assets = plan_entries(&decl, &dir, "global@t").unwrap();
         assert_eq!(assets[0].dest, dir.join("dist"));
         assert!(assets[0].archive);
         // 标签指向目录，而不是那个只用来中转的压缩包名
-        assert_eq!(assets[0].label, "@@t/dist");
+        assert_eq!(assets[0].label, "global@t/dist");
     }
 
     #[test]
     fn plan_extract_into_root_is_labelled_by_key() {
         let decl = parse(json!([{"src": "https://e.com/b.tar.gz", "extract": true}])).unwrap();
-        let assets = plan_entries(&decl, &tmp_dir(), "@@t").unwrap();
-        assert_eq!(assets[0].label, "@@t");
+        let assets = plan_entries(&decl, &tmp_dir(), "global@t").unwrap();
+        assert_eq!(assets[0].label, "global@t");
     }
 
     #[test]
@@ -279,20 +283,20 @@ mod tests {
         ]))
         .unwrap();
 
-        let err = plan_entries(&decl, &dir, "@@t").unwrap_err();
+        let err = plan_entries(&decl, &dir, "global@t").unwrap_err();
 
         assert!(err.contains("must be the only entry"), "{err}");
 
         // 单独一条就合法：lansend 那种发布包形态
         let single = parse(json!([{"src": "https://e.com/b.tar.gz", "extract": true}])).unwrap();
-        plan_entries(&single, &dir, "@@t").unwrap();
+        plan_entries(&single, &dir, "global@t").unwrap();
     }
 
     #[test]
     fn plan_detects_clashes() {
         let decl =
             parse(json!(["https://e.com/a", {"src": "https://e.com/b", "name": "a"}])).unwrap();
-        let err = plan_entries(&decl, &tmp_dir(), "@@t").unwrap_err();
+        let err = plan_entries(&decl, &tmp_dir(), "global@t").unwrap_err();
         assert!(err.contains("already used by files[0]"), "{err}");
     }
 
@@ -303,6 +307,6 @@ mod tests {
             {"src": "https://e.com/README", "to": "dist", "name": "README"}
         ]))
         .unwrap();
-        plan_entries(&decl, &tmp_dir(), "@@t").unwrap();
+        plan_entries(&decl, &tmp_dir(), "global@t").unwrap();
     }
 }

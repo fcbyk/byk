@@ -1,25 +1,25 @@
-//! 精确执行语法：@file.key 和 @@file.key。
+//! 精确执行语法：local@file.key 和 global@file.key。
 
 use std::io;
 use std::path::PathBuf;
 
 use super::scan::load_alias_file;
 use crate::model::PathLayout;
-use crate::model::{AliasFile, Mode, ResolvedAlias};
+use crate::model::{AliasFile, Mode, ResolvedAlias, Scope, build_file_key};
 use crate::resolve::{
     Diagnostic, Level, apply_inherited, build_builtin_table, is_alias_value, parse_paths,
     to_alias_definition, to_alias_value, validate_filename,
 };
 
-/// 解析 `@file.key` / `@@file.key`，返回 (file_key, alias_key)。
+/// 解析 `local@file.key` / `global@file.key`，返回 (file_key, alias_key)。
 ///
-/// `@.build` 的 file_key 是 `@`（匿名文件）；无点号或 key 为空时返回 None，走普通查找。
+/// `local@.build` 的 file_key 是 `local@`（匿名文件）；无点号或 key 为空时返回 None，
+/// 走普通查找。`sys@` 没有别名键，不参与点号语法。
 pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
-    let (prefix, rest) = if let Some(rest) = input.strip_prefix("@@") {
-        ("@@", rest)
-    } else {
-        ("@", input.strip_prefix('@')?)
-    };
+    let (scope, rest) = Scope::split(input)?;
+    if scope == Scope::Sys {
+        return None;
+    }
 
     let dot_idx = rest.find('.')?;
     let file_name = &rest[..dot_idx];
@@ -29,7 +29,10 @@ pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
         return None;
     }
 
-    Some((format!("{}{}", prefix, file_name), alias_key.to_string()))
+    Some((
+        build_file_key(file_name, scope.is_global()),
+        alias_key.to_string(),
+    ))
 }
 
 /// 精确执行结果。
@@ -56,10 +59,10 @@ pub enum LoadFailure {
     Failed(String),
 }
 
-/// 按 `@file` / `@@file` 加载并解析目标文件，不扫描目录、不建合并树。
+/// 按 `local@file` / `global@file` 加载并解析目标文件，不扫描目录、不建合并树。
 ///
-/// `@` 指向当前目录，`@@` 指向全局别名目录；文件 key 与扫描阶段的命名规则一致。
-/// 文件名不合法时视作文件不存在，避免 `@../x` 这类路径穿越。
+/// `local@` 指向当前目录，`global@` 指向全局别名目录；文件 key 与扫描阶段的命名规则一致。
+/// 文件名不合法时视作文件不存在，避免 `local@../x` 这类路径穿越。
 pub fn load_file_by_key(layout: &PathLayout, file_key: &str) -> Result<AliasFile, LoadFailure> {
     let Some((is_global, stem)) = split_file_key(file_key) else {
         return Err(LoadFailure::NotFound);
@@ -135,7 +138,7 @@ pub fn load_file_by_key(layout: &PathLayout, file_key: &str) -> Result<AliasFile
     }
 }
 
-/// 解析目标文件来响应 `@file.key` / `@@file.key`。
+/// 解析目标文件来响应 `local@file.key` / `global@file.key`。
 pub fn resolve_exact_alias(layout: &PathLayout, file_key: &str, alias_key: &str) -> ExactLookup {
     let file = match load_file_by_key(layout, file_key) {
         Ok(file) => file,
@@ -176,11 +179,11 @@ fn failure_reason(diagnostics: &[Diagnostic]) -> String {
 }
 
 fn split_file_key(file_key: &str) -> Option<(bool, &str)> {
-    if let Some(stem) = file_key.strip_prefix("@@") {
-        Some((true, stem))
-    } else {
-        file_key.strip_prefix('@').map(|stem| (false, stem))
+    let (scope, stem) = Scope::split(file_key)?;
+    if scope == Scope::Sys {
+        return None;
     }
+    Some((scope.is_global(), stem))
 }
 
 /// 按 file_key 在文件列表里查找别名，返回 (别名, 展示用来源串)。
@@ -274,16 +277,16 @@ mod tests {
         let ExactLookup::Found {
             resolved,
             display_source,
-        } = resolve_exact_alias(&layout, "@@ops", "build")
+        } = resolve_exact_alias(&layout, "global@ops", "build")
         else {
             panic!("expected the alias to resolve");
         };
-        assert_eq!(resolved.source, "@@ops");
+        assert_eq!(resolved.source, "global@ops");
         assert_eq!(
             resolved.source_path.as_deref(),
             Some(layout.alias_dir.join("ops.byk.json").as_path())
         );
-        assert_eq!(display_source, "@@ops.build");
+        assert_eq!(display_source, "global@ops.build");
         assert_eq!(resolved.definition.command, "make build");
     }
 
@@ -296,7 +299,8 @@ mod tests {
         )
         .unwrap();
 
-        let ExactLookup::Found { resolved, .. } = resolve_exact_alias(&layout, "@@ops", "deploy")
+        let ExactLookup::Found { resolved, .. } =
+            resolve_exact_alias(&layout, "global@ops", "deploy")
         else {
             panic!("exact calls must reach private files");
         };
@@ -322,7 +326,8 @@ mod tests {
         .unwrap();
 
         let paths = |key: &str| {
-            let ExactLookup::Found { resolved, .. } = resolve_exact_alias(&layout, "@@ops", key)
+            let ExactLookup::Found { resolved, .. } =
+                resolve_exact_alias(&layout, "global@ops", key)
             else {
                 panic!("expected {key} to resolve");
             };
@@ -339,7 +344,7 @@ mod tests {
     fn resolve_exact_missing_file() {
         let (_tmp, layout) = temp_layout();
         assert!(matches!(
-            resolve_exact_alias(&layout, "@@nope", "build"),
+            resolve_exact_alias(&layout, "global@nope", "build"),
             ExactLookup::FileNotFound
         ));
     }
@@ -349,7 +354,7 @@ mod tests {
         let (_tmp, layout) = temp_layout();
         fs::write(layout.alias_dir.join("ops.byk.json"), r#"{"other": "x"}"#).unwrap();
         assert!(matches!(
-            resolve_exact_alias(&layout, "@@ops", "build"),
+            resolve_exact_alias(&layout, "global@ops", "build"),
             ExactLookup::KeyNotFound
         ));
     }
@@ -358,7 +363,7 @@ mod tests {
     fn resolve_exact_reports_unloadable_file() {
         let (_tmp, layout) = temp_layout();
         fs::write(layout.alias_dir.join("broken.byk.json"), "{not json").unwrap();
-        match resolve_exact_alias(&layout, "@@broken", "build") {
+        match resolve_exact_alias(&layout, "global@broken", "build") {
             ExactLookup::FileUnavailable { reason } => {
                 assert!(
                     reason.contains("invalid JSON"),
@@ -381,7 +386,7 @@ mod tests {
         for key in ["build.$cmd", "build.$description", "$custom"] {
             assert!(
                 matches!(
-                    resolve_exact_alias(&layout, "@@ops", key),
+                    resolve_exact_alias(&layout, "global@ops", key),
                     ExactLookup::ReservedField { .. }
                 ),
                 "expected {key} to be rejected"
@@ -393,7 +398,7 @@ mod tests {
     fn resolve_exact_rejects_path_traversal() {
         let (_tmp, layout) = temp_layout();
         assert!(matches!(
-            resolve_exact_alias(&layout, "@@../evil", "build"),
+            resolve_exact_alias(&layout, "global@../evil", "build"),
             ExactLookup::FileNotFound
         ));
     }
@@ -401,38 +406,38 @@ mod tests {
     #[test]
     fn parse_at_file_dot_key() {
         assert_eq!(
-            parse_exact_syntax("@release.build"),
-            Some(("@release".into(), "build".into()))
+            parse_exact_syntax("local@release.build"),
+            Some(("local@release".into(), "build".into()))
         );
     }
 
     #[test]
     fn parse_double_at_file_dot_key() {
         assert_eq!(
-            parse_exact_syntax("@@release.build"),
-            Some(("@@release".into(), "build".into()))
+            parse_exact_syntax("global@release.build"),
+            Some(("global@release".into(), "build".into()))
         );
     }
 
     #[test]
     fn parse_at_dot_key() {
         assert_eq!(
-            parse_exact_syntax("@.build"),
-            Some(("@".into(), "build".into()))
+            parse_exact_syntax("local@.build"),
+            Some(("local@".into(), "build".into()))
         );
     }
 
     #[test]
     fn parse_double_at_dot_key() {
         assert_eq!(
-            parse_exact_syntax("@@.build"),
-            Some(("@@".into(), "build".into()))
+            parse_exact_syntax("global@.build"),
+            Some(("global@".into(), "build".into()))
         );
     }
 
     #[test]
     fn parse_at_only_no_dot() {
-        assert_eq!(parse_exact_syntax("@release"), None);
+        assert_eq!(parse_exact_syntax("local@release"), None);
     }
 
     #[test]
@@ -443,24 +448,24 @@ mod tests {
 
     #[test]
     fn parse_at_dot_empty_key() {
-        assert_eq!(parse_exact_syntax("@release."), None);
-        assert_eq!(parse_exact_syntax("@."), None);
+        assert_eq!(parse_exact_syntax("local@release."), None);
+        assert_eq!(parse_exact_syntax("local@."), None);
     }
 
     #[test]
     fn parse_dot_in_file_name() {
         // file_name 部分不含 dot（第一个 dot 即分隔符），多 dot 后面的归 alias_key
         assert_eq!(
-            parse_exact_syntax("@release.build.prod"),
-            Some(("@release".into(), "build.prod".into()))
+            parse_exact_syntax("local@release.build.prod"),
+            Some(("local@release".into(), "build.prod".into()))
         );
     }
 
     #[test]
     fn parse_with_hyphens() {
         assert_eq!(
-            parse_exact_syntax("@my-file.run-test"),
-            Some(("@my-file".into(), "run-test".into()))
+            parse_exact_syntax("local@my-file.run-test"),
+            Some(("local@my-file".into(), "run-test".into()))
         );
     }
 }

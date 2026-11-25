@@ -28,7 +28,7 @@ impl PathLayout {
         }
     }
 
-    /// `@@@config` 的目标文件：CLI Home 根部的 `config.json`。
+    /// `sys@config` 的目标文件：CLI Home 根部的 `config.json`。
     ///
     /// 由 `root_dir` 推导而不是单独存一个字段，省得两处各写一遍、
     /// 将来改了目录却只改到一半。
@@ -36,16 +36,16 @@ impl PathLayout {
         self.root_dir.join("config.json")
     }
 
-    /// `@@@tap` 管理的仓库目录：CLI Home 下的 `tap/`。
+    /// `sys@tap` 管理的仓库目录：CLI Home 下的 `tap/`。
     ///
     /// 布局是 `<tap>/<user>/<repo>/`，与 `clone --tap` 扫描本地索引的两层结构一致。
     pub fn tap_dir(&self) -> PathBuf {
         self.root_dir.join("tap")
     }
 
-    /// `@@@tap` 的账本：`tap/index.json`。
+    /// `sys@tap` 的账本：`tap/index.json`。
     ///
-    /// 只有 `@@@tap` 读写它。放在 `tap/` 根部是安全的：扫描器按
+    /// 只有 `sys@tap` 读写它。放在 `tap/` 根部是安全的：扫描器按
     /// `<tap>/<user>/<repo>/byk.tap.json` 两层找索引，`index.json` 含点号，
     /// 不会被当成用户名。
     pub fn tap_index_path(&self) -> PathBuf {

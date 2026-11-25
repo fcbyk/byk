@@ -1,14 +1,14 @@
-//! 系统文件命令路由：`@@@<name> <args...>`。
+//! 系统文件命令路由：`sys@<name> <args...>`。
 //!
-//! `@` / `@@` 指向别名文件，`@@@` 指向别名之外的任何文件（byk 自己的配置、用户的启动
-//! 文件）。这一层只认名字，之后的语法——有无动词、`-h` 算什么——归各文件自己定。
+//! `local@` / `global@` 指向别名文件，`sys@` 指向别名之外的任何文件（byk 自己的配置、
+//! 用户的启动文件）。这一层只认名字，之后的语法——有无动词、`-h` 算什么——归各文件自己定。
 
 pub(crate) mod config;
 pub(crate) mod shell;
 pub(crate) mod store;
 pub(crate) mod tap;
 
-use crate::model::PathLayout;
+use crate::model::{PathLayout, Scope};
 
 /// 已注册的系统文件；顺序即错误提示与补全顺序。
 ///
@@ -24,9 +24,12 @@ pub(crate) fn names() -> impl Iterator<Item = &'static str> {
     FILES.iter().map(|(name, _)| *name)
 }
 
-/// 把 `@@@name` 换成注册表里的名字；未注册或只是 `@@@` 时返回 `None`。
+/// 把 `sys@name` 换成注册表里的名字；未注册或只是 `sys@` 时返回 `None`。
 pub(crate) fn parse_token(token: &str) -> Option<&'static str> {
-    let stem = token.strip_prefix("@@@")?;
+    let (scope, stem) = Scope::split(token)?;
+    if scope != Scope::Sys {
+        return None;
+    }
     FILES
         .iter()
         .find(|(name, _)| *name == stem)
@@ -45,7 +48,7 @@ pub(crate) fn verbs(name: &str) -> &'static [(&'static str, &'static str)] {
     }
 }
 
-/// 补全说明：系统文件名本身（`@@@config` → `byk settings`）。
+/// 补全说明：系统文件名本身（`sys@config` → `byk settings`）。
 pub(crate) fn describe_file(token: &str) -> Option<&'static str> {
     let name = parse_token(token)?;
     FILES
@@ -77,7 +80,7 @@ pub(crate) fn run(stem: &str, args: &[String], layout: &PathLayout) -> Result<()
     }
 }
 
-/// 把 `@@@` 后面那段文字换成注册表里的文件身份。
+/// 把 `sys@` 后面那段文字换成注册表里的文件身份。
 fn resolve_name(stem: &str) -> Result<&'static str, String> {
     if stem.is_empty() {
         return Err(format!(
@@ -85,11 +88,11 @@ fn resolve_name(stem: &str) -> Result<&'static str, String> {
             available()
         ));
     }
-    // 点号在这里是明确的误用信号：`@@@config.set` 是想写 `@@@config set ...`，
+    // 点号在这里是明确的误用信号：`sys@config.set` 是想写 `sys@config set ...`，
     // 不能掉进别名查找，否则用户等到的是 "alias not found"。
     if stem.contains('.') {
         return Err(format!(
-            "Invalid system file: {:?}\nHint: system files take arguments after a space, e.g. `byk @@@config banner never`",
+            "Invalid system file: {:?}\nHint: system files take arguments after a space, e.g. `byk sys@config banner never`",
             stem
         ));
     }
@@ -108,7 +111,7 @@ fn resolve_name(stem: &str) -> Result<&'static str, String> {
 
 fn available() -> String {
     names()
-        .map(|name| format!("@@@{}", name))
+        .map(|name| format!("{}{}", Scope::Sys.token(), name))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -126,14 +129,14 @@ mod tests {
     fn rejects_empty_name_with_available_list() {
         let err = resolve_name("").unwrap_err();
         assert!(err.starts_with("Missing system file name"), "{err}");
-        assert!(err.contains("@@@config"), "{err}");
+        assert!(err.contains("sys@config"), "{err}");
     }
 
     #[test]
     fn rejects_unknown_name_with_available_list() {
         let err = resolve_name("confg").unwrap_err();
         assert!(err.starts_with("Unknown system file: \"confg\""), "{err}");
-        assert!(err.contains("Available: @@@config"), "{err}");
+        assert!(err.contains("Available: sys@config"), "{err}");
     }
 
     #[test]
@@ -143,6 +146,6 @@ mod tests {
             err.starts_with("Invalid system file: \"config.set\""),
             "{err}"
         );
-        assert!(err.contains("byk @@@config banner never"), "{err}");
+        assert!(err.contains("byk sys@config banner never"), "{err}");
     }
 }

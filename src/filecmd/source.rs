@@ -1,4 +1,4 @@
-//! 别名文件来源解析：`@name` / `@@name` / 路径，link 与 clone 共用。
+//! 别名文件来源解析：`local@name` / `global@name` / 路径，link 与 clone 共用。
 
 use std::fs;
 use std::io;
@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::deps::Origin;
 use crate::filecmd::io::path::target_path;
 use crate::filecmd::spec::invalid_stem_message;
-use crate::model::PathLayout;
+use crate::model::{PathLayout, Scope};
 use crate::resolve::validate_filename;
 use crate::utils::path::{canonical, expand_home};
 
@@ -76,8 +76,8 @@ fn remote(url: &str, channel: crate::net::Channel) -> Result<Loaded, String> {
 
 /// 直接按路径读取别名文件。
 ///
-/// 与 [`load`] 的区别是跳过 `@name` / `@@name` 与裸名补全：tap 索引里的值
-/// 是精确指针，`@foo` 也必须当普通文件名，不能被解释成别名。
+/// 与 [`load`] 的区别是跳过 `local@` / `global@` 与裸名补全：tap 索引里的值
+/// 是精确指针，`@foo` 也必须当普通文件名，不能被解释成作用域。
 pub(crate) fn load_file(path: &Path) -> Result<Loaded, String> {
     let (path, data) = read_source(path.to_path_buf())?;
     Ok(Loaded {
@@ -323,17 +323,22 @@ pub(crate) fn encode_segment(segment: &str) -> String {
 }
 
 fn load_local(spec: &str, layout: &PathLayout) -> Result<(PathBuf, Vec<u8>), String> {
-    if let Some(stem) = spec.strip_prefix("@@") {
+    if let Some((scope, stem)) = Scope::split(spec) {
+        if scope == Scope::Sys {
+            return Err(format!(
+                "System files are not alias-file sources: {}\nHint: clone and link take alias files, e.g. local@ops or global@ops",
+                spec
+            ));
+        }
         if !validate_filename(stem) {
             return Err(invalid_stem_message(stem));
         }
-        return read_source(target_path(&layout.alias_dir, stem));
-    }
-    if let Some(stem) = spec.strip_prefix('@') {
-        if !validate_filename(stem) {
-            return Err(invalid_stem_message(stem));
-        }
-        return read_source(target_path(&current_dir()?, stem));
+        let dir = if scope.is_global() {
+            layout.alias_dir.clone()
+        } else {
+            current_dir()?
+        };
+        return read_source(target_path(&dir, stem));
     }
 
     let expanded = expand_home(spec);
@@ -483,10 +488,10 @@ fn failure_hint(route: &crate::net::Route, url: &str) -> Option<&'static str> {
     }
     match route {
         crate::net::Route::Direct => Some(
-            "\nHint: this network cannot reach GitHub directly; retry through a mirror:\n  byk @@@config set net-github ghproxy",
+            "\nHint: this network cannot reach GitHub directly; retry through a mirror:\n  byk sys@config set net-github ghproxy",
         ),
         crate::net::Route::Mirrored(_) => Some(
-            "\nHint: the mirror may be unreachable; go direct with:\n  byk @@@config set net-github direct",
+            "\nHint: the mirror may be unreachable; go direct with:\n  byk sys@config set net-github direct",
         ),
         // 凭证地址本来就不该换成镜像，别给一个会泄露凭证的建议
         crate::net::Route::Credentials => None,
@@ -599,7 +604,7 @@ mod tests {
         let layout = layout(&temp);
         let target = object_file(&layout.alias_dir, "tool.byk.json");
 
-        let resolved = resolve("@@tool", &layout).unwrap();
+        let resolved = resolve("global@tool", &layout).unwrap();
 
         assert_eq!(resolved, canonical(&target));
     }
@@ -999,7 +1004,7 @@ mod tests {
     fn rejects_invalid_name() {
         let temp = tempfile::tempdir().unwrap();
 
-        let err = resolve("@@a/b", &layout(&temp)).unwrap_err();
+        let err = resolve("global@a/b", &layout(&temp)).unwrap_err();
 
         assert!(err.starts_with("Invalid file name:"));
     }

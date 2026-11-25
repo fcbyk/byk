@@ -66,7 +66,7 @@ pub(crate) fn scan_alias_files(
     vars: &VarTable,
 ) -> ScanResult {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
-    // 只想给本文件用（仅 @file.key 可达）时写 `$private: true`。
+    // 只想给本文件用（仅 local@file.key 可达）时写 `$private: true`。
     let default_priority = default_priority(is_global);
     let mut result = ScanResult::default();
 
@@ -489,12 +489,12 @@ fn parse_alias_file(
 
 /// 原地排序 AliasFile 列表：低优先级在前，高优先级在后。
 ///
-/// 同优先级时非匿名文件按 key 字母序，匿名文件（`@` 或 `@@`）排在最后——
+/// 同优先级时非匿名文件按 key 字母序，匿名文件（`local@` 或 `global@`）排在最后——
 /// 因为后面的覆盖前面的，所以同目录里 `.byk.json` 的别名最后生效。
 pub(crate) fn sort_alias_files(files: &mut [AliasFile]) {
     files.sort_by(|a, b| {
-        let a_is_anon = matches!(a.key.as_str(), "@" | "@@");
-        let b_is_anon = matches!(b.key.as_str(), "@" | "@@");
+        let a_is_anon = crate::model::is_anonymous_key(&a.key);
+        let b_is_anon = crate::model::is_anonymous_key(&b.key);
         a.priority
             .cmp(&b.priority)
             .then_with(|| a_is_anon.cmp(&b_is_anon))
@@ -524,9 +524,9 @@ mod tests {
     #[test]
     fn sort_by_priority_low_first() {
         let mut files = vec![
-            make_file("@high", 100),
-            make_file("@low", 0),
-            make_file("@mid", 50),
+            make_file("local@high", 100),
+            make_file("local@low", 0),
+            make_file("local@mid", 50),
         ];
         sort_alias_files(&mut files);
         assert_eq!(files[0].priority, 0);
@@ -537,29 +537,29 @@ mod tests {
     #[test]
     fn sort_same_priority_anonymous_first() {
         let mut files = vec![
-            make_file("@named", 10),
-            make_file("@", 10),
-            make_file("@@", 10),
-            make_file("@other", 10),
+            make_file("local@named", 10),
+            make_file("local@", 10),
+            make_file("global@", 10),
+            make_file("local@other", 10),
         ];
         sort_alias_files(&mut files);
         // 非匿名文件排在前面（false.cmp(&true) == Less）
-        // 匿名文件（@, @@）排在后面
-        assert!(matches!(files[2].key.as_str(), "@" | "@@"));
-        assert!(matches!(files[3].key.as_str(), "@" | "@@"));
+        // 匿名文件（@, global@）排在后面
+        assert!(matches!(files[2].key.as_str(), "local@" | "global@"));
+        assert!(matches!(files[3].key.as_str(), "local@" | "global@"));
     }
 
     #[test]
     fn sort_same_priority_non_anonymous_alphabetical() {
         let mut files = vec![
-            make_file("@zzz", 10),
-            make_file("@aaa", 10),
-            make_file("@mmm", 10),
+            make_file("local@zzz", 10),
+            make_file("local@aaa", 10),
+            make_file("local@mmm", 10),
         ];
         sort_alias_files(&mut files);
-        assert_eq!(files[0].key, "@aaa");
-        assert_eq!(files[1].key, "@mmm");
-        assert_eq!(files[2].key, "@zzz");
+        assert_eq!(files[0].key, "local@aaa");
+        assert_eq!(files[1].key, "local@mmm");
+        assert_eq!(files[2].key, "local@zzz");
     }
 
     #[test]
@@ -571,9 +571,9 @@ mod tests {
 
     #[test]
     fn sort_single() {
-        let mut files = vec![make_file("@only", 5)];
+        let mut files = vec![make_file("local@only", 5)];
         sort_alias_files(&mut files);
-        assert_eq!(files[0].key, "@only");
+        assert_eq!(files[0].key, "local@only");
     }
 
     #[test]
@@ -696,7 +696,7 @@ mod tests {
                 .iter()
                 .map(|(key, _)| key.as_str())
                 .collect::<Vec<_>>(),
-            vec!["@", "@a", "@b"]
+            vec!["local@", "local@a", "local@b"]
         );
     }
 
@@ -706,7 +706,7 @@ mod tests {
         std::fs::write(dir.path().join("ops.byk.json"), "{}").unwrap();
 
         let files = list_alias_files(dir.path(), true);
-        assert_eq!(files[0].0, "@@ops");
+        assert_eq!(files[0].0, "global@ops");
         assert!(list_alias_files(Path::new("/nonexistent/byk-test-dir"), true).is_empty());
     }
 
@@ -744,6 +744,6 @@ mod tests {
         }));
 
         let files = list_alias_files(dir.path(), false);
-        assert_eq!(files[0].0, "@ops");
+        assert_eq!(files[0].0, "local@ops");
     }
 }

@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
+use super::scope::Scope;
+
 /// 执行方式，三态互斥。
 ///
 /// 交互要求说话（模板 / 占位符提示 / Enter 确认），静默要求闭嘴，两者天然互斥。
@@ -138,7 +140,7 @@ pub fn to_alias_definition(value: &AliasValue) -> AliasDefinition {
 /// 单个别名文件的数据结构。
 #[derive(Debug, Clone)]
 pub struct AliasFile {
-    /// 文件 key: "@release" | "@@release" | "@" | "@@"
+    /// 文件 key: "local@release" | "global@release" | "local@" | "global@"
     pub key: String,
     pub priority: i32,
     /// 过滤后的原始 JSON（已去除 $priority/$cwd/$mode/$private/$clone/$paths/$var，已过滤非法 key）
@@ -157,12 +159,21 @@ pub struct AliasFile {
     pub prepend_paths: Vec<String>,
 }
 
+impl AliasFile {
+    /// 是否来自全局别名目录。
+    ///
+    /// `key` 是拼出来的文本；需要判断作用域的地方一律走这里，不自己比字符串。
+    pub fn is_global(&self) -> bool {
+        self.key.starts_with(Scope::Global.token())
+    }
+}
+
 /// 合并后叶子节点，包含来源信息。
 #[derive(Debug, Clone)]
 pub struct ResolvedAlias {
     /// 解析后的可执行定义。
     pub definition: AliasDefinition,
-    /// 来源文件 key，如 "@release"
+    /// 来源文件 key，如 "local@release"
     pub source: String,
     /// 来源配置文件路径（文件本身，非目录）
     pub source_path: Option<PathBuf>,

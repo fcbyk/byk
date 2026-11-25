@@ -40,21 +40,21 @@ def test_link_file_dir_is_target_dir(runner):
 
 
 def test_link_exact_call_uses_link_key(runner):
-    """身份留在链接文件上：@@ops.key 可以精确调用"""
+    """身份留在链接文件上：global@ops.key 可以精确调用"""
     bundle(runner, "proj/web/run.byk.json", {"hi": "echo exact-ok"})
     runner.prepare_alias_file("ops", '["../../proj/web/run.byk.json"]')
-    r = runner.run("@@ops.hi")
+    r = runner.run("global@ops.hi")
     assert r.returncode == 0, r.stderr
     assert "exact-ok" in r.stdout
 
 
 def test_link_local_file(runner):
-    """当前目录的链接文件同样生效（key 为单 @）"""
+    """当前目录的链接文件同样生效（key 为 local@）"""
     proj = runner.home / "proj"
     proj.mkdir(parents=True, exist_ok=True)
     (proj / "lib.byk.json").write_text('{"hi": "echo local-bundle"}', encoding="utf-8")
     (proj / "p.byk.json").write_text('["lib.byk.json"]', encoding="utf-8")
-    r = runner.run("@p.hi", cwd=str(proj))
+    r = runner.run("local@p.hi", cwd=str(proj))
     assert r.returncode == 0, r.stderr
     assert "local-bundle" in r.stdout
 
@@ -170,6 +170,6 @@ def test_link_target_private_honored(runner):
     merged = runner.run("priv")
     assert merged.returncode == 1
     assert "Unrecognized" in merged.stderr
-    exact = runner.run("@@ops.priv")
+    exact = runner.run("global@ops.priv")
     assert exact.returncode == 0, exact.stderr
     assert "private-ok" in exact.stdout

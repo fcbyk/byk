@@ -82,25 +82,25 @@ def test_resolve_reports_mode_and_derived_interactive(runner):
 
 
 def test_resolve_exact_global_syntax(runner):
-    """@@file.key 精确语法（全局别名目录）"""
+    """global@file.key 精确语法（全局别名目录）"""
     runner.prepare_alias_json("r", {"hello": "echo hi"})
-    r = runner.run("__api__", "resolve", "@@r.hello")
+    r = runner.run("__api__", "resolve", "global@r.hello")
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     assert payload["command"] == "echo hi"
-    assert payload["source"] == "@@r"
+    assert payload["source"] == "global@r"
 
 
 def test_resolve_exact_local_syntax(runner):
-    """@file.key 精确语法（当前目录文件）"""
+    """local@file.key 精确语法（当前目录文件）"""
     work = runner.home / "proj"
     work.mkdir(parents=True, exist_ok=True)
     (work / "p.byk.json").write_text('{"hello": "echo local"}', encoding="utf-8")
-    r = runner.run("__api__", "resolve", "@p.hello", cwd=str(work))
+    r = runner.run("__api__", "resolve", "local@p.hello", cwd=str(work))
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     assert payload["command"] == "echo local"
-    assert payload["source"] == "@p"
+    assert payload["source"] == "local@p"
 
 
 def test_resolve_unknown_alias_fails(runner):
@@ -111,7 +111,7 @@ def test_resolve_unknown_alias_fails(runner):
 
 def test_resolve_reports_unloadable_file(runner):
     runner.prepare_alias_file("broken", "{not json")
-    r = runner.run("__api__", "resolve", "@@broken.build")
+    r = runner.run("__api__", "resolve", "global@broken.build")
     assert r.returncode == 1
     assert "cannot be loaded" in r.stderr
     assert "invalid JSON" in r.stderr
@@ -122,7 +122,7 @@ def test_resolve_rejects_reserved_fields(runner):
         "ops",
         {"$custom": "echo custom", "build": {"$cmd": "echo hi"}},
     )
-    r = runner.run("__api__", "resolve", "@@ops.build.$cmd")
+    r = runner.run("__api__", "resolve", "global@ops.build.$cmd")
     assert r.returncode == 1
     assert "reserved $ field" in r.stderr
 

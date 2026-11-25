@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::model::PathLayout;
 use crate::resolve::validate_filename;
 
-use crate::filecmd::spec::{FileScope, invalid_stem_message, split_prefix};
+use crate::filecmd::spec::{FileScope, invalid_stem_message};
+use crate::model::Scope;
 
 /// `__api__ file` 的返回内容：key 对应的 scope 与目标文件路径。
 pub(crate) struct FileAddress {
@@ -39,24 +40,29 @@ pub(crate) fn resolve_target(
     }
 }
 
-/// 解析文件 key（`@name` / `@@name` / `@` / `@@`）为目标地址。
+/// 解析文件 key（`local@name` / `global@name` / `local@` / `global@`）为目标地址。
 ///
 /// 与 `path` 共用文件名校验和 scope 选择；不读取文件，也不要求文件存在。
 pub(crate) fn address_for_key(key: &str, layout: &PathLayout) -> Result<FileAddress, String> {
-    let Some((prefix, stem)) = split_prefix(key) else {
+    let Some((scope, stem)) = Scope::split(key) else {
         return Err(format!(
-            "Invalid file key: {:?}\nHint: expected @<name> or @@<name>",
+            "Invalid file key: {:?}\nHint: expected local@<name>, global@<name>, local@ or global@",
             key
         ));
+    };
+    let scope = match scope {
+        Scope::Local => FileScope::Local,
+        Scope::Global => FileScope::Global,
+        Scope::Sys => {
+            return Err(format!(
+                "System files are not alias files: {}\nHint: alias file keys are local@<name> or global@<name>",
+                key
+            ));
+        }
     };
     if !validate_filename(stem) {
         return Err(invalid_stem_message(stem));
     }
-    let scope = if prefix == "@@" {
-        FileScope::Global
-    } else {
-        FileScope::Local
-    };
     let path = resolve_target(scope, stem, layout)?;
     Ok(FileAddress { scope, path })
 }
@@ -81,8 +87,8 @@ pub(crate) fn not_found_message(
 
     if other != target && fs::symlink_metadata(&other).is_ok() {
         let (label, prefix) = match scope {
-            FileScope::Local => ("global", "@@"),
-            FileScope::Global => ("local", "@"),
+            FileScope::Local => ("global", Scope::Global.token()),
+            FileScope::Global => ("local", Scope::Local.token()),
         };
         message.push_str(&format!(
             "\nHint: a {} file exists at {}; use {}{} {}",
@@ -126,7 +132,7 @@ mod tests {
     #[test]
     fn parse_global_init() {
         assert_eq!(
-            parse_ok("@@ops", &["init"]),
+            parse_ok("global@ops", &["init"]),
             FileCommand {
                 scope: FileScope::Global,
                 stem: "ops".into(),
@@ -139,7 +145,7 @@ mod tests {
     #[test]
     fn parse_local_init() {
         assert_eq!(
-            parse_ok("@ops", &["init"]),
+            parse_ok("local@ops", &["init"]),
             FileCommand {
                 scope: FileScope::Local,
                 stem: "ops".into(),
@@ -151,14 +157,14 @@ mod tests {
 
     #[test]
     fn parse_anonymous_files() {
-        assert_eq!(parse_ok("@@", &["init"]).stem, "");
-        assert_eq!(parse_ok("@", &["init"]).scope, FileScope::Local);
+        assert_eq!(parse_ok("global@", &["init"]).stem, "");
+        assert_eq!(parse_ok("local@", &["init"]).scope, FileScope::Local);
     }
 
     #[test]
     fn parse_bare_file_shows_help() {
         assert_eq!(
-            parse_ok("@@ops", &[]),
+            parse_ok("global@ops", &[]),
             FileCommand {
                 scope: FileScope::Global,
                 stem: "ops".into(),
@@ -166,15 +172,18 @@ mod tests {
                 args: Vec::new(),
             }
         );
-        assert_eq!(parse_ok("@@ops", &["--help"]).verb, Verb::Help);
-        assert_eq!(parse_ok("@@ops", &["--help"]).args, Vec::<String>::new());
-        assert_eq!(parse_ok("@@ops", &["-h"]).verb, Verb::Help);
+        assert_eq!(parse_ok("global@ops", &["--help"]).verb, Verb::Help);
+        assert_eq!(
+            parse_ok("global@ops", &["--help"]).args,
+            Vec::<String>::new()
+        );
+        assert_eq!(parse_ok("global@ops", &["-h"]).verb, Verb::Help);
     }
 
     #[test]
     fn parse_verb_help_flag_targets_the_verb() {
         assert_eq!(
-            parse_ok("@@ops", &["init", "-h"]),
+            parse_ok("global@ops", &["init", "-h"]),
             FileCommand {
                 scope: FileScope::Global,
                 stem: "ops".into(),
@@ -183,7 +192,7 @@ mod tests {
             }
         );
         assert_eq!(
-            parse_ok("@@ops", &["set", "build", "--help"]).args,
+            parse_ok("global@ops", &["set", "build", "--help"]).args,
             vec!["set".to_string()]
         );
     }
@@ -191,23 +200,26 @@ mod tests {
     #[test]
     fn help_is_not_a_verb() {
         assert_eq!(
-            parse_err("@@ops", &["help"]),
+            parse_err("global@ops", &["help"]),
             FileCommandError::UnknownVerb("help".into())
         );
     }
 
     #[test]
     fn parse_exact_alias_is_not_a_file_command() {
-        assert_eq!(parse("@@ops.init", &[]), ParseResult::NotFileCommand);
-        assert_eq!(parse("@ops.init.prod", &[]), ParseResult::NotFileCommand);
+        assert_eq!(parse("global@ops.init", &[]), ParseResult::NotFileCommand);
+        assert_eq!(
+            parse("local@ops.init.prod", &[]),
+            ParseResult::NotFileCommand
+        );
         assert_eq!(parse("ops.init", &[]), ParseResult::NotFileCommand);
-        assert_eq!(parse("@@ops.", &[]), ParseResult::NotFileCommand);
+        assert_eq!(parse("global@ops.", &[]), ParseResult::NotFileCommand);
     }
 
     #[test]
     fn parse_unknown_verb() {
         assert_eq!(
-            parse_err("@@ops", &["explode"]),
+            parse_err("global@ops", &["explode"]),
             FileCommandError::UnknownVerb("explode".into())
         );
     }
@@ -215,11 +227,11 @@ mod tests {
     #[test]
     fn parse_invalid_stem() {
         assert_eq!(
-            parse_err("@@a/b", &["init"]),
+            parse_err("global@a/b", &["init"]),
             FileCommandError::InvalidStem("a/b".into())
         );
         assert_eq!(
-            parse_err("@@a b", &["init"]),
+            parse_err("global@a b", &["init"]),
             FileCommandError::InvalidStem("a b".into())
         );
     }
@@ -227,7 +239,7 @@ mod tests {
     #[test]
     fn parse_system_file_keeps_args_verbatim() {
         assert_eq!(
-            parse("@@@config", &args(&["banner", "never"])),
+            parse("sys@config", &args(&["banner", "never"])),
             ParseResult::System {
                 stem: "config".into(),
                 args: args(&["banner", "never"]),
@@ -235,7 +247,7 @@ mod tests {
         );
         // 系统文件没有动词表，`-h` 也原样交给目标文件
         assert_eq!(
-            parse("@@@config", &args(&["-h"])),
+            parse("sys@config", &args(&["-h"])),
             ParseResult::System {
                 stem: "config".into(),
                 args: args(&["-h"]),
@@ -245,10 +257,10 @@ mod tests {
 
     #[test]
     fn system_file_skips_the_dot_rule() {
-        // 点号规则只属于别名：`@@@config.set` 必须留在系统文件命名空间里，
+        // 点号规则只属于别名：`sys@config.set` 必须留在系统文件命名空间里，
         // 否则会掉进别名查找，报一句 "alias not found"。
         assert_eq!(
-            parse("@@@config.set", &[]),
+            parse("sys@config.set", &[]),
             ParseResult::System {
                 stem: "config.set".into(),
                 args: Vec::new(),
@@ -260,7 +272,7 @@ mod tests {
     fn system_file_keeps_an_empty_stem() {
         // 空名字归 sys 报错，解析层既不 panic 也不吞掉
         assert_eq!(
-            parse("@@@", &[]),
+            parse("sys@", &[]),
             ParseResult::System {
                 stem: String::new(),
                 args: Vec::new(),
@@ -270,23 +282,26 @@ mod tests {
 
     #[test]
     fn double_at_keeps_its_scope() {
-        // 三级前缀不能把 `@@file` 的 Global 语义带歪
-        assert_eq!(parse_ok("@@config", &["init"]).scope, FileScope::Global);
+        // 三级前缀不能把 `global@file` 的 Global 语义带歪
+        assert_eq!(
+            parse_ok("global@config", &["init"]).scope,
+            FileScope::Global
+        );
     }
 
     #[test]
     fn system_files_are_claimed_but_not_alias_file_heads() {
-        assert!(claims("@@@config", &args(&["banner"])));
-        assert!(!is_file_head("@@@config"));
-        assert!(is_file_head("@@config"));
+        assert!(claims("sys@config", &args(&["banner"])));
+        assert!(!is_file_head("sys@config"));
+        assert!(is_file_head("global@config"));
     }
 
     #[test]
     fn claims_file_command_namespace() {
-        assert!(claims("@@ops", &args(&["init"])));
-        assert!(claims("@@ops", &args(&["explode"])));
-        assert!(claims("@@ops", &[]));
-        assert!(!claims("@@ops.init", &[]));
+        assert!(claims("global@ops", &args(&["init"])));
+        assert!(claims("global@ops", &args(&["explode"])));
+        assert!(claims("global@ops", &[]));
+        assert!(!claims("global@ops.init", &[]));
         assert!(!claims("normal", &args(&["init"])));
     }
 
@@ -321,7 +336,7 @@ mod tests {
     #[test]
     fn parse_global_destroy() {
         assert_eq!(
-            parse_ok("@@ops", &["destroy"]),
+            parse_ok("global@ops", &["destroy"]),
             FileCommand {
                 scope: FileScope::Global,
                 stem: "ops".into(),

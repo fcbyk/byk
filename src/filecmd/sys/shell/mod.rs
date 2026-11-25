@@ -1,4 +1,4 @@
-//! `@@@shell`：当前 shell 的启动文件（`~/.zshrc` 之类）。
+//! `sys@shell`：当前 shell 的启动文件（`~/.zshrc` 之类）。
 //!
 //! 目标按父进程与 `$SHELL` 探测，并且只改它——没有 `switch`，也不接受
 //! `add completion bash` 这样的指名：给 bash 装补全，就在 bash 里跑 byk。
@@ -29,7 +29,7 @@ pub(crate) const VERBS: &[(&str, &str)] = &[
 const ITEMS: &[(&str, &str)] = &[("completion", "Shell completion")];
 
 // shell 由环境决定，多写一个词就会被拒绝，所以用法行照实说。
-const USAGE: &str = "byk @@@shell [OPTIONS] [COMMAND] [ITEM]";
+const USAGE: &str = "byk sys@shell [OPTIONS] [COMMAND] [ITEM]";
 
 pub(crate) fn run(args: &[String], _layout: &PathLayout) -> Result<(), String> {
     let Some((verb, rest)) = args.split_first() else {
@@ -156,7 +156,7 @@ fn modify(args: &[String], action: Action) -> Result<(), String> {
                 );
                 if state.is_outdated() {
                     eprintln!(
-                        "Hint: `byk @@@shell remove completion` then `add` upgrades it to a marked block"
+                        "Hint: `byk sys@shell remove completion` then `add` upgrades it to a marked block"
                     );
                 }
                 return Ok(());
@@ -423,7 +423,7 @@ fn no_shell_argument(action: Action, given: &str) -> String {
     );
     match Shell::parse(given) {
         Some(shell) => format!(
-            "{base}\nHint: run `byk @@@shell {} completion` from {} to set up {}",
+            "{base}\nHint: run `byk sys@shell {} completion` from {} to set up {}",
             action.verb(),
             shell.name(),
             shell.name()
@@ -492,6 +492,8 @@ mod tests {
         let link = temp.path().join(".zshrc");
         #[cfg(unix)]
         std::os::unix::fs::symlink(&real, &link).unwrap();
+        #[cfg(not(unix))]
+        let _ = &link;
 
         #[cfg(unix)]
         {
@@ -587,7 +589,7 @@ mod tests {
     #[test]
     fn help_lists_verbs_and_items() {
         let text = strip_ansi(&render_help(""));
-        assert!(text.contains("Usage: byk @@@shell [OPTIONS] [COMMAND] [ITEM]"));
+        assert!(text.contains("Usage: byk sys@shell [OPTIONS] [COMMAND] [ITEM]"));
         assert!(text.contains("  add     Enable shell completion"));
         assert!(text.contains("  remove  Disable shell completion"));
         assert!(text.contains("  completion  Shell completion"));
@@ -611,7 +613,7 @@ mod tests {
         assert_eq!(lines[1], "Shell: zsh (from parent process)");
         assert_eq!(lines[3], "Completion: installed (lines 12-14)");
         assert_eq!(lines[4], "");
-        assert_eq!(lines[5], "Usage: byk @@@shell [OPTIONS] [COMMAND] [ITEM]");
+        assert_eq!(lines[5], "Usage: byk sys@shell [OPTIONS] [COMMAND] [ITEM]");
     }
 
     #[test]
@@ -662,7 +664,7 @@ mod tests {
             )
             .unwrap_err(),
             "`add` takes no shell argument: it always updates the startup file of the shell \
-             running byk\nHint: run `byk @@@shell add completion` from bash to set up bash"
+             running byk\nHint: run `byk sys@shell add completion` from bash to set up bash"
         );
 
         // 认不出来的词给不出「去 bash 里跑」这种建议，就只说多余

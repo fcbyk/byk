@@ -1,32 +1,36 @@
 ---
 title: System Files
-description: Address files that are not aliases with @@@ — byk's own config, and shell startup files
+description: Address files that are not aliases with sys@ — byk's own config, and shell startup files
 ---
 
 # System Files
 
-`@@@` is the third file domain, and it is the inverse of the first two. `@` and
-`@@` look for alias files; `@@@` looks for **files that are not aliases**. Its
-scope is "any other file": byk's own configuration inside the CLI home
-(`~/.byk/`), and the user's shell startup file.
+Three scopes are named: `local@` is the current directory (it does not search
+upward), `global@` is the CLI alias directory, and `sys@` is byk's built-in
+system files. Only the scope may be abbreviated, to a unique prefix — `l@` /
+`lo@` / `loc@`, `g@`, `s@`.
+
+`local@` and `global@` look for alias files; `sys@` is their inverse: it looks
+for **files that are not aliases** — byk's own configuration inside the CLI home
+(`~/.byk/`) and the user's shell startup file.
 
 ```bash
-byk @@@file command [args...]
+byk sys@file command [args...]
 ```
 
-Three exist today:
+Three system files exist today:
 
 | Form | Target |
 |------|--------|
-| `@@@config` | `~/.byk/config.json` |
-| `@@@tap` | `~/.byk/tap/`, with `index.json` as its ledger |
-| `@@@shell` | Your shell's startup file, e.g. `~/.zshrc` |
+| `sys@config` | `~/.byk/config.json` |
+| `sys@tap` | `~/.byk/tap/`, with `index.json` as its ledger |
+| `sys@shell` | Your shell's startup file, e.g. `~/.zshrc` |
 
 - System files never take part in alias lookup, and have no `clone` / `link`:
   there is no notion of several of them referencing each other.
-- The name after `@@@` must be a registered system file; a typo reports
+- The name after `sys@` must be a registered system file; a typo reports
   `Unknown system file` and lists the available names.
-- Commands follow the name after a space, not a dot: `@@@config.set` reports
+- Commands follow the name after a space, not a dot: `sys@config.set` reports
   `Invalid system file`.
 - `config` and `tap` point at byk's own files, so the worst case is falling back
   to defaults; `shell` points at **someone else's file**, so it only inserts or
@@ -47,11 +51,11 @@ help instead.
 | `unset <key>` | Remove the key, falling back to its default |
 
 ```bash
-byk @@@config                    # every setting
-byk @@@config get banner         # auto
-byk @@@config set banner never   # drop the box above `-h`
-byk @@@config unset banner       # back to the default
-byk @@@config set net-github ghproxy  # read GitHub files through gh-proxy
+byk sys@config                    # every setting
+byk sys@config get banner         # auto
+byk sys@config set banner never   # drop the box above `-h`
+byk sys@config unset banner       # back to the default
+byk sys@config set net-github ghproxy  # read GitHub files through gh-proxy
 ```
 
 `get` prints a bare value; `set` / `unset` report on stderr, so pipelines stay
@@ -86,21 +90,21 @@ line **ignores this setting**: it is a warning, not decoration.
   normalized.
 - The `Config:` line of `byk --paths` is this file.
 
-## tap (`@@@tap`)
+## tap (`sys@tap`)
 
-`@@@tap` does two things: put a tap repository into
+`sys@tap` does two things: put a tap repository into
 `~/.byk/tap/<user>/<repo>`, and bring it up to date with upstream — no hand-written
 `git clone` / `git pull` either way. It only knows git, so `add` and `update`
 need git on the machine.
 
 ```bash
-byk @@@tap                      # what is installed (same as list)
-byk @@@tap add aaa/bb           # GitHub by default, ref defaults to HEAD
-byk @@@tap add aaa/bb@v1        # pin a ref
-byk @@@tap add my/tools https://git.example.com/my/tools.git   # any git URL
-byk @@@tap update               # bring every repository in the ledger up to date
-byk @@@tap update aaa/bb        # update just that one
-byk @@@tap remove aaa/bb        # unrecord and delete
+byk sys@tap                      # what is installed (same as list)
+byk sys@tap add aaa/bb           # GitHub by default, ref defaults to HEAD
+byk sys@tap add aaa/bb@v1        # pin a ref
+byk sys@tap add my/tools https://git.example.com/my/tools.git   # any git URL
+byk sys@tap update               # bring every repository in the ledger up to date
+byk sys@tap update aaa/bb        # update just that one
+byk sys@tap remove aaa/bb        # unrecord and delete
 ```
 
 | Command | What it does |
@@ -121,9 +125,9 @@ protocol allowlist — git itself already refuses `ext::` and friends, where a
 URL turns into a command.
 
 ```bash
-byk @@@tap add my/tools                         # https://github.com/my/tools.git
-byk @@@tap add my/tools git@git.example.com:tools/tap.git
-byk @@@tap add local/scratch ~/src/tap          # a local repository, origin `local`
+byk sys@tap add my/tools                         # https://github.com/my/tools.git
+byk sys@tap add my/tools git@git.example.com:tools/tap.git
+byk sys@tap add local/scratch ~/src/tap          # a local repository, origin `local`
 ```
 
 - **`<user>/<repo>` is only the local name**: it decides the directory and the
@@ -148,8 +152,8 @@ plus `git reset --hard`, deliberately not `git pull`:
 - the shallow clone stays shallow instead of quietly turning into full history.
 
 ```bash
-byk @@@tap update               # every repository in the ledger
-byk @@@tap update aaa/bb        # just one
+byk sys@tap update               # every repository in the ledger
+byk sys@tap update aaa/bb        # just one
 # Updated aaa/bb (1a2b3c4 → 5d6e7f8)
 # ccc/dd is already up to date
 ```
@@ -175,7 +179,7 @@ byk @@@tap update aaa/bb        # just one
 
 ### Directory and index
 
-The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
+The ledger is `~/.byk/tap/index.json`, and only `sys@tap` reads or writes it:
 
 ```json
 {
@@ -230,15 +234,15 @@ The ledger is `~/.byk/tap/index.json`, and only `@@@tap` reads or writes it:
   only moves data around; the risk shows up later, when `clone --tap` reads
   those aliases and something runs them.
 
-## shell (`@@@shell`)
+## shell (`sys@shell`)
 
 Manages shell completion: insert one marked block into your shell's startup
 file, or take it out.
 
 ```bash
-byk @@@shell                    # same as -h: shell, file, state, and the usage in one screen
-byk @@@shell add completion     # enable completion for the current shell
-byk @@@shell remove completion  # disable it
+byk sys@shell                    # same as -h: shell, file, state, and the usage in one screen
+byk sys@shell add completion     # enable completion for the current shell
+byk sys@shell remove completion  # disable it
 ```
 
 | Command | What it does |
@@ -248,10 +252,10 @@ byk @@@shell remove completion  # disable it
 
 No argument and `-h` are the same screen, byte for byte: the file has two verbs,
 so a separate "status" page would only mean typing twice to find out what can be
-done. `@@@config -h` and `@@@tap -h` open with those same few lines.
+done. `sys@config -h` and `sys@tap -h` open with those same few lines.
 
-The item name may be abbreviated to a unique prefix: `byk @@@shell add comp` is
-the same as `byk @@@shell add completion`. Only a unique match is accepted —
+The item name may be abbreviated to a unique prefix: `byk sys@shell add comp` is
+the same as `byk sys@shell add completion`. Only a unique match is accepted —
 if a future second item also matched, it reports the ambiguity instead of
 picking one.
 
@@ -279,17 +283,17 @@ shadow; creating it while `.profile` exists would shadow that file entirely.
 The shell is identified as **parent process name → `$SHELL`**. `$SHELL` names the
 login shell, so after `exec bash` it still says zsh; the parent process is what
 is actually running. Only when that is unavailable (Windows, restricted
-environments) does the environment variable take over. `@@@shell` prints the
+environments) does the environment variable take over. `sys@shell` prints the
 answer together with where it came from:
 
 ```bash
-$ byk @@@shell
+$ byk sys@shell
 
 Shell: zsh (from parent process)
 FilePath: /Users/coke/.zshrc
 Completion: installed (lines 3-5)
 
-Usage: byk @@@shell [OPTIONS] [COMMAND] [ITEM]
+Usage: byk sys@shell [OPTIONS] [COMMAND] [ITEM]
 
 Options:
   --help, -h  Show this help
@@ -319,26 +323,26 @@ file" subcommand nor an argument to name one — asking for it is refused, and t
 refusal says where to run the command instead:
 
 ```bash
-$ byk @@@shell add completion bash
+$ byk sys@shell add completion bash
 `add` takes no shell argument: it always updates the startup file of the shell running byk
-Hint: run `byk @@@shell add completion` from bash to set up bash
+Hint: run `byk sys@shell add completion` from bash to set up bash
 ```
 
 The reason is that this kind of mismatch **fails silently**: install into
 `.bash_profile` from a zsh terminal and the terminal in front of you does
 nothing, with no message saying it went to the wrong place. To set up bash,
 run the command in bash — then there is exactly one answer to "which file am I
-changing", and it matches both the line `@@@shell` prints and the terminal you
+changing", and it matches both the line `sys@shell` prints and the terminal you
 are looking at.
 
 ### Other shells: cmd, PowerShell, sh
 
-Completion generators cover `zsh`, `bash`, and `fish` only. Running `@@@shell`
+Completion generators cover `zsh`, `bash`, and `fish` only. Running `sys@shell`
 in any other shell is not an error — it simply answers that the current shell
 points at no file:
 
 ```bash
-$ byk @@@shell
+$ byk sys@shell
 
 Shell: pwsh (from $SHELL)
 FilePath: (none)
@@ -358,7 +362,7 @@ something (`add` / `remove`) does fail, with exit code 1 and those same two
 sentences, because nothing was changed:
 
 ```bash
-$ byk @@@shell add completion
+$ byk sys@shell add completion
 No startup file for pwsh (from $SHELL)
 Only zsh, bash and fish have a startup file byk can edit
 ```
@@ -370,7 +374,7 @@ completion, run byk inside one of those three.
 
 ### Write rules
 
-This is the only `@@@` member that edits **someone else's** file, so its rules
+This is the only `sys@` member that edits **someone else's** file, so its rules
 differ from `config.json`:
 
 - only the marked block (`# The following lines have been added by byk to enable
@@ -389,7 +393,7 @@ The installer no longer writes that line — like pip, it only puts the binary i
 place. Turn completion on once, yourself:
 
 ```bash
-byk @@@shell add completion
+byk sys@shell add completion
 ```
 
 ## Completion
@@ -397,10 +401,10 @@ byk @@@shell add completion
 Each system file owns its grammar, so the candidates come from the file itself
 rather than from the file-command verb list:
 
-- typing `@@@` lists `config`, `tap`, and `shell`, each with a one-line
+- typing `sys@` lists `config`, `tap`, and `shell`, each with a one-line
   description;
-- after `@@@config` / `@@@tap` / `@@@shell` a tab offers the verbs, and `-` offers
-  `--help` / `-h` — those live in the verb slot only, since `@@@config set -h`
+- after `sys@config` / `sys@tap` / `sys@shell` a tab offers the verbs, and `-` offers
+  `--help` / `-h` — those live in the verb slot only, since `sys@config set -h`
   passes `-h` to `set`;
 - `get`, `set`, and `unset` complete setting names, and `set <name>` completes
   that key's values (`banner` → `auto` / `always` / `never`);

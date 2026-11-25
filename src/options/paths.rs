@@ -7,7 +7,7 @@ use colored::Colorize;
 use crate::model::PathLayout;
 use crate::resolve;
 
-/// 文件分组之间的分隔线；不带标题，作用域靠 key 的 `@` / `@@` 前缀区分。
+/// 文件分组之间的分隔线；不带标题，作用域靠 key 的 `local@` / `global@` 前缀区分。
 const SEPARATOR: &str = "---------------------------";
 
 /// 渲染 CLI 目录与别名文件位置。

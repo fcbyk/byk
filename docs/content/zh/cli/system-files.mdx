@@ -1,27 +1,29 @@
 ---
 title: 系统文件
-description: 用 @@@ 寻址别名之外的文件——byk 自己的配置，以及 shell 启动文件
+description: 用 sys@ 寻址别名之外的文件——byk 自己的配置，以及 shell 启动文件
 ---
 
 # 系统文件
 
-`@@@` 是第三个文件域，和前两个的关系是反的：`@` 与 `@@` 找的是别名文件，`@@@` 找的是**不是别名文件**的那些。作用域是一整个「其他文件」——既包括 CLI Home（`~/.byk/`）里属于 byk 自己的配置，也包括用户自己的 shell 启动文件。
+三个作用域都有名字：`local@` 是当前目录（不向上查找），`global@` 是 CLI 别名目录，`sys@` 是 byk 内置的系统文件。只有作用域可以缩写成唯一前缀——`l@` / `lo@` / `loc@`、`g@`、`s@`。
+
+`local@` 与 `global@` 找的是别名文件，`sys@` 与它们相反：找的是**不是别名文件**的那些——CLI Home（`~/.byk/`）里属于 byk 自己的配置，以及用户自己的 shell 启动文件。
 
 ```bash
-byk @@@文件 命令 [参数...]
+byk sys@文件 命令 [参数...]
 ```
 
-目前有三个：
+目前有三个系统文件：
 
 | 写法 | 目标 |
 |------|------|
-| `@@@config` | `~/.byk/config.json` |
-| `@@@tap` | `~/.byk/tap/`，账本是其中的 `index.json` |
-| `@@@shell` | 当前 shell 的启动文件，如 `~/.zshrc` |
+| `sys@config` | `~/.byk/config.json` |
+| `sys@tap` | `~/.byk/tap/`，账本是其中的 `index.json` |
+| `sys@shell` | 当前 shell 的启动文件，如 `~/.zshrc` |
 
 - 系统文件不参与别名查找，也没有 `clone` / `link`：它们不存在“多份互链”的概念。
-- `@@@` 后面的名字必须是注册过的系统文件，拼错会报 `Unknown system file` 并列出可用项。
-- 动词与名字之间用空格，不是点号：`@@@config.set` 会报 `Invalid system file`。
+- `sys@` 后面的名字必须是注册过的系统文件，拼错会报 `Unknown system file` 并列出可用项。
+- 动词与名字之间用空格，不是点号：`sys@config.set` 会报 `Invalid system file`。
 - `config` 与 `tap` 的目标是 byk 自己的文件，坏了最多回退默认值；`shell` 的目标是**别人的文件**，所以它只增删一段标记块，绝不整体重写。
 
 ## config
@@ -38,11 +40,11 @@ byk @@@文件 命令 [参数...]
 | `unset <键>` | 删除该键，回到默认值 |
 
 ```bash
-byk @@@config                    # 看全部设置
-byk @@@config get banner         # auto
-byk @@@config set banner never   # 关掉帮助页顶部的装饰框
-byk @@@config unset banner       # 回到默认
-byk @@@config set net-github ghproxy  # 之后 GitHub 文件都经 gh-proxy 取
+byk sys@config                    # 看全部设置
+byk sys@config get banner         # auto
+byk sys@config set banner never   # 关掉帮助页顶部的装饰框
+byk sys@config unset banner       # 回到默认
+byk sys@config set net-github ghproxy  # 之后 GitHub 文件都经 gh-proxy 取
 ```
 
 `get` 打印裸值；`set` / `unset` 的状态提示写 stderr，管道里不会混进输出。
@@ -60,7 +62,7 @@ byk @@@config set net-github ghproxy  # 之后 GitHub 文件都经 gh-proxy 取
 
 `net-github` 只影响**读写 GitHub 文件的请求**：`clone` 的来源、`--tap` 的远程索引与目标、`$deps` 里指向 GitHub 的资产。它不改写 URL 里写的地址，也不进 `$deps.base`——落盘的永远是规范上游地址，镜像只在请求那一刻套用，所以同一份文件换台机器不用改。
 
-两条边界：带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到它们；`@@@tap add` 走的是 `git clone`，镜像帮不上忙，那条路只有代理管得着（见 `BYK_PROXY`）。
+两条边界：带凭证的地址（`?token=…`、`user:pass@host`）一律直连，镜像看不到它们；`sys@tap add` 走的是 `git clone`，镜像帮不上忙，那条路只有代理管得着（见 `BYK_PROXY`）。
 
 ### 文件
 
@@ -74,18 +76,18 @@ byk @@@config set net-github ghproxy  # 之后 GitHub 文件都经 gh-proxy 取
 - 键按字母顺序写回，手写的顺序会被规范化。
 - `byk --paths` 的 `Config:` 一行就是这个文件的位置。
 
-## tap（`@@@tap`）
+## tap（`sys@tap`）
 
-`@@@tap` 干两件事：把 tap 仓库装进 `~/.byk/tap/<user>/<repo>`，以及把它们拉到上游最新——都不用再手敲 `git clone` / `git pull`。它只走 git，所以 `add` 与 `update` 需要系统里有 git。
+`sys@tap` 干两件事：把 tap 仓库装进 `~/.byk/tap/<user>/<repo>`，以及把它们拉到上游最新——都不用再手敲 `git clone` / `git pull`。它只走 git，所以 `add` 与 `update` 需要系统里有 git。
 
 ```bash
-byk @@@tap                      # 看已装的仓库（等于 list）
-byk @@@tap add aaa/bb           # 默认从 GitHub 装，ref 默认 HEAD
-byk @@@tap add aaa/bb@v1        # 固定 ref
-byk @@@tap add my/tools https://git.example.com/my/tools.git   # 任意 git 地址
-byk @@@tap update               # 把账本里的每一份都拉到上游最新
-byk @@@tap update aaa/bb        # 只更新这一份
-byk @@@tap remove aaa/bb        # 注销并删除目录
+byk sys@tap                      # 看已装的仓库（等于 list）
+byk sys@tap add aaa/bb           # 默认从 GitHub 装，ref 默认 HEAD
+byk sys@tap add aaa/bb@v1        # 固定 ref
+byk sys@tap add my/tools https://git.example.com/my/tools.git   # 任意 git 地址
+byk sys@tap update               # 把账本里的每一份都拉到上游最新
+byk sys@tap update aaa/bb        # 只更新这一份
+byk sys@tap remove aaa/bb        # 注销并删除目录
 ```
 
 | 命令 | 作用 |
@@ -102,9 +104,9 @@ byk @@@tap remove aaa/bb        # 注销并删除目录
 第二个参数会**原样交给 `git clone`**：`https://`、`ssh://`、`git@host:path`、`file://`、本地路径都行——不设协议白名单，反正 git 自己会拒绝 `ext::` 那类会把 URL 变成命令的形态。
 
 ```bash
-byk @@@tap add my/tools                         # https://github.com/my/tools.git
-byk @@@tap add my/tools git@git.example.com:tools/tap.git
-byk @@@tap add local/scratch ~/src/tap          # 本地仓库，装完 origin 记 local
+byk sys@tap add my/tools                         # https://github.com/my/tools.git
+byk sys@tap add my/tools git@git.example.com:tools/tap.git
+byk sys@tap add local/scratch ~/src/tap          # 本地仓库，装完 origin 记 local
 ```
 
 - **`<user>/<repo>` 只是本地名字**：目录位置和账本的键都用它，不承诺与地址对应，也不校验（和 `brew tap user/repo URL` 一致）。
@@ -121,14 +123,14 @@ byk @@@tap add local/scratch ~/src/tap          # 本地仓库，装完 origin �
 - 浅克隆保持浅克隆，不会被悄悄补成一整份历史。
 
 ```bash
-byk @@@tap update               # 账本里的每一份都更新
-byk @@@tap update aaa/bb        # 只更新一份
+byk sys@tap update               # 账本里的每一份都更新
+byk sys@tap update aaa/bb        # 只更新一份
 # Updated aaa/bb (1a2b3c4 → 5d6e7f8)
 # ccc/dd is already up to date
 ```
 
 - **更新跟着账本里的 `ref` 走**：`update aaa/bb` 不会因为命令行没写 `@v1` 就跑回默认分支。钉在 tag 上时，上游不动 tag 就没有东西可更。
-- **更新不写账本**：装了什么、钉在哪个 ref 都没变，变的只有 checkout 里的提交。`byk @@@tap list` 里那份清单，更新前后一模一样。
+- **更新不写账本**：装了什么、钉在哪个 ref 都没变，变的只有 checkout 里的提交。`byk sys@tap list` 里那份清单，更新前后一模一样。
 - **本地改过的 checkout 不动**：`reset --hard` 会把这些改动一起抹掉，所以先报 `has local changes` 让你自己决定（提交、挪走，或者 `remove` + `add`）。
 - **索引没了就回滚**：上游要是把 `byk.tap.json` 删了，这次更新退回到原来的提交，不让 checkout 停在 `--tap` 用不了的状态。
 - 不带参数时**一份失败不拦下其余**：逐条报完，最后用一条 `Failed to update 1 of 2 tap repositories: …` 收尾，退出码 1。
@@ -136,7 +138,7 @@ byk @@@tap update aaa/bb        # 只更新一份
 
 ### 目录与索引
 
-账本是 `~/.byk/tap/index.json`，只有 `@@@tap` 读写它：
+账本是 `~/.byk/tap/index.json`，只有 `sys@tap` 读写它：
 
 ```json
 {
@@ -168,14 +170,14 @@ byk @@@tap update aaa/bb        # 只更新一份
 - 下载跟随 `BYK_PROXY` 等代理设置，翻译成 git 的 `-c http.proxy`；索引写入不联网。
 - 装第三方 tap 等于信任它给的别名文件：`add` 本身只搬运数据，真正的风险发生在之后 `clone --tap` 取用并执行那些别名时。
 
-## shell（`@@@shell`）
+## shell（`sys@shell`）
 
 管理 shell 补全：在你当前 shell 的启动文件里加一段带标记的块，或者把它摘掉。
 
 ```bash
-byk @@@shell                    # 等同 -h：当前 shell、会改哪个文件、补全装没装，连同用法一屏
-byk @@@shell add completion     # 给当前 shell 装补全
-byk @@@shell remove completion  # 摘掉
+byk sys@shell                    # 等同 -h：当前 shell、会改哪个文件、补全装没装，连同用法一屏
+byk sys@shell add completion     # 给当前 shell 装补全
+byk sys@shell remove completion  # 摘掉
 ```
 
 | 命令 | 作用 |
@@ -183,9 +185,9 @@ byk @@@shell remove completion  # 摘掉
 | `add completion` | 写入补全块；已经装过就只报一句 |
 | `remove completion` | 摘掉补全块，文件其余内容一个字节都不动 |
 
-不带参数与 `-h` 是同一屏，输出逐字节相同：这一域只有两条动词，单开一屏「状态」等于让人多敲一次才能知道能做什么。`@@@config -h` / `@@@tap -h` 头顶那几行也是这个排法。
+不带参数与 `-h` 是同一屏，输出逐字节相同：这一域只有两条动词，单开一屏「状态」等于让人多敲一次才能知道能做什么。`sys@config -h` / `sys@tap -h` 头顶那几行也是这个排法。
 
-对象名可以只写前缀，`byk @@@shell add comp` 与 `byk @@@shell add completion` 等价——只认唯一命中，将来加了第二个对象、两个都能接上时报歧义，不会替你挑一个。
+对象名可以只写前缀，`byk sys@shell add comp` 与 `byk sys@shell add completion` 等价——只认唯一命中，将来加了第二个对象、两个都能接上时报歧义，不会替你挑一个。
 
 目标 shell 就是运行 byk 的那个，不接受指名，见下面「没有 switch，也不能指名」。
 
@@ -201,16 +203,16 @@ byk @@@shell remove completion  # 摘掉
 
 bash 那一行不是随手排的：登录 shell 只读前三者，`.bashrc` 只被非登录交互 shell 读，所以它排在最后——前面都不存在、它存在，才说明你走的是那条路。一个都不存在时新建 `.bash_profile` 是安全的，因为没有可被它屏蔽的文件；反过来，`.profile` 存在却去建 `.bash_profile`，会把你原来那份整份屏蔽掉。
 
-当前 shell 的判定顺序是**父进程名 → `$SHELL`**。`$SHELL` 是登录 shell，`exec bash` 之后它仍然写着 zsh，所以父进程优先；取不到（Windows、受限环境）才退回环境变量。`@@@shell` 把判定结果和它的来源一起打出来：
+当前 shell 的判定顺序是**父进程名 → `$SHELL`**。`$SHELL` 是登录 shell，`exec bash` 之后它仍然写着 zsh，所以父进程优先；取不到（Windows、受限环境）才退回环境变量。`sys@shell` 把判定结果和它的来源一起打出来：
 
 ```bash
-$ byk @@@shell
+$ byk sys@shell
 
 Shell: zsh (from parent process)
 FilePath: /Users/coke/.zshrc
 Completion: installed (lines 3-5)
 
-Usage: byk @@@shell [OPTIONS] [COMMAND] [ITEM]
+Usage: byk sys@shell [OPTIONS] [COMMAND] [ITEM]
 
 Options:
   --help, -h  Show this help
@@ -232,19 +234,19 @@ Items:
 目标由环境决定，所以既没有「切换配置文件」的子命令，也不接受在命令行里指名——写了会被拒绝，并告诉你该去哪儿跑：
 
 ```bash
-$ byk @@@shell add completion bash
+$ byk sys@shell add completion bash
 `add` takes no shell argument: it always updates the startup file of the shell running byk
-Hint: run `byk @@@shell add completion` from bash to set up bash
+Hint: run `byk sys@shell add completion` from bash to set up bash
 ```
 
-理由是这类错配**不会报错**：在 zsh 里把补全写进 `.bash_profile`，眼前这个终端毫无反应，也没有任何提示告诉你装错了地方。要装 bash 的补全就进 bash 再跑一次——「我改的是哪个文件」因此永远只有一个答案，它和 `@@@shell` 打出来的那一行、和你眼前那个终端必然一致。
+理由是这类错配**不会报错**：在 zsh 里把补全写进 `.bash_profile`，眼前这个终端毫无反应，也没有任何提示告诉你装错了地方。要装 bash 的补全就进 bash 再跑一次——「我改的是哪个文件」因此永远只有一个答案，它和 `sys@shell` 打出来的那一行、和你眼前那个终端必然一致。
 
 ### 其他 shell：cmd、PowerShell、sh
 
-补全生成器只覆盖 `zsh`、`bash`、`fish`。在别的 shell 里跑 `@@@shell` 不算出错——它照实回答「当前 shell 没有指向任何文件」：
+补全生成器只覆盖 `zsh`、`bash`、`fish`。在别的 shell 里跑 `sys@shell` 不算出错——它照实回答「当前 shell 没有指向任何文件」：
 
 ```bash
-$ byk @@@shell
+$ byk sys@shell
 
 Shell: pwsh (from $SHELL)
 FilePath: (none)
@@ -257,7 +259,7 @@ Only zsh, bash and fish have a startup file byk can edit
 退出码是 0：这是一句正常的回答，不是失败。真去改（`add` / `remove`）才失败，退出码 1，文案就是上面那两句——因为它们确实什么都没做：
 
 ```bash
-$ byk @@@shell add completion
+$ byk sys@shell add completion
 No startup file for pwsh (from $SHELL)
 Only zsh, bash and fish have a startup file byk can edit
 ```
@@ -266,7 +268,7 @@ Only zsh, bash and fish have a startup file byk can edit
 
 ### 写入纪律
 
-这是 `@@@` 里唯一改**别人**文件的对象，所以规矩和 `config.json` 不一样：
+这是 `sys@` 里唯一改**别人**文件的对象，所以规矩和 `config.json` 不一样：
 
 - 只增删标记块（`# The following lines have been added by byk to enable byk cli completions.` 到 `# End of byk cli completions`），文件其余字节原样保留，包括手写的顺序与 CRLF 行尾；标记写成完整句子而不是 `# >>> ... >>>`，因为这份文件是给人读的；
 - 符号链接写到目标，链接仍在；
@@ -276,15 +278,15 @@ Only zsh, bash and fish have a startup file byk can edit
 安装脚本不再自动写这一行（与 pip 一样，只负责把二进制放好）。装完自己开一次：
 
 ```bash
-byk @@@shell add completion
+byk sys@shell add completion
 ```
 
 ## 补全
 
 系统文件的语法归各自定，所以候选也向文件本身要，不套文件命令那张动词表：
 
-- 敲 `@@@` 列出 `config`、`tap` 与 `shell`，各带一句说明；
-- 敲完 `@@@config` / `@@@tap` / `@@@shell` 补动词；`-` 开头补 `--help` / `-h`——它只在动词位，`@@@config set -h` 里的 `-h` 是 `set` 的参数；
+- 敲 `sys@` 列出 `config`、`tap` 与 `shell`，各带一句说明；
+- 敲完 `sys@config` / `sys@tap` / `sys@shell` 补动词；`-` 开头补 `--help` / `-h`——它只在动词位，`sys@config set -h` 里的 `-h` 是 `set` 的参数；
 - `get` / `set` / `unset` 补设置名，`set <设置名>` 补齐该键的候选值（如 `banner` → `auto` / `always` / `never`）；
 - `remove` / `update` 补账本里的 `<user>/<repo>`；`add` 的来源在远端，不补；
 - `add` / `remove` 的第一位补 `completion`，之后什么都不补——目标 shell 由运行环境决定，补一个 `bash` 出来就是教用户去做一件会被拒绝的事。

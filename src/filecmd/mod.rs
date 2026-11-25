@@ -1,4 +1,4 @@
-//! 文件命令路由：`@file` / `@@file` 归别名文件命令，`@@@<name>` 归系统文件命令，
+//! 文件命令路由：`local@file` / `global@file` 归别名文件命令，`sys@<name>` 归系统文件命令，
 //! 两者都在别名查找之前处理。
 
 pub(crate) mod io;

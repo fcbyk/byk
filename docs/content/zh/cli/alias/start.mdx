@@ -45,14 +45,14 @@ byk deploy            # 交互：先问 env，确认后再执行
 ```
 
 ```bash
-byk dev            # 找不到
-byk @run.dev       # 精确调用，只能这样用
+byk dev                  # 找不到
+byk local@run.dev        # 精确调用，只能这样用
 ```
 
 ### 想让它在家目录也能用
 
 ```bash
-byk @@run clone @run     # 把当前目录的 run.byk.json 复制到 ~/.byk/alias/
+byk global@run clone local@run     # 把当前目录的 run.byk.json 复制到 ~/.byk/alias/
 byk dev
 ```
 

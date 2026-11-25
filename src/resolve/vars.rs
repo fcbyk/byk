@@ -28,7 +28,7 @@ pub type VarTable = BTreeMap<String, String>;
 /// 而这个值逐文件不同，由扫描阶段克隆一份局部表再注入。
 pub const FILE_DIR_VAR: &str = "file_dir";
 
-/// 别名文件专属依赖目录的变量名（`~/.byk/deps/@@<stem>`）。
+/// 别名文件专属依赖目录的变量名（`~/.byk/deps/global@<stem>`）。
 ///
 /// 与 `file_dir` 同类：逐文件不同，由扫描阶段注入；只有全局别名文件
 /// 注入，局部文件里的 `${deps_dir}` 按未命中规则原样保留。
@@ -287,7 +287,7 @@ pub fn preprocess_vars(root: &mut Value, builtin: &VarTable) -> Vec<VarIssue> {
 /// 文档级展开：内置变量加 `file_dir` / 可选 `deps_dir`，随后移除顶层 `$var`。
 ///
 /// `file_dir` 由调用方按被处理文件的位置给出；`deps_dir` 按扫描语义给出：全局别名
-/// 文件传 `~/.byk/deps/@@<stem>`（链接文件的 key 也是它），其余传 `None`。
+/// 文件传 `~/.byk/deps/global@<stem>`（链接文件的 key 也是它），其余传 `None`。
 /// 返回值是声明问题，供调用方提示。
 pub fn expand_document(
     value: &mut Value,

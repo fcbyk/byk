@@ -110,7 +110,7 @@ mod tests {
         MergedNode {
             alias: Some(ResolvedAlias {
                 definition: to_alias_definition(&AliasValue::Str("echo x".into())),
-                source: "@test".into(),
+                source: "local@test".into(),
                 source_path: None,
                 paths: Vec::new(),
                 prepend_paths: Vec::new(),
@@ -138,22 +138,22 @@ mod tests {
         )
         .unwrap();
 
-        let hit = lookup(&layout, "@@ops.build").unwrap();
-        assert_eq!(hit.resolved.source, "@@ops");
-        assert_eq!(hit.display_source, "@@ops.build");
+        let hit = lookup(&layout, "global@ops.build").unwrap();
+        assert_eq!(hit.resolved.source, "global@ops");
+        assert_eq!(hit.display_source, "global@ops.build");
     }
 
     #[test]
     fn exact_failures_keep_their_identity() {
         let (_tmp, layout) = temp_layout();
         assert!(matches!(
-            lookup(&layout, "@@nope.build"),
+            lookup(&layout, "global@nope.build"),
             Err(LookupFailure::FileNotFound { .. })
         ));
 
         fs::write(layout.alias_dir.join("broken.byk.json"), "{not json").unwrap();
         assert!(matches!(
-            lookup(&layout, "@@broken.build"),
+            lookup(&layout, "global@broken.build"),
             Err(LookupFailure::FileUnavailable { .. })
         ));
 
@@ -163,11 +163,11 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            lookup(&layout, "@@ops.build.$cmd"),
+            lookup(&layout, "global@ops.build.$cmd"),
             Err(LookupFailure::ReservedField { .. })
         ));
         assert!(matches!(
-            lookup(&layout, "@@ops.deploy"),
+            lookup(&layout, "global@ops.deploy"),
             Err(LookupFailure::KeyNotFound { .. })
         ));
     }

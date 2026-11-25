@@ -1,4 +1,4 @@
-"""`@@@tap` 系统文件：把仓库装进 ~/.byk/tap，并验证 clone --tap 不需要改。
+"""`sys@tap` 系统文件：把仓库装进 ~/.byk/tap，并验证 clone --tap 不需要改。
 
 `add` 只走 `git clone`；这里用假 git 覆盖参数与失败路径，另有一条用真 git 的本地克隆。
 `update` 本质是 `fetch` + `reset --hard`，全部用真 git 的本地仓库验证——
@@ -79,7 +79,7 @@ def tap_entries(runner):
 def add_via_git(runner, tmp_path, **overrides):
     files = overrides.pop("files", TAP_REPO)
     env, log = fake_git(tmp_path, files=files, **overrides)
-    return runner.run("@@@tap", "add", "aaa/bb", env=env), log
+    return runner.run("sys@tap", "add", "aaa/bb", env=env), log
 
 
 def test_add_uses_a_shallow_git_clone(runner, tmp_path):
@@ -101,7 +101,7 @@ def test_add_accepts_any_git_url(runner, tmp_path):
     env, log = fake_git(tmp_path, files=TAP_REPO)
 
     result = runner.run(
-        "@@@tap", "add", "my/tools", "ssh://git@git.example.com/my/tools.git", env=env
+        "sys@tap", "add", "my/tools", "ssh://git@git.example.com/my/tools.git", env=env
     )
 
     assert result.returncode == 0, result.stderr
@@ -143,7 +143,7 @@ def test_add_clones_a_local_git_repository(runner, tmp_path):
     ):
         subprocess.run(["git", *argv], check=True, capture_output=True)
 
-    result = runner.run("@@@tap", "add", "local/scratch", str(source))
+    result = runner.run("sys@tap", "add", "local/scratch", str(source))
 
     assert result.returncode == 0, result.stderr
     repo = runner.byk_dir / "tap" / "local" / "scratch"
@@ -157,7 +157,7 @@ def test_add_clones_a_local_git_repository(runner, tmp_path):
 def test_add_passes_the_pinned_ref_to_git(runner, tmp_path):
     env, log = fake_git(tmp_path, files=TAP_REPO)
 
-    result = runner.run("@@@tap", "add", "aaa/bb@v1", env=env)
+    result = runner.run("sys@tap", "add", "aaa/bb@v1", env=env)
 
     assert result.returncode == 0, result.stderr
     args = log.read_text(encoding="utf-8").splitlines()
@@ -170,7 +170,7 @@ def test_add_requires_git(runner, tmp_path):
     empty.mkdir()
 
     for argv in (["aaa/bb"], ["aaa/bb", "https://git.example.com/aaa/bb.git"]):
-        result = runner.run("@@@tap", "add", *argv, env={"PATH": str(empty)})
+        result = runner.run("sys@tap", "add", *argv, env={"PATH": str(empty)})
 
         assert result.returncode == 1
         assert "Installing a tap repository requires git" in result.stderr
@@ -180,7 +180,7 @@ def test_add_requires_git(runner, tmp_path):
 def test_add_reports_a_missing_repository(runner, tmp_path):
     env, _ = fake_git(tmp_path, exit_code=128, stderr="fatal: repository not found")
 
-    result = runner.run("@@@tap", "add", "aaa/bb", env=env)
+    result = runner.run("sys@tap", "add", "aaa/bb", env=env)
 
     assert result.returncode == 1
     assert "Failed to clone aaa/bb@HEAD" in result.stderr
@@ -196,7 +196,7 @@ def test_add_suggests_a_proxy_for_transport_failures(runner, tmp_path):
         stderr="fatal: unable to access 'https://github.com/aaa/bb.git/': CONNECT tunnel failed",
     )
 
-    result = runner.run("@@@tap", "add", "aaa/bb", env=env)
+    result = runner.run("sys@tap", "add", "aaa/bb", env=env)
 
     assert result.returncode == 1
     assert "set BYK_PROXY and retry" in result.stderr
@@ -206,7 +206,7 @@ def test_list_shows_installed_repositories(runner, tmp_path):
     result, _ = add_via_git(runner, tmp_path)
     assert result.returncode == 0
 
-    listed = runner.run("@@@tap", "list")
+    listed = runner.run("sys@tap", "list")
 
     assert listed.returncode == 0
     assert "aaa/bb" in listed.stdout
@@ -219,8 +219,8 @@ def test_bare_call_equals_list(runner, tmp_path):
     result, _ = add_via_git(runner, tmp_path)
     assert result.returncode == 0
 
-    bare = runner.run("@@@tap")
-    listed = runner.run("@@@tap", "list")
+    bare = runner.run("sys@tap")
+    listed = runner.run("sys@tap", "list")
 
     assert bare.returncode == 0
     assert bare.stdout == listed.stdout
@@ -231,7 +231,7 @@ def test_list_marks_a_hand_deleted_directory(runner, tmp_path):
     assert result.returncode == 0
     shutil.rmtree(runner.byk_dir / "tap" / "aaa" / "bb")
 
-    listed = runner.run("@@@tap", "list")
+    listed = runner.run("sys@tap", "list")
 
     assert "aaa/bb" in listed.stdout
     assert "missing" in listed.stdout
@@ -241,7 +241,7 @@ def test_remove_deletes_the_directory_and_the_entry(runner, tmp_path):
     result, _ = add_via_git(runner, tmp_path)
     assert result.returncode == 0
 
-    removed = runner.run("@@@tap", "remove", "aaa/bb")
+    removed = runner.run("sys@tap", "remove", "aaa/bb")
 
     assert removed.returncode == 0, removed.stderr
     assert not (runner.byk_dir / "tap" / "aaa").exists()
@@ -256,11 +256,11 @@ def test_list_and_remove_work_without_git(runner, tmp_path):
     empty.mkdir()
     env = {"PATH": str(empty)}
 
-    listed = runner.run("@@@tap", "list", env=env)
+    listed = runner.run("sys@tap", "list", env=env)
     assert listed.returncode == 0
     assert "aaa/bb" in listed.stdout
 
-    removed = runner.run("@@@tap", "remove", "aaa/bb", env=env)
+    removed = runner.run("sys@tap", "remove", "aaa/bb", env=env)
     assert removed.returncode == 0, removed.stderr
     assert not (runner.byk_dir / "tap" / "aaa").exists()
 
@@ -269,7 +269,7 @@ def test_remove_refuses_a_repository_outside_the_index(runner):
     manual = runner.byk_dir / "tap" / "aaa" / "bb"
     manual.mkdir(parents=True)
 
-    result = runner.run("@@@tap", "remove", "aaa/bb")
+    result = runner.run("sys@tap", "remove", "aaa/bb")
 
     assert result.returncode == 1
     assert "Tap repository is not installed" in result.stderr
@@ -281,7 +281,7 @@ def test_add_refuses_to_overwrite_an_existing_directory(runner, tmp_path):
     env, log = fake_git(tmp_path, files=TAP_REPO)
     (runner.byk_dir / "tap" / "aaa" / "bb").mkdir(parents=True)
 
-    result = runner.run("@@@tap", "add", "aaa/bb", env=env)
+    result = runner.run("sys@tap", "add", "aaa/bb", env=env)
 
     assert result.returncode == 1
     assert "Tap repository already exists" in result.stderr
@@ -291,7 +291,7 @@ def test_add_refuses_to_overwrite_an_existing_directory(runner, tmp_path):
 def test_add_rolls_back_a_repository_without_an_index(runner, tmp_path):
     env, _ = fake_git(tmp_path, files={"README.md": "not a tap repo"})
 
-    result = runner.run("@@@tap", "add", "aaa/bb", env=env)
+    result = runner.run("sys@tap", "add", "aaa/bb", env=env)
 
     assert result.returncode == 1
     assert "Not a tap repository" in result.stderr
@@ -308,9 +308,9 @@ def test_added_repository_feeds_clone_tap(runner, tmp_path):
             "aliases/build.byk.json": '{"build": "echo hi"}',
         },
     )
-    assert runner.run("@@@tap", "add", "aaa/bb", env=env).returncode == 0
+    assert runner.run("sys@tap", "add", "aaa/bb", env=env).returncode == 0
 
-    result = runner.run("@@ops", "clone", "--tap", "aaa/bb/build")
+    result = runner.run("global@ops", "clone", "--tap", "aaa/bb/build")
 
     assert result.returncode == 0, result.stderr
     assert (runner.byk_dir / "alias" / "ops.byk.json").read_text(
@@ -321,7 +321,7 @@ def test_added_repository_feeds_clone_tap(runner, tmp_path):
 def test_add_rejects_a_bad_spec_without_network(runner, tmp_path):
     env, log = fake_git(tmp_path, files=TAP_REPO)
 
-    result = runner.run("@@@tap", "add", "aaa", env=env)
+    result = runner.run("sys@tap", "add", "aaa", env=env)
 
     assert result.returncode == 1
     assert "Tap repository must be <user>/<repo>" in result.stderr
@@ -331,7 +331,7 @@ def test_add_rejects_a_bad_spec_without_network(runner, tmp_path):
 def test_add_rejects_a_source_that_looks_like_an_option(runner, tmp_path):
     env, log = fake_git(tmp_path, files=TAP_REPO)
 
-    result = runner.run("@@@tap", "add", "aaa/bb", "--upload-pack=sh", env=env)
+    result = runner.run("sys@tap", "add", "aaa/bb", "--upload-pack=sh", env=env)
 
     assert result.returncode == 1
     assert "Invalid source" in result.stderr
@@ -339,10 +339,10 @@ def test_add_rejects_a_source_that_looks_like_an_option(runner, tmp_path):
 
 
 def test_help_lists_the_verbs(runner):
-    result = runner.run("@@@tap", "-h")
+    result = runner.run("sys@tap", "-h")
 
     assert result.returncode == 0
-    assert "Usage: byk @@@tap" in result.stdout
+    assert "Usage: byk sys@tap" in result.stdout
     for verb in ("list", "add", "update", "remove"):
         assert verb in result.stdout
 
@@ -386,7 +386,7 @@ def make_upstream(tmp_path, name="upstream", files=None):
 
 def install(runner, tmp_path, key="local/scratch", name="upstream", files=None):
     source = make_upstream(tmp_path, name=name, files=files)
-    result = runner.run("@@@tap", "add", key, str(source))
+    result = runner.run("sys@tap", "add", key, str(source))
     assert result.returncode == 0, result.stderr
     return source
 
@@ -400,7 +400,7 @@ def test_update_pulls_new_commits(runner, tmp_path):
     source = install(runner, tmp_path)
     commit(source, {"later.byk.json": '{"build": "echo hi"}'})
 
-    result = runner.run("@@@tap", "update", "local/scratch")
+    result = runner.run("sys@tap", "update", "local/scratch")
 
     assert result.returncode == 0, result.stderr
     assert "Updated local/scratch" in result.stderr
@@ -412,7 +412,7 @@ def test_update_pulls_new_commits(runner, tmp_path):
 def test_update_says_so_when_there_is_nothing_new(runner, tmp_path):
     install(runner, tmp_path)
 
-    result = runner.run("@@@tap", "update", "local/scratch")
+    result = runner.run("sys@tap", "update", "local/scratch")
 
     assert result.returncode == 0, result.stderr
     assert "local/scratch is already up to date" in result.stderr
@@ -427,7 +427,7 @@ def test_update_follows_a_file_removed_upstream(runner, tmp_path):
     )
     commit(source, {"old.byk.json": None})
 
-    assert runner.run("@@@tap", "update", "local/scratch").returncode == 0
+    assert runner.run("sys@tap", "update", "local/scratch").returncode == 0
 
     assert not (tap_path(runner) / "old.byk.json").exists(), "上游删掉的文件不能留下"
 
@@ -437,10 +437,10 @@ def test_update_follows_the_ref_the_index_recorded(runner, tmp_path):
     """命令行没写 `@v1` 也不会跑回默认分支：账本才是真相。"""
     source = make_upstream(tmp_path)
     git("tag", "v1", cwd=source)
-    assert runner.run("@@@tap", "add", "local/scratch@v1", str(source)).returncode == 0
+    assert runner.run("sys@tap", "add", "local/scratch@v1", str(source)).returncode == 0
     commit(source, {"later.byk.json": '{"build": "echo hi"}'})
 
-    result = runner.run("@@@tap", "update", "local/scratch")
+    result = runner.run("sys@tap", "update", "local/scratch")
 
     assert result.returncode == 0, result.stderr
     assert "already up to date" in result.stderr
@@ -455,7 +455,7 @@ def test_update_all_walks_the_whole_index(runner, tmp_path):
     commit(first, {"a.byk.json": "{}"})
     commit(second, {"b.byk.json": "{}"})
 
-    result = runner.run("@@@tap", "update")
+    result = runner.run("sys@tap", "update")
 
     assert result.returncode == 0, result.stderr
     assert "Updated local/one" in result.stderr
@@ -469,7 +469,7 @@ def test_update_keeps_going_when_one_repository_fails(runner, tmp_path):
     shutil.rmtree(gone)
     commit(good, {"a.byk.json": "{}"})
 
-    result = runner.run("@@@tap", "update")
+    result = runner.run("sys@tap", "update")
 
     assert result.returncode == 1
     assert "Updated local/one" in result.stderr, "一份失败不该拦下其余"
@@ -482,7 +482,7 @@ def test_update_rolls_back_a_checkout_without_an_index(runner, tmp_path):
     source = install(runner, tmp_path)
     commit(source, {"byk.tap.json": None, "other.json": "{}"})
 
-    result = runner.run("@@@tap", "update", "local/scratch")
+    result = runner.run("sys@tap", "update", "local/scratch")
 
     assert result.returncode == 1
     assert "Not a tap repository" in result.stderr
@@ -497,7 +497,7 @@ def test_update_refuses_a_checkout_with_local_changes(runner, tmp_path):
     local = tap_path(runner) / "byk.tap.json"
     local.write_text('{"build": "edited"}', encoding="utf-8")
 
-    result = runner.run("@@@tap", "update", "local/scratch")
+    result = runner.run("sys@tap", "update", "local/scratch")
 
     assert result.returncode == 1
     assert "has local changes" in result.stderr
@@ -509,7 +509,7 @@ def test_update_reports_a_missing_checkout(runner, tmp_path):
     install(runner, tmp_path)
     shutil.rmtree(tap_path(runner))
 
-    result = runner.run("@@@tap", "update", "local/scratch")
+    result = runner.run("sys@tap", "update", "local/scratch")
 
     assert result.returncode == 1
     assert "Tap repository is missing" in result.stderr
@@ -525,7 +525,7 @@ def test_update_requires_git(runner, tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
 
-    result = runner.run("@@@tap", "update", "aaa/bb", env={"PATH": str(empty)})
+    result = runner.run("sys@tap", "update", "aaa/bb", env={"PATH": str(empty)})
 
     assert result.returncode == 1
     assert "Updating a tap repository requires git" in result.stderr
@@ -534,7 +534,7 @@ def test_update_requires_git(runner, tmp_path):
 def test_update_refuses_a_repository_outside_the_index(runner):
     tap_path(runner, "aaa/bb").mkdir(parents=True)
 
-    result = runner.run("@@@tap", "update", "aaa/bb")
+    result = runner.run("sys@tap", "update", "aaa/bb")
 
     assert result.returncode == 1
     assert "Tap repository is not installed" in result.stderr
@@ -542,15 +542,15 @@ def test_update_refuses_a_repository_outside_the_index(runner):
 
 
 def test_update_without_any_repository_is_not_an_error(runner):
-    result = runner.run("@@@tap", "update")
+    result = runner.run("sys@tap", "update")
 
     assert result.returncode == 0
     assert "No repositories installed" in result.stderr
-    assert "byk @@@tap add aaa/bb" in result.stderr
+    assert "byk sys@tap add aaa/bb" in result.stderr
 
 
 def test_update_takes_at_most_one_repository(runner):
-    result = runner.run("@@@tap", "update", "aaa/bb", "ccc/dd")
+    result = runner.run("sys@tap", "update", "aaa/bb", "ccc/dd")
 
     assert result.returncode == 1
     assert "update takes one repository, or none" in result.stderr

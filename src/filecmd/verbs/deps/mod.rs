@@ -2,7 +2,7 @@
 //!
 //! 语法为 `<scope><stem> deps <verb>`，verb 取 `install` / `uninstall` / `status`
 //! 之一，也认无歧义前缀；不带 verb 等于 `status`。依赖目录全局是
-//! `~/.byk/deps/@@<stem>/`，局部是 `<文件所在目录>/.byk/deps/@<stem>/`。
+//! `~/.byk/deps/global@<stem>/`，局部是 `<文件所在目录>/.byk/deps/local@<stem>/`。
 //!
 //! install 读链接文件并跟随指针：`$deps` 来自目标文档，落点却跟着链接文件的 key 走。
 
@@ -67,7 +67,7 @@ fn file_dir_of(scope: FileScope, layout: &PathLayout) -> PathBuf {
     }
 }
 
-/// 提示里那条可复制的命令：`@@hello deps install` / `@hello deps install`。
+/// 提示里那条可复制的命令：`global@hello deps install` / `local@hello deps install`。
 fn deps_command(scope: FileScope, stem: &str) -> String {
     format!(
         "byk {} deps install",
@@ -131,7 +131,9 @@ fn print_warnings(diagnostics: &[Diagnostic]) {
 fn uninstall(scope: FileScope, stem: &str, deps_dir: &Path, yes: bool) -> Result<Outcome, String> {
     if !deps_dir.is_dir() {
         return Err(format!(
-            "No dependencies installed for @@{stem}: {}",
+            "No dependencies installed for {}{}: {}",
+            scope.token(),
+            stem,
             deps_dir.display()
         ));
     }
