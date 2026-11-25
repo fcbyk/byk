@@ -16,6 +16,10 @@
 - **`--paths`**: adds a `Config:` line naming the settings file
 - **completion**: PowerShell registration script — `byk __api__ completion powershell` (or `pwsh`) prints it, and `sys@shell add completion` writes the block into `$PROFILE` (pwsh and Windows PowerShell 5.1, recognised from the parent process); PowerShell completes the global options and byk's own arguments
 
+### Bug Fixes
+
+- **completion**: bash (Git Bash included) completes `local@file` arguments — `@` is a word separator there, and the token used to arrive split into pieces
+
 ## v0.8.2 (2026-11-20)
 
 ### Features

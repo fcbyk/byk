@@ -16,6 +16,10 @@
 - **`--paths`**: 新增 `Config:` 一行，指出设置文件的位置
 - **completion**: PowerShell 补全注册脚本——`byk __api__ completion powershell`（或 `pwsh`）输出脚本，`sys@shell add completion` 把补全块写进 `$PROFILE`（`pwsh` 与 Windows PowerShell 5.1，按父进程识别）；PowerShell 里补全局选项与 byk 自己解释的参数
 
+### 问题修复
+
+- **completion**: bash（含 Git Bash）能补 `local@file` 后面的参数——那里的 `@` 是词分隔符，token 会碎成几块
+
 ## v0.8.2 (2026-11-20)
 
 ### 新功能

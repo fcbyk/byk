@@ -251,15 +251,52 @@ compdef _byk byk
 fn print_bash() {
     print!(
         r##"_byk_completion() {{
-    local i cur
+    local i cur w glue=0
     local -a words
-    cur="${{COMP_WORDS[COMP_CWORD]}}"
-    # COMP_WORDS 不含光标处的空词，按 COMP_CWORD 逐下标取（越界即空），
-    # 让 complete 看到的形状与 zsh 一致：光标在空格后 = 最后一个词为空
+    # Git Bash 的 COMP_WORDBREAKS 含 @：`local@demo` 在 COMP_WORDS 里被切成
+    # local / @ / demo。纯分隔符拼回前一个词，紧跟其后的部分也接着拼
     for ((i = 1; i <= COMP_CWORD; i++)); do
-        words+=("${{COMP_WORDS[i]}}")
+        w="${{COMP_WORDS[i]}}"
+        if [[ -z $w ]]; then
+            # 光标贴在分隔符后面时，这个空块仍属于同一个词
+            if (( glue )) && [[ ${{COMP_LINE:COMP_POINT-1:1}} != [[:blank:]] ]]; then
+                glue=0
+                continue
+            fi
+            [[ -n $cur ]] && words+=("$cur")
+            words+=("")
+            cur=""
+            continue
+        fi
+        if [[ -n $COMP_WORDBREAKS && -z ${{w//[$COMP_WORDBREAKS]/}} ]]; then
+            cur+="$w"
+            glue=1
+            continue
+        fi
+        if (( glue )); then
+            cur+="$w"
+            glue=0
+        else
+            [[ -n $cur ]] && words+=("$cur")
+            cur="$w"
+        fi
     done
+    [[ -n $cur ]] && words+=("$cur")
+    cur=""
+    (( ${{#words[@]}} )) && cur="${{words[${{#words[@]}}-1]}}"
     COMPREPLY=($(compgen -W "$(byk __api__ complete "${{words[@]}}" 2>/dev/null)" -- "$cur"))
+    # readline 从最后一个词分隔符（Git Bash 里是 @）开始替换；候选里重复的前缀
+    # 要摘掉，否则 `s@` + `s@config` 会变成 `ss@config`
+    local prefix=""
+    if [[ -n $COMP_WORDBREAKS && -n $cur ]]; then
+        local head="${{cur%[$COMP_WORDBREAKS]*}}"
+        [[ $head != "$cur" ]] && prefix="$head"
+    fi
+    if [[ -n $prefix ]]; then
+        for i in "${{!COMPREPLY[@]}}"; do
+            [[ ${{COMPREPLY[i]}} == "$prefix"* ]] && COMPREPLY[i]="${{COMPREPLY[i]#"$prefix"}}"
+        done
+    fi
 }}
 
 complete -F _byk_completion byk
