@@ -254,7 +254,7 @@ compdef _byk byk
 fn print_bash() {
     print!(
         r##"_byk_completion() {{
-    local i cur w glue=0
+    local i cur="" w glue=0
     local -a words
     # Git Bash 的 COMP_WORDBREAKS 含 @：`work@demo` 在 COMP_WORDS 里被切成
     # local / @ / demo。纯分隔符拼回前一个词，紧跟其后的部分也接着拼

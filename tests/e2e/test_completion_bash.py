@@ -83,7 +83,7 @@ def run_cases(runner, tmp_path):
 def test_git_bash_shapes_are_rejoined_and_stripped(runner, tmp_path):
     cases = run_cases(runner, tmp_path)
 
-    # readline 从 @ 开始替换，候选里的 `local` / `s` 前缀要摘掉
+    # readline 从 @ 开始替换，候选里的 `work` / `s` 前缀要摘掉
     assert cases["split_key"] == "@demo"
     assert cases["split_key_no_empty"] == "@demo"
     assert cases["split_scope_prefix"] == "@config @tap @shell"
