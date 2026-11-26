@@ -66,7 +66,7 @@ pub(crate) fn scan_alias_files(
     vars: &VarTable,
 ) -> ScanResult {
     // 本地文件默认参与合并，且优先级高于全局（1 > 0）——进目录就能 `byk <key>`。
-    // 只想给本文件用（仅 local@file.key 可达）时写 `$private: true`。
+    // 只想给本文件用（仅 work@file.key 可达）时写 `$private: true`。
     let default_priority = default_priority(is_global);
     let mut result = ScanResult::default();
 
@@ -489,7 +489,7 @@ fn parse_alias_file(
 
 /// 原地排序 AliasFile 列表：低优先级在前，高优先级在后。
 ///
-/// 同优先级时非匿名文件按 key 字母序，匿名文件（`local@` 或 `global@`）排在最后——
+/// 同优先级时非匿名文件按 key 字母序，匿名文件（`work@` 或 `global@`）排在最后——
 /// 因为后面的覆盖前面的，所以同目录里 `.byk.json` 的别名最后生效。
 pub(crate) fn sort_alias_files(files: &mut [AliasFile]) {
     files.sort_by(|a, b| {
@@ -524,9 +524,9 @@ mod tests {
     #[test]
     fn sort_by_priority_low_first() {
         let mut files = vec![
-            make_file("local@high", 100),
-            make_file("local@low", 0),
-            make_file("local@mid", 50),
+            make_file("work@high", 100),
+            make_file("work@low", 0),
+            make_file("work@mid", 50),
         ];
         sort_alias_files(&mut files);
         assert_eq!(files[0].priority, 0);
@@ -537,29 +537,29 @@ mod tests {
     #[test]
     fn sort_same_priority_anonymous_first() {
         let mut files = vec![
-            make_file("local@named", 10),
-            make_file("local@", 10),
+            make_file("work@named", 10),
+            make_file("work@", 10),
             make_file("global@", 10),
-            make_file("local@other", 10),
+            make_file("work@other", 10),
         ];
         sort_alias_files(&mut files);
         // 非匿名文件排在前面（false.cmp(&true) == Less）
         // 匿名文件（@, global@）排在后面
-        assert!(matches!(files[2].key.as_str(), "local@" | "global@"));
-        assert!(matches!(files[3].key.as_str(), "local@" | "global@"));
+        assert!(matches!(files[2].key.as_str(), "work@" | "global@"));
+        assert!(matches!(files[3].key.as_str(), "work@" | "global@"));
     }
 
     #[test]
     fn sort_same_priority_non_anonymous_alphabetical() {
         let mut files = vec![
-            make_file("local@zzz", 10),
-            make_file("local@aaa", 10),
-            make_file("local@mmm", 10),
+            make_file("work@zzz", 10),
+            make_file("work@aaa", 10),
+            make_file("work@mmm", 10),
         ];
         sort_alias_files(&mut files);
-        assert_eq!(files[0].key, "local@aaa");
-        assert_eq!(files[1].key, "local@mmm");
-        assert_eq!(files[2].key, "local@zzz");
+        assert_eq!(files[0].key, "work@aaa");
+        assert_eq!(files[1].key, "work@mmm");
+        assert_eq!(files[2].key, "work@zzz");
     }
 
     #[test]
@@ -571,9 +571,9 @@ mod tests {
 
     #[test]
     fn sort_single() {
-        let mut files = vec![make_file("local@only", 5)];
+        let mut files = vec![make_file("work@only", 5)];
         sort_alias_files(&mut files);
-        assert_eq!(files[0].key, "local@only");
+        assert_eq!(files[0].key, "work@only");
     }
 
     #[test]
@@ -696,7 +696,7 @@ mod tests {
                 .iter()
                 .map(|(key, _)| key.as_str())
                 .collect::<Vec<_>>(),
-            vec!["local@", "local@a", "local@b"]
+            vec!["work@", "work@a", "work@b"]
         );
     }
 
@@ -744,6 +744,6 @@ mod tests {
         }));
 
         let files = list_alias_files(dir.path(), false);
-        assert_eq!(files[0].0, "local@ops");
+        assert_eq!(files[0].0, "work@ops");
     }
 }

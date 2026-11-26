@@ -19,7 +19,7 @@ def test_destroy_yes_removes_local_file(runner, tmp_path):
     path = tmp_path / "ops.byk.json"
     path.write_text('{"build": "echo hi"}', encoding="utf-8")
 
-    result = runner.run("local@ops", "destroy", "--yes", cwd=str(tmp_path))
+    result = runner.run("work@ops", "destroy", "--yes", cwd=str(tmp_path))
 
     assert result.returncode == 0
     assert not path.exists()
@@ -151,7 +151,7 @@ def test_destroy_hints_other_scope(runner, tmp_path):
     result = runner.run("global@ops", "destroy", "--yes", cwd=str(tmp_path))
 
     assert result.returncode == 1
-    assert "use local@ops destroy" in result.stderr
+    assert "use work@ops destroy" in result.stderr
 
 
 def test_destroy_rejects_extra_arguments(runner):

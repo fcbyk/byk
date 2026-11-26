@@ -165,7 +165,7 @@ def test_remove_local_and_anonymous(runner, tmp_path):
     anonymous = runner.prepare_alias_json("", {"build": "echo anon"})
 
     local_result = runner.run(
-        "local@ops", "remove", "build", cwd=str(tmp_path)
+        "work@ops", "remove", "build", cwd=str(tmp_path)
     )
     anonymous_result = runner.run("global@", "remove", "build")
 

@@ -14,7 +14,7 @@ use crate::filecmd::spec::FileScope;
 use crate::filecmd::spec::subcommand_names;
 use crate::filecmd::spec::{HELP_FLAGS, OPTION_ALIASES, OPTIONS, VERBS, Verb, split_head};
 
-/// 补全 `local@file <verb> ...`。
+/// 补全 `work@file <verb> ...`。
 ///
 /// `prev` 是光标前的完整词，`partial` 是当前词。返回 `None` 表示第一个词
 /// 不是别名文件头，调用方继续按别名补全。
@@ -198,8 +198,8 @@ fn source_candidates(partial: &str, layout: &PathLayout) -> Vec<String> {
     let Some((scope, rest)) = Scope::split(partial) else {
         return Vec::new();
     };
-    // 系统文件不是 clone / link 的来源
-    if scope == Scope::Sys {
+    // 特殊文件不是 clone / link 的来源
+    if scope == Scope::Special {
         return Vec::new();
     }
     let typed = &partial[..partial.len() - rest.len()];
@@ -306,7 +306,7 @@ mod tests {
             Some(vec!["destroy".to_string(), "deps".to_string()])
         );
         assert_eq!(
-            complete(&words(&["local@"]), "i", &layout),
+            complete(&words(&["work@"]), "i", &layout),
             Some(vec!["init".to_string()])
         );
         assert_eq!(
@@ -449,7 +449,7 @@ mod tests {
             Some(vec!["--help".to_string(), "--link".to_string()])
         );
         assert_eq!(
-            complete(&words(&["global@ops", "set"]), "local@", &layout),
+            complete(&words(&["global@ops", "set"]), "work@", &layout),
             Some(Vec::new())
         );
     }

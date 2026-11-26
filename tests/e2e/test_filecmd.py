@@ -22,7 +22,7 @@ def test_init_global_existing_file_is_not_overwritten(runner):
 
 
 def test_init_local_uses_cwd_without_creating_home(runner, tmp_path):
-    result = runner.run("local@ops", "init", cwd=str(tmp_path))
+    result = runner.run("work@ops", "init", cwd=str(tmp_path))
 
     assert result.returncode == 0
     assert (tmp_path / "ops.byk.json").read_text() == "{}\n"
@@ -31,7 +31,7 @@ def test_init_local_uses_cwd_without_creating_home(runner, tmp_path):
 
 def test_init_anonymous_files(runner, tmp_path):
     global_result = runner.run("global@", "init", cwd=str(tmp_path))
-    local_result = runner.run("local@", "init", cwd=str(tmp_path))
+    local_result = runner.run("work@", "init", cwd=str(tmp_path))
 
     assert global_result.returncode == 0
     assert local_result.returncode == 0
@@ -58,7 +58,7 @@ def test_init_rejects_arguments(runner):
 
 
 def test_init_rejects_invalid_name(runner, tmp_path):
-    result = runner.run("local@a/b", "init", cwd=str(tmp_path))
+    result = runner.run("work@a/b", "init", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "Invalid file name" in result.stderr

@@ -1,4 +1,4 @@
-"""`sys@shell` 系统文件：在当前 shell 的启动文件里维护一段补全块。
+"""`special@shell` 特殊文件：在当前 shell 的启动文件里维护一段补全块。
 
 这里验证的是四件容易出错的事：
 - 只增删标记块，文件其余字节原样保留（含 CRLF）；
@@ -32,8 +32,8 @@ WINDOWS_POWERSHELL_BLOCK = PWSH_BLOCK.replace("completion pwsh", "completion pow
 
 
 def shell_cmd(runner, *args, env=None, shell="/bin/zsh"):
-    """跑一条 `sys@shell` 命令，环境固定当前 shell 为 zsh。"""
-    return runner.run("sys@shell", *args, env={"SHELL": shell, "ZDOTDIR": "", **(env or {})})
+    """跑一条 `special@shell` 命令，环境固定当前 shell 为 zsh。"""
+    return runner.run("special@shell", *args, env={"SHELL": shell, "ZDOTDIR": "", **(env or {})})
 
 
 def read(path):
@@ -62,7 +62,7 @@ def test_bare_call_is_the_help_page(runner):
     assert bare.stdout == help_page.stdout
     # 状态在前，用法定在后
     assert bare.stdout.index("Completion:") < bare.stdout.index("Usage:")
-    assert "Usage: byk sys@shell [OPTIONS] [COMMAND] [ITEM]" in bare.stdout
+    assert "Usage: byk special@shell [OPTIONS] [COMMAND] [ITEM]" in bare.stdout
     assert "  completion  Shell completion" in bare.stdout
 
 
@@ -316,7 +316,7 @@ def test_a_shell_argument_is_rejected_with_where_to_run_it(runner):
     assert result.stderr.strip() == (
         "`add` takes no shell argument: it always updates the startup file of "
         "the shell running byk\n"
-        "Hint: run `byk sys@shell add completion` from bash to set up bash"
+        "Hint: run `byk special@shell add completion` from bash to set up bash"
     )
     # 一句都不落盘：参数这一层就挡住了
     assert not (runner.home / ".bash_profile").exists()
@@ -365,8 +365,8 @@ def test_no_shell_argument_completes_to_nothing(runner):
     def complete(*words):
         return runner.run("__api__", "complete", *words).stdout.split()
 
-    assert complete("sys@shell", "") == ["add", "remove"]
-    assert complete("sys@shell", "a") == ["add"]
-    assert complete("sys@shell", "add", "") == ["completion"]
+    assert complete("special@shell", "") == ["add", "remove"]
+    assert complete("special@shell", "a") == ["add"]
+    assert complete("special@shell", "add", "") == ["completion"]
     # 目标 shell 由运行环境决定，补个 bash 出来等于教用户去做一件会被拒绝的事
-    assert complete("sys@shell", "add", "completion", "") == []
+    assert complete("special@shell", "add", "completion", "") == []

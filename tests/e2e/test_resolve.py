@@ -92,15 +92,15 @@ def test_resolve_exact_global_syntax(runner):
 
 
 def test_resolve_exact_local_syntax(runner):
-    """local@file.key 精确语法（当前目录文件）"""
+    """work@file.key 精确语法（当前目录文件）"""
     work = runner.home / "proj"
     work.mkdir(parents=True, exist_ok=True)
     (work / "p.byk.json").write_text('{"hello": "echo local"}', encoding="utf-8")
-    r = runner.run("__api__", "resolve", "local@p.hello", cwd=str(work))
+    r = runner.run("__api__", "resolve", "work@p.hello", cwd=str(work))
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     assert payload["command"] == "echo local"
-    assert payload["source"] == "local@p"
+    assert payload["source"] == "work@p"
 
 
 def test_resolve_unknown_alias_fails(runner):

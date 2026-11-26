@@ -20,7 +20,7 @@ def test_path_global_named(runner):
 
 
 def test_path_local_named(runner, tmp_path):
-    result = runner.run("local@ops", "path", cwd=str(tmp_path))
+    result = runner.run("work@ops", "path", cwd=str(tmp_path))
 
     line = path_line(result)
     expected = tmp_path / "ops.byk.json"
@@ -29,7 +29,7 @@ def test_path_local_named(runner, tmp_path):
 
 def test_path_anonymous(runner, tmp_path):
     global_result = runner.run("global@", "path")
-    local_result = runner.run("local@", "path", cwd=str(tmp_path))
+    local_result = runner.run("work@", "path", cwd=str(tmp_path))
 
     assert os.path.realpath(path_line(global_result)) == os.path.realpath(
         runner.byk_dir / "alias" / ".byk.json"

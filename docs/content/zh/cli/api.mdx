@@ -60,7 +60,7 @@ byk __api__
     {
       "name": "file",
       "args": "<file-key> | --list",
-      "description": "resolve an alias file key (local@name / global@name) to its path, or list every alias file with --list"
+      "description": "resolve an alias file key (work@name / global@name) to its path, or list every alias file with --list"
     },
     {
       "name": "expand",
@@ -89,7 +89,7 @@ Unsupported shell: nushell
 
 ## complete `[--with-descriptions] <words...>`
 
-把命令行上已经敲下的词原样传进去，返回候选，一行一个。带 `local@` / `global@` 前缀时只返回文件 key，带分组前缀时只返回该组的子项。空输入只列合并别名——文件 key 要等词以 `local@` / `global@` 开头才出现。带 `--with-descriptions` 时，内置选项、文件命令动词与文件 key 都附带 tab 分隔的描述；文件 key 的描述是别名文件路径，家目录显示为 `~`。
+把命令行上已经敲下的词原样传进去，返回候选，一行一个。带 `work@` / `global@` 前缀时只返回文件 key，带分组前缀时只返回该组的子项。空输入只列合并别名——文件 key 要等词以 `work@` / `global@` 开头才出现。带 `--with-descriptions` 时，内置选项、文件命令动词与文件 key 都附带 tab 分隔的描述；文件 key 的描述是别名文件路径，家目录显示为 `~`。
 
 ```bash
 $ byk __api__ complete grp.
@@ -104,20 +104,20 @@ grp.inner
 
 ## resolve `<key> [args...]`
 
-解析一个别名但不执行：返回最终命令、工作目录、PATH 前缀和执行方式。键支持两种写法——合并空间里的名字（`dep`），或精确语法（`local@run.build`、`global@ops.deploy`）。文件命令不是别名，`local@文件 命令` 会被拒绝并以退出码 1 结束；路径段以 `$` 开头的保留字段或自定义元数据同样不是别名。
+解析一个别名但不执行：返回最终命令、工作目录、PATH 前缀和执行方式。键支持两种写法——合并空间里的名字（`dep`），或精确语法（`work@run.build`、`global@ops.deploy`）。文件命令不是别名，`work@文件 命令` 会被拒绝并以退出码 1 结束；路径段以 `$` 开头的保留字段或自定义元数据同样不是别名。
 
 :::warning 不是 `file.key`
-`run.build` 是**点号路径**，会在合并空间里当成分组名查找，通常找不到。文件 key 必须带前缀：`local@run.build`。
+`run.build` 是**点号路径**，会在合并空间里当成分组名查找，通常找不到。文件 key 必须带前缀：`work@run.build`。
 :::
 
 ```bash
-byk __api__ resolve local@run.build --env staging
+byk __api__ resolve work@run.build --env staging
 ```
 
 | 字段 | 说明 |
 |------|------|
 | `key` | 传入的键，原样回显 |
-| `source` | 命中的文件 key，如 `local@run` / `global@ops` |
+| `source` | 命中的文件 key，如 `work@run` / `global@ops` |
 | `sourcePath` | 该别名文件的绝对路径；仅少数无来源的场合为 `null` |
 | `command` | 非交互别名：占位符已按参数解析的最终命令（参数已按 shell 规则引用，可直接交给 `sh -c`）；交互别名：**未解析的模板** |
 | `cwd` | 执行时的工作目录（绝对路径） |
@@ -134,7 +134,7 @@ byk __api__ resolve local@run.build --env staging
 ```json title="byk __api__ resolve int"
 {
   "key": "int",
-  "source": "local@i",
+  "source": "work@i",
   "sourcePath": "/Users/you/proj/i.byk.json",
   "command": "deploy --env {env}",
   "cwd": "/Users/you/proj",
@@ -197,24 +197,24 @@ __api__ paths: unknown name "bin" (expected one of: root, alias, workdir)
 把文件 key 解析成地址，不读文件，也不要求文件存在：
 
 ```bash
-byk __api__ file local@run
+byk __api__ file work@run
 ```
 
-```json title="byk __api__ file local@run"
+```json title="byk __api__ file work@run"
 {
-  "key": "local@run",
-  "scope": "local",
+  "key": "work@run",
+  "scope": "work",
   "path": "/Users/you/proj/run.byk.json",
   "dir": "/Users/you/proj"
 }
 ```
 
-接受与文件命令相同的 key 形式：`local@name`（工作目录）、`global@name`（全局别名目录）、`local@` / `global@`（匿名文件 `.byk.json`）。`path` 与 `paths.aliasFiles` 中的一项相同，另外附带 `key`、`scope` 与 `dir`。
+接受与文件命令相同的 key 形式：`work@name`（工作目录）、`global@name`（全局别名目录）、`work@` / `global@`（匿名文件 `.byk.json`）。`path` 与 `paths.aliasFiles` 中的一项相同，另外附带 `key`、`scope` 与 `dir`。
 
-- **不要求文件存在**：它回答的是"按 byk 的规则会落在哪里"，与 `local@run path` 的输出路径相同，另外附带 `scope` 与 `dir`。
+- **不要求文件存在**：它回答的是"按 byk 的规则会落在哪里"，与 `work@run path` 的输出路径相同，另外附带 `scope` 与 `dir`。
 - **只解析地址，不解析内容**：想知道某个别名来自哪个文件、最终命令是什么，用 `resolve`。
 - **不跟随链接**：返回的是链接文件本身的位置，不是它指向的目标。
-- **别名 key 会被拒绝**：`local@run.build` 里的点让它成为非法文件名，退出码 1。
+- **别名 key 会被拒绝**：`work@run.build` 里的点让它成为非法文件名，退出码 1。
 
 ### `--list`
 
@@ -234,8 +234,8 @@ byk __api__ file --list
       "dir": "/Users/you/.byk/alias"
     },
     {
-      "key": "local@run",
-      "scope": "local",
+      "key": "work@run",
+      "scope": "work",
       "path": "/Users/you/proj/run.byk.json",
       "dir": "/Users/you/proj"
     }
@@ -247,7 +247,7 @@ byk __api__ file --list
 
 ## expand `[--no-builtins] <path>`
 
-展开一个 JSON 文件里的变量并输出结果。参数是普通文件路径（相对路径按进程工作目录解析），**不是 `local@文件key`**。选项写在路径前面。
+展开一个 JSON 文件里的变量并输出结果。参数是普通文件路径（相对路径按进程工作目录解析），**不是 `work@文件key`**。选项写在路径前面。
 
 `--no-builtins` 只展开文件自己的 `$var`：不注入 `${byk_dir}`、`${work_dir}`、`${file_dir}`、`${deps_dir}`，没有声明同名变量时原样保留。
 
@@ -324,10 +324,10 @@ byk __api__ check
 
 ## 补全是怎么接上的
 
-安装脚本不写补全（与 pip 一样，它只负责把二进制放好）。补全由 `sys@shell` 自己装，落在当前 shell 的启动文件里：
+安装脚本不写补全（与 pip 一样，它只负责把二进制放好）。补全由 `special@shell` 自己装，落在当前 shell 的启动文件里：
 
 ```bash
-byk sys@shell add completion
+byk special@shell add completion
 ```
 
 它写进去的是这样一段带标记的块（早期版本 `install.sh` 留下的无标记裸行，`remove` 同样认得）：
@@ -348,13 +348,13 @@ if (Get-Command byk -ErrorAction SilentlyContinue) { byk __api__ completion powe
 # End of byk cli completions
 ```
 
-PowerShell 这边补全覆盖全局选项与 byk 自己解释的参数——合并别名、文件 key、系统文件，以及它们后面的动词、选项与 key；传给目标命令的参数照旧不动。
+PowerShell 这边补全覆盖全局选项与 byk 自己解释的参数——合并别名、文件 key、特殊文件，以及它们后面的动词、选项与 key；传给目标命令的参数照旧不动。
 
 :::note Windows PowerShell 5.1 与单横线
 5.1 只有在词以 `--` 开头时才把候选交给补全脚本：`byk --p<TAB>` 有结果，而 `byk -`、`byk -h` 会走它自己的参数补全分支，什么都补不出来。别名补全不受影响。
 :::
 
-块里的这一行把 Tab 事件转给 `byk __api__ complete`，由 byk 实时扫描别名后返回候选。手工写同样的行也完全等价；`byk sys@shell` 会告诉你它打算改哪个文件，`remove completion` 把块摘掉，文件其余内容不动。详见[系统文件](/cli/system-files)。
+块里的这一行把 Tab 事件转给 `byk __api__ complete`，由 byk 实时扫描别名后返回候选。手工写同样的行也完全等价；`byk special@shell` 会告诉你它打算改哪个文件，`remove completion` 把块摘掉，文件其余内容不动。详见[特殊文件](/cli/special-files)。
 
 ## 版本与兼容
 

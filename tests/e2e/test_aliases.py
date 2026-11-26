@@ -30,7 +30,7 @@ def test_file_dir_independent_of_cwd(runner):
         '{"w": {"$cmd": "echo ${file_dir}", "$cwd": "%s"}}' % build,
         encoding="utf-8",
     )
-    r = runner.run("local@p.w", cwd=str(proj))
+    r = runner.run("work@p.w", cwd=str(proj))
     assert r.returncode == 0, r.stderr
     assert str(proj) in r.stdout
     assert str(build) not in r.stdout
@@ -196,7 +196,7 @@ def test_local_overrides_global(runner):
 
 
 def test_private_file_needs_scope(runner):
-    """$private: true 的文件不参与合并，只能 local@file.key 精确调用"""
+    """$private: true 的文件不参与合并，只能 work@file.key 精确调用"""
     work = runner.home / "proj3"
     work.mkdir(parents=True, exist_ok=True)
     (work / "p.byk.json").write_text(
@@ -206,7 +206,7 @@ def test_private_file_needs_scope(runner):
     r = runner.run("hidden", cwd=str(work))
     assert r.returncode != 0
 
-    r2 = runner.run("local@p.hidden", cwd=str(work))
+    r2 = runner.run("work@p.hidden", cwd=str(work))
     assert r2.returncode == 0, r2.stderr
     assert "hidden" in r2.stdout
 

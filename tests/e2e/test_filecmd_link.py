@@ -36,7 +36,7 @@ def test_init_link_creates_global_link_usable_anywhere(runner, tmp_path):
         },
     )
 
-    result = runner.run("global@tools", "init", "--link", "local@tool", cwd=str(repo))
+    result = runner.run("global@tools", "init", "--link", "work@tool", cwd=str(repo))
 
     index = runner.byk_dir / "alias" / "tools.byk.json"
     assert result.returncode == 0, result.stderr
@@ -52,19 +52,19 @@ def test_init_link_creates_global_link_usable_anywhere(runner, tmp_path):
 def test_init_link_works_in_local_scope(runner, tmp_path):
     source = write_alias(tmp_path / "tool.byk.json", {"hello": "echo hi"})
 
-    result = runner.run("local@tools", "init", "--link", "local@tool", cwd=str(tmp_path))
+    result = runner.run("work@tools", "init", "--link", "work@tool", cwd=str(tmp_path))
 
     index = tmp_path / "tools.byk.json"
     assert result.returncode == 0, result.stderr
     assert link_target(index) == os.path.realpath(source)
-    assert runner.run("local@tools.hello", cwd=str(tmp_path)).stdout.strip() == "hi"
+    assert runner.run("work@tools.hello", cwd=str(tmp_path)).stdout.strip() == "hi"
     assert runner.run("hello", cwd=str(tmp_path)).stdout.strip() == "hi"
 
 
 def test_init_link_accepts_anonymous_alias_target(runner, tmp_path):
     source = write_alias(tmp_path / ".byk.json", {"hello": "echo hi"})
 
-    result = runner.run("global@tools", "init", "--link", "local@", cwd=str(tmp_path))
+    result = runner.run("global@tools", "init", "--link", "work@", cwd=str(tmp_path))
 
     assert result.returncode == 0, result.stderr
     assert link_target(runner.byk_dir / "alias" / "tools.byk.json") == os.path.realpath(
@@ -100,7 +100,7 @@ def test_init_link_accepts_paths(runner, tmp_path):
 
 
 def test_init_link_refuses_missing_target(runner, tmp_path):
-    result = runner.run("global@tools", "init", "--link", "local@missing", cwd=str(tmp_path))
+    result = runner.run("global@tools", "init", "--link", "work@missing", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "Source not found" in result.stderr
@@ -111,7 +111,7 @@ def test_init_link_refuses_non_object_target(runner, tmp_path):
     target = tmp_path / "scalar.byk.json"
     target.write_text("42", encoding="utf-8")
 
-    result = runner.run("global@tools", "init", "--link", "local@scalar", cwd=str(tmp_path))
+    result = runner.run("global@tools", "init", "--link", "work@scalar", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "must be a JSON object" in result.stderr
@@ -122,7 +122,7 @@ def test_init_link_refuses_link_target(runner, tmp_path):
     write_alias(tmp_path / "other.byk.json", {"a": "echo a"})
     (tmp_path / "chain.byk.json").write_text('["other.byk.json"]\n', encoding="utf-8")
 
-    result = runner.run("global@tools", "init", "--link", "local@chain", cwd=str(tmp_path))
+    result = runner.run("global@tools", "init", "--link", "work@chain", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "is itself a link" in result.stderr
@@ -132,14 +132,14 @@ def test_init_link_refuses_link_target(runner, tmp_path):
 def test_init_link_refuses_invalid_json_target(runner, tmp_path):
     (tmp_path / "broken.byk.json").write_text("{not json", encoding="utf-8")
 
-    result = runner.run("global@tools", "init", "--link", "local@broken", cwd=str(tmp_path))
+    result = runner.run("global@tools", "init", "--link", "work@broken", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "Failed to parse source" in result.stderr
 
 
 def test_init_link_rejects_invalid_alias_target(runner, tmp_path):
-    result = runner.run("global@tools", "init", "--link", "local@a.b", cwd=str(tmp_path))
+    result = runner.run("global@tools", "init", "--link", "work@a.b", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "Invalid file name" in result.stderr
@@ -149,7 +149,7 @@ def test_init_link_refuses_existing_file(runner, tmp_path):
     write_alias(tmp_path / "tool.byk.json", {"hello": "echo hi"})
     existing = runner.prepare_alias_file("tools", '{"keep": true}')
 
-    result = runner.run("global@tools", "init", "--link", "local@tool", cwd=str(tmp_path))
+    result = runner.run("global@tools", "init", "--link", "work@tool", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "already exists" in result.stderr
@@ -160,7 +160,7 @@ def test_link_converts_empty_object(runner, tmp_path):
     source = write_alias(tmp_path / "tool.byk.json", {"hello": "echo hi"})
     runner.run("global@tools", "init")
 
-    result = runner.run("global@tools", "link", "local@tool", cwd=str(tmp_path))
+    result = runner.run("global@tools", "link", "work@tool", cwd=str(tmp_path))
 
     index = runner.byk_dir / "alias" / "tools.byk.json"
     assert result.returncode == 0, result.stderr
@@ -171,10 +171,10 @@ def test_link_converts_empty_object(runner, tmp_path):
 def test_link_retargets_existing_link(runner, tmp_path):
     first = write_alias(tmp_path / "first.byk.json", {"a": "echo a"})
     second = write_alias(tmp_path / "second.byk.json", {"b": "echo b"})
-    runner.run("global@tools", "init", "--link", "local@first", cwd=str(tmp_path))
+    runner.run("global@tools", "init", "--link", "work@first", cwd=str(tmp_path))
     index = runner.byk_dir / "alias" / "tools.byk.json"
 
-    result = runner.run("global@tools", "link", "local@second", cwd=str(tmp_path))
+    result = runner.run("global@tools", "link", "work@second", cwd=str(tmp_path))
 
     assert result.returncode == 0, result.stderr
     assert link_target(index) == os.path.realpath(second)
@@ -185,7 +185,7 @@ def test_link_refuses_non_empty_object(runner, tmp_path):
     write_alias(tmp_path / "tool.byk.json", {"hello": "echo hi"})
     existing = runner.prepare_alias_file("tools", '{"keep": "echo keep"}')
 
-    result = runner.run("global@tools", "link", "local@tool", cwd=str(tmp_path))
+    result = runner.run("global@tools", "link", "work@tool", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "Not a link" in result.stderr
@@ -195,7 +195,7 @@ def test_link_refuses_non_empty_object(runner, tmp_path):
 def test_link_missing_file_hints_init(runner, tmp_path):
     write_alias(tmp_path / "tool.byk.json", {"hello": "echo hi"})
 
-    result = runner.run("global@tools", "link", "local@tool", cwd=str(tmp_path))
+    result = runner.run("global@tools", "link", "work@tool", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "File not found" in result.stderr
@@ -203,10 +203,10 @@ def test_link_missing_file_hints_init(runner, tmp_path):
 
 
 def test_link_refuses_self_link(runner, tmp_path):
-    runner.run("local@tools", "init", cwd=str(tmp_path))
+    runner.run("work@tools", "init", cwd=str(tmp_path))
     path = tmp_path / "tools.byk.json"
 
-    result = runner.run("local@tools", "link", "local@tools", cwd=str(tmp_path))
+    result = runner.run("work@tools", "link", "work@tools", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "Link cannot point to itself" in result.stderr
@@ -222,7 +222,7 @@ def test_link_refuses_symlink(runner, tmp_path):
     os.symlink(real, link)
     write_alias(tmp_path / "tool.byk.json", {"hello": "echo hi"})
 
-    result = runner.run("global@tools", "link", "local@tool", cwd=str(tmp_path))
+    result = runner.run("global@tools", "link", "work@tool", cwd=str(tmp_path))
 
     assert result.returncode == 1
     assert "Refusing to rewrite symlink" in result.stderr
@@ -232,7 +232,7 @@ def test_link_refuses_symlink(runner, tmp_path):
 
 def test_link_requires_exactly_one_target(runner):
     missing = runner.run("global@tools", "link")
-    extra = runner.run("global@tools", "link", "local@a", "local@b")
+    extra = runner.run("global@tools", "link", "work@a", "work@b")
 
     assert missing.returncode == 1
     assert "exactly one target" in missing.stderr

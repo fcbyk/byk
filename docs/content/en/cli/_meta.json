@@ -16,8 +16,8 @@
   },
   {
     "type": "file",
-    "name": "system-files",
-    "label": "System Files"
+    "name": "special-files",
+    "label": "Special Files"
   },
   {
     "type": "file",

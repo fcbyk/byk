@@ -110,7 +110,7 @@ mod tests {
         MergedNode {
             alias: Some(ResolvedAlias {
                 definition: to_alias_definition(&AliasValue::Str("echo x".into())),
-                source: "local@test".into(),
+                source: "work@test".into(),
                 source_path: None,
                 paths: Vec::new(),
                 prepend_paths: Vec::new(),

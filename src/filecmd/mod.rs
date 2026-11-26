@@ -1,11 +1,11 @@
-//! 文件命令路由：`local@file` / `global@file` 归别名文件命令，`sys@<name>` 归系统文件命令，
+//! 文件命令路由：`work@file` / `global@file` 归别名文件命令，`special@<name>` 归特殊文件命令，
 //! 两者都在别名查找之前处理。
 
 pub(crate) mod io;
 pub(crate) mod prompt;
 pub(crate) mod source;
 pub(crate) mod spec;
-pub(crate) mod sys;
+pub(crate) mod special;
 mod verbs;
 
 use crate::filecmd::spec::{FileCommand, ParseResult, Verb, parse};
@@ -20,8 +20,8 @@ pub(crate) fn run(command_name: &str, args: &[String], layout: &PathLayout) -> O
         ParseResult::NotFileCommand => None,
         ParseResult::Command(command) => Some(dispatch(&command, layout)),
         ParseResult::System { stem, args } => {
-            // 系统文件的成功没有回调，`Ok(())` 就是退出码 0
-            Some(match sys::run(&stem, &args, layout) {
+            // 特殊文件的成功没有回调，`Ok(())` 就是退出码 0
+            Some(match special::run(&stem, &args, layout) {
                 Ok(()) => 0,
                 Err(message) => fail(message),
             })

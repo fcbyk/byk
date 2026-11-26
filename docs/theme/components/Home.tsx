@@ -186,7 +186,7 @@ export function BykHome() {
           </Link>
 
           <Link href={`${langPrefix}/cli/file-commands`} className="b-feature">
-            <span className="b-feature__mark">byk local@run set</span>
+            <span className="b-feature__mark">byk work@run set</span>
             <h3 className="b-feature__title">{t('homeFeat2Title')}</h3>
             <p className="b-feature__desc">
               {t('homeFeat2DescA')}{' '}
@@ -329,7 +329,7 @@ export function BykHome() {
             </div>
             <p>
               {t('homeWhy1BodyA')}{' '}
-              <span className="b-ic">local@file.key</span>{' '}
+              <span className="b-ic">work@file.key</span>{' '}
               {t('homeWhy1BodyB')}
             </p>
           </div>

@@ -17,7 +17,7 @@ pub(crate) fn destination(
     layout: &PathLayout,
 ) -> Result<PathBuf, String> {
     let base = match scope {
-        FileScope::Local => std::env::current_dir()
+        FileScope::Work => std::env::current_dir()
             .map_err(|e| format!("Failed to resolve current directory: {}", e))?,
         FileScope::Global => {
             fs::create_dir_all(&layout.alias_dir).map_err(|e| {

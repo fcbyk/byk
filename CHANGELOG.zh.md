@@ -2,24 +2,24 @@
 
 ### 破坏性变更
 
-- **作用域**: `@` / `@@` / `@@@` 改为 `local@` / `global@` / `sys@`（可写唯一前缀 `l@`、`g@`、`s@`）；依赖目录改为 `deps/local@<stem>` 与 `~/.byk/deps/global@<stem>`，需要重装一次依赖
-- **文件命令**: 移除 `..` 分隔写法，改为 `byk local@文件 命令`（全局是 `byk global@文件 命令`）；分隔符改成空格，不再和精确别名 `local@文件.key` 混淆
+- **作用域**: `@` / `@@` / `@@@` 改为 `work@` / `global@` / `special@`（可写唯一前缀 `w@`、`g@`、`s@`）；依赖目录改为 `deps/work@<stem>` 与 `~/.byk/deps/global@<stem>`，需要重装一次依赖
+- **文件命令**: 移除 `..` 分隔写法，改为 `byk work@文件 命令`（全局是 `byk global@文件 命令`）；分隔符改成空格，不再和精确别名 `work@文件.key` 混淆
 - **文件帮助**: 移除 `help` 命令，改用 `-h` / `--help`；文件命令的帮助现在会在 Usage 上方重复目标 `FilePath`
 - **`clone`**: 平台改成来源参数上的前缀（`github:` / `gitee:`），访问 GitHub 的通道改为配置项 `net-github`（`direct` / `ghproxy`）；`clone` 只剩 `--tap` 与 `--deps`
 
 ### 新功能
 
-- **`sys@` 系统文件**: 新增第三个文件域，指向别名文件以外的其他任何文件——`sys@config` 管设置（`net-github`、`banner` 等），`sys@tap` 管 tap 仓库，`sys@shell` 管运行 byk 的那个 shell 的启动文件里的补全块。文件名、动词、设置名与候选值、仓库都参与补全。安装脚本不再写补全，只配 `PATH`
+- **`special@` 特殊文件**: 新增第三个文件域，指向别名文件以外的其他任何文件——`special@config` 管设置（`net-github`、`banner` 等），`special@tap` 管 tap 仓库，`special@shell` 管运行 byk 的那个 shell 的启动文件里的补全块。文件名、动词、设置名与候选值、仓库都参与补全。安装脚本不再写补全，只配 `PATH`
 - **`$paths`**: 与 `$cwd` / `$mode` 一样可继承，子级写了就整体覆盖，`[]` 回到系统 `PATH`
 - **`$deps`**: `base` 是 ghproxy 时，绝对 GitHub 地址（含 Release 资产）同样走代理；终端下显示 curl 原生进度条，非 TTY 保持静默
 - **网络**: `BYK_USE_PROXY=false` 强制直连；否则依次跟随 `BYK_PROXY`、已有代理变量与 Windows 系统代理，且只注入 curl 子进程
 - **`--paths`**: 新增 `Config:` 一行，指出设置文件的位置
-- **completion**: PowerShell 补全注册脚本——`byk __api__ completion powershell`（或 `pwsh`）输出脚本，`sys@shell add completion` 把补全块写进 `$PROFILE`（`pwsh` 与 Windows PowerShell 5.1，按父进程识别）；PowerShell 里补全局选项与 byk 自己解释的参数
+- **completion**: PowerShell 补全注册脚本——`byk __api__ completion powershell`（或 `pwsh`）输出脚本，`special@shell add completion` 把补全块写进 `$PROFILE`（`pwsh` 与 Windows PowerShell 5.1，按父进程识别）；PowerShell 里补全局选项与 byk 自己解释的参数
 - **`clone`**: 路径前（或 `--tap` 的 key 前）可以写 `#`，`<ref>` 因此能含 `/`（`github:user/repo@feature/x#tools/release`）；`@<ref>/<path>` 写法保持不变
 
 ### 问题修复
 
-- **completion**: bash（含 Git Bash）能补 `local@file` 后面的参数——那里的 `@` 是词分隔符，token 会碎成几块
+- **completion**: bash（含 Git Bash）能补 `work@file` 后面的参数——那里的 `@` 是词分隔符，token 会碎成几块
 
 ## v0.8.2 (2026-11-20)
 

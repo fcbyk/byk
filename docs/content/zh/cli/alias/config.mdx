@@ -156,7 +156,7 @@ type AliasFileJSON =
 
 ```bash
 byk build
-# > local@.build /project
+# > work@.build /project
 #
 # > pnpm build
 #
@@ -244,7 +244,7 @@ byk 为此给调用链留了标记：执行别名前把 `文件.key` 压进环�
 （逗号分隔）交给子进程。下一层发现自己已经在链路上，就报错退出：
 
 ```text
-Error: alias recursion detected: local@dev.build -> local@dev.release -> local@dev.build
+Error: alias recursion detected: work@dev.build -> work@dev.release -> work@dev.build
 ```
 
 报的是**完整链路**而不只是首尾两个名字，因为「谁绕回来的」才是要定位的东西。
@@ -329,7 +329,7 @@ Aliases:
 | 文件 | 专属目录 |
 |------|----------|
 | 全局 `~/.byk/alias/hello.byk.json` | `~/.byk/deps/global@hello/` |
-| 局部 `./hello.byk.json` | `./.byk/deps/local@hello/` |
+| 局部 `./hello.byk.json` | `./.byk/deps/work@hello/` |
 
 两种作用域同一套规则，只是根不同：全局的依赖留在 `~/.byk`，局部的依赖跟着项目走（删项目即删依赖，不占全局空间）。局部安装时会自动写一个 `.byk/deps/.gitignore`（内容 `*`），所以下载产物不会出现在 `git status` 里。
 
@@ -383,11 +383,11 @@ byk global@tool clone <source> -d # 或者在克隆时顺手装好
 | clone 来源 | 落盘的 `base` | 资产怎么取 |
 |---|---|---|
 | 远程（URL、`github:` / `gitee:` 前缀） | 绝对 http(s) 目录 URL | `curl` 下载 |
-| 本地（`global@name`、`local@name`、路径） | 本机绝对目录路径 | 直接复制 |
+| 本地（`global@name`、`work@name`、路径） | 本机绝对目录路径 | 直接复制 |
 
 两条路互不越界：**远程 clone 只会写出 URL 形态，所以从网上拿到的别名文件读不了本机文件**。这不是靠检查挡住的，而是它根本拿不到本地路径这种写法。
 
-**通道不写进 `base`。** 落盘的永远是规范上游地址（`https://raw.githubusercontent.com/…`），走不走镜像由 `sys@config` 的 `net-github` 在请求那一刻决定，所以同一份文件换台机器不用改写。旧文件里若 `base` 已经是 `https://gh-proxy.com/...`，`deps i` 仍会把绝对 GitHub 地址交给同一个代理（Release 资产同样加速），相对 `src` 经 base 拼出来已带前缀，不会重复套。
+**通道不写进 `base`。** 落盘的永远是规范上游地址（`https://raw.githubusercontent.com/…`），走不走镜像由 `special@config` 的 `net-github` 在请求那一刻决定，所以同一份文件换台机器不用改写。旧文件里若 `base` 已经是 `https://gh-proxy.com/...`，`deps i` 仍会把绝对 GitHub 地址交给同一个代理（Release 资产同样加速），相对 `src` 经 base 拼出来已带前缀，不会重复套。
 
 镜像改写的是 URL，不是网络出口。下载走的本地代理由 `BYK_USE_PROXY`、`BYK_PROXY`、代理环境变量或 Windows 静态系统代理决定，见[选项与命令](/cli/commands)。
 
@@ -407,7 +407,7 @@ Windows 上还有一条：`/sub` 这种没有盘符的根路径挂在"当前盘"
 
 `$var`、`$paths` 与 `$deps` 自身都会先经过变量替换，可以用 `${version}` 之类的自定义变量拼 URL。
 
-链接文件的依赖：声明跟着目标文件走，安装位置跟链接文件的 key 走——全局链接落到 `~/.byk/deps/global@<链接文件名>/`，局部链接落到它所在项目的 `.byk/deps/local@<链接文件名>/`。详见 [单链接](#单链接)。
+链接文件的依赖：声明跟着目标文件走，安装位置跟链接文件的 key 走——全局链接落到 `~/.byk/deps/global@<链接文件名>/`，局部链接落到它所在项目的 `.byk/deps/work@<链接文件名>/`。详见 [单链接](#单链接)。
 
 ### 变量
 
@@ -415,7 +415,7 @@ Windows 上还有一条：`/sub` 这种没有盘符的根路径挂在"当前盘"
 
 | 来源 | 说明 |
 |------|------|
-| 内置 | `${byk_dir}` → `~/.byk`（资源根，不是二进制目录）；`${work_dir}` → 调用 byk 时的目录（不受 `$cwd` 影响）；`${file_dir}` → 当前别名文件所在目录；`${deps_dir}` → 该文件的依赖目录，全局是 `~/.byk/deps/global@<文件名>`、局部是 `<文件所在目录>/.byk/deps/local@<文件名>` |
+| 内置 | `${byk_dir}` → `~/.byk`（资源根，不是二进制目录）；`${work_dir}` → 调用 byk 时的目录（不受 `$cwd` 影响）；`${file_dir}` → 当前别名文件所在目录；`${deps_dir}` → 该文件的依赖目录，全局是 `~/.byk/deps/global@<文件名>`、局部是 `<文件所在目录>/.byk/deps/work@<文件名>` |
 | `$var` 声明 | 文件级自定义变量 |
 
 同名时**文件声明覆盖内置**——显式写下的值，就是你预期的那个值。
@@ -570,7 +570,7 @@ byk 读取两个位置：**全局目录** `~/.byk/alias/` 与**当前工作目�
 ["~/proj/web/run.byk.json"]
 ```
 
-含义是「放弃自己的身份」：`local@`/`global@` 前缀、key、默认优先级留在链接文件上，别名内容与一切声明都来自目标文件，相对路径也以**目标文件所在目录**为基准。所以同一份 bundle，直接扫描和通过链接，行为完全一致。
+含义是「放弃自己的身份」：`work@`/`global@` 前缀、key、默认优先级留在链接文件上，别名内容与一切声明都来自目标文件，相对路径也以**目标文件所在目录**为基准。所以同一份 bundle，直接扫描和通过链接，行为完全一致。
 
 ```json title="~/proj/web/run.byk.json"
 {
@@ -590,9 +590,9 @@ byk global@ops.build     # 精确调用走链接的 key
 | 只能一项 | 数组写多项时只用第一项，并在 stderr 提示 |
 | 路径基准 | 相对**链接文件所在目录**解析，支持 `~` 和 `${...}` 变量 |
 | 只允许一层 | 目标文件本身不能也是数组，否则报错并跳过该文件 |
-| 身份 | key、`local@`/`global@` 前缀、默认优先级来自链接；其余全部来自目标 |
+| 身份 | key、`work@`/`global@` 前缀、默认优先级来自链接；其余全部来自目标 |
 | `$private` | 照常生效：目标写 `true` 会让链接一起退出合并命名空间，只剩精确调用 |
-| 依赖 | 目标文件里的 `$deps` 照常可用，安装位置跟链接文件的 key 走：全局链接落到 `~/.byk/deps/global@<链接文件名>`，局部链接落到它所在项目的 `.byk/deps/local@<链接文件名>` |
+| 依赖 | 目标文件里的 `$deps` 照常可用，安装位置跟链接文件的 key 走：全局链接落到 `~/.byk/deps/global@<链接文件名>`，局部链接落到它所在项目的 `.byk/deps/work@<链接文件名>` |
 
 :::note
 目标缺失、JSON 损坏、数组为空时，只跳过该文件，其他别名照常可用。
@@ -616,7 +616,7 @@ byk global@ops.build     # 精确调用走链接的 key
 同优先级文件按文件名字母序加载，匿名文件 `.byk.json` 排在同级最后，**后加载的覆盖先加载的**。所以同一目录里若 `a.byk.json` 与 `.byk.json` 都有 `build`，生效的是 `.byk.json` 那份。
 
 :::note 在全局目录里运行
-当 cwd 恰好是 `~/.byk/alias/` 时，那里的文件同时属于「当前目录」和「全局目录」。它会以两个身份被扫描（`local@f` 与 `global@f` 都能精确调用），但**只按全局身份参与一次合并**，不会被合并两遍。
+当 cwd 恰好是 `~/.byk/alias/` 时，那里的文件同时属于「当前目录」和「全局目录」。它会以两个身份被扫描（`work@f` 与 `global@f` 都能精确调用），但**只按全局身份参与一次合并**，不会被合并两遍。
 :::
 
 #### 自定义顺序
@@ -638,7 +638,7 @@ byk global@ops.build     # 精确调用走链接的 key
 
 ### 可见性
 
-`$private: true` 让一段别名**不进入合并空间**，只能通过精确语法 `local@文件.key` / `global@文件.key` 调用。
+`$private: true` 让一段别名**不进入合并空间**，只能通过精确语法 `work@文件.key` / `global@文件.key` 调用。
 
 它和 `$cwd` / `$mode` 一样支持三级继承：文件级 → 分组级 → 别名级，越靠近别名优先级越高；子级写 `false` 可以重新暴露。
 
@@ -652,7 +652,7 @@ byk global@ops.build     # 精确调用走链接的 key
 }
 ```
 
-`byk shared` 照常可用；`byk scratch.deploy` 找不到，只能 `byk local@run.scratch.deploy`。
+`byk shared` 照常可用；`byk scratch.deploy` 找不到，只能 `byk work@run.scratch.deploy`。
 
 整个文件都不进合并空间时，把 `$private` 写在文件根：
 
@@ -693,17 +693,17 @@ clone 这个文件只会得到 `shared.whoami`，`deploy` 被剔除。如果剔�
 
 | 语法 | 说明 |
 |------|------|
-| `byk local@release.build` | 当前目录 `release.byk.json` 的 `build` |
+| `byk work@release.build` | 当前目录 `release.byk.json` 的 `build` |
 | `byk global@release.build` | 全局 `~/.byk/alias/release.byk.json` 的 `build` |
-| `byk local@.build` | 当前目录匿名文件 `.byk.json` 的 `build` |
+| `byk work@.build` | 当前目录匿名文件 `.byk.json` 的 `build` |
 | `byk global@.build` | 全局匿名文件 `.byk.json` 的 `build` |
 
 约定：
 
 - 只做文件路由，不做 fallback
-- 作用域可缩写成唯一前缀：`local@` 写 `l@` / `lo@` / `loc@`，`global@` 写 `g@`；文件名与 key 永远不缩写
-- 文件不存在 → `Alias file not found: local@release`（全局报 `global@release`）
-- 文件存在但无法加载 → `Alias file cannot be loaded: local@release`，附原因并提示 `byk --check`
-- 文件存在但 key 不存在 → `Alias key not found in file local@release: build`
+- 作用域可缩写成唯一前缀：`work@` 写 `w@` / `wo@` / `wor@`，`global@` 写 `g@`；文件名与 key 永远不缩写
+- 文件不存在 → `Alias file not found: work@release`（全局报 `global@release`）
+- 文件存在但无法加载 → `Alias file cannot be loaded: work@release`，附原因并提示 `byk --check`
+- 文件存在但 key 不存在 → `Alias key not found in file work@release: build`
 - 路径段以 `$` 开头 → `Not an alias (reserved $ field)`；`$` 字段是保留字段或自定义元数据，不是别名
 - 以上都以退出码 1 结束

@@ -97,15 +97,15 @@ def test_help_for_command_without_options(runner):
 
 
 def test_help_local_and_anonymous_prefixes(runner):
-    local = runner.run("local@ops", "-h")
+    local = runner.run("work@ops", "-h")
     anonymous = runner.run("global@", "-h")
 
     assert local.returncode == 0
     assert local.stdout.startswith(
-        "\nCommands for this local alias file. "
-        "Run `byk local@ops <command> -h` for details.\n\nFilePath: "
+        "\nCommands for this work alias file. "
+        "Run `byk work@ops <command> -h` for details.\n\nFilePath: "
     )
-    assert "Usage: byk local@ops [OPTIONS] [COMMAND] [ARGS]..." in local.stdout
+    assert "Usage: byk work@ops [OPTIONS] [COMMAND] [ARGS]..." in local.stdout
     assert any(line.startswith("  init ") for line in local.stdout.splitlines())
     assert anonymous.returncode == 0
     assert anonymous.stdout.startswith(
@@ -115,10 +115,10 @@ def test_help_local_and_anonymous_prefixes(runner):
     assert "Usage: byk global@ [OPTIONS] [COMMAND] [ARGS]..." in anonymous.stdout
     assert any(line.startswith("  init ") for line in anonymous.stdout.splitlines())
 
-    local_set = runner.run("local@ops", "set", "-h")
+    local_set = runner.run("work@ops", "set", "-h")
     anonymous_set = runner.run("global@", "set", "-h")
     assert local_set.returncode == 0
-    assert "Usage: byk local@ops set [OPTIONS] [key]" in local_set.stdout
+    assert "Usage: byk work@ops set [OPTIONS] [key]" in local_set.stdout
     assert anonymous_set.returncode == 0
     assert "Usage: byk global@ set [OPTIONS] [key]" in anonymous_set.stdout
 

@@ -66,7 +66,7 @@ fn render_index(scope: FileScope, stem: &str, layout: &PathLayout) -> String {
         .map(|info| (info.name.to_string(), info.description))
         .collect();
     let kind = match scope {
-        FileScope::Local => "local",
+        FileScope::Work => "work",
         FileScope::Global => "global",
     };
     let base = base(scope, stem);
@@ -169,7 +169,7 @@ fn render_verb(base: &str, info: &VerbInfo, target: &str) -> String {
 fn clone_sources() -> Vec<(String, &'static str)> {
     let mut rows = vec![
         (
-            "local@name, global@name".to_string(),
+            "work@name, global@name".to_string(),
             "An alias file in the current or global directory",
         ),
         (
@@ -362,7 +362,7 @@ mod tests {
 
         assert!(text.contains("Usage: byk global@ops clone [OPTIONS] <source>"));
         assert!(text.contains("\nSources:\n"));
-        assert!(text.contains("local@name, global@name"));
+        assert!(text.contains("work@name, global@name"));
         assert!(text.contains("github:<spec>"));
         assert!(text.contains("the transport comes from `net-github`"));
         assert!(text.contains("gitee:<spec>"));
@@ -393,19 +393,19 @@ mod tests {
 
     #[test]
     fn local_and_anonymous_prefix() {
-        let local = strip_ansi(&run(FileScope::Local, "ops", &[], &layout()).unwrap());
+        let local = strip_ansi(&run(FileScope::Work, "ops", &[], &layout()).unwrap());
         assert!(local.starts_with(
-            "\nCommands for this local alias file. Run `byk local@ops <command> -h` for details.\n\nFilePath: "
+            "\nCommands for this work alias file. Run `byk work@ops <command> -h` for details.\n\nFilePath: "
         ));
-        assert!(local.contains("Usage: byk local@ops [OPTIONS]"));
+        assert!(local.contains("Usage: byk work@ops [OPTIONS]"));
         assert!(local.contains("  init     Create this alias file"));
 
         let anonymous = strip_ansi(&run(FileScope::Global, "", &[], &layout()).unwrap());
         assert!(anonymous.contains("Usage: byk global@ [OPTIONS]"));
 
         let local_set =
-            strip_ansi(&run(FileScope::Local, "ops", &args(&["set"]), &layout()).unwrap());
-        assert!(local_set.contains("Usage: byk local@ops set [OPTIONS] [key]"));
+            strip_ansi(&run(FileScope::Work, "ops", &args(&["set"]), &layout()).unwrap());
+        assert!(local_set.contains("Usage: byk work@ops set [OPTIONS] [key]"));
 
         let anonymous_set =
             strip_ansi(&run(FileScope::Global, "", &args(&["set"]), &layout()).unwrap());

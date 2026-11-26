@@ -4,21 +4,21 @@
 
 use super::scope::Scope;
 
-/// 构建文件 key：`local@<stem>` / `global@<stem>`，空 stem 为 `local@` / `global@`。
+/// 构建文件 key：`work@<stem>` / `global@<stem>`，空 stem 为 `work@` / `global@`。
 pub(crate) fn build_file_key(stem: &str, is_global: bool) -> String {
     let prefix = if is_global {
         Scope::Global.token()
     } else {
-        Scope::Local.token()
+        Scope::Work.token()
     };
     format!("{}{}", prefix, stem)
 }
 
 /// key 是否指向匿名文件。
 ///
-/// 依赖 `stem` 不含 `@`：`local@x` 的 `x` 不可能是空串之外的前缀形态。
+/// 依赖 `stem` 不含 `@`：`work@x` 的 `x` 不可能是空串之外的前缀形态。
 pub(crate) fn is_anonymous_key(key: &str) -> bool {
-    key == Scope::Local.token() || key == Scope::Global.token()
+    key == Scope::Work.token() || key == Scope::Global.token()
 }
 
 #[cfg(test)]
@@ -27,7 +27,7 @@ mod tests {
 
     #[test]
     fn build_key_local_empty_stem() {
-        assert_eq!(build_file_key("", false), "local@");
+        assert_eq!(build_file_key("", false), "work@");
     }
 
     #[test]
@@ -37,7 +37,7 @@ mod tests {
 
     #[test]
     fn build_key_local_with_stem() {
-        assert_eq!(build_file_key("release", false), "local@release");
+        assert_eq!(build_file_key("release", false), "work@release");
     }
 
     #[test]
@@ -47,9 +47,9 @@ mod tests {
 
     #[test]
     fn detects_anonymous_keys() {
-        assert!(is_anonymous_key("local@"));
+        assert!(is_anonymous_key("work@"));
         assert!(is_anonymous_key("global@"));
-        assert!(!is_anonymous_key("local@ops"));
+        assert!(!is_anonymous_key("work@ops"));
         assert!(!is_anonymous_key("global@ops"));
     }
 }

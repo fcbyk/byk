@@ -2,7 +2,7 @@
 
 mod at_prefix;
 mod filecmd_args;
-mod sys_args;
+mod special_args;
 
 use at_prefix::{complete_at_prefix, complete_nested_alias};
 
@@ -12,13 +12,13 @@ use at_prefix::collect_object_keys;
 use std::collections::HashMap;
 
 use crate::filecmd::spec as file_spec;
-use crate::filecmd::sys as sys_files;
+use crate::filecmd::special as special_files;
 use crate::model::PathLayout;
 use crate::resolve;
 use crate::utils::path::display_path;
 
 use self::filecmd_args as file_complete;
-use self::sys_args as system_complete;
+use self::special_args as special_complete;
 
 pub fn generate(shell: &str) {
     match shell {
@@ -66,9 +66,9 @@ pub fn complete(args: &[String], layout: &PathLayout, with_descriptions: bool) {
     }
 }
 
-/// 动态描述：文件 key 给别名文件路径，系统文件的候选给各自的说明。
+/// 动态描述：文件 key 给别名文件路径，特殊文件的候选给各自的说明。
 ///
-/// 系统文件的说明只能按「问的是哪个文件」来查：`config` 与 `tap` 都有 `list`，
+/// 特殊文件的说明只能按「问的是哪个文件」来查：`config` 与 `tap` 都有 `list`，
 /// 前者是设置表、后者是仓库清单。
 fn dynamic_descriptions(
     args: &[String],
@@ -77,9 +77,12 @@ fn dynamic_descriptions(
 ) -> HashMap<String, String> {
     let mut descriptions = file_key_descriptions(candidates, layout);
 
-    if let Some(name) = args.first().and_then(|token| sys_files::parse_token(token)) {
+    if let Some(name) = args
+        .first()
+        .and_then(|token| special_files::parse_token(token))
+    {
         for candidate in candidates {
-            if let Some(description) = sys_files::describe(name, candidate) {
+            if let Some(description) = special_files::describe(name, candidate) {
                 descriptions.insert(candidate.clone(), description.to_string());
             }
         }
@@ -90,14 +93,14 @@ fn dynamic_descriptions(
 
 /// 文件 key → 展示用别名文件路径。
 ///
-/// 文件 key 不含点号；带点号的是精确别名路径。候选可能用了缩写前缀（`loc@`），
+/// 文件 key 不含点号；带点号的是精确别名路径。候选可能用了缩写前缀（`wor@`），
 /// 这里还原成完整 key 再查文件路径，描述挂回候选本身。
 fn file_key_descriptions(candidates: &[String], layout: &PathLayout) -> HashMap<String, String> {
     let scoped: Vec<(crate::model::Scope, &str, &String)> = candidates
         .iter()
         .filter_map(|candidate| {
             let (scope, rest) = crate::model::Scope::split(candidate)?;
-            (scope != crate::model::Scope::Sys && !rest.contains('.'))
+            (scope != crate::model::Scope::Special && !rest.contains('.'))
                 .then_some((scope, rest, candidate))
         })
         .collect();
@@ -138,7 +141,7 @@ fn describe_in(candidate: &str, prefer_file_option: bool) -> Option<&'static str
         _ => file_spec::describe_option(candidate)
             .or_else(|| file_spec::describe_verb(candidate))
             .or_else(|| file_spec::describe_subcommand(candidate))
-            .or_else(|| sys_files::describe_file(candidate)),
+            .or_else(|| special_files::describe_file(candidate)),
     }
 }
 
@@ -158,7 +161,7 @@ fn format_candidate(
     }
 }
 
-/// 第一个词是别名时只在第一词位置补；文件命令按 `local@file <verb>` 的位置补。
+/// 第一个词是别名时只在第一词位置补；文件命令按 `work@file <verb>` 的位置补。
 fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
     let Some((partial, prev)) = args.split_last() else {
         // 无参数：焦点在第一个词
@@ -169,8 +172,8 @@ fn candidates(args: &[String], layout: &PathLayout) -> Vec<String> {
         return get_completions(partial, layout);
     }
 
-    // `sys@file` 的语法由各文件自己定，先交给系统文件的补全；它只认注册表里的名字
-    system_complete::complete(prev, partial, layout)
+    // `special@file` 的语法由各文件自己定，先交给特殊文件的补全；它只认注册表里的名字
+    special_complete::complete(prev, partial, layout)
         .or_else(|| file_complete::complete(prev, partial, layout))
         .unwrap_or_default()
 }
@@ -205,7 +208,7 @@ fn get_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
 
 /// 补全顶级命令：只列合并树里的顶层 key。
 ///
-/// 文件命名空间属于精确执行语法，只在词命中作用域前缀（`local@` / `global@` / `sys@`）
+/// 文件命名空间属于精确执行语法，只在词命中作用域前缀（`work@` / `global@` / `special@`）
 /// 时由 `complete_at_prefix` 提供，避免和可执行别名混在同一张菜单里。
 fn get_top_level_completions(partial: &str, layout: &PathLayout) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
@@ -253,7 +256,7 @@ fn print_bash() {
         r##"_byk_completion() {{
     local i cur w glue=0
     local -a words
-    # Git Bash 的 COMP_WORDBREAKS 含 @：`local@demo` 在 COMP_WORDS 里被切成
+    # Git Bash 的 COMP_WORDBREAKS 含 @：`work@demo` 在 COMP_WORDS 里被切成
     # local / @ / demo。纯分隔符拼回前一个词，紧跟其后的部分也接着拼
     for ((i = 1; i <= COMP_CWORD; i++)); do
         w="${{COMP_WORDS[i]}}"
@@ -552,23 +555,23 @@ mod tests {
     fn at_prefix_completes_system_files() {
         let env = TestEnv::new();
         let files = vec![
-            "sys@config".to_string(),
-            "sys@tap".to_string(),
-            "sys@shell".to_string(),
+            "special@config".to_string(),
+            "special@tap".to_string(),
+            "special@shell".to_string(),
         ];
-        // 候选来自注册表而不是磁盘：没有 sys@config 这个文件也能补出来
-        assert_eq!(complete_at_prefix("sys@", &env.layout), files);
+        // 候选来自注册表而不是磁盘：没有 special@config 这个文件也能补出来
+        assert_eq!(complete_at_prefix("special@", &env.layout), files);
         assert_eq!(
-            complete_at_prefix("sys@c", &env.layout),
-            vec!["sys@config".to_string()]
+            complete_at_prefix("special@c", &env.layout),
+            vec!["special@config".to_string()]
         );
         assert_eq!(
-            complete_at_prefix("sys@t", &env.layout),
-            vec!["sys@tap".to_string()]
+            complete_at_prefix("special@t", &env.layout),
+            vec!["special@tap".to_string()]
         );
-        assert!(complete_at_prefix("sys@nope", &env.layout).is_empty());
+        assert!(complete_at_prefix("special@nope", &env.layout).is_empty());
         // 三级前缀不能被 `global@` 的文件 key 分支吞掉
-        assert_eq!(get_completions("sys@", &env.layout), files);
+        assert_eq!(get_completions("special@", &env.layout), files);
     }
 
     #[test]
@@ -576,7 +579,7 @@ mod tests {
         // 文件命令改成空格分隔后，`..` 不再保留含义，只是普通点号路径。
         let env = TestEnv::new();
         assert!(complete_at_prefix("global@anything..", &env.layout).is_empty());
-        assert!(complete_at_prefix("local@..i", &env.layout).is_empty());
+        assert!(complete_at_prefix("work@..i", &env.layout).is_empty());
     }
 
     #[test]
@@ -977,7 +980,7 @@ mod tests {
         // 第二个源不补
         assert!(
             candidates(
-                &words(&["global@ops", "clone", "global@src", "local@"]),
+                &words(&["global@ops", "clone", "global@src", "work@"]),
                 &env.layout
             )
             .is_empty()
@@ -1058,12 +1061,15 @@ mod tests {
 
     #[test]
     fn system_file_tokens_carry_descriptions() {
-        assert_eq!(describe_in("sys@config", false), Some("byk settings"));
-        assert_eq!(describe_in("sys@tap", false), Some("tap repositories"));
-        assert_eq!(describe_in("sys@shell", false), Some("shell startup file"));
+        assert_eq!(describe_in("special@config", false), Some("byk settings"));
+        assert_eq!(describe_in("special@tap", false), Some("tap repositories"));
         assert_eq!(
-            format_candidate("sys@config", true, false, None),
-            "sys@config\tbyk settings"
+            describe_in("special@shell", false),
+            Some("shell startup file")
+        );
+        assert_eq!(
+            format_candidate("special@config", true, false, None),
+            "special@config\tbyk settings"
         );
     }
 
@@ -1071,7 +1077,7 @@ mod tests {
     fn candidates_system_file_verbs() {
         let env = TestEnv::new();
         assert_eq!(
-            candidates(&words(&["sys@config", ""]), &env.layout),
+            candidates(&words(&["special@config", ""]), &env.layout),
             vec![
                 "list".to_string(),
                 "get".to_string(),
@@ -1080,7 +1086,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            candidates(&words(&["sys@tap", "u"]), &env.layout),
+            candidates(&words(&["special@tap", "u"]), &env.layout),
             vec!["update".to_string()]
         );
     }
@@ -1088,9 +1094,13 @@ mod tests {
     #[test]
     fn system_file_descriptions_follow_the_addressed_file() {
         let env = TestEnv::new();
-        let config =
-            dynamic_descriptions(&words(&["sys@config", ""]), &words(&["list"]), &env.layout);
-        let tap = dynamic_descriptions(&words(&["sys@tap", ""]), &words(&["list"]), &env.layout);
+        let config = dynamic_descriptions(
+            &words(&["special@config", ""]),
+            &words(&["list"]),
+            &env.layout,
+        );
+        let tap =
+            dynamic_descriptions(&words(&["special@tap", ""]), &words(&["list"]), &env.layout);
 
         // 同名动词在两个文件里含义不同，描述不能串
         assert_eq!(
@@ -1107,7 +1117,7 @@ mod tests {
     fn system_file_descriptions_cover_setting_names() {
         let env = TestEnv::new();
         let map = dynamic_descriptions(
-            &words(&["sys@config", "set", ""]),
+            &words(&["special@config", "set", ""]),
             &words(&["banner"]),
             &env.layout,
         );
@@ -1170,7 +1180,7 @@ mod tests {
         env.add_alias_file("release", &json!({"deploy": "echo deploy"}));
         assert!(file_key_descriptions(&["build".to_string()], &env.layout).is_empty());
         assert!(
-            file_key_descriptions(&["local@release.deploy".to_string()], &env.layout).is_empty()
+            file_key_descriptions(&["work@release.deploy".to_string()], &env.layout).is_empty()
         );
     }
 

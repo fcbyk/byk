@@ -261,7 +261,7 @@ def test_set_local_and_anonymous(runner, tmp_path):
     anonymous = runner.prepare_alias_file("", "{}\n")
 
     local_result = runner.run(
-        "local@ops", "set", "build", "--cmd", "echo local", cwd=str(tmp_path)
+        "work@ops", "set", "build", "--cmd", "echo local", cwd=str(tmp_path)
     )
     anonymous_result = runner.run("global@", "set", "build", "--cmd", "echo anon")
 
