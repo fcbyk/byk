@@ -229,10 +229,7 @@ mod tests {
 
     #[test]
     fn accepts_one_target() {
-        assert_eq!(
-            parse_args(&["local@tool".to_string()]).unwrap(),
-            "local@tool"
-        );
+        assert_eq!(parse_args(&["work@tool".to_string()]).unwrap(), "work@tool");
     }
 
     #[test]

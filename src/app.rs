@@ -48,9 +48,9 @@ fn dispatch(cli: &Cli, option_specs: &[(String, String)], layout: &PathLayout) -
     alias::run(command_name, command_args, layout)
 }
 
-/// 帮助页顶部的装饰框要不要画，由 `sys@config banner` 决定。
+/// 帮助页顶部的装饰框要不要画，由 `special@config banner` 决定。
 ///
 /// 只在帮助路径上读配置：跑别名的时候不该为一个装饰框去碰磁盘。
 fn banner_enabled(layout: &PathLayout) -> bool {
-    filecmd::sys::config::banner_enabled(layout)
+    filecmd::special::config::banner_enabled(layout)
 }

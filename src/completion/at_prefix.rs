@@ -1,22 +1,22 @@
-//! 作用域前缀（`local@` / `global@` / `sys@`）的补全与 key 收集。
+//! 作用域前缀（`work@` / `global@` / `special@`）的补全与 key 收集。
 
 use std::collections::HashMap;
 
 use crate::model::{MergedNode, PathLayout, Scope, build_file_key};
 use crate::resolve;
 
-/// 补全 `local@` / `global@` / `sys@`：先补文件 key，输入点号后补该文件内的别名路径。
+/// 补全 `work@` / `global@` / `special@`：先补文件 key，输入点号后补该文件内的别名路径。
 ///
-/// 候选回显用户已经敲的前缀（`loc@` 给 `loc@build`），否则光标处的词会被换成完整写法。
+/// 候选回显用户已经敲的前缀（`wor@` 给 `wor@build`），否则光标处的词会被换成完整写法。
 pub(crate) fn complete_at_prefix(partial: &str, layout: &PathLayout) -> Vec<String> {
     let Some((scope, rest)) = Scope::split(partial) else {
         return Vec::new();
     };
     let typed = &partial[..partial.len() - rest.len()];
 
-    // `sys@` 是系统文件命名空间：候选来自注册表，不来自磁盘，也没有点号子路径
-    if scope == Scope::Sys {
-        return crate::filecmd::sys::names()
+    // `special@` 是特殊文件命名空间：候选来自注册表，不来自磁盘，也没有点号子路径
+    if scope == Scope::Special {
+        return crate::filecmd::special::names()
             .filter(|name| name.starts_with(rest))
             .map(|name| format!("{}{}", typed, name))
             .collect();

@@ -16,8 +16,8 @@
   },
   {
     "type": "file",
-    "name": "system-files",
-    "label": "系统文件"
+    "name": "special-files",
+    "label": "特殊文件"
   },
   {
     "type": "file",

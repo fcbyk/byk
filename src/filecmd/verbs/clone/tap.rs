@@ -490,7 +490,7 @@ pub(super) fn target_url(spec: &Spec, value: &str) -> Result<String, String> {
     let url = Forge::Github.raw_url(
         &source::encode_segment(&spec.user),
         &source::encode_segment(&spec.repo),
-        &source::encode_segment(&spec.reference),
+        &source::encode_ref(&spec.reference),
         &encoded,
     );
     ensure_not_index(&url)?;

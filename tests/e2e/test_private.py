@@ -67,7 +67,7 @@ def test_private_local_file_does_not_shadow_global(runner, tmp_path):
     assert merged.returncode == 0
     assert "global" in merged.stdout
 
-    exact = runner.run("local@p.deploy", cwd=str(tmp_path))
+    exact = runner.run("work@p.deploy", cwd=str(tmp_path))
     assert exact.returncode == 0
     assert "local" in exact.stdout
 

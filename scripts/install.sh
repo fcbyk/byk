@@ -65,4 +65,4 @@ fi
 # 改用户的 rc 由 byk 自己做，能探测、能撤销、能看见落到哪个文件。
 echo ""
 echo "Shell completion is not enabled. Turn it on with:"
-echo "  byk sys@shell add completion"
+echo "  byk special@shell add completion"

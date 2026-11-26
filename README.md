@@ -45,19 +45,19 @@ byk global@ops set clean --cmd "cargo clean" # add one entry
 byk global@ops json                          # look at what is there now
 ```
 
-Already have one in a project? `byk global@run clone local@run` copies it over.
+Already have one in a project? `byk global@run clone work@run` copies it over.
 
 ## CLI
 
 Five invocation forms:
 
 - `byk <alias> [args...]` — look it up across the current and global directories, then run it
-- `byk local@file.key` / `global@file.key` — route straight to one exact file
-- `byk local@file command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `deps`, `destroy`, `clear`; `byk local@file -h` lists them all
-- `byk sys@file command` — system files, for files that are not aliases: `sys@config` (settings), `sys@tap` (tap repositories), `sys@shell` (your shell's startup file); `byk sys@config -h` lists them
+- `byk work@file.key` / `global@file.key` — route straight to one exact file
+- `byk work@file command` — file commands: `init`, `set`, `remove`, `json`, `path`, `rename`, `clone`, `link`, `deps`, `destroy`, `clear`; `byk work@file -h` lists them all
+- `byk special@file command` — special files, non-alias files that each have their own commands: `special@config` (settings), `special@tap` (tap repositories), `special@shell` (your shell's startup file); `byk special@config -h` lists them
 - `byk __api__` — read-only interface for shell completion and editor plugins (hidden)
 
-Options: `--paths` lists the alias files byk scans, `--check` validates them, `-h` shows help and every alias, `-v` shows the version. Downloads follow `BYK_USE_PROXY` / `BYK_PROXY`, existing proxy variables, and the Windows system proxy. Full descriptions live in [Options & Commands](https://cli.fcbyk.com/cli/commands), [File Commands](https://cli.fcbyk.com/cli/file-commands) and [System Files](https://cli.fcbyk.com/cli/system-files).
+Options: `--paths` lists the alias files byk scans, `--check` validates them, `-h` shows help and every alias, `-v` shows the version. Downloads follow `BYK_USE_PROXY` / `BYK_PROXY`, existing proxy variables, and the Windows system proxy. Full descriptions live in [Options & Commands](https://cli.fcbyk.com/cli/commands), [File Commands](https://cli.fcbyk.com/cli/file-commands) and [Special Files](https://cli.fcbyk.com/cli/special-files).
 
 ## Installation
 

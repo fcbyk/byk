@@ -168,7 +168,7 @@ Before running, byk prints two lines to **stderr**: the source (`file.key` plus 
 
 ```bash
 byk build
-# > local@.build /project
+# > work@.build /project
 #
 # > pnpm build
 #
@@ -252,7 +252,7 @@ Interactive and silent are the two extremes of one axis: interactive has to show
 byk therefore leaves a trail on the call chain: before running an alias it pushes `file.key` onto the `BYK_ALIAS_STACK` environment variable (comma-separated) and hands it to the child process. A level that finds itself already on the chain reports and exits:
 
 ```text
-Error: alias recursion detected: local@dev.build -> local@dev.release -> local@dev.build
+Error: alias recursion detected: work@dev.build -> work@dev.release -> work@dev.build
 ```
 
 The **whole chain** is printed, not just the endpoints — which level looped back is the thing worth locating. Chains deeper than 32 levels are stopped as well: that backstop exists for wrappers that scrub the environment (`env -i byk build`), where the trail cannot survive and depth is all that is left.
@@ -334,7 +334,7 @@ A resolved `$cwd` is appended in parentheses only when no description is set —
 | File | Dedicated directory |
 |------|---------------------|
 | Global `~/.byk/alias/hello.byk.json` | `~/.byk/deps/global@hello/` |
-| Local `./hello.byk.json` | `./.byk/deps/local@hello/` |
+| Local `./hello.byk.json` | `./.byk/deps/work@hello/` |
 
 Both scopes follow the same rules, only the root differs: global dependencies stay under `~/.byk`, local ones travel with the project (delete the project, delete its dependencies — no global clutter). A local install writes `.byk/deps/.gitignore` containing `*`, so downloaded assets never show up in `git status`.
 
@@ -388,11 +388,11 @@ byk global@tool clone <source> -d # or install them right after cloning
 | Clone source | `base` landed on disk | How assets are fetched |
 |---|---|---|
 | Remote (a URL, or a `github:` / `gitee:` prefix) | Absolute http(s) directory URL | `curl` |
-| Local (`global@name`, `local@name`, a path) | Local absolute directory path | direct copy |
+| Local (`global@name`, `work@name`, a path) | Local absolute directory path | direct copy |
 
 Neither side crosses into the other: **a remote clone only ever writes the URL form, so an alias file you got from the network cannot read local files.** That is not enforced by a check — the local-path form simply never reaches it.
 
-**The transport never lands in `base`.** What is written is always the canonical upstream URL (`https://raw.githubusercontent.com/…`); whether a mirror is used is decided at request time by `net-github` in `sys@config`, so the same file needs no rewriting on another machine. For older files whose `base` is already a `https://gh-proxy.com/...` URL, `deps i` still routes absolute GitHub addresses through the same proxy (release assets included), and relative `src` entries already carry the prefix through `base`, so nothing is wrapped twice.
+**The transport never lands in `base`.** What is written is always the canonical upstream URL (`https://raw.githubusercontent.com/…`); whether a mirror is used is decided at request time by `net-github` in `special@config`, so the same file needs no rewriting on another machine. For older files whose `base` is already a `https://gh-proxy.com/...` URL, `deps i` still routes absolute GitHub addresses through the same proxy (release assets included), and relative `src` entries already carry the prefix through `base`, so nothing is wrapped twice.
 
 The mirror rewrites the URL, not the network egress. The local proxy used for downloads is chosen by `BYK_USE_PROXY`, `BYK_PROXY`, proxy environment variables, or the static Windows system proxy; see [Options & Commands](/cli/commands).
 
@@ -420,7 +420,7 @@ Variables come from two places and are merged into **a single table**, substitut
 
 | Source | Description |
 |--------|-------------|
-| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${work_dir}` → the directory `byk` was invoked from (unaffected by `$cwd`); `${file_dir}` → the directory holding the current alias file; `${deps_dir}` → that file's dependency directory: `~/.byk/deps/global@<file-name>` for global files, `<file-dir>/.byk/deps/local@<file-name>` for local ones |
+| Built-in | `${byk_dir}` → `~/.byk` (the resource root, not the binary directory); `${work_dir}` → the directory `byk` was invoked from (unaffected by `$cwd`); `${file_dir}` → the directory holding the current alias file; `${deps_dir}` → that file's dependency directory: `~/.byk/deps/global@<file-name>` for global files, `<file-dir>/.byk/deps/work@<file-name>` for local ones |
 | `$var` declarations | File-scoped custom variables |
 
 On a name collision, **the file declaration wins** — the value you wrote explicitly is the value you get.
@@ -575,7 +575,7 @@ When the root is an **array holding one path**, the file is a link file: a point
 ["~/proj/web/run.byk.json"]
 ```
 
-The link file gives up its own identity: the `local@` / `global@` prefix, its key and its default priority stay with the link file, while the aliases and every declaration come from the target — and relative paths resolve against the **target's** directory. The same bundle therefore behaves identically whether it is scanned directly or reached through a link.
+The link file gives up its own identity: the `work@` / `global@` prefix, its key and its default priority stay with the link file, while the aliases and every declaration come from the target — and relative paths resolve against the **target's** directory. The same bundle therefore behaves identically whether it is scanned directly or reached through a link.
 
 ```json title="~/proj/web/run.byk.json"
 {
@@ -595,9 +595,9 @@ byk global@ops.build     # exact call goes through the link's key
 | One entry only | Extra entries are ignored with a note on stderr; the first is used |
 | Path base | Relative paths resolve against the **link file's** directory; `~` and `${...}` work |
 | One level | The target may not itself be an array; that is an error and the file is skipped |
-| Identity | Key, `local@` / `global@` prefix and default priority come from the link; everything else from the target |
+| Identity | Key, `work@` / `global@` prefix and default priority come from the link; everything else from the target |
 | `$private` | Still honoured: a target with `true` pulls the link out of the merged namespace, leaving exact calls only |
-| Dependencies | `$deps` declared in the target works as usual; the install location follows the link file's key: `~/.byk/deps/global@<link-file-name>` for a global link, `<link-dir>/.byk/deps/local@<link-file-name>` for a local one |
+| Dependencies | `$deps` declared in the target works as usual; the install location follows the link file's key: `~/.byk/deps/global@<link-file-name>` for a global link, `<link-dir>/.byk/deps/work@<link-file-name>` for a local one |
 
 :::note
 A missing target, broken JSON or an empty array only skips that one file — other aliases keep working.
@@ -621,7 +621,7 @@ Hence "near-first": project files automatically override same-named global alias
 Files at the same priority load in alphabetical order by filename, and the anonymous `.byk.json` sorts **last** among its peers; later files override earlier ones. So if both `a.byk.json` and `.byk.json` in one directory define `build`, the `.byk.json` copy is the one that runs.
 
 :::note Running inside the global directory
-When the cwd happens to be `~/.byk/alias/`, the files there belong to both the "current directory" and the "global directory". They are scanned in both roles (`local@f` and `global@f` both work), but they participate in the merge **only once, as the global role** — they are never merged twice.
+When the cwd happens to be `~/.byk/alias/`, the files there belong to both the "current directory" and the "global directory". They are scanned in both roles (`work@f` and `global@f` both work), but they participate in the merge **only once, as the global role** — they are never merged twice.
 :::
 
 #### Custom Ordering
@@ -643,7 +643,7 @@ Only write a number when you need to outrank other files in the same directory:
 
 ### Visibility
 
-`$private: true` keeps a subtree **out of the merged space**; it stays reachable through exact syntax `local@file.key` / `global@file.key`.
+`$private: true` keeps a subtree **out of the merged space**; it stays reachable through exact syntax `work@file.key` / `global@file.key`.
 
 Like `$cwd` and `$mode`, it has three levels of inheritance: file → group → alias, with the closest level winning. A child can set `false` to expose its subtree again.
 
@@ -657,7 +657,7 @@ Like `$cwd` and `$mode`, it has three levels of inheritance: file → group → 
 }
 ```
 
-`byk shared` still works; `byk scratch.deploy` is not found and only `byk local@run.scratch.deploy` reaches it.
+`byk shared` still works; `byk scratch.deploy` is not found and only `byk work@run.scratch.deploy` reaches it.
 
 To keep a whole file out of the merged space, put `$private` at the file root:
 
@@ -698,17 +698,17 @@ Cloning this file yields only `shared.whoami`; `deploy` is dropped. If nothing w
 
 | Syntax | Description |
 |--------|-------------|
-| `byk local@release.build` | `build` from `release.byk.json` in the current directory |
+| `byk work@release.build` | `build` from `release.byk.json` in the current directory |
 | `byk global@release.build` | `build` from `~/.byk/alias/release.byk.json` |
-| `byk local@.build` | `build` from the anonymous `.byk.json` in the current directory |
+| `byk work@.build` | `build` from the anonymous `.byk.json` in the current directory |
 | `byk global@.build` | `build` from the anonymous `.byk.json` globally |
 
 Conventions:
 
 - Pure file routing, no fallback
-- The scope may be abbreviated to a unique prefix: `l@` / `lo@` / `loc@` for `local@`, `g@` for `global@`; the file name and key are never abbreviated
-- File not found → `Alias file not found: local@release` (`global@release` on the global side)
-- File exists but cannot be loaded → `Alias file cannot be loaded: local@release`, with the reason and a `byk --check` hint
-- File exists but key not found → `Alias key not found in file local@release: build`
+- The scope may be abbreviated to a unique prefix: `w@` / `wo@` / `wor@` for `work@`, `g@` for `global@`; the file name and key are never abbreviated
+- File not found → `Alias file not found: work@release` (`global@release` on the global side)
+- File exists but cannot be loaded → `Alias file cannot be loaded: work@release`, with the reason and a `byk --check` hint
+- File exists but key not found → `Alias key not found in file work@release: build`
 - A path segment starts with `$` → `Not an alias (reserved $ field)`; `$` fields are reserved or custom metadata, not aliases
 - All of these exit with code 1

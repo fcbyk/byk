@@ -140,7 +140,7 @@ pub fn to_alias_definition(value: &AliasValue) -> AliasDefinition {
 /// 单个别名文件的数据结构。
 #[derive(Debug, Clone)]
 pub struct AliasFile {
-    /// 文件 key: "local@release" | "global@release" | "local@" | "global@"
+    /// 文件 key: "work@release" | "global@release" | "work@" | "global@"
     pub key: String,
     pub priority: i32,
     /// 过滤后的原始 JSON（已去除 $priority/$cwd/$mode/$private/$clone/$paths/$var，已过滤非法 key）
@@ -173,7 +173,7 @@ impl AliasFile {
 pub struct ResolvedAlias {
     /// 解析后的可执行定义。
     pub definition: AliasDefinition,
-    /// 来源文件 key，如 "local@release"
+    /// 来源文件 key，如 "work@release"
     pub source: String,
     /// 来源配置文件路径（文件本身，非目录）
     pub source_path: Option<PathBuf>,

@@ -100,4 +100,4 @@ def test_completes_file_commands_after_the_key(runner):
 
 
 def test_completes_system_file_commands_after_the_name(runner):
-    assert complete(runner, "byk sys@config ") == ["list", "get", "set", "unset"]
+    assert complete(runner, "byk special@config ") == ["list", "get", "set", "unset"]

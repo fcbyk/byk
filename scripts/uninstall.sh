@@ -14,7 +14,7 @@ else
 fi
 
 # Remove PATH and completion entries from shell configs
-# Completion block markers live in src/filecmd/sys/shell/rc.rs: the two comment
+# Completion block markers live in src/filecmd/special/shell/rc.rs: the two comment
 # lines carry "byk cli completions", the `if ... fi` line carries
 # "byk [__api__ ]completion". That pattern also covers the bare line older
 # installers wrote.

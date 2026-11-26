@@ -1,4 +1,4 @@
-//! 别名文件来源解析：`local@name` / `global@name` / 路径，link 与 clone 共用。
+//! 别名文件来源解析：`work@name` / `global@name` / 路径，link 与 clone 共用。
 
 use std::fs;
 use std::io;
@@ -41,7 +41,7 @@ pub(crate) fn resolve(spec: &str, layout: &PathLayout) -> Result<PathBuf, String
 /// 传输通道（直连 / gh-proxy）从配置读一次，远程请求共用同一个判定：
 /// URL 与 `$deps.base` 里永远只出现规范上游地址。
 pub(crate) fn load(spec: &str, layout: &PathLayout) -> Result<Loaded, String> {
-    let channel = crate::filecmd::sys::config::channel(layout);
+    let channel = crate::filecmd::special::config::channel(layout);
 
     match classify(spec)? {
         SourceKind::Url(url) => remote(url, channel),
@@ -76,7 +76,7 @@ fn remote(url: &str, channel: crate::net::Channel) -> Result<Loaded, String> {
 
 /// 直接按路径读取别名文件。
 ///
-/// 与 [`load`] 的区别是跳过 `local@` / `global@` 与裸名补全：tap 索引里的值
+/// 与 [`load`] 的区别是跳过 `work@` / `global@` 与裸名补全：tap 索引里的值
 /// 是精确指针，`@foo` 也必须当普通文件名，不能被解释成作用域。
 pub(crate) fn load_file(path: &Path) -> Result<Loaded, String> {
     let (path, data) = read_source(path.to_path_buf())?;
@@ -349,9 +349,9 @@ pub(crate) fn encode_segment(segment: &str) -> String {
 
 fn load_local(spec: &str, layout: &PathLayout) -> Result<(PathBuf, Vec<u8>), String> {
     if let Some((scope, stem)) = Scope::split(spec) {
-        if scope == Scope::Sys {
+        if scope == Scope::Special {
             return Err(format!(
-                "System files are not alias-file sources: {}\nHint: clone and link take alias files, e.g. local@ops or global@ops",
+                "Special files are not alias-file sources: {}\nHint: clone and link take alias files, e.g. work@ops or global@ops",
                 spec
             ));
         }
@@ -499,7 +499,7 @@ enum FetchKind {
 ///
 /// 与普通来源共用同一个通道：远程索引同样受 `net-github` 约束。
 pub(crate) fn fetch_tap_index(url: &str, layout: &PathLayout) -> Result<Vec<u8>, String> {
-    let channel = crate::filecmd::sys::config::channel(layout);
+    let channel = crate::filecmd::special::config::channel(layout);
     fetch(url, FetchKind::TapIndex, channel)
 }
 
@@ -513,10 +513,10 @@ fn failure_hint(route: &crate::net::Route, url: &str) -> Option<&'static str> {
     }
     match route {
         crate::net::Route::Direct => Some(
-            "\nHint: this network cannot reach GitHub directly; retry through a mirror:\n  byk sys@config set net-github ghproxy",
+            "\nHint: this network cannot reach GitHub directly; retry through a mirror:\n  byk special@config set net-github ghproxy",
         ),
         crate::net::Route::Mirrored(_) => Some(
-            "\nHint: the mirror may be unreachable; go direct with:\n  byk sys@config set net-github direct",
+            "\nHint: the mirror may be unreachable; go direct with:\n  byk special@config set net-github direct",
         ),
         // 凭证地址本来就不该换成镜像，别给一个会泄露凭证的建议
         crate::net::Route::Credentials => None,

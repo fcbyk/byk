@@ -541,10 +541,10 @@ def test_local_deps_install_into_the_project(runner, tmp_path):
     env, _ = write_fake_curl(tmp_path, {"/tool": b"local"})
     prepare_local(tmp_path, ["https://example.com/tool"])
 
-    result = runner.run("local@tool", "deps", "i", cwd=str(tmp_path), env=env)
+    result = runner.run("work@tool", "deps", "i", cwd=str(tmp_path), env=env)
 
     assert result.returncode == 0
-    local_deps = tmp_path / ".byk" / "deps" / "local@tool"
+    local_deps = tmp_path / ".byk" / "deps" / "work@tool"
     assert (local_deps / "tool").read_bytes() == b"local"
     assert (local_deps / ".byk-deps.json").is_file()
     # 自忽略的 .gitignore，免得仓库里冒出二进制
@@ -561,11 +561,11 @@ def test_local_deps_do_not_mix_between_projects(runner, tmp_path):
         env, _ = write_fake_curl(project, {"/tool": payload})
         prepare_local(project, ["https://example.com/tool"])
 
-        result = runner.run("local@tool", "deps", "i", cwd=str(project), env=env)
+        result = runner.run("work@tool", "deps", "i", cwd=str(project), env=env)
         assert result.returncode == 0, result.stderr
 
-    assert (project_a / ".byk" / "deps" / "local@tool" / "tool").read_bytes() == b"A"
-    assert (project_b / ".byk" / "deps" / "local@tool" / "tool").read_bytes() == b"B"
+    assert (project_a / ".byk" / "deps" / "work@tool" / "tool").read_bytes() == b"A"
+    assert (project_b / ".byk" / "deps" / "work@tool" / "tool").read_bytes() == b"B"
 
 
 def test_local_deps_dir_expands_in_the_file(runner, tmp_path):
@@ -575,19 +575,19 @@ def test_local_deps_dir_expands_in_the_file(runner, tmp_path):
         extra={"$paths": ["${deps_dir}"], "run": "tool"},
     )
 
-    result = runner.run("local@tool", "json", "--expand", cwd=str(tmp_path))
+    result = runner.run("work@tool", "json", "--expand", cwd=str(tmp_path))
 
     assert result.returncode == 0
-    assert f"{tmp_path}/.byk/deps/local@tool" in result.stdout
+    assert f"{tmp_path}/.byk/deps/work@tool" in result.stdout
 
 
 def test_destroy_removes_local_deps(runner, tmp_path):
     env, _ = write_fake_curl(tmp_path, {"/tool": b"x"})
     prepare_local(tmp_path, ["https://example.com/tool"])
-    runner.run("local@tool", "deps", "i", cwd=str(tmp_path), env=env)
-    assert (tmp_path / ".byk" / "deps" / "local@tool").is_dir()
+    runner.run("work@tool", "deps", "i", cwd=str(tmp_path), env=env)
+    assert (tmp_path / ".byk" / "deps" / "work@tool").is_dir()
 
-    result = runner.run("local@tool", "destroy", "--yes", cwd=str(tmp_path))
+    result = runner.run("work@tool", "destroy", "--yes", cwd=str(tmp_path))
 
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / ".byk").exists(), "空壳目录也要收掉"

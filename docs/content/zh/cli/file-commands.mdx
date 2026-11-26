@@ -8,11 +8,11 @@ description: 绑定在别名文件上的保留命令：创建、修改、克隆�
 每个别名文件都自带一组保留命令，用来创建、修改和查看这个文件本身：
 
 ```bash
-byk local@文件 命令 [参数...]     # 当前目录
+byk work@文件 命令 [参数...]     # 当前目录
 byk global@文件 命令 [参数...]    # 全局目录 ~/.byk/alias/
 ```
 
-动词与文件 token 之间用空格分隔。不带点号的 `local@文件` / `global@文件` 后面跟动词时永远走文件命令；带点号的 `local@文件.key` 是精确别名，所以 `byk global@ops set` 与 `byk global@ops.set` 不会混淆。只写 `byk global@ops` 会显示该文件的命令帮助。
+动词与文件 token 之间用空格分隔。不带点号的 `work@文件` / `global@文件` 后面跟动词时永远走文件命令；带点号的 `work@文件.key` 是精确别名，所以 `byk global@ops set` 与 `byk global@ops.set` 不会混淆。只写 `byk global@ops` 会显示该文件的命令帮助。
 
 ```bash
 byk global@ops init                            # 创建 ~/.byk/alias/ops.byk.json
@@ -25,17 +25,17 @@ byk global@ops -h                              # 列出全部文件命令
 
 | 写法 | 目标文件 |
 |------|----------|
-| `local@ops json` | 当前目录 `./ops.byk.json` |
+| `work@ops json` | 当前目录 `./ops.byk.json` |
 | `global@ops json` | 全局目录 `~/.byk/alias/ops.byk.json` |
-| `local@ json` | 当前目录匿名文件 `./.byk.json` |
+| `work@ json` | 当前目录匿名文件 `./.byk.json` |
 | `global@ json` | 全局匿名文件 `~/.byk/alias/.byk.json` |
 
-- `local@` 与 `global@` 是两个别名文件作用域，可缩写为 `l@` / `lo@` / `loc@` 与 `g@`；`sys@`（`s@`）是第三个作用域，指向不是别名的其他文件，不走这些文件命令——见 [系统文件](/cli/system-files)。
+- `work@` 与 `global@` 是两个别名文件作用域，可缩写为 `w@` / `wo@` / `wor@` 与 `g@`；`special@`（`s@`）是第三个作用域，指向不是别名的其他文件，不走这些文件命令——见 [特殊文件](/cli/special-files)。
 - 文件名不能包含 `.`、`@`、`/` 或空格；支持字母、数字、`-`、`_` 与中文。
-- 省略动词（只写 `local@文件`）、或写 `-h` / `--help`，都会显示该文件的命令帮助。
+- 省略动词（只写 `work@文件`）、或写 `-h` / `--help`，都会显示该文件的命令帮助。
 - 改写类命令只写被寻址的这个文件；`clone`、`link`、`init --link` 的来源只读。
 - `set` 与 `remove` 拒绝改写链接文件（单元素数组）；要改内容请直接编辑链接目标。`clear` 清空的是链接文件自身。
-- 需要文件存在的命令在目标缺失时，如果另一侧（当前目录 / 全局目录）有同名文件，会提示换用 `local@` 或 `global@`；`path` 不要求文件存在。
+- 需要文件存在的命令在目标缺失时，如果另一侧（当前目录 / 全局目录）有同名文件，会提示换用 `work@` 或 `global@`；`path` 不要求文件存在。
 - 修改类命令的提示写 stderr；`json`、`path` 与帮助输出写 stdout，方便管道和 `$(...)`。
 
 ## 命令一览
@@ -60,12 +60,12 @@ byk global@ops -h                              # 列出全部文件命令
 
 ```bash
 byk global@ops init                          # 创建空文件 {}
-byk local@ops init --link local@shared       # 创建指向 ./shared.byk.json 的链接
+byk work@ops init --link work@shared       # 创建指向 ./shared.byk.json 的链接
 ```
 
 - 内容固定为 `{}` 加一个结尾换行；不会覆盖已存在的文件。
 - `--link <source>` 创建**链接文件**（单元素数组），保存来源文件的规范化绝对路径。
-- 来源可以是 `local@name`（当前目录）、`global@name`（全局目录）或路径（`~` 展开，相对路径按当前目录解析）。来源必须是已存在的对象别名文件；指向链接文件时会被拒绝，链接只支持一层。
+- 来源可以是 `work@name`（当前目录）、`global@name`（全局目录）或路径（`~` 展开，相对路径按当前目录解析）。来源必须是已存在的对象别名文件；指向链接文件时会被拒绝，链接只支持一层。
 - 本地裸名先读字面文件，缺失时再补 `.byk.json`；`.`、`..`、结尾 `/` 与目录名读取目录里的 `.byk.json`——与 `clone` 的本地规则相同。
 - 创建全局文件时，`~/.byk/alias/` 不存在会自动创建。
 
@@ -182,7 +182,7 @@ byk global@ops path
 byk global@ops rename tools
 ```
 
-- 在同一个作用域内改名（`local@` 只改当前目录，`global@` 只改全局目录）。
+- 在同一个作用域内改名（`work@` 只改当前目录，`global@` 只改全局目录）。
 - 新名字遵循同样的文件名规则；目标已存在时拒绝。
 - 链接文件改的是链接文件本身，目标不动。
 - 全局文件的依赖目录 `~/.byk/deps/global@<旧名>` 会同步改名为 `global@<新名>`，别名里的 `${deps_dir}` 指向不变。
@@ -195,14 +195,14 @@ byk global@ops set -h         # set 的用法与选项
 byk global@ops set build -h   # 同样是 set 的帮助
 ```
 
-命令列表会先说明这是当前还是全局别名文件，并提示用 `<command> -h` 查看单个命令；随后是 `FilePath`（绝对路径，未创建时标注 `(not created yet)`，链接文件标注 `(link)`）、Usage、Options、Commands。单个命令的帮助依次给出描述、`FilePath`、Usage 与 Options。未知命令会列出全部可用命令。
+命令列表会先说明这是工作目录还是全局别名文件，并提示用 `<command> -h` 查看单个命令；随后是 `FilePath`（绝对路径，未创建时标注 `(not created yet)`，链接文件标注 `(link)`）、Usage、Options、Commands。单个命令的帮助依次给出描述、`FilePath`、Usage 与 Options。未知命令会列出全部可用命令。
 
 ## 克隆与链接
 
 ### `clone <source>`
 
 ```bash
-byk global@ops clone local@shared
+byk global@ops clone work@shared
 byk global@ops clone ~/src/tool.byk.json
 byk global@ops clone ~/src/tool               # 自动补成 tool.byk.json
 byk global@ops clone ./tools/release          # 子目录里的 release.byk.json
@@ -223,7 +223,7 @@ byk global@ops clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 
 | 来源 | 说明 |
 |------|------|
-| `local@name` / `global@name` | 当前目录 / 全局目录里的别名文件 |
+| `work@name` / `global@name` | 当前目录 / 全局目录里的别名文件 |
 | 路径 | 支持 `~`；相对路径按当前目录解析；裸名字自动补 `.byk.json` |
 | `http://` / `https://` | 通过外部 `curl` 下载 |
 | `github:<spec>` | GitHub raw；`<spec>` 见下面的「仓库简写」 |
@@ -238,7 +238,7 @@ byk global@ops clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 | `github:` | `raw.githubusercontent.com` |
 | `gitee:` | `gitee.com/<user>/<repo>/raw/…` |
 
-- **通道不在语法里。** 要经镜像访问 GitHub，配一次就够：`byk sys@config set net-github ghproxy`。它同时作用于 `clone`、`--tap` 的远程索引与 `$deps` 下载；`gitee:` 和其它 host 不受影响，详见[系统文件](/zh/cli/system-files)。
+- **通道不在语法里。** 要经镜像访问 GitHub，配一次就够：`byk special@config set net-github ghproxy`。它同时作用于 `clone`、`--tap` 的远程索引与 `$deps` 下载；`gitee:` 和其它 host 不受影响，详见[特殊文件](/zh/cli/special-files)。
 - 带凭证的地址（`?token=…`，或 `user:pass@host`）一律直连：镜像看不到它们。这类来源也不能声明 `$deps`——否则凭证要么被写进文档，要么让资产静默 404，两种都不该悄悄发生。
 - 认不出的前缀会直接失败并列出可选值：`Unknown source prefix: fastgit:`。名字里带冒号的本地文件用 `./` 开头即可（`./notes:2024`）。
 - 前缀已是「一个位置参数」，所以不再有 `-gh` / `-ge` 这类选项；选项只剩 `--tap` 与 `--deps`。
@@ -299,7 +299,7 @@ byk global@ops clone https://example.com/tool.byk.json -d   # 顺手装好 $deps
 一个仓库可以发布多个别名文件，而不必都堆在根目录：`--tap` 读取仓库根目录的 `byk.tap.json` 作为路由表。
 
 ```bash
-git clone https://github.com/user/repo ~/.byk/tap/user/repo   # 或者：byk sys@tap add user/repo
+git clone https://github.com/user/repo ~/.byk/tap/user/repo   # 或者：byk special@tap add user/repo
 byk global@ops clone --tap user/repo/build
 byk global@ops clone --tap build                      # 搜索所有本地 tap 索引
 byk global@ops clone -t user/repo@v1/build -d
@@ -319,9 +319,9 @@ byk global@ops clone -t user/repo@v1/build -d
 - **完整写法本地索引优先。** spec 不带 `@<ref>` 时，先读 `~/.byk/tap/<user>/<repo>/byk.tap.json`。这个文件存在就是权威：解析失败、缺键、value 非 string、目标不存在都会直接报错；只有索引文件本身不存在才回退 GitHub。写了 `@<ref>` 则始终使用远程索引。
 - **单 key 简写。** 只写 `--tap <key>`（不含 `/`）时，搜索所有合法的 `~/.byk/tap/<user>/<repo>/byk.tap.json`，只查本地索引、不联网拉取索引。唯一命中就从该索引克隆（value 是 URL 时仍走远程 clone）；多个仓库都有这个 key 时，列出 `user/repo/key` 完整写法让你自己选；一个都没有则直接失败，不回退远程。
 - 简写只读两层：`tap/<user>/<repo>/byk.tap.json`。目录名必须是合法的 GitHub 用户名 / 仓库名，非法目录和没有索引的目录跳过。读不了或解析失败的索引会打印警告并跳过，所以「唯一」只对可读索引成立。
-- 简写不支持 `local@ref`；要固定 ref 请用完整写法（走远程索引）。
-- `~/.byk/tap/` 只有 `sys@tap` 会写：`clone --tap` 只读它，从不创建、更新或删除。装仓库用 `byk sys@tap add <user>/<repo>`，它只动 `tap/<user>/<repo>` 和账本 `tap/index.json`；`byk sys@tap update` 把这些 checkout 拉到上游，账本不碰。
-- value 是精确指针：不会补 `.byk.json`，也不会把目录当成目录里的 `.byk.json`。以 `local@` / `global@` 开头的目标同样按字面文件名处理，绝不解释成别名引用。
+- 简写不支持 `work@ref`；要固定 ref 请用完整写法（走远程索引）。
+- `~/.byk/tap/` 只有 `special@tap` 会写：`clone --tap` 只读它，从不创建、更新或删除。装仓库用 `byk special@tap add <user>/<repo>`，它只动 `tap/<user>/<repo>` 和账本 `tap/index.json`；`byk special@tap update` 把这些 checkout 拉到上游，账本不碰。
+- value 是精确指针：不会补 `.byk.json`，也不会把目录当成目录里的 `.byk.json`。以 `work@` / `global@` 开头的目标同样按字面文件名处理，绝不解释成别名引用。
   - 本地索引：相对值以索引文件所在目录为基准；绝对路径与 `~` 按本地文件处理；`http(s)` URL 仍走远程 clone。
   - 远程索引：相对值以仓库根为基准；只允许 `http(s)` URL 和仓库内相对路径，不能指向本地。
 - 只路由一层。目标必须是别名文件，不能再是 tap 索引：最后一段是 `byk.tap.json` 的目标会被直接拒绝，解析出来的文件也不会被当成第二条路由。
@@ -336,14 +336,14 @@ byk global@hello clone https://example.com/hello.byk.json -d
 ```
 
 - 克隆落盘后立刻读新文件的 `$deps`：有就按 `deps i` 的同步语义装好（新建的 key 没有清单，等于首次安装）；没有就跳过，不当成错误。
-- `-d` 对局部文件同样有效：依赖落在当前目录的 `.byk/deps/local@<文件名>/` 里，和 `deps i` 一致。
+- `-d` 对局部文件同样有效：依赖落在当前目录的 `.byk/deps/work@<文件名>/` 里，和 `deps i` 一致。
 - 安装不二次确认，也不需要 `--yes`：从 clone 到资产就位是一条命令的事，适合脚本与非交互环境。
 - 装依赖失败**不**回滚克隆：文件已经落盘且合法，按提示重跑 `global@<file> deps i` 即可，已就位的资产不会重复下载。
 
 ### `link <target>`
 
 ```bash
-byk global@ops link local@shared
+byk global@ops link work@shared
 ```
 
 - 把被寻址的文件改写为单元素数组，指向目标文件的规范化绝对路径。
@@ -403,7 +403,7 @@ global@tool: 2 declared, 2 present — up to date
 
 - `src` 写相对路径时靠 `$deps.base` 拼成绝对地址；两者缺一就报错，不会去猜。base 落盘后必须是绝对地址——URL 形态对应下载，本机路径形态对应复制（`clone` 按来源决定写哪种）。相对写法只在 `clone` 时才有意义。base 由程序写入，是尽力锚点而非可移植性担保，不建议手写。
 - 本地条目按源文件 mtime 判新旧：源比装好的那份新就重装；源不在了就报 `cannot read` 并给出路径，不安静跳过。
-- 全局与局部都支持：全局落到 `~/.byk/deps/global@<文件名>/`，局部落到 `<文件所在目录>/.byk/deps/local@<文件名>/` 并自带 `.gitignore`（内容 `*`）。
+- 全局与局部都支持：全局落到 `~/.byk/deps/global@<文件名>/`，局部落到 `<文件所在目录>/.byk/deps/work@<文件名>/` 并自带 `.gitignore`（内容 `*`）。
 - 已安装清单存在 `<专属目录>/.byk-deps.json`，记录上次声明的快照与落点。删除它等于重新开始记账，安装会重新「接管」现有文件。
 - 只删自己装过的路径：目录里多出来的文件永远不动，只提示一句。
 - 安装不二次确认，也不需要 `--yes`；`--force` 是唯一的选项，用于「文件资产被外部改坏」这类清单看不出的情况。
@@ -414,7 +414,7 @@ global@tool: 2 declared, 2 present — up to date
 - `$deps.pip` 把 Python 包装进专属目录里的 `.venv`：venv 缺失时用 `python3`（Windows 为 `python`）创建，然后执行 `pip install`。venv 的 `bin` / `Scripts` 会前置到 `PATH`；缺少 Python 时报错并提示安装。
 - `$deps.npm` 把 npm 包装进专属目录：缺失时写一个最小 `package.json`（`byk-deps`、`private`），然后执行 `npm install`。`node_modules/.bin` 会前置到 `PATH`；缺少 npm 时报错并提示安装。
 - 包每次安装都会执行，且不记进 `.byk-deps.json`——是否最新由 pip / npm 判断。`--force` 只影响文件条目；从声明里删掉某个包不会卸载它，想清空整个目录用 `deps uninstall`。`files` 可以省略，所以声明里可以只有包。
-- 落点都圈在专属目录内（全局 `~/.byk/deps/global@<文件名>/`，局部 `<文件所在目录>/.byk/deps/local@<文件名>/`）。字段说明见 [依赖](/cli/alias/config#依赖)。
+- 落点都圈在专属目录内（全局 `~/.byk/deps/global@<文件名>/`，局部 `<文件所在目录>/.byk/deps/work@<文件名>/`）。字段说明见 [依赖](/cli/alias/config#依赖)。
 - 带 `extract` 的条目落点是目录，用 `(extract)` 标注；重装时整目录替换，旧归档里没有的文件不会留下。省略 `to` 表示解到专属目录根，这种条目必须单独存在（它会换掉整个目录）：
 
 ```
@@ -449,8 +449,8 @@ Hint: run `byk global@tool deps install` to install the missing assets
 
 文件命令的补全覆盖：
 
-- `local@` / `global@` 后的文件名；敲完文件名和空格后补动词；
+- `work@` / `global@` 后的文件名；敲完文件名和空格后补动词；
 - 命令后的选项（如 `set --`），以及 `--help` / `-h`；
 - `remove` 后面的已有 key 路径（读目标文件，链接文件不补）；
-- `clone`、`link`、`init --link` 的来源参数（以 `local@` 开头的别名文件）；
+- `clone`、`link`、`init --link` 的来源参数（以 `work@` 开头的别名文件）；
 - `deps` 后面的子命令（`install` / `uninstall` / `status`）。

@@ -18,7 +18,7 @@ def test_rename_local_uses_cwd(runner, tmp_path):
     old = tmp_path / "ops.byk.json"
     old.write_text('{"a": "echo a"}', encoding="utf-8")
 
-    result = runner.run("local@ops", "rename", "new", cwd=str(tmp_path))
+    result = runner.run("work@ops", "rename", "new", cwd=str(tmp_path))
 
     assert result.returncode == 0
     assert (tmp_path / "new.byk.json").read_text() == '{"a": "echo a"}'
@@ -30,7 +30,7 @@ def test_rename_to_anonymous(runner, tmp_path):
 
     global_result = runner.run("global@ops", "rename", "")
     (tmp_path / "local.byk.json").write_text("{}", encoding="utf-8")
-    local_result = runner.run("local@local", "rename", "", cwd=str(tmp_path))
+    local_result = runner.run("work@local", "rename", "", cwd=str(tmp_path))
 
     assert global_result.returncode == 0
     assert (runner.byk_dir / "alias" / ".byk.json").exists()

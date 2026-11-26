@@ -1,4 +1,4 @@
-//! 精确执行语法：local@file.key 和 global@file.key。
+//! 精确执行语法：work@file.key 和 global@file.key。
 
 use std::io;
 use std::path::PathBuf;
@@ -11,13 +11,13 @@ use crate::resolve::{
     to_alias_definition, to_alias_value, validate_filename,
 };
 
-/// 解析 `local@file.key` / `global@file.key`，返回 (file_key, alias_key)。
+/// 解析 `work@file.key` / `global@file.key`，返回 (file_key, alias_key)。
 ///
-/// `local@.build` 的 file_key 是 `local@`（匿名文件）；无点号或 key 为空时返回 None，
-/// 走普通查找。`sys@` 没有别名键，不参与点号语法。
+/// `work@.build` 的 file_key 是 `work@`（匿名文件）；无点号或 key 为空时返回 None，
+/// 走普通查找。`special@` 没有别名键，不参与点号语法。
 pub fn parse_exact_syntax(input: &str) -> Option<(String, String)> {
     let (scope, rest) = Scope::split(input)?;
-    if scope == Scope::Sys {
+    if scope == Scope::Special {
         return None;
     }
 
@@ -59,10 +59,10 @@ pub enum LoadFailure {
     Failed(String),
 }
 
-/// 按 `local@file` / `global@file` 加载并解析目标文件，不扫描目录、不建合并树。
+/// 按 `work@file` / `global@file` 加载并解析目标文件，不扫描目录、不建合并树。
 ///
-/// `local@` 指向当前目录，`global@` 指向全局别名目录；文件 key 与扫描阶段的命名规则一致。
-/// 文件名不合法时视作文件不存在，避免 `local@../x` 这类路径穿越。
+/// `work@` 指向当前目录，`global@` 指向全局别名目录；文件 key 与扫描阶段的命名规则一致。
+/// 文件名不合法时视作文件不存在，避免 `work@../x` 这类路径穿越。
 pub fn load_file_by_key(layout: &PathLayout, file_key: &str) -> Result<AliasFile, LoadFailure> {
     let Some((is_global, stem)) = split_file_key(file_key) else {
         return Err(LoadFailure::NotFound);
@@ -138,7 +138,7 @@ pub fn load_file_by_key(layout: &PathLayout, file_key: &str) -> Result<AliasFile
     }
 }
 
-/// 解析目标文件来响应 `local@file.key` / `global@file.key`。
+/// 解析目标文件来响应 `work@file.key` / `global@file.key`。
 pub fn resolve_exact_alias(layout: &PathLayout, file_key: &str, alias_key: &str) -> ExactLookup {
     let file = match load_file_by_key(layout, file_key) {
         Ok(file) => file,
@@ -180,7 +180,7 @@ fn failure_reason(diagnostics: &[Diagnostic]) -> String {
 
 fn split_file_key(file_key: &str) -> Option<(bool, &str)> {
     let (scope, stem) = Scope::split(file_key)?;
-    if scope == Scope::Sys {
+    if scope == Scope::Special {
         return None;
     }
     Some((scope.is_global(), stem))
@@ -406,8 +406,8 @@ mod tests {
     #[test]
     fn parse_at_file_dot_key() {
         assert_eq!(
-            parse_exact_syntax("local@release.build"),
-            Some(("local@release".into(), "build".into()))
+            parse_exact_syntax("work@release.build"),
+            Some(("work@release".into(), "build".into()))
         );
     }
 
@@ -422,8 +422,8 @@ mod tests {
     #[test]
     fn parse_at_dot_key() {
         assert_eq!(
-            parse_exact_syntax("local@.build"),
-            Some(("local@".into(), "build".into()))
+            parse_exact_syntax("work@.build"),
+            Some(("work@".into(), "build".into()))
         );
     }
 
@@ -437,7 +437,7 @@ mod tests {
 
     #[test]
     fn parse_at_only_no_dot() {
-        assert_eq!(parse_exact_syntax("local@release"), None);
+        assert_eq!(parse_exact_syntax("work@release"), None);
     }
 
     #[test]
@@ -448,24 +448,24 @@ mod tests {
 
     #[test]
     fn parse_at_dot_empty_key() {
-        assert_eq!(parse_exact_syntax("local@release."), None);
-        assert_eq!(parse_exact_syntax("local@."), None);
+        assert_eq!(parse_exact_syntax("work@release."), None);
+        assert_eq!(parse_exact_syntax("work@."), None);
     }
 
     #[test]
     fn parse_dot_in_file_name() {
         // file_name 部分不含 dot（第一个 dot 即分隔符），多 dot 后面的归 alias_key
         assert_eq!(
-            parse_exact_syntax("local@release.build.prod"),
-            Some(("local@release".into(), "build.prod".into()))
+            parse_exact_syntax("work@release.build.prod"),
+            Some(("work@release".into(), "build.prod".into()))
         );
     }
 
     #[test]
     fn parse_with_hyphens() {
         assert_eq!(
-            parse_exact_syntax("local@my-file.run-test"),
-            Some(("local@my-file".into(), "run-test".into()))
+            parse_exact_syntax("work@my-file.run-test"),
+            Some(("work@my-file".into(), "run-test".into()))
         );
     }
 }

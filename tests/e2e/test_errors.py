@@ -44,7 +44,7 @@ def test_unknown_alias_reports_and_exits_1(runner):
 
 
 def test_exact_syntax_missing_file(runner):
-    r = runner.run("local@nofile.build")
+    r = runner.run("work@nofile.build")
     assert r.returncode == 1
     assert "Alias file not found" in r.stderr
 

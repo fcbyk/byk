@@ -49,12 +49,12 @@ def test_link_exact_call_uses_link_key(runner):
 
 
 def test_link_local_file(runner):
-    """当前目录的链接文件同样生效（key 为 local@）"""
+    """当前目录的链接文件同样生效（key 为 work@）"""
     proj = runner.home / "proj"
     proj.mkdir(parents=True, exist_ok=True)
     (proj / "lib.byk.json").write_text('{"hi": "echo local-bundle"}', encoding="utf-8")
     (proj / "p.byk.json").write_text('["lib.byk.json"]', encoding="utf-8")
-    r = runner.run("local@p.hi", cwd=str(proj))
+    r = runner.run("work@p.hi", cwd=str(proj))
     assert r.returncode == 0, r.stderr
     assert "local-bundle" in r.stdout
 

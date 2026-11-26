@@ -21,7 +21,7 @@ def test_json_local_and_anonymous(runner, tmp_path):
     (tmp_path / "ops.byk.json").write_text('{"a": "echo a"}\n', encoding="utf-8")
     runner.prepare_alias_file("", '{"b": "echo b"}\n')
 
-    local = runner.run("local@ops", "json", cwd=str(tmp_path))
+    local = runner.run("work@ops", "json", cwd=str(tmp_path))
     anonymous = runner.run("global@", "json")
 
     assert local.returncode == 0
@@ -148,7 +148,7 @@ def test_json_hints_other_scope(runner, tmp_path):
     result = runner.run("global@ops", "json", cwd=str(tmp_path))
 
     assert result.returncode == 1
-    assert "use local@ops json" in result.stderr
+    assert "use work@ops json" in result.stderr
 
 
 def test_json_refuses_directory(runner):

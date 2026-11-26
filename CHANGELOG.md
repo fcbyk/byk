@@ -2,24 +2,24 @@
 
 ### Breaking Changes
 
-- **scope**: `@` / `@@` / `@@@` → `local@` / `global@` / `sys@` (unique prefixes such as `l@`, `g@`, `s@`); dependency directories are now `deps/local@<stem>` and `~/.byk/deps/global@<stem>`, so reinstall dependencies
-- **file commands**: the `..` separator is gone — write `byk local@file <verb>` (`byk global@file <verb>` for the global one); the separator is now a space, so it no longer collides with the exact `local@file.key` syntax
+- **scope**: `@` / `@@` / `@@@` → `work@` / `global@` / `special@` (unique prefixes such as `w@`, `g@`, `s@`); dependency directories are now `deps/work@<stem>` and `~/.byk/deps/global@<stem>`, so reinstall dependencies
+- **file commands**: the `..` separator is gone — write `byk work@file <verb>` (`byk global@file <verb>` for the global one); the separator is now a space, so it no longer collides with the exact `work@file.key` syntax
 - **file help**: the `help` command is gone — use `-h` / `--help`, which now repeats the target `FilePath` above the usage
 - **`clone`**: the platform moved into the source argument (`github:` / `gitee:`), and the GitHub transport became the `net-github` setting (`direct` / `ghproxy`); only `--tap` and `--deps` are left
 
 ### Features
 
-- **`sys@` system files**: a third file domain for files that are not aliases — `sys@config` drives the settings (`net-github`, `banner`, …), `sys@tap` manages the tap repositories, and `sys@shell` the completion block in the startup file of the shell running byk. Names, verbs, setting names, values and repositories are completed. The installer now only sets `PATH`, so completion is enabled by hand
+- **`special@` special files**: a third file domain for files that are not aliases — `special@config` drives the settings (`net-github`, `banner`, …), `special@tap` manages the tap repositories, and `special@shell` the completion block in the startup file of the shell running byk. Names, verbs, setting names, values and repositories are completed. The installer now only sets `PATH`, so completion is enabled by hand
 - **`$paths`**: inheritable like `$cwd` / `$mode`; a child value replaces the list, `[]` falls back to the system `PATH`
 - **`$deps`**: a ghproxy `base` also covers absolute GitHub downloads, release assets included; curl's own progress bar shows on a terminal and stays quiet elsewhere
 - **network**: `BYK_USE_PROXY=false` forces a direct download; otherwise `BYK_PROXY`, the existing proxy variables, and the Windows system proxy are followed, injected into curl child processes only
 - **`--paths`**: adds a `Config:` line naming the settings file
-- **completion**: PowerShell registration script — `byk __api__ completion powershell` (or `pwsh`) prints it, and `sys@shell add completion` writes the block into `$PROFILE` (pwsh and Windows PowerShell 5.1, recognised from the parent process); PowerShell completes the global options and byk's own arguments
+- **completion**: PowerShell registration script — `byk __api__ completion powershell` (or `pwsh`) prints it, and `special@shell add completion` writes the block into `$PROFILE` (pwsh and Windows PowerShell 5.1, recognised from the parent process); PowerShell completes the global options and byk's own arguments
 - **`clone`**: a `#` before the path — or before the `--tap` key — lets `<ref>` contain `/` (`github:user/repo@feature/x#tools/release`); the `@<ref>/<path>` forms stay as they are
 
 ### Bug Fixes
 
-- **completion**: bash (Git Bash included) completes `local@file` arguments — `@` is a word separator there, and the token used to arrive split into pieces
+- **completion**: bash (Git Bash included) completes `work@file` arguments — `@` is a word separator there, and the token used to arrive split into pieces
 
 ## v0.8.2 (2026-11-20)
 

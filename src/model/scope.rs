@@ -1,38 +1,38 @@
-//! 文件作用域：`local@` / `global@` / `sys@`。
+//! 文件作用域：`work@` / `global@` / `special@`。
 //!
-//! 前缀按唯一前缀匹配（`l@`、`loc@`、`local@` 等价）。命令位、精确语法、来源位
+//! 前缀按唯一前缀匹配（`w@`、`wor@`、`work@` 等价）。命令位、精确语法、来源位
 //! 与补全都调这里，避免各自 `strip_prefix` 后规则漂移。
 
-/// 别名文件与系统文件的作用域。
+/// 别名文件与特殊文件的作用域。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Scope {
-    /// 当前目录里的别名文件
-    Local,
+    /// 工作目录里的别名文件
+    Work,
     /// CLI 别名目录里的别名文件
     Global,
-    /// 内置系统文件（config / tap / shell）
-    Sys,
+    /// 非别名的特殊文件（config / tap / shell）
+    Special,
 }
 
 impl Scope {
     pub(crate) fn all() -> [Scope; 3] {
-        [Scope::Local, Scope::Global, Scope::Sys]
+        [Scope::Work, Scope::Global, Scope::Special]
     }
 
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            Scope::Local => "local",
+            Scope::Work => "work",
             Scope::Global => "global",
-            Scope::Sys => "sys",
+            Scope::Special => "special",
         }
     }
 
     /// 完整写法，用于拼 key 与提示文案。
     pub(crate) fn token(self) -> &'static str {
         match self {
-            Scope::Local => "local@",
+            Scope::Work => "work@",
             Scope::Global => "global@",
-            Scope::Sys => "sys@",
+            Scope::Special => "special@",
         }
     }
 
@@ -40,7 +40,7 @@ impl Scope {
         matches!(self, Scope::Global)
     }
 
-    /// 按第一个 `@` 切分：`l@ops` → `(Local, "ops")`，`local@` → `(Local, "")`。
+    /// 按第一个 `@` 切分：`w@ops` → `(Work, "ops")`，`work@` → `(Work, "")`。
     ///
     /// `@` 左侧为空、未命中或命中多个作用域时返回 `None`，由调用方决定回退路径还是报错。
     pub(crate) fn split(token: &str) -> Option<(Scope, &str)> {
@@ -69,7 +69,7 @@ impl Scope {
         (!head.is_empty() && head.bytes().all(|byte| byte.is_ascii_alphabetic())).then_some(head)
     }
 
-    /// 提示用：`local@, global@, sys@`。
+    /// 提示用：`work@, global@, special@`。
     pub(crate) fn tokens() -> String {
         Scope::all()
             .iter()
@@ -85,20 +85,20 @@ mod tests {
 
     #[test]
     fn splits_every_prefix_length() {
-        for typed in ["l@ops", "lo@ops", "loc@ops", "local@ops"] {
-            assert_eq!(Scope::split(typed), Some((Scope::Local, "ops")), "{typed}");
+        for typed in ["w@ops", "wo@ops", "wor@ops", "work@ops"] {
+            assert_eq!(Scope::split(typed), Some((Scope::Work, "ops")), "{typed}");
         }
         assert_eq!(Scope::split("g@ops"), Some((Scope::Global, "ops")));
-        assert_eq!(Scope::split("s@config"), Some((Scope::Sys, "config")));
+        assert_eq!(Scope::split("s@config"), Some((Scope::Special, "config")));
     }
 
     #[test]
     fn keeps_the_rest_verbatim() {
-        assert_eq!(Scope::split("local@"), Some((Scope::Local, "")));
-        assert_eq!(Scope::split("local@.build"), Some((Scope::Local, ".build")));
+        assert_eq!(Scope::split("work@"), Some((Scope::Work, "")));
+        assert_eq!(Scope::split("work@.build"), Some((Scope::Work, ".build")));
         assert_eq!(
-            Scope::split("sys@config.list"),
-            Some((Scope::Sys, "config.list"))
+            Scope::split("special@config.list"),
+            Some((Scope::Special, "config.list"))
         );
     }
 
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(Scope::split("@@ops"), None);
         assert_eq!(Scope::split("ops"), None);
         assert_eq!(Scope::split("gla@ops"), None);
-        assert_eq!(Scope::split("LOCAL@ops"), None);
+        assert_eq!(Scope::split("WORK@ops"), None);
         assert_eq!(Scope::split("hello@123"), None);
         assert_eq!(Scope::split("./dir@2"), None);
     }
@@ -117,7 +117,7 @@ mod tests {
     fn reports_only_scope_shaped_heads() {
         assert_eq!(Scope::unknown_prefix("gla@ops"), Some("gla"));
         assert_eq!(Scope::unknown_prefix("hello@123"), Some("hello"));
-        assert_eq!(Scope::unknown_prefix("local@ops"), None);
+        assert_eq!(Scope::unknown_prefix("work@ops"), None);
         // 路径与带非字母的名字不是作用域形态
         assert_eq!(Scope::unknown_prefix("./dir@2"), None);
         assert_eq!(Scope::unknown_prefix("C:\\a@b"), None);
@@ -127,6 +127,6 @@ mod tests {
 
     #[test]
     fn tokens_lists_every_scope() {
-        assert_eq!(Scope::tokens(), "local@, global@, sys@");
+        assert_eq!(Scope::tokens(), "work@, global@, special@");
     }
 }

@@ -28,7 +28,7 @@ def test_clear_local_and_anonymous(runner, tmp_path):
     local.write_text('{"build": "echo local"}', encoding="utf-8")
     anonymous = runner.prepare_alias_file("", '{"build": "echo anon"}')
 
-    local_result = runner.run("local@ops", "clear", "--yes", cwd=str(tmp_path))
+    local_result = runner.run("work@ops", "clear", "--yes", cwd=str(tmp_path))
     anonymous_result = runner.run("global@", "clear", "--yes")
 
     assert local_result.returncode == 0

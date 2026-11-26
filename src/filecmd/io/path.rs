@@ -31,7 +31,7 @@ pub(crate) fn resolve_target(
     layout: &PathLayout,
 ) -> Result<PathBuf, String> {
     match scope {
-        FileScope::Local => {
+        FileScope::Work => {
             let cwd = std::env::current_dir()
                 .map_err(|e| format!("Failed to resolve current directory: {}", e))?;
             Ok(target_path(&cwd, stem))
@@ -40,22 +40,22 @@ pub(crate) fn resolve_target(
     }
 }
 
-/// 解析文件 key（`local@name` / `global@name` / `local@` / `global@`）为目标地址。
+/// 解析文件 key（`work@name` / `global@name` / `work@` / `global@`）为目标地址。
 ///
 /// 与 `path` 共用文件名校验和 scope 选择；不读取文件，也不要求文件存在。
 pub(crate) fn address_for_key(key: &str, layout: &PathLayout) -> Result<FileAddress, String> {
     let Some((scope, stem)) = Scope::split(key) else {
         return Err(format!(
-            "Invalid file key: {:?}\nHint: expected local@<name>, global@<name>, local@ or global@",
+            "Invalid file key: {:?}\nHint: expected work@<name>, global@<name>, work@ or global@",
             key
         ));
     };
     let scope = match scope {
-        Scope::Local => FileScope::Local,
+        Scope::Work => FileScope::Work,
         Scope::Global => FileScope::Global,
-        Scope::Sys => {
+        Scope::Special => {
             return Err(format!(
-                "System files are not alias files: {}\nHint: alias file keys are local@<name> or global@<name>",
+                "Special files are not alias files: {}\nHint: alias file keys are work@<name> or global@<name>",
                 key
             ));
         }
@@ -78,7 +78,7 @@ pub(crate) fn not_found_message(
     let mut message = format!("File not found: {}", target.display());
 
     let other = match scope {
-        FileScope::Local => target_path(&layout.alias_dir, stem),
+        FileScope::Work => target_path(&layout.alias_dir, stem),
         FileScope::Global => match std::env::current_dir() {
             Ok(cwd) => target_path(&cwd, stem),
             Err(_) => return message,
@@ -87,8 +87,8 @@ pub(crate) fn not_found_message(
 
     if other != target && fs::symlink_metadata(&other).is_ok() {
         let (label, prefix) = match scope {
-            FileScope::Local => ("global", Scope::Global.token()),
-            FileScope::Global => ("local", Scope::Local.token()),
+            FileScope::Work => ("global", Scope::Global.token()),
+            FileScope::Global => ("work", Scope::Work.token()),
         };
         message.push_str(&format!(
             "\nHint: a {} file exists at {}; use {}{} {}",
@@ -145,9 +145,9 @@ mod tests {
     #[test]
     fn parse_local_init() {
         assert_eq!(
-            parse_ok("local@ops", &["init"]),
+            parse_ok("work@ops", &["init"]),
             FileCommand {
-                scope: FileScope::Local,
+                scope: FileScope::Work,
                 stem: "ops".into(),
                 verb: Verb::Init,
                 args: Vec::new(),
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn parse_anonymous_files() {
         assert_eq!(parse_ok("global@", &["init"]).stem, "");
-        assert_eq!(parse_ok("local@", &["init"]).scope, FileScope::Local);
+        assert_eq!(parse_ok("work@", &["init"]).scope, FileScope::Work);
     }
 
     #[test]
@@ -209,7 +209,7 @@ mod tests {
     fn parse_exact_alias_is_not_a_file_command() {
         assert_eq!(parse("global@ops.init", &[]), ParseResult::NotFileCommand);
         assert_eq!(
-            parse("local@ops.init.prod", &[]),
+            parse("work@ops.init.prod", &[]),
             ParseResult::NotFileCommand
         );
         assert_eq!(parse("ops.init", &[]), ParseResult::NotFileCommand);
@@ -239,15 +239,15 @@ mod tests {
     #[test]
     fn parse_system_file_keeps_args_verbatim() {
         assert_eq!(
-            parse("sys@config", &args(&["banner", "never"])),
+            parse("special@config", &args(&["banner", "never"])),
             ParseResult::System {
                 stem: "config".into(),
                 args: args(&["banner", "never"]),
             }
         );
-        // 系统文件没有动词表，`-h` 也原样交给目标文件
+        // 特殊文件没有动词表，`-h` 也原样交给目标文件
         assert_eq!(
-            parse("sys@config", &args(&["-h"])),
+            parse("special@config", &args(&["-h"])),
             ParseResult::System {
                 stem: "config".into(),
                 args: args(&["-h"]),
@@ -257,10 +257,10 @@ mod tests {
 
     #[test]
     fn system_file_skips_the_dot_rule() {
-        // 点号规则只属于别名：`sys@config.set` 必须留在系统文件命名空间里，
+        // 点号规则只属于别名：`special@config.set` 必须留在特殊文件命名空间里，
         // 否则会掉进别名查找，报一句 "alias not found"。
         assert_eq!(
-            parse("sys@config.set", &[]),
+            parse("special@config.set", &[]),
             ParseResult::System {
                 stem: "config.set".into(),
                 args: Vec::new(),
@@ -270,9 +270,9 @@ mod tests {
 
     #[test]
     fn system_file_keeps_an_empty_stem() {
-        // 空名字归 sys 报错，解析层既不 panic 也不吞掉
+        // 空名字归 special 报错，解析层既不 panic 也不吞掉
         assert_eq!(
-            parse("sys@", &[]),
+            parse("special@", &[]),
             ParseResult::System {
                 stem: String::new(),
                 args: Vec::new(),
@@ -291,8 +291,8 @@ mod tests {
 
     #[test]
     fn system_files_are_claimed_but_not_alias_file_heads() {
-        assert!(claims("sys@config", &args(&["banner"])));
-        assert!(!is_file_head("sys@config"));
+        assert!(claims("special@config", &args(&["banner"])));
+        assert!(!is_file_head("special@config"));
         assert!(is_file_head("global@config"));
     }
 

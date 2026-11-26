@@ -133,7 +133,7 @@ def test_clone_local_name(runner, tmp_path):
     source = tmp_path / "src.byk.json"
     source.write_text('{"build": "echo local"}', encoding="utf-8")
 
-    result = runner.run("global@ops", "clone", "local@src", cwd=str(tmp_path))
+    result = runner.run("global@ops", "clone", "work@src", cwd=str(tmp_path))
 
     assert result.returncode == 0
     assert read(runner.byk_dir / "alias" / "ops.byk.json") == {
@@ -144,7 +144,7 @@ def test_clone_local_name(runner, tmp_path):
 def test_clone_to_local_destination(runner, tmp_path):
     source = runner.prepare_alias_json("src", {"build": "echo hi"})
 
-    result = runner.run("local@ops", "clone", str(source), cwd=str(tmp_path))
+    result = runner.run("work@ops", "clone", str(source), cwd=str(tmp_path))
 
     assert result.returncode == 0
     assert read(tmp_path / "ops.byk.json") == {"build": "echo hi"}
@@ -363,14 +363,14 @@ def test_clone_source_completion_lists_alias_files(runner, tmp_path):
 
     global_only = runner.run("__api__", "complete", "global@ops", "clone", "global@")
     local_only = runner.run(
-        "__api__", "complete", "global@ops", "clone", "local@", cwd=str(tmp_path)
+        "__api__", "complete", "global@ops", "clone", "work@", cwd=str(tmp_path)
     )
     path_partial = runner.run("__api__", "complete", "global@ops", "clone", "./")
 
     assert global_only.returncode == 0
     assert global_only.stdout.splitlines() == ["global@src"]
     assert local_only.returncode == 0
-    assert local_only.stdout.splitlines() == ["local@local"]
+    assert local_only.stdout.splitlines() == ["work@local"]
     assert path_partial.returncode == 0
     assert path_partial.stdout == ""
 
@@ -484,7 +484,7 @@ def test_clone_github_direct_failure_suggests_cdn(runner, tmp_path):
     assert "curl failed (exit 35)" in result.stderr
     assert "Recv failure: Connection reset by peer" in result.stderr
     assert "cannot reach GitHub directly" in result.stderr
-    assert "byk sys@config set net-github ghproxy" in result.stderr
+    assert "byk special@config set net-github ghproxy" in result.stderr
     assert not (runner.byk_dir / "alias" / "ops.byk.json").exists()
 
 
@@ -702,7 +702,7 @@ def test_clone_mirror_failure_suggests_going_direct(runner, tmp_path):
     result = runner.run("global@ops", "clone", "github:aaa/bb", env=env)
 
     assert result.returncode == 1
-    assert "byk sys@config set net-github direct" in result.stderr
+    assert "byk special@config set net-github direct" in result.stderr
 
 
 def test_clone_credentials_bypass_the_mirror(runner, tmp_path):
@@ -1488,7 +1488,7 @@ def test_clone_into_local_installs_into_the_project(runner, tmp_path):
     )
 
     result = runner.run(
-        "local@ops", "clone",
+        "work@ops", "clone",
         "https://example.com/hello.byk.json",
         "-d",
         cwd=str(tmp_path),
@@ -1496,7 +1496,7 @@ def test_clone_into_local_installs_into_the_project(runner, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    local_deps = tmp_path / ".byk" / "deps" / "local@ops"
+    local_deps = tmp_path / ".byk" / "deps" / "work@ops"
     assert (local_deps / "bin" / "tool").read_bytes() == b"local"
     assert (local_deps / ".byk-deps.json").is_file()
     assert not (runner.byk_dir / "deps" / "global@ops").exists()
